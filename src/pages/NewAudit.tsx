@@ -3,19 +3,15 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
-  Wifi,
-  Camera,
   CheckCircle2,
   Loader2,
   Sparkles,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
-import UploadDropzone from '../components/ui/UploadDropzone';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS } from '../lib/demo-data';
-import { SCREENSHOT_CATEGORIES } from '../lib/constants';
-import { createAudit, createAuditAsset, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, uploadAuditAssetFile } from '../lib/db';
+import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -23,8 +19,7 @@ import { supabase } from '../lib/supabase';
 
 const STEPS = [
   { label: 'Prospect Details', description: 'Basic information' },
-  { label: 'Data Method', description: 'API or screenshots' },
-  { label: 'Data Inputs', description: 'Collect audit data' },
+  { label: 'API Connection', description: 'Connect Klaviyo data' },
   { label: 'Run Analysis', description: 'AI-powered audit' },
 ];
 
@@ -51,10 +46,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     clientName: '',
     companyName: '',
     notes: '',
-    auditMethod: '' as '' | 'api' | 'screenshot',
     apiKey: '',
   });
-  const [screenshots, setScreenshots] = useState<Record<string, File[]>>({});
 
   const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
   const selectedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
@@ -153,7 +146,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         client_id: clientId,
         title,
         status: 'in_progress',
-        audit_method: form.auditMethod as Audit['audit_method'],
+        audit_method: 'api' as Audit['audit_method'],
         list_size: 0,
         aov: 0,
         monthly_traffic: 0,
@@ -168,74 +161,33 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       const sectionKeys = ['account_health', 'flows', 'segmentation', 'campaigns', 'email_design', 'signup_forms', 'revenue_summary'];
       const createdSections = await createAuditSections(audit.id, sectionKeys);
 
-      // 4) Upload screenshots (screenshot method)
-      const mapCategoryToSection: Record<string, string> = {
-        account_overview: 'account_health',
-        flows: 'flows',
-        campaigns: 'campaigns',
-        segments: 'segmentation',
-        signup_forms: 'signup_forms',
-        email_examples: 'email_design',
-      };
-
-      const allFiles = Object.entries(screenshots).flatMap(([cat, files]) => files.map(f => ({ cat, file: f })));
-      if (form.auditMethod === 'screenshot' && allFiles.length > 0) {
-        setAnalysisStage('Uploading screenshots…');
-        // upload sequentially to keep progress meaningful
-        for (let i = 0; i < allFiles.length; i++) {
-          const { cat, file } = allFiles[i];
-          const sectionKey = mapCategoryToSection[cat] ?? 'account_health';
-          const uploaded = await uploadAuditAssetFile({
-            auditId: audit.id,
-            clientId,
-            sectionKey,
-            side: 'current',
-            file,
-          });
-          await createAuditAsset({
-            audit_id: audit.id,
-            client_id: clientId,
-            asset_type: 'screenshot',
-            file_url: uploaded.publicUrl,
-            file_name: file.name,
-            section_key: sectionKey,
-            side: 'current',
-          });
-          setAnalysisProgress(Math.round(((i + 1) / Math.max(1, allFiles.length)) * 30));
-          setAnalysisStage(`Uploading screenshots… (${i + 1}/${allFiles.length})`);
-        }
-      }
+      // 4) Fetch Klaviyo snapshot (API only)
+      setAnalysisProgress(35);
+      setAnalysisStage('Fetching Klaviyo account data…');
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
+      const { data, error: fnErr } = await supabase.functions.invoke<any>('klaviyo_fetch_snapshot', {
+        body: {
+          audit_id: audit.id,
+          client_id: clientId,
+          api_key: form.apiKey || undefined,
+        },
+        headers: {
+          Authorization: `Bearer ${token}`,
+        },
+      });
+      if (fnErr) throw fnErr;
+      if (!data?.ok) throw new Error(data?.error?.message || 'Failed to fetch Klaviyo snapshot');
+      setSnapshotMeta({
+        counts: data?.counts,
+        fetch: (data as any)?.fetch,
+        reporting: data?.reporting,
+        elapsed_ms: data?.elapsed_ms,
+        correlationId: data?.correlationId,
+      });
 
       // 5) Run AI analysis and persist section updates
-      // 5) Fetch Klaviyo snapshot (API method)
-      if (form.auditMethod === 'api') {
-        setAnalysisProgress(35);
-        setAnalysisStage('Fetching Klaviyo account data…');
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        if (!token) throw new Error('Your session expired. Please sign in again and retry.');
-        const { data, error: fnErr } = await supabase.functions.invoke<any>('klaviyo_fetch_snapshot', {
-          body: {
-            audit_id: audit.id,
-            client_id: clientId,
-            api_key: form.apiKey || undefined,
-          },
-          headers: {
-            Authorization: `Bearer ${token}`,
-          },
-        });
-        if (fnErr) throw fnErr;
-        if (!data?.ok) throw new Error(data?.error?.message || 'Failed to fetch Klaviyo snapshot');
-        setSnapshotMeta({
-          counts: data?.counts,
-          fetch: (data as any)?.fetch,
-          reporting: data?.reporting,
-          elapsed_ms: data?.elapsed_ms,
-          correlationId: data?.correlationId,
-        });
-      }
-
-      // 6) Run AI analysis and persist section updates
       setAnalysisProgress(40);
       setAnalysisStage('Running AI analysis…');
       const ticker = setInterval(() => {
@@ -257,8 +209,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           aov: 0,
           monthlyTraffic: 0,
           notes: form.notes,
-          auditMethod: form.auditMethod as any,
-          screenshots,
+          auditMethod: 'api' as any,
         }, (update) => {
           if (update.total > 0) {
             setAnalysisStage(update.label);
@@ -304,8 +255,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
   const canProceed = () => {
     if (step === 0) return form.companyName;
-    if (step === 1) return form.auditMethod;
-    if (step === 2) return true;
+    if (step === 1) return hasSavedKlaviyoConnection || form.apiKey;
     return true;
   };
 
@@ -369,61 +319,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {step === 1 && (
-          <div className="space-y-4 animate-slide-up">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">How would you like to collect data?</h2>
-            <p className="text-sm text-gray-500 mb-6">Choose the method that best fits your situation.</p>
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <button
-                onClick={() => updateField('auditMethod', 'api')}
-                className={`p-6 rounded-xl border-2 text-left transition-all ${
-                  form.auditMethod === 'api'
-                    ? 'border-brand-primary bg-brand-primary/5'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
-                  form.auditMethod === 'api' ? 'bg-brand-primary/10' : 'bg-gray-100'
-                }`}>
-                  <Wifi className={`w-6 h-6 ${form.auditMethod === 'api' ? 'text-brand-primary' : 'text-gray-400'}`} />
-                </div>
-                <h3 className="text-base font-semibold text-gray-900 mb-1">Direct API Connection</h3>
-                <p className="text-sm text-gray-500 mb-3">
-                  Connect via Klaviyo private API key for automated data analysis.
-                </p>
-                <div className="flex items-center gap-1.5 text-xs font-medium text-brand-primary">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Recommended for Klaviyo accounts
-                </div>
-              </button>
-
-              <button
-                onClick={() => updateField('auditMethod', 'screenshot')}
-                className={`p-6 rounded-xl border-2 text-left transition-all ${
-                  form.auditMethod === 'screenshot'
-                    ? 'border-brand-primary bg-brand-primary/5'
-                    : 'border-gray-200 hover:border-gray-300'
-                }`}
-              >
-                <div className={`w-12 h-12 rounded-xl flex items-center justify-center mb-4 ${
-                  form.auditMethod === 'screenshot' ? 'bg-brand-primary/10' : 'bg-gray-100'
-                }`}>
-                  <Camera className={`w-6 h-6 ${form.auditMethod === 'screenshot' ? 'text-brand-primary' : 'text-gray-400'}`} />
-                </div>
-                <h3 className="text-base font-semibold text-gray-900 mb-1">Screenshot-Based Audit</h3>
-                <p className="text-sm text-gray-500 mb-3">
-                  Upload screenshots from any ESP for manual analysis.
-                </p>
-                <div className="flex items-center gap-1.5 text-xs font-medium text-gray-500">
-                  <CheckCircle2 className="w-3.5 h-3.5" />
-                  Works with any email platform
-                </div>
-              </button>
-            </div>
-          </div>
-        )}
-
-        {step === 2 && form.auditMethod === 'api' && (
           <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
             <h2 className="text-lg font-semibold text-gray-900">API Connection</h2>
             {hasSavedKlaviyoConnection ? (
@@ -455,29 +350,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {step === 2 && form.auditMethod === 'screenshot' && (
-          <div className="bg-white rounded-xl p-6 card-shadow space-y-6 animate-slide-up">
-            <div>
-              <h2 className="text-lg font-semibold text-gray-900 mb-1">Upload Screenshots</h2>
-              <p className="text-sm text-gray-500">
-                Upload screenshots for each category below. This helps our AI analyze the account.
-              </p>
-            </div>
-
-            {SCREENSHOT_CATEGORIES.map(cat => (
-              <div key={cat.key} className="border-t border-gray-50 pt-5 first:border-0 first:pt-0">
-                <UploadDropzone
-                  label={cat.label}
-                  description={cat.description}
-                  files={screenshots[cat.key] || []}
-                  onFilesChange={files => setScreenshots(prev => ({ ...prev, [cat.key]: files }))}
-                />
-              </div>
-            ))}
-          </div>
-        )}
-
-        {step === 3 && (
+        {step === 2 && (
           <div className="bg-white rounded-xl p-8 card-shadow text-center animate-slide-up">
             {error && (
               <div className="mb-4 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg text-left">
@@ -528,15 +401,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                     },
                     {
                       key: 'input',
-                      label: form.auditMethod === 'api' ? 'Fetch Klaviyo snapshot' : 'Upload screenshots',
-                      done: analysisProgress >= (form.auditMethod === 'api' ? 40 : 30),
-                      active: analysisProgress >= 10 && analysisProgress < (form.auditMethod === 'api' ? 40 : 30),
+                      label: 'Fetch Klaviyo snapshot',
+                      done: analysisProgress >= 40,
+                      active: analysisProgress >= 10 && analysisProgress < 40,
                     },
                     {
                       key: 'ai',
                       label: 'Run AI analysis',
                       done: analysisProgress >= 70,
-                      active: analysisProgress >= (form.auditMethod === 'api' ? 40 : 30) && analysisProgress < 70,
+                      active: analysisProgress >= 40 && analysisProgress < 70,
                     },
                     {
                       key: 'save',
@@ -565,7 +438,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                     </div>
                   ))}
                 </div>
-                {form.auditMethod === 'api' && snapshotMeta?.counts && (() => {
+                {snapshotMeta?.counts && (() => {
                   const fetch = snapshotMeta.fetch as Record<string, { ok: boolean }> | undefined;
                   const resources = ['flows', 'campaigns', 'segments', 'forms', 'lists'] as const;
                   const failedScopes = fetch ? resources.filter(r => fetch[r] && !fetch[r].ok) : [];
@@ -603,7 +476,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {step < 3 && (
+        {step < 2 && (
           <div className="flex justify-end mt-6">
             <button
               onClick={() => setStep(step + 1)}

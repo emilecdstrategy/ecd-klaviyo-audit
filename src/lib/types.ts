@@ -145,6 +145,7 @@ export interface AuditSection {
   revenue_opportunity: number;
   confidence: 'low' | 'medium' | 'high';
   status: 'draft' | 'reviewed' | 'approved';
+  section_details?: Record<string, unknown> | null;
 }
 
 export interface AuditAsset {
@@ -194,7 +195,7 @@ export interface WizardData {
   aov: number;
   monthlyTraffic: number;
   notes: string;
-  auditMethod: 'api' | 'screenshot';
+  auditMethod: 'api';
   apiKey?: string;
-  screenshots: Record<string, File[]>;
+  screenshots?: Record<string, File[]>;
 }

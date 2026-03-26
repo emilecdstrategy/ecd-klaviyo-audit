@@ -1,4 +1,4 @@
-export const AI_SCHEMA_VERSION = "2026-03-26.v3";
+export const AI_SCHEMA_VERSION = "2026-03-26.v4";
 
 export const AUDIT_SECTION_KEYS = [
   "account_health",
@@ -46,8 +46,9 @@ export const AI_OUTPUT_JSON_SCHEMA = {
           optimized_notes: { type: "string", minLength: 40, maxLength: 3000 },
           ai_findings: { type: "string", minLength: 40, maxLength: 3000 },
           summary_text: { type: "string", minLength: 40, maxLength: 1200 },
-          revenue_opportunity: { type: "number", minimum: 0, maximum: 10000000 },
+          revenue_opportunity: { type: "number", minimum: 0, maximum: 500000 },
           confidence: { type: "string", enum: ["low", "medium", "high"] },
+          section_details: { type: "object" },
         },
       },
     },

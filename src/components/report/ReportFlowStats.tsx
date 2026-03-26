@@ -34,10 +34,10 @@ export default function ReportFlowStats({ snapshots, performance, clientName }: 
     { label: 'Live Flows', value: String(live), sub: 'actively sending' },
     { label: 'Draft / Paused', value: String(draftPaused), sub: `${inactivePercent}% inactive` },
     { label: 'Manual Flows', value: String(manual), sub: 'require manual trigger' },
-    { label: 'Annual Flow Revenue', value: hasPerf ? formatCurrency(annualRevenue) : '—', sub: hasPerf ? `${formatCurrency(monthlyRevenue)}/mo` : 'no metrics data', subColor: hasPerf ? 'text-emerald-600' : undefined },
-    { label: 'Total Recipients', value: fmtRecipients, sub: hasPerf ? 'per month' : 'no metrics data' },
-    { label: 'Overall Conv. Rate', value: hasPerf ? `${(weightedConv * 100).toFixed(2)}%` : '—', sub: hasPerf ? 'weighted average' : 'no metrics data' },
-    { label: 'Revenue Per Recipient', value: hasPerf ? `$${rpr.toFixed(2)}` : '—', sub: hasPerf ? 'across all flows' : 'no metrics data' },
+    { label: 'Annual Flow Revenue', value: hasPerf ? formatCurrency(annualRevenue) : 'N/A', sub: hasPerf ? `${formatCurrency(monthlyRevenue)}/mo` : 'requires Klaviyo metrics scope', subColor: hasPerf ? 'text-emerald-600' : undefined },
+    { label: 'Total Recipients', value: hasPerf ? fmtRecipients : 'N/A', sub: hasPerf ? 'per month' : 'requires Klaviyo metrics scope' },
+    { label: 'Overall Conv. Rate', value: hasPerf ? `${(weightedConv * 100).toFixed(2)}%` : 'N/A', sub: hasPerf ? 'weighted average' : 'requires Klaviyo metrics scope' },
+    { label: 'Revenue Per Recipient', value: hasPerf ? `$${rpr.toFixed(2)}` : 'N/A', sub: hasPerf ? 'across all flows' : 'requires Klaviyo metrics scope' },
   ];
 
   return (

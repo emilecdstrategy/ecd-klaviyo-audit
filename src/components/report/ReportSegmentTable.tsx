@@ -57,7 +57,7 @@ export default function ReportSegmentTable({ segments }: { segments: KlaviyoSegm
         <div className="relative z-10 flex justify-center pt-3 pb-1">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1.5 text-sm font-semibold bg-brand-primary text-white rounded-lg px-5 py-2 hover:bg-brand-primary-dark transition-colors shadow-sm"
+            className="flex items-center gap-1.5 text-sm font-semibold text-brand-primary hover:text-brand-primary-dark transition-colors"
           >
             {expanded ? (
               <>Collapse <ChevronUp className="w-4 h-4" /></>

@@ -63,6 +63,14 @@ export function buildAuditSystemPrompt() {
     "Phase 3 (Month 2-3, 'Strategic'): segmentation improvements, template redesigns, testing programs.",
     "Phase 4 (Month 3+, 'Long-Term'): advanced personalization, data programs, sophisticated automations.",
     "Each phase should have 2-4 specific items referencing actual findings from this account.",
+    "",
+    "SECTION RUBRIC REQUIREMENTS:",
+    "For FLOWS, explicitly cover: Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
+    "For each core flow include: present/not present, live/not live, approximate email count, current structure note, and ECD recommended structure note.",
+    "For SEGMENTATION, explicitly assess: full-list vs segmented sends, engaged/unengaged audience definition, VIP/high-LTV segments, and benchmark against ECD architecture.",
+    "For CAMPAIGNS, explicitly assess: send frequency consistency, segmented targeting vs blasting, subject/preview hygiene, and campaign type mix (promotional/educational/seasonal).",
+    "For SIGNUP FORMS, explicitly assess: popup presence, embedded form presence, offer quality (discount/lead magnet), mobile optimization, and benchmark conversion framing.",
+    "Populate section_details objects for flows/segmentation/campaigns/signup_forms so the frontend can render structured checklists and matrices.",
   ].join(" ");
 }
 
@@ -199,6 +207,12 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
       no_negative_revenue_opportunity: true,
       revenue_realism: "Be CONSERVATIVE with revenue_opportunity estimates. Base them on actual monthly revenue in the data. Each section should max at 2-3x current annualized revenue for that area. Total across all sections should rarely exceed $100K for smaller accounts.",
       analyze_actual_data: "You MUST reference and analyze the actual Klaviyo data above. Do NOT claim data is missing if it is provided.",
+    },
+    section_rubric: {
+      flows: "Cover Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
+      segmentation: "Assess full-list vs segmented, engaged/unengaged definitions, VIP/high-LTV, and benchmark architecture.",
+      campaigns: "Assess frequency consistency, segmented targeting, subject/preview hygiene, and campaign type mix.",
+      signup_forms: "Assess popup + embedded presence, offer quality, mobile optimization, benchmark conversion framing.",
     },
   };
 

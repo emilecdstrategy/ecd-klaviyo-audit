@@ -157,6 +157,7 @@ export default function PublicReport() {
   }
 
   const totalRevenue = sections.reduce((s, sec) => s + sec.revenue_opportunity, 0);
+  const currentFlowMonthlyRevenue = flowPerformance.reduce((s, f) => s + (f.monthly_revenue_current ?? 0), 0);
   const topOpportunities = [...sections]
     .filter(s => s.revenue_opportunity > 0)
     .sort((a, b) => b.revenue_opportunity - a.revenue_opportunity);
@@ -265,28 +266,22 @@ export default function PublicReport() {
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                 <h3 className="text-sm font-semibold text-gray-900">What's Working</h3>
               </div>
-              <ul className="space-y-2.5">
+              <ul className="space-y-3">
                 {aiStrengths.length > 0 ? aiStrengths.map((s, i) => {
                   const dashIdx = s.indexOf(' — ');
-                  const bold = dashIdx > 0 ? s.slice(0, dashIdx) : '';
-                  const rest = dashIdx > 0 ? s.slice(dashIdx + 3) : s;
+                  const bold = dashIdx > 0 ? s.slice(0, dashIdx) : s;
+                  const rest = dashIdx > 0 ? s.slice(dashIdx + 3) : '';
                   return (
                     <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
                       <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
-                      <span>{bold ? <><span className="font-semibold">{bold}</span> — {rest}</> : rest}</span>
+                      <span>
+                        <span className="font-semibold block">{bold}</span>
+                        {rest && <span className="block text-gray-600 leading-relaxed mt-0.5">{rest}</span>}
+                      </span>
                     </li>
                   );
                 }) : (
-                  <>
-                    <li className="flex items-start gap-2 text-sm text-gray-700">
-                      <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
-                      Klaviyo account is set up with automated flows generating revenue
-                    </li>
-                    <li className="flex items-start gap-2 text-sm text-gray-700">
-                      <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
-                      {flowSnapshots.length > 0 ? `${flowSnapshots.length} flows configured in the account` : 'Basic tracking and flows in place'}
-                    </li>
-                  </>
+                  <li className="text-sm text-gray-500">AI overview not available for this audit run.</li>
                 )}
               </ul>
             </div>
@@ -295,27 +290,23 @@ export default function PublicReport() {
                 <AlertTriangle className="w-4 h-4 text-red-400" />
                 <h3 className="text-sm font-semibold text-gray-900">What Needs Attention</h3>
               </div>
-              <ul className="space-y-2.5">
+              <ul className="space-y-3">
                 {aiConcerns.length > 0 ? aiConcerns.map((s, i) => {
                   const dashIdx = s.indexOf(' — ');
-                  const bold = dashIdx > 0 ? s.slice(0, dashIdx) : '';
-                  const rest = dashIdx > 0 ? s.slice(dashIdx + 3) : s;
+                  const bold = dashIdx > 0 ? s.slice(0, dashIdx) : s;
+                  const rest = dashIdx > 0 ? s.slice(dashIdx + 3) : '';
                   return (
                     <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
                       <span className="text-red-400 mt-0.5 shrink-0">→</span>
-                      <span>{bold ? <><span className="font-semibold">{bold}</span> — {rest}</> : rest}</span>
+                      <span>
+                        <span className="font-semibold block">{bold}</span>
+                        {rest && <span className="block text-gray-600 leading-relaxed mt-0.5">{rest}</span>}
+                      </span>
                     </li>
                   );
-                }) : topOpportunities.slice(0, 4).map(s => (
-                  <li key={s.id} className="flex items-start gap-2 text-sm text-gray-700">
-                    <span className="text-red-400 mt-0.5 shrink-0">→</span>
-                    <span>
-                      <span className="font-semibold">{SECTION_LABELS[s.section_key]}</span>
-                      {' — '}
-                      <span className="text-emerald-700 font-medium">{formatCurrency(s.revenue_opportunity)}/mo opportunity</span>
-                    </span>
-                  </li>
-                ))}
+                }) : (
+                  <li className="text-sm text-gray-500">AI overview not available for this audit run.</li>
+                )}
               </ul>
             </div>
           </div>
@@ -494,15 +485,17 @@ export default function PublicReport() {
             <div className="bg-white rounded-xl p-6 border border-gray-100">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Current Email Revenue</p>
               <p className="text-3xl font-bold text-gray-400 mb-1">
-                ~{formatCurrency(Math.round(totalRevenue * 0.28))}<span className="text-base font-normal">/mo</span>
+                {currentFlowMonthlyRevenue > 0 ? formatCurrency(currentFlowMonthlyRevenue) : 'N/A'}<span className="text-base font-normal">{currentFlowMonthlyRevenue > 0 ? '/mo' : ''}</span>
               </p>
-              <p className="text-xs text-gray-400">Estimated from current flow performance</p>
+              <p className="text-xs text-gray-400">
+                {currentFlowMonthlyRevenue > 0 ? 'Based on Klaviyo flow reporting data' : 'Not available for this audit (missing metrics scope)'}
+              </p>
             </div>
             <div className="bg-white rounded-xl p-6 border border-brand-primary/20 relative overflow-hidden">
               <div className="absolute top-0 right-0 w-24 h-24 bg-brand-primary/5 rounded-bl-full" />
               <p className="text-xs font-semibold text-brand-primary uppercase tracking-wider mb-2">Potential Email Revenue</p>
               <p className="text-3xl font-bold text-gray-900 mb-1">
-                ~{formatCurrency(Math.round(totalRevenue * 0.28) + totalRevenue)}<span className="text-base font-normal text-gray-500">/mo</span>
+                {formatCurrency((currentFlowMonthlyRevenue > 0 ? currentFlowMonthlyRevenue : 0) + totalRevenue)}<span className="text-base font-normal text-gray-500">/mo</span>
               </p>
               <p className="text-xs text-emerald-600 font-medium">+{formatCurrency(totalRevenue)}/mo identified opportunity</p>
             </div>
@@ -540,12 +533,7 @@ export default function PublicReport() {
             <h3 className="text-sm font-semibold text-gray-900 mb-6">Implementation Timeline</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 relative">
               <div className="hidden md:block absolute top-5 left-[12.5%] right-[12.5%] h-px bg-gray-100 z-0" />
-              {(aiTimeline.length >= 4 ? aiTimeline : [
-                { phase: 'Phase 1', timeframe: 'Week 1–2', label: 'Quick Wins', items: ['Activate draft flows', 'Fix form triggers', 'Cart flow expansion'] },
-                { phase: 'Phase 2', timeframe: 'Week 3–6', label: 'Core Flows', items: ['Post-Purchase sequence', 'Welcome Series rebuild', 'Segmentation tiers'] },
-                { phase: 'Phase 3', timeframe: 'Month 2–3', label: 'Strategic', items: ['Winback + Sunset flows', 'Template redesign', 'A/B test program'] },
-                { phase: 'Phase 4', timeframe: 'Month 3+', label: 'Long-Term', items: ['Advanced personalization', 'Zero-party data program', 'RFM segments'] },
-              ]).map((p, i) => {
+              {(aiTimeline.length >= 4 ? aiTimeline : []).map((p, i) => {
                 const colors = ['bg-emerald-500', 'bg-brand-primary', 'bg-amber-500', 'bg-gray-300'];
                 return (
                   <div key={i} className="relative flex flex-col items-center text-center px-2">
@@ -566,6 +554,11 @@ export default function PublicReport() {
                   </div>
                 );
               })}
+              {aiTimeline.length < 4 && (
+                <p className="text-sm text-gray-500 md:col-span-4 text-center py-6">
+                  AI timeline not available for this audit run.
+                </p>
+              )}
             </div>
           </div>
 
@@ -633,6 +626,91 @@ function KPIBlock({ label, value, sub, subColor = 'text-gray-400' }: { label: st
       <p className={`text-xs font-medium mt-0.5 ${subColor}`}>{sub}</p>
     </div>
   );
+}
+
+function parseSectionDetails(raw: unknown): Record<string, any> | null {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw as Record<string, any>;
+  if (typeof raw === 'string') {
+    try { return JSON.parse(raw); } catch { return null; }
+  }
+  return null;
+}
+
+function SectionRubricDetails({ section }: { section: AuditSection }) {
+  const details = parseSectionDetails((section as any).section_details);
+  if (!details) return null;
+
+  if (section.section_key === 'flows') {
+    const rows = details?.flows?.core_flows;
+    if (!Array.isArray(rows) || rows.length === 0) return null;
+    return (
+      <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4 overflow-x-auto">
+        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Core Flows Matrix</p>
+        <table className="w-full text-xs">
+          <thead className="text-gray-500">
+            <tr>
+              <th className="text-left py-1.5 pr-2">Flow</th><th className="text-left py-1.5 pr-2">Present</th><th className="text-left py-1.5 pr-2">Live</th><th className="text-left py-1.5 pr-2">Emails</th><th className="text-left py-1.5 pr-2">Current</th><th className="text-left py-1.5">Recommended</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r: any, i: number) => (
+              <tr key={i} className="border-t border-gray-100 text-gray-700 align-top">
+                <td className="py-2 pr-2 font-medium">{r.flow_name}</td>
+                <td className="py-2 pr-2">{r.present ? 'Yes' : 'No'}</td>
+                <td className="py-2 pr-2">{r.live ? 'Yes' : 'No'}</td>
+                <td className="py-2 pr-2">{typeof r.email_count === 'number' ? r.email_count : 'N/A'}</td>
+                <td className="py-2 pr-2">{r.current_structure_note || 'N/A'}</td>
+                <td className="py-2">{r.recommended_structure || 'N/A'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    );
+  }
+
+  if (section.section_key === 'segmentation') {
+    const d = details?.segmentation;
+    if (!d) return null;
+    return (
+      <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-700 space-y-1.5">
+        <p><strong>Full-list sends:</strong> {d.sends_to_full_list ? 'Yes' : 'No'}</p>
+        <p><strong>Engaged/unengaged segments:</strong> {d.has_engaged_unengaged_segments ? 'Defined' : 'Missing'}</p>
+        <p><strong>VIP/high-LTV segments:</strong> {d.has_vip_segments ? 'Defined' : 'Missing'}</p>
+        <p><strong>ECD benchmark:</strong> {d.benchmark_architecture_note || 'N/A'}</p>
+      </div>
+    );
+  }
+
+  if (section.section_key === 'campaigns') {
+    const d = details?.campaigns;
+    if (!d) return null;
+    return (
+      <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-700 space-y-1.5">
+        <p><strong>Cadence:</strong> {d.send_frequency_consistency || 'N/A'}</p>
+        <p><strong>Targeting quality:</strong> {d.segmented_vs_blast_note || 'N/A'}</p>
+        <p><strong>Subject/preview hygiene:</strong> {d.subject_preview_hygiene_note || 'N/A'}</p>
+        <p><strong>Type mix:</strong> {d.campaign_type_mix_note || 'N/A'}</p>
+      </div>
+    );
+  }
+
+  if (section.section_key === 'signup_forms') {
+    const d = details?.signup_forms;
+    if (!d) return null;
+    return (
+      <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-700 space-y-1.5">
+        <p><strong>Popup:</strong> {d.has_popup ? 'Present' : 'Missing'}</p>
+        <p><strong>Embedded form:</strong> {d.has_embedded_form ? 'Present' : 'Missing'}</p>
+        <p><strong>Offer quality:</strong> {d.offer_note || 'N/A'}</p>
+        <p><strong>Mobile optimization:</strong> {d.mobile_optimization_note || 'N/A'}</p>
+        <p><strong>Benchmark conversion:</strong> {d.benchmark_conversion_note || 'N/A'}</p>
+      </div>
+    );
+  }
+
+  return null;
 }
 
 function ReportSectionBlock({
@@ -709,6 +787,7 @@ function ReportSectionBlock({
             )}
           </div>
         </div>
+        <SectionRubricDetails section={section} />
 
         {(section.human_edited_findings || section.summary_text) && (
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">

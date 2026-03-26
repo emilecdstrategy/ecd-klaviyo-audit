@@ -1,4 +1,4 @@
-export const AI_SCHEMA_VERSION = "2026-03-26.v3";
+export const AI_SCHEMA_VERSION = "2026-03-26.v4";
 
 export const AUDIT_SECTION_KEYS = [
   "account_health",
@@ -22,6 +22,7 @@ export type AISection = {
   summary_text: string;
   revenue_opportunity: number;
   confidence: Confidence;
+  section_details?: Record<string, unknown>;
 };
 
 export type AITimelinePhase = {
@@ -64,6 +65,65 @@ const SECTION_ITEM_SCHEMA = {
     summary_text: { type: "string", minLength: 40, maxLength: 1200 },
     revenue_opportunity: { type: "number", minimum: 0, maximum: 500000 },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
+    section_details: {
+      type: "object",
+      additionalProperties: false,
+      properties: {
+        flows: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            core_flows: {
+              type: "array",
+              items: {
+                type: "object",
+                additionalProperties: false,
+                required: ["flow_name", "present", "live", "email_count", "current_structure_note", "recommended_structure"],
+                properties: {
+                  flow_name: { type: "string" },
+                  present: { type: "boolean" },
+                  live: { type: "boolean" },
+                  email_count: { type: "number" },
+                  current_structure_note: { type: "string" },
+                  recommended_structure: { type: "string" },
+                },
+              },
+            },
+          },
+        },
+        segmentation: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            sends_to_full_list: { type: "boolean" },
+            has_engaged_unengaged_segments: { type: "boolean" },
+            has_vip_segments: { type: "boolean" },
+            benchmark_architecture_note: { type: "string" },
+          },
+        },
+        campaigns: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            send_frequency_consistency: { type: "string" },
+            segmented_vs_blast_note: { type: "string" },
+            subject_preview_hygiene_note: { type: "string" },
+            campaign_type_mix_note: { type: "string" },
+          },
+        },
+        signup_forms: {
+          type: "object",
+          additionalProperties: false,
+          properties: {
+            has_popup: { type: "boolean" },
+            has_embedded_form: { type: "boolean" },
+            offer_note: { type: "string" },
+            mobile_optimization_note: { type: "string" },
+            benchmark_conversion_note: { type: "string" },
+          },
+        },
+      },
+    },
   },
 } as const;
 

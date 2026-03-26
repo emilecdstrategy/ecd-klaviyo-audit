@@ -153,6 +153,7 @@ export async function createAuditSections(
     revenue_opportunity: 0,
     confidence: 'medium',
     status: 'draft',
+    section_details: null,
   }));
   const { data, error } = await supabase.from('audit_sections').insert(rows).select('*');
   if (error) throw error;
