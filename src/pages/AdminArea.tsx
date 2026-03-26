@@ -94,7 +94,13 @@ function UsersTab() {
     setError('');
     try {
       setLoading(true);
-      const { data, error } = await supabase.functions.invoke('admin_users', { body: { action: 'list' } });
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
+      const { data, error } = await supabase.functions.invoke('admin_users', {
+        body: { action: 'list' },
+        headers: { Authorization: `Bearer ${token}` },
+      });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to load users');
       setUsers((data.users ?? []) as AdminUserRow[]);
@@ -118,8 +124,12 @@ function UsersTab() {
     try {
       setInviting(true);
       const email = inviteEmail.trim();
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
       const { data, error } = await supabase.functions.invoke('admin_users', {
         body: { action: 'invite', email },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Invite failed');
@@ -138,8 +148,12 @@ function UsersTab() {
     setUsers(u => u.map(x => x.id === userId ? { ...x, role } : x));
     try {
       setSavingRoleFor(userId);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
       const { data, error } = await supabase.functions.invoke('admin_users', {
         body: { action: 'update_role', user_id: userId, role },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to save role');
@@ -160,8 +174,12 @@ function UsersTab() {
     if (!window.confirm('Remove this user? This cannot be undone.')) return;
     try {
       setRemovingFor(userId);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
       const { data, error } = await supabase.functions.invoke('admin_users', {
         body: { action: 'remove', user_id: userId },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to remove user');
@@ -270,8 +288,12 @@ function SettingsTab() {
     let cancelled = false;
     (async () => {
       try {
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error('Your session expired. Please sign in again and retry.');
         const { data, error } = await supabase.functions.invoke('openai_key_admin', {
           body: { action: 'status' },
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (cancelled) return;
         if (error) throw error;
@@ -289,15 +311,19 @@ function SettingsTab() {
     setSuccess('');
     try {
       setSaving(true);
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
       const { data, error } = await supabase.functions.invoke('openai_key_admin', {
         body: { action: 'set', openai_api_key: apiKey },
+        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to save key');
       setApiKey('');
       setSuccess('Saved. Edge Functions will use this key for AI analysis.');
       // refresh status
-      const st = await supabase.functions.invoke('openai_key_admin', { body: { action: 'status' } });
+      const st = await supabase.functions.invoke('openai_key_admin', { body: { action: 'status' }, headers: { Authorization: `Bearer ${token}` } });
       if (!st.error && st.data?.ok === true) {
         setStatus({ configured: Boolean(st.data.configured), updated_at: st.data.updated_at ?? null });
       }

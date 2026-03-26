@@ -1,4 +1,4 @@
-import { NavLink } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard,
   Users,
@@ -30,6 +30,8 @@ const ADMIN_ITEMS = [
 ];
 
 export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }: SidebarProps) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [collapsedState, setCollapsedState] = useState(false);
   const collapsed = collapsedProp ?? collapsedState;
   const setCollapsed = (next: boolean) => {
@@ -70,12 +72,26 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
       </div>
 
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map(item => (
-          <NavLink key={item.to} to={item.to} end={item.to === '/'} className={linkClass}>
-            <item.icon className="w-[18px] h-[18px] shrink-0" />
-            {!collapsed && <span>{item.label}</span>}
-          </NavLink>
-        ))}
+        {NAV_ITEMS.map(item => {
+          if (item.to === '/audits/new') {
+            return (
+              <button
+                key={item.to}
+                onClick={() => navigate('/audits/new', { state: { backgroundLocation: location } })}
+                className={linkClass({ isActive: false })}
+              >
+                <item.icon className="w-[18px] h-[18px] shrink-0" />
+                {!collapsed && <span>{item.label}</span>}
+              </button>
+            );
+          }
+          return (
+            <NavLink key={item.to} to={item.to} end={item.to === '/'} className={linkClass}>
+              <item.icon className="w-[18px] h-[18px] shrink-0" />
+              {!collapsed && <span>{item.label}</span>}
+            </NavLink>
+          );
+        })}
 
         {hasRole('admin') && (
           <>

@@ -39,9 +39,16 @@ async function deriveAesKey(secret: string) {
   return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
+function encryptionSecret() {
+  // Prefer dedicated KMS key; fall back to service role key to keep the app usable.
+  // Service role key never leaves the function runtime.
+  return (KMS_ENCRYPTION_KEY || SUPABASE_SERVICE_ROLE_KEY || "").trim();
+}
+
 async function encryptString(plaintext: string) {
-  if (!KMS_ENCRYPTION_KEY) throw new Error("KMS_ENCRYPTION_KEY is missing");
-  const key = await deriveAesKey(KMS_ENCRYPTION_KEY);
+  const secret = encryptionSecret();
+  if (!secret) throw new Error("Encryption secret is missing");
+  const key = await deriveAesKey(secret);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const enc = new TextEncoder();
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(plaintext));
@@ -53,8 +60,9 @@ async function encryptString(plaintext: string) {
 }
 
 async function decryptString(ciphertextB64: string, ivB64: string) {
-  if (!KMS_ENCRYPTION_KEY) throw new Error("KMS_ENCRYPTION_KEY is missing");
-  const key = await deriveAesKey(KMS_ENCRYPTION_KEY);
+  const secret = encryptionSecret();
+  if (!secret) throw new Error("Encryption secret is missing");
+  const key = await deriveAesKey(secret);
   const iv = b64decode(ivB64);
   const ct = b64decode(ciphertextB64);
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);

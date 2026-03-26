@@ -49,6 +49,18 @@ function assertServiceClient() {
   });
 }
 
+async function requireAuthenticatedUser(req: Request) {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader) throw new Error("Missing Authorization header");
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data, error } = await sb.auth.getUser();
+  if (error || !data?.user) throw new Error("Invalid session");
+  return data.user;
+}
+
 function b64encode(bytes: Uint8Array) {
   return btoa(String.fromCharCode(...bytes));
 }
@@ -66,9 +78,14 @@ async function deriveAesKey(secret: string) {
   return crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
 }
 
+function encryptionSecret() {
+  return (KMS_ENCRYPTION_KEY || SUPABASE_SERVICE_ROLE_KEY || "").trim();
+}
+
 async function encryptString(plaintext: string) {
-  if (!KMS_ENCRYPTION_KEY) throw new Error("KMS_ENCRYPTION_KEY is missing");
-  const key = await deriveAesKey(KMS_ENCRYPTION_KEY);
+  const secret = encryptionSecret();
+  if (!secret) throw new Error("Encryption secret is missing");
+  const key = await deriveAesKey(secret);
   const iv = crypto.getRandomValues(new Uint8Array(12));
   const enc = new TextEncoder();
   const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, enc.encode(plaintext));
@@ -80,8 +97,9 @@ async function encryptString(plaintext: string) {
 }
 
 async function decryptString(ciphertextB64: string, ivB64: string) {
-  if (!KMS_ENCRYPTION_KEY) throw new Error("KMS_ENCRYPTION_KEY is missing");
-  const key = await deriveAesKey(KMS_ENCRYPTION_KEY);
+  const secret = encryptionSecret();
+  if (!secret) throw new Error("Encryption secret is missing");
+  const key = await deriveAesKey(secret);
   const iv = b64decode(ivB64);
   const ct = b64decode(ciphertextB64);
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
@@ -210,6 +228,16 @@ serve(async (req) => {
   let revision: string | null = null;
 
   try {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      return json({ ok: false, error: { code: "config_missing", message: "Supabase env missing" }, correlationId }, { status: 500 });
+    }
+
+    try {
+      await requireAuthenticatedUser(req);
+    } catch (e) {
+      return json({ ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId }, { status: 401 });
+    }
+
     const input = (await req.json()) as FetchInput;
     auditId = input.audit_id;
     clientId = input.client_id;

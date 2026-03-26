@@ -15,7 +15,7 @@ import UploadDropzone from '../components/ui/UploadDropzone';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS } from '../lib/demo-data';
 import { SCREENSHOT_CATEGORIES } from '../lib/constants';
-import { createAudit, createAuditAsset, createAuditSections, createClient, ensureClientCreator, updateAudit, updateAuditSection, uploadAuditAssetFile } from '../lib/db';
+import { createAudit, createAuditAsset, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, uploadAuditAssetFile } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -42,14 +42,27 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     clientId: '',
     clientName: '',
     companyName: '',
-    websiteUrl: '',
     notes: '',
     auditMethod: '' as '' | 'api' | 'screenshot',
     apiKey: '',
   });
   const [screenshots, setScreenshots] = useState<Record<string, File[]>>({});
 
-  const [clients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
+  const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isDemo) return;
+    (async () => {
+      try {
+        const c = await listClients();
+        if (!cancelled) setClients(c);
+      } catch {
+        // ignore; audit can still create new client
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isDemo]);
 
   // If opened from a client detail, preselect that client.
   useEffect(() => {
@@ -73,7 +86,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         clientId,
         clientName: client.name,
         companyName: client.company_name,
-        websiteUrl: client.website_url,
       }));
     }
   };
@@ -101,7 +113,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         const created = await createClient(await ensureClientCreator(user, {
           name: form.clientName || form.companyName,
           company_name: form.companyName,
-          website_url: form.websiteUrl,
+          website_url: '',
             industry: '',
           esp_platform: 'Klaviyo',
           api_key_placeholder: '',
@@ -195,7 +207,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         clientName: form.clientName,
         companyName: form.companyName,
         espPlatform: 'Klaviyo',
-        websiteUrl: form.websiteUrl,
+        websiteUrl: '',
         listSize: 0,
         aov: 0,
         monthlyTraffic: 0,
@@ -273,22 +285,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                   placeholder="Acme Co."
                 />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
-                <input
-                  type="url"
-                  value={form.websiteUrl}
-                  onChange={e => updateField('websiteUrl', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  placeholder="https://example.com"
-                />
-                <p className="text-xs text-gray-400 mt-1">
-                  Optional. If you connect via Klaviyo API, we’ll pull the organization website automatically.
-                </p>
               </div>
             </div>
 

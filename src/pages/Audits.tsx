@@ -161,7 +161,9 @@ export default function Audits() {
                         {client?.company_name || 'Unknown'}
                       </td>
                       <td className="px-6 py-4">
-                        <span className="text-xs font-medium text-gray-500 capitalize">{audit.audit_method}</span>
+                        <span className="text-xs font-medium text-gray-500">
+                          {audit.audit_method === 'api' ? 'API' : audit.audit_method === 'screenshot' ? 'Screenshot' : audit.audit_method}
+                        </span>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm font-semibold text-emerald-700">

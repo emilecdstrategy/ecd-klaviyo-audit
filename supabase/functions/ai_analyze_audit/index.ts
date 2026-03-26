@@ -27,6 +27,33 @@ function json(data: unknown, init: ResponseInit = {}) {
   });
 }
 
+const corsHeaders: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers":
+    "authorization, x-client-info, apikey, content-type, accept, origin, referer, user-agent",
+  "access-control-allow-methods": "POST, OPTIONS",
+};
+
+function jsonCors(data: unknown, init: ResponseInit = {}) {
+  return new Response(JSON.stringify(data), {
+    headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) },
+    ...init,
+  });
+}
+
+async function requireAuthenticatedUser(req: Request) {
+  const authHeader = req.headers.get("authorization");
+  if (!authHeader) throw new Error("Missing Authorization header");
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+    global: { headers: { Authorization: authHeader } },
+  });
+  const { data, error } = await sb.auth.getUser();
+  if (error || !data?.user) throw new Error("Invalid session");
+  return data.user;
+}
+
 function timeoutSignal(ms: number) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort("timeout"), ms);
@@ -56,8 +83,9 @@ async function deriveAesKey(secret: string) {
 }
 
 async function decryptString(ciphertextB64: string, ivB64: string) {
-  if (!KMS_ENCRYPTION_KEY) throw new Error("KMS_ENCRYPTION_KEY is missing");
-  const key = await deriveAesKey(KMS_ENCRYPTION_KEY);
+  const secret = (KMS_ENCRYPTION_KEY || SUPABASE_SERVICE_ROLE_KEY || "").trim();
+  if (!secret) throw new Error("Encryption secret is missing");
+  const key = await deriveAesKey(secret);
   const iv = b64decode(ivB64);
   const ct = b64decode(ciphertextB64);
   const pt = await crypto.subtle.decrypt({ name: "AES-GCM", iv }, key, ct);
@@ -152,7 +180,8 @@ async function logRun(payload: Record<string, unknown>) {
 }
 
 serve(async (req) => {
-  if (req.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
+  if (req.method !== "POST") return jsonCors({ error: "Method not allowed" }, { status: 405 });
 
   const startedAt = Date.now();
   const correlationId = crypto.randomUUID();
@@ -160,6 +189,15 @@ serve(async (req) => {
   let retries = 0;
 
   try {
+    try {
+      await requireAuthenticatedUser(req);
+    } catch (e) {
+      return jsonCors(
+        { ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId },
+        { status: 401 },
+      );
+    }
+
     const body = (await req.json()) as WizardData;
     const systemPrompt = buildAuditSystemPrompt();
 
@@ -229,7 +267,7 @@ serve(async (req) => {
       schema_version: AI_SCHEMA_VERSION,
     });
 
-    return json(
+    return jsonCors(
       {
         ok: true,
         correlationId,
@@ -251,7 +289,7 @@ serve(async (req) => {
       error_code: code,
       error_message: msg.slice(0, 1000),
     });
-    return json(
+    return jsonCors(
       {
         ok: false,
         error: { code, message: msg },
