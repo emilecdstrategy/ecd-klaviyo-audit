@@ -66,6 +66,8 @@ export function buildAuditSystemPrompt() {
   ].join(" ");
 }
 
+type PromptMode = "full" | "sections_only" | "top_level_only";
+
 function summarizeFlows(flows: KlaviyoContext["flows"]): string {
   if (!flows?.length) return "No flows found in the account.";
   const byStatus: Record<string, string[]> = {};
@@ -138,25 +140,46 @@ function summarizeFlowPerformance(perf: KlaviyoContext["flowPerformance"]): stri
   return lines.join("\n");
 }
 
-export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext, sectionsOnly = false) {
+export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext, mode: PromptMode = "full") {
   const requested = Array.isArray(data.requestedSectionKeys) && data.requestedSectionKeys.length > 0
     ? data.requestedSectionKeys
     : AUDIT_SECTION_KEYS;
 
-  const klaviyoSection = klaviyo ? {
-    account: klaviyo.account ?? null,
-    flows_summary: summarizeFlows(klaviyo.flows),
-    campaigns_summary: summarizeCampaigns(klaviyo.campaigns),
-    segments_summary: summarizeSegments(klaviyo.segments),
-    forms_summary: summarizeForms(klaviyo.forms),
-    lists_summary: summarizeLists(klaviyo.lists),
-    flow_performance: summarizeFlowPerformance(klaviyo.flowPerformance),
-  } : null;
+  const klaviyoSection = klaviyo
+    ? mode === "top_level_only"
+      ? {
+          account: klaviyo.account ?? null,
+          flow_count: klaviyo.flows?.length ?? 0,
+          campaign_count: klaviyo.campaigns?.length ?? 0,
+          segment_count: klaviyo.segments?.length ?? 0,
+          form_count: klaviyo.forms?.length ?? 0,
+          top_flows: (klaviyo.flowPerformance ?? [])
+            .slice(0, 8)
+            .map((f) => ({
+              name: f.flow_name,
+              revenue: f.monthly_revenue_current ?? 0,
+              recipients: f.recipients_per_month ?? 0,
+              conv: f.actual_conv_rate ?? 0,
+            })),
+        }
+      : {
+          account: klaviyo.account ?? null,
+          flows_summary: summarizeFlows(klaviyo.flows),
+          campaigns_summary: summarizeCampaigns(klaviyo.campaigns),
+          segments_summary: summarizeSegments(klaviyo.segments),
+          forms_summary: summarizeForms(klaviyo.forms),
+          lists_summary: summarizeLists(klaviyo.lists),
+          flow_performance: summarizeFlowPerformance(klaviyo.flowPerformance),
+        }
+    : null;
 
   const payload: Record<string, unknown> = {
-    task: sectionsOnly
-      ? "Generate ONLY the requested audit sections below. Do NOT include executiveSummary, strengths, concerns, or implementationTimeline."
-      : "Generate a full audit analysis based on the actual Klaviyo account data provided below.",
+    task:
+      mode === "sections_only"
+        ? "Generate ONLY the requested audit sections below. Do NOT include executiveSummary, strengths, concerns, or implementationTimeline."
+        : mode === "top_level_only"
+          ? "Generate ONLY top-level findings (executiveSummary, strengths, concerns, implementationTimeline). Do NOT include section objects."
+          : "Generate a full audit analysis based on the actual Klaviyo account data provided below.",
     client_info: {
       name: data.clientName || data.companyName,
       website: data.websiteUrl || klaviyo?.account?.website_url,
@@ -165,7 +188,7 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
       notes: data.notes || undefined,
     },
     klaviyo_data: klaviyoSection,
-    required_sections: requested,
+    required_sections: mode === "top_level_only" ? [] : requested,
     style: {
       audience: "ecommerce founder/marketing lead",
       tone: "executive, practical, actionable",
@@ -179,12 +202,15 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
     },
   };
 
-  if (!sectionsOnly) {
+  if (mode !== "sections_only") {
     payload.required_top_level_fields = {
       strengths: "Array of 4-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages from the data.",
       concerns: "Array of 4-6 strings. Each is a specific issue or gap with bold lead phrase and evidence. Reference actual missing flows, underperforming metrics, inactive flows by name.",
       implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
     };
+  }
+  if (mode === "top_level_only") {
+    payload.required_sections = [];
   }
 
   return JSON.stringify(payload, null, 2);

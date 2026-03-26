@@ -3,9 +3,11 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   AI_OUTPUT_JSON_SCHEMA,
   AI_SECTIONS_ONLY_SCHEMA,
+  AI_TOP_LEVEL_ONLY_SCHEMA,
   AI_SCHEMA_VERSION,
   AUDIT_SECTION_KEYS,
   type SectionKey,
+  type ValidationMode,
   failedSectionKeysFromErrors,
   validateOutput,
 } from "./schema.ts";
@@ -264,7 +266,20 @@ serve(async (req) => {
     const requestedSectionKeys: SectionKey[] | null = Array.isArray((body as any)?.requestedSectionKeys)
       ? ((body as any).requestedSectionKeys as SectionKey[]).filter((k) => (AUDIT_SECTION_KEYS as readonly string[]).includes(k))
       : null;
-    const sectionsOnly = (body as any)?.sectionsOnly === true;
+    const explicitMode = (body as any)?.aiMode as ValidationMode | undefined;
+    let mode: ValidationMode = "full";
+    if (explicitMode === "top_level_only" || explicitMode === "sections_only" || explicitMode === "full") {
+      mode = explicitMode;
+    } else if ((body as any)?.sectionsOnly === true) {
+      mode = "sections_only";
+    }
+    const selectedSchema =
+      mode === "top_level_only"
+        ? AI_TOP_LEVEL_ONLY_SCHEMA
+        : mode === "sections_only"
+          ? AI_SECTIONS_ONLY_SCHEMA
+          : AI_OUTPUT_JSON_SCHEMA;
+    const requiredKeys = requestedSectionKeys?.length ? requestedSectionKeys : AUDIT_SECTION_KEYS;
     const systemPrompt = buildAuditSystemPrompt();
 
     // Fetch Klaviyo snapshot data from DB to enrich the prompt
@@ -282,13 +297,13 @@ serve(async (req) => {
     const first = await callOpenAI({
       model: PRIMARY_MODEL,
       systemPrompt,
-      userPrompt: buildAuditUserPrompt(body, klaviyoCtx ?? undefined, sectionsOnly),
-      jsonSchema: sectionsOnly ? AI_SECTIONS_ONLY_SCHEMA : AI_OUTPUT_JSON_SCHEMA,
+      userPrompt: buildAuditUserPrompt(body, klaviyoCtx ?? undefined, mode),
+      jsonSchema: selectedSchema,
     });
 
     let output = first.output;
     let usage = first.usage;
-    let validation = validateOutput(output, requestedSectionKeys?.length ? requestedSectionKeys : AUDIT_SECTION_KEYS, sectionsOnly);
+    let validation = validateOutput(output, requiredKeys, mode);
 
     if (!validation.ok) {
       const failedSections = failedSectionKeysFromErrors(validation.errors);

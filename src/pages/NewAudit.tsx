@@ -259,6 +259,14 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           notes: form.notes,
           auditMethod: form.auditMethod as any,
           screenshots,
+        }, (update) => {
+          if (update.total > 0) {
+            setAnalysisStage(update.label);
+            const mapped = 40 + Math.round((update.current / update.total) * 28);
+            setAnalysisProgress(prev => Math.max(prev, Math.min(68, mapped)));
+          } else if (update.label) {
+            setAnalysisStage(update.label);
+          }
         });
       } finally {
         clearInterval(ticker);

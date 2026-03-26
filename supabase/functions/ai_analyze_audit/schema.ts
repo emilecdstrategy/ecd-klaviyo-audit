@@ -116,17 +116,62 @@ export const AI_SECTIONS_ONLY_SCHEMA = {
   },
 } as const;
 
-type ValidationResult = { ok: true; value: AIOutput } | { ok: false; errors: string[] };
+export const AI_TOP_LEVEL_ONLY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["schemaVersion", "executiveSummary", "strengths", "concerns", "implementationTimeline"],
+  properties: {
+    schemaVersion: { type: "string" },
+    executiveSummary: { type: "string", minLength: 80, maxLength: 4000 },
+    strengths: {
+      type: "array",
+      minItems: 3,
+      maxItems: 7,
+      items: { type: "string", minLength: 20, maxLength: 300 },
+    },
+    concerns: {
+      type: "array",
+      minItems: 3,
+      maxItems: 7,
+      items: { type: "string", minLength: 20, maxLength: 300 },
+    },
+    implementationTimeline: {
+      type: "array",
+      minItems: 4,
+      maxItems: 4,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["phase", "timeframe", "label", "items"],
+        properties: {
+          phase: { type: "string" },
+          timeframe: { type: "string" },
+          label: { type: "string" },
+          items: { type: "array", minItems: 2, maxItems: 4, items: { type: "string" } },
+        },
+      },
+    },
+  },
+} as const;
 
-export function validateOutput(input: unknown, requiredSectionKeys: readonly SectionKey[] = AUDIT_SECTION_KEYS, sectionsOnly = false): ValidationResult {
+type ValidationResult = { ok: true; value: AIOutput } | { ok: false; errors: string[] };
+export type ValidationMode = "full" | "sections_only" | "top_level_only";
+
+export function validateOutput(
+  input: unknown,
+  requiredSectionKeys: readonly SectionKey[] = AUDIT_SECTION_KEYS,
+  mode: ValidationMode = "full",
+): ValidationResult {
   if (!input || typeof input !== "object") return { ok: false, errors: ["Output is not an object"] };
   const out = input as Partial<AIOutput>;
   const errors: string[] = [];
+  const needsSections = mode === "full" || mode === "sections_only";
+  const needsTopLevel = mode === "full" || mode === "top_level_only";
 
   if (out.schemaVersion !== AI_SCHEMA_VERSION) {
     errors.push(`schemaVersion must be ${AI_SCHEMA_VERSION}`);
   }
-  if (!sectionsOnly) {
+  if (needsTopLevel) {
     if (!out.executiveSummary || out.executiveSummary.trim().length < 80) {
       errors.push("executiveSummary is too short");
     }
@@ -140,27 +185,29 @@ export function validateOutput(input: unknown, requiredSectionKeys: readonly Sec
       errors.push("implementationTimeline must have 4 phases");
     }
   }
-  if (!Array.isArray(out.sections) || out.sections.length === 0) {
+  if (needsSections && (!Array.isArray(out.sections) || out.sections.length === 0)) {
     errors.push("sections must be a non-empty array");
   }
 
   const byKey = new Map<string, AISection>();
   const placeholderRegex = /(lorem ipsum|placeholder|tbd|insert here|example text)/i;
-  for (const key of requiredSectionKeys) {
-    const section = (out.sections ?? []).find((s) => (s as AISection).section_key === key) as AISection | undefined;
-    if (!section) {
-      errors.push(`missing section ${key}`);
-      continue;
-    }
-    byKey.set(key, section);
-    if (!section.summary_text || section.summary_text.trim().length < 40) errors.push(`${key}: summary_text too short`);
-    if (!section.ai_findings || section.ai_findings.trim().length < 40) errors.push(`${key}: ai_findings too short`);
-    if (section.revenue_opportunity == null || Number.isNaN(section.revenue_opportunity) || section.revenue_opportunity < 0) {
-      errors.push(`${key}: revenue_opportunity invalid`);
-    }
-    if (!["low", "medium", "high"].includes(section.confidence)) errors.push(`${key}: confidence invalid`);
-    if (placeholderRegex.test(section.summary_text) || placeholderRegex.test(section.ai_findings)) {
-      errors.push(`${key}: contains placeholder language`);
+  if (needsSections) {
+    for (const key of requiredSectionKeys) {
+      const section = (out.sections ?? []).find((s) => (s as AISection).section_key === key) as AISection | undefined;
+      if (!section) {
+        errors.push(`missing section ${key}`);
+        continue;
+      }
+      byKey.set(key, section);
+      if (!section.summary_text || section.summary_text.trim().length < 40) errors.push(`${key}: summary_text too short`);
+      if (!section.ai_findings || section.ai_findings.trim().length < 40) errors.push(`${key}: ai_findings too short`);
+      if (section.revenue_opportunity == null || Number.isNaN(section.revenue_opportunity) || section.revenue_opportunity < 0) {
+        errors.push(`${key}: revenue_opportunity invalid`);
+      }
+      if (!["low", "medium", "high"].includes(section.confidence)) errors.push(`${key}: confidence invalid`);
+      if (placeholderRegex.test(section.summary_text) || placeholderRegex.test(section.ai_findings)) {
+        errors.push(`${key}: contains placeholder language`);
+      }
     }
   }
 
@@ -178,7 +225,7 @@ export function validateOutput(input: unknown, requiredSectionKeys: readonly Sec
         label: p.label,
         items: p.items.map((i: string) => i.trim()),
       })),
-      sections: requiredSectionKeys.map((k) => byKey.get(k)!),
+      sections: needsSections ? requiredSectionKeys.map((k) => byKey.get(k)!) : [],
     },
   };
 }

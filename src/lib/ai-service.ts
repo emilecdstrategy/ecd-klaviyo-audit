@@ -1,6 +1,6 @@
 import type { AuditSection, WizardData } from './types';
 import { supabase } from './supabase';
-import { AI_SCHEMA_VERSION } from './ai/schema';
+import { AI_SCHEMA_VERSION, AUDIT_SECTION_KEYS } from './ai/schema';
 
 // Future: Replace with real OpenAI API calls through a Supabase Edge Function
 // The edge function would accept section data and return AI-generated findings
@@ -12,6 +12,9 @@ interface AIAnalysisResult {
   concerns?: string[];
   implementationTimeline?: { phase: string; timeframe: string; label: string; items: string[] }[];
 }
+
+type AIRequestMode = 'full' | 'sections_only' | 'top_level_only';
+type ProgressUpdate = { current: number; total: number; label: string };
 
 type AIErrorCode =
   | 'retry'
@@ -32,17 +35,30 @@ export class AIAnalysisError extends Error {
   }
 }
 
-function validateClientPayload(data: any): data is AIAnalysisResult {
+function hasTopLevelPayload(data: any): boolean {
   return Boolean(
     data &&
     data.schemaVersion === AI_SCHEMA_VERSION &&
     typeof data.executiveSummary === 'string' &&
+    Array.isArray(data.strengths) &&
+    Array.isArray(data.concerns) &&
+    Array.isArray(data.implementationTimeline),
+  );
+}
+
+function hasSectionsPayload(data: any): boolean {
+  return Boolean(
+    data &&
+    data.schemaVersion === AI_SCHEMA_VERSION &&
     Array.isArray(data.sections) &&
     data.sections.length > 0,
   );
 }
 
-export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisResult> {
+export async function runAIAnalysis(
+  wizardData: WizardData,
+  onProgress?: (update: ProgressUpdate) => void,
+): Promise<AIAnalysisResult> {
   // Production path: Edge function only.
   // Demo fallback is only allowed when explicitly enabled.
   const allowFallback = import.meta.env.DEV && import.meta.env.VITE_ALLOW_AI_FALLBACK === 'true';
@@ -52,9 +68,9 @@ export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisR
     const token = sessionData.session?.access_token;
     if (!token) throw new AIAnalysisError('Your session expired. Please sign in again and retry.', 'provider_error');
 
-    const call = async (requestedSectionKeys: string[], sectionsOnly = false) => {
+    const call = async (requestedSectionKeys: string[], aiMode: AIRequestMode, label: string) => {
       const { data, error } = await supabase.functions.invoke<any>('ai_analyze_audit', {
-        body: { ...wizardData, requestedSectionKeys, sectionsOnly },
+        body: { ...wizardData, requestedSectionKeys, aiMode },
         headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw new AIAnalysisError(error.message || 'AI request failed', 'provider_error');
@@ -63,34 +79,63 @@ export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisR
         const msg = data?.error?.message ?? 'AI request failed';
         throw new AIAnalysisError(msg, code, data?.correlationId);
       }
-      if (!validateClientPayload(data)) throw new AIAnalysisError('Invalid AI response shape', 'bad_response', data?.correlationId);
+      if (aiMode === 'top_level_only') {
+        if (!hasTopLevelPayload(data)) throw new AIAnalysisError(`Invalid AI top-level response shape (${label})`, 'bad_response', data?.correlationId);
+      } else if (!hasSectionsPayload(data)) {
+        throw new AIAnalysisError(`Invalid AI sections response shape (${label})`, 'bad_response', data?.correlationId);
+      }
       return data as AIAnalysisResult;
     };
 
-    // Split into two smaller requests to avoid provider timeouts.
-    const withRetryOnTimeout = async (fn: () => Promise<AIAnalysisResult>) => {
+    const withRetryOnTimeout = async (fn: () => Promise<AIAnalysisResult>, label: string) => {
       try {
         return await fn();
       } catch (e) {
         if (e instanceof AIAnalysisError && e.code === 'provider_timeout') {
-          // One quick retry: timeouts are frequently transient.
+          const base = 600 + Math.floor(Math.random() * 500);
+          await new Promise(r => setTimeout(r, base));
+          onProgress?.({ current: 0, total: 0, label: `Retrying ${label}…` });
           return await fn();
         }
         throw e;
       }
     };
 
-    const first = await withRetryOnTimeout(() => call(['account_health', 'flows', 'segmentation']));
-    const second = await withRetryOnTimeout(() => call(['campaigns', 'email_design', 'signup_forms'], true));
+    const sectionBatches: { keys: string[]; label: string }[] = [
+      { keys: ['account_health', 'flows'], label: 'sections batch 1/3' },
+      { keys: ['segmentation', 'campaigns'], label: 'sections batch 2/3' },
+      { keys: ['email_design', 'signup_forms'], label: 'sections batch 3/3' },
+    ];
 
-    const sections = [...(first.sections ?? []), ...(second.sections ?? [])];
+    const totalSteps = 1 + sectionBatches.length;
+    onProgress?.({ current: 1, total: totalSteps, label: 'Generating executive summary (1/4)…' });
+    const top = await withRetryOnTimeout(
+      () => call([], 'top_level_only', 'top-level summary'),
+      'top-level summary',
+    );
+
+    const sections: Partial<AuditSection>[] = [];
+    for (let i = 0; i < sectionBatches.length; i++) {
+      const batch = sectionBatches[i];
+      onProgress?.({ current: i + 2, total: totalSteps, label: `Analyzing ${batch.label}…` });
+      const result = await withRetryOnTimeout(
+        () => call(batch.keys, 'sections_only', batch.label),
+        batch.label,
+      );
+      sections.push(...(result.sections ?? []));
+    }
+
     if (!sections.length) throw new AIAnalysisError('AI returned no sections', 'bad_response');
+    const order = new Map(AUDIT_SECTION_KEYS.map((k, i) => [k, i]));
+    sections.sort((a, b) =>
+      (order.get(String((a as any).section_key)) ?? 999) - (order.get(String((b as any).section_key)) ?? 999),
+    );
 
     return {
-      executiveSummary: first.executiveSummary,
-      strengths: first.strengths ?? [],
-      concerns: first.concerns ?? [],
-      implementationTimeline: first.implementationTimeline ?? [],
+      executiveSummary: top.executiveSummary,
+      strengths: top.strengths ?? [],
+      concerns: top.concerns ?? [],
+      implementationTimeline: top.implementationTimeline ?? [],
       sections,
     };
   } catch (e) {
