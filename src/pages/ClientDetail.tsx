@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from 'react-router-dom';
+import { useLocation, useParams, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   Globe,
@@ -21,6 +21,7 @@ import { getClient, listAuditsByClient } from '../lib/db';
 export default function ClientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const location = useLocation();
   const { isDemo } = useAuth();
 
   const [client, setClient] = useState<Client | null>(
@@ -112,7 +113,7 @@ export default function ClientDetail() {
         subtitle={client.industry}
         actions={
           <button
-            onClick={() => navigate('/audits/new', { state: { clientId: client.id } })}
+            onClick={() => navigate('/audits/new', { state: { clientId: client.id, backgroundLocation: location } })}
             className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
           >
             <Plus className="w-4 h-4" />

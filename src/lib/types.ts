@@ -136,7 +136,7 @@ export interface WizardData {
   clientId: string;
   clientName: string;
   companyName: string;
-  industry: string;
+  industry?: string;
   espPlatform: string;
   websiteUrl: string;
   listSize: number;

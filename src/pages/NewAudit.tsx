@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
@@ -14,7 +14,7 @@ import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import UploadDropzone from '../components/ui/UploadDropzone';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS } from '../lib/demo-data';
-import { INDUSTRIES, ESP_PLATFORMS, SCREENSHOT_CATEGORIES } from '../lib/constants';
+import { SCREENSHOT_CATEGORIES } from '../lib/constants';
 import { createAudit, createAuditAsset, createAuditSections, createClient, ensureClientCreator, updateAudit, updateAuditSection, uploadAuditAssetFile } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
@@ -28,8 +28,11 @@ const STEPS = [
   { label: 'Run Analysis', description: 'AI-powered audit' },
 ];
 
-export default function NewAudit() {
+type NewAuditProps = { asModal?: boolean };
+
+export default function NewAudit({ asModal }: NewAuditProps) {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isDemo, user } = useAuth();
   const [step, setStep] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
@@ -39,12 +42,7 @@ export default function NewAudit() {
     clientId: '',
     clientName: '',
     companyName: '',
-    industry: '',
-    espPlatform: 'Klaviyo',
     websiteUrl: '',
-    listSize: 0,
-    aov: 0,
-    monthlyTraffic: 0,
     notes: '',
     auditMethod: '' as '' | 'api' | 'screenshot',
     apiKey: '',
@@ -52,6 +50,16 @@ export default function NewAudit() {
   const [screenshots, setScreenshots] = useState<Record<string, File[]>>({});
 
   const [clients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
+
+  // If opened from a client detail, preselect that client.
+  useEffect(() => {
+    const st = location.state as any;
+    const preClientId = (st?.clientId ?? '').toString();
+    if (preClientId && !form.clientId) {
+      handleClientSelect(preClientId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const updateField = (field: string, value: string | number) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -65,8 +73,6 @@ export default function NewAudit() {
         clientId,
         clientName: client.name,
         companyName: client.company_name,
-        industry: client.industry,
-        espPlatform: client.esp_platform,
         websiteUrl: client.website_url,
       }));
     }
@@ -96,8 +102,8 @@ export default function NewAudit() {
           name: form.clientName || form.companyName,
           company_name: form.companyName,
           website_url: form.websiteUrl,
-          industry: form.industry,
-          esp_platform: form.espPlatform,
+            industry: '',
+          esp_platform: 'Klaviyo',
           api_key_placeholder: '',
           notes: form.notes,
         }) as any);
@@ -111,9 +117,9 @@ export default function NewAudit() {
         title,
         status: 'in_progress',
         audit_method: form.auditMethod as Audit['audit_method'],
-        list_size: Number(form.listSize) || 0,
-        aov: Number(form.aov) || 0,
-        monthly_traffic: Number(form.monthlyTraffic) || 0,
+        list_size: 0,
+        aov: 0,
+        monthly_traffic: 0,
         total_revenue_opportunity: 0,
         executive_summary: '',
         created_by: user?.id || '',
@@ -164,11 +170,17 @@ export default function NewAudit() {
       // 5) Fetch Klaviyo snapshot (API method)
       if (form.auditMethod === 'api') {
         setAnalysisProgress(35);
+        const { data: sessionData } = await supabase.auth.getSession();
+        const token = sessionData.session?.access_token;
+        if (!token) throw new Error('Your session expired. Please sign in again and retry.');
         const { data, error: fnErr } = await supabase.functions.invoke<any>('klaviyo_fetch_snapshot', {
           body: {
             audit_id: audit.id,
             client_id: clientId,
             api_key: form.apiKey || undefined,
+          },
+          headers: {
+            Authorization: `Bearer ${token}`,
           },
         });
         if (fnErr) throw fnErr;
@@ -182,12 +194,11 @@ export default function NewAudit() {
         clientId,
         clientName: form.clientName,
         companyName: form.companyName,
-        industry: form.industry,
-        espPlatform: form.espPlatform,
+        espPlatform: 'Klaviyo',
         websiteUrl: form.websiteUrl,
-        listSize: Number(form.listSize) || 0,
-        aov: Number(form.aov) || 0,
-        monthlyTraffic: Number(form.monthlyTraffic) || 0,
+        listSize: 0,
+        aov: 0,
+        monthlyTraffic: 0,
         notes: form.notes,
         auditMethod: form.auditMethod as any,
         screenshots,
@@ -214,17 +225,15 @@ export default function NewAudit() {
   };
 
   const canProceed = () => {
-    if (step === 0) return form.companyName && form.industry;
+    if (step === 0) return form.companyName;
     if (step === 1) return form.auditMethod;
     if (step === 2) return true;
     return true;
   };
 
-  return (
-    <div>
-      <TopBar title="New Audit" subtitle="Create a new Klaviyo audit" />
-
-      <div className="p-8 max-w-4xl animate-fade-in">
+  const body = (
+    <div className={asModal ? 'p-5' : 'p-8 max-w-4xl'}>
+      {!asModal && (
         <button
           onClick={() => step > 0 ? setStep(step - 1) : navigate('/')}
           className="flex items-center gap-1.5 text-sm text-gray-500 hover:text-gray-700 mb-6 transition-colors"
@@ -232,6 +241,7 @@ export default function NewAudit() {
           <ArrowLeft className="w-4 h-4" />
           {step > 0 ? 'Previous Step' : 'Back to Dashboard'}
         </button>
+      )}
 
         <div className="bg-white rounded-xl p-6 card-shadow mb-8">
           <AuditWizardStepper steps={STEPS} currentStep={step} />
@@ -264,31 +274,9 @@ export default function NewAudit() {
                   placeholder="Acme Co."
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-                <Select value={form.industry} onValueChange={v => updateField('industry', v)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {INDUSTRIES.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">ESP Platform</label>
-                <Select value={form.espPlatform} onValueChange={v => updateField('espPlatform', v)}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {ESP_PLATFORMS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
                 <input
@@ -298,39 +286,9 @@ export default function NewAudit() {
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                   placeholder="https://example.com"
                 />
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">List Size</label>
-                <input
-                  type="number"
-                  value={form.listSize || ''}
-                  onChange={e => updateField('listSize', Number(e.target.value))}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  placeholder="25,000"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Average Order Value</label>
-                <input
-                  type="number"
-                  value={form.aov || ''}
-                  onChange={e => updateField('aov', Number(e.target.value))}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  placeholder="$65"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Monthly Traffic</label>
-                <input
-                  type="number"
-                  value={form.monthlyTraffic || ''}
-                  onChange={e => updateField('monthlyTraffic', Number(e.target.value))}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  placeholder="100,000"
-                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Optional. If you connect via Klaviyo API, we’ll pull the organization website automatically.
+                </p>
               </div>
             </div>
 
@@ -508,7 +466,15 @@ export default function NewAudit() {
             </button>
           </div>
         )}
-      </div>
+    </div>
+  );
+
+  if (asModal) return body;
+
+  return (
+    <div>
+      <TopBar title="New Audit" subtitle="Create a new Klaviyo audit" />
+      <div className="animate-fade-in">{body}</div>
     </div>
   );
 }

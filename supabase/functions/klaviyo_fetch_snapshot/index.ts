@@ -247,6 +247,7 @@ serve(async (req) => {
     const account = accountRes.body?.data?.[0] ?? null;
     const accountId = account?.id ?? null;
     const accountName = account?.attributes?.contact_information?.organization_name ?? null;
+    const websiteUrl = account?.attributes?.contact_information?.website_url ?? null;
     const timezone = account?.attributes?.timezone ?? null;
     const preferredCurrency = account?.attributes?.preferred_currency ?? null;
 
@@ -341,6 +342,7 @@ serve(async (req) => {
       client_id: clientId,
       account_id: accountId,
       account_name: accountName,
+      website_url: websiteUrl,
       timezone,
       preferred_currency: preferredCurrency,
       revision,
@@ -348,6 +350,14 @@ serve(async (req) => {
       last_verified_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: "client_id" });
+
+    // Backfill client website if missing.
+    if (websiteUrl) {
+      const { data: existingClient } = await sb.from("clients").select("website_url").eq("id", clientId).maybeSingle();
+      if (!existingClient?.website_url) {
+        await sb.from("clients").update({ website_url: websiteUrl }).eq("id", clientId);
+      }
+    }
 
     await sb.from("clients").update({ klaviyo_connected: true }).eq("id", clientId);
 

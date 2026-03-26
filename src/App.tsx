@@ -1,4 +1,4 @@
-import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppShell from './components/layout/AppShell';
 import Login from './pages/Login';
@@ -11,9 +11,14 @@ import NewAudit from './pages/NewAudit';
 import AuditWorkspace from './pages/AuditWorkspace';
 import PublicReport from './pages/PublicReport';
 import AdminArea from './pages/AdminArea';
+import Modal from './components/ui/Modal';
 
 function AppRoutes() {
   const { user, isLoading } = useAuth();
+  const location = useLocation();
+  const navigate = useNavigate();
+  const state = location.state as any;
+  const backgroundLocation = state?.backgroundLocation as ReturnType<typeof useLocation> | undefined;
 
   // Important: during a magic-link redirect, Supabase needs a moment to hydrate
   // the session from the URL/storage. If we redirect to /login while loading,
@@ -27,7 +32,8 @@ function AppRoutes() {
   }
 
   return (
-    <Routes>
+    <>
+    <Routes location={backgroundLocation || location}>
       <Route path="/report/:token" element={<PublicReport />} />
 
       {!user ? (
@@ -49,6 +55,28 @@ function AppRoutes() {
         </Route>
       )}
     </Routes>
+
+    {backgroundLocation && user && (
+      <Routes>
+        <Route
+          path="/clients/new"
+          element={
+            <Modal open title="Add Client" onClose={() => navigate(-1)}>
+              <NewClient asModal />
+            </Modal>
+          }
+        />
+        <Route
+          path="/audits/new"
+          element={
+            <Modal open title="New Audit" onClose={() => navigate(-1)}>
+              <NewAudit asModal />
+            </Modal>
+          }
+        />
+      </Routes>
+    )}
+    </>
   );
 }
 

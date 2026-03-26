@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   Plus,
   Search,
@@ -20,6 +20,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 
 export default function Audits() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isDemo } = useAuth();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
@@ -55,7 +56,7 @@ export default function Audits() {
     const matchSearch =
       a.title.toLowerCase().includes(search.toLowerCase()) ||
       (client?.company_name || '').toLowerCase().includes(search.toLowerCase());
-    const matchStatus = !statusFilter || a.status === statusFilter;
+    const matchStatus = statusFilter === '__all__' || !statusFilter || a.status === statusFilter;
     return matchSearch && matchStatus;
   });
 
@@ -66,7 +67,7 @@ export default function Audits() {
         subtitle={`${audits.length} total audits`}
         actions={
           <button
-            onClick={() => navigate('/audits/new')}
+            onClick={() => navigate('/audits/new', { state: { backgroundLocation: location } })}
             className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
           >
             <Plus className="w-4 h-4" />
@@ -95,7 +96,7 @@ export default function Audits() {
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="">All Status</SelectItem>
+                  <SelectItem value="__all__">All Status</SelectItem>
                   <SelectItem value="draft">Draft</SelectItem>
                   <SelectItem value="in_progress">In Progress</SelectItem>
                   <SelectItem value="review">In Review</SelectItem>
@@ -122,7 +123,7 @@ export default function Audits() {
             description="Create your first audit to start identifying revenue opportunities."
             action={
               <button
-                onClick={() => navigate('/audits/new')}
+                onClick={() => navigate('/audits/new', { state: { backgroundLocation: location } })}
                 className="flex items-center gap-2 px-5 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
               >
                 <Plus className="w-4 h-4" />

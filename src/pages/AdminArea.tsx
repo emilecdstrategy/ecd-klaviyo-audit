@@ -1,31 +1,30 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   Users,
   Settings,
-  BookOpen,
-  BarChart3,
   Key,
   Shield,
+  Trash2,
+  UserPlus,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
 import { useAuth } from '../contexts/AuthContext';
-import { DEMO_INDUSTRY_EXAMPLES } from '../lib/demo-data';
-import { INDUSTRIES } from '../lib/constants';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { supabase } from '../lib/supabase';
 
 const TABS = [
   { id: 'users', label: 'Users', icon: Users },
-  { id: 'examples', label: 'Industry Examples', icon: BookOpen },
-  { id: 'benchmarks', label: 'Benchmarks', icon: BarChart3 },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
-const DEMO_USERS = [
-  { id: '1', name: 'Emil G', email: 'emil@ecdigitalstrategy.com', role: 'admin' },
-  { id: '2', name: 'Marcus Kim', email: 'marcus@ecdigitalstrategy.com', role: 'auditor' },
-  { id: '3', name: 'Priya Patel', email: 'priya@ecdigitalstrategy.com', role: 'viewer' },
-];
+type AdminUserRow = {
+  id: string;
+  email: string | null;
+  name: string | null;
+  role: 'admin' | 'auditor' | 'viewer';
+  created_at?: string | null;
+};
 
 export default function AdminArea() {
   const [tab, setTab] = useState('users');
@@ -67,8 +66,6 @@ export default function AdminArea() {
         </div>
 
         {tab === 'users' && <UsersTab />}
-        {tab === 'examples' && <ExamplesTab />}
-        {tab === 'benchmarks' && <BenchmarksTab />}
         {tab === 'settings' && <SettingsTab />}
       </div>
     </div>
@@ -76,30 +73,162 @@ export default function AdminArea() {
 }
 
 function UsersTab() {
+  const { user: currentUser } = useAuth();
+  const [users, setUsers] = useState<AdminUserRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [inviteEmail, setInviteEmail] = useState('');
+  const [inviting, setInviting] = useState(false);
+  const [savingRoleFor, setSavingRoleFor] = useState<string | null>(null);
+  const [removingFor, setRemovingFor] = useState<string | null>(null);
+
+  const currentUserId = currentUser?.id || '';
+
+  const sorted = useMemo(() => {
+    const copy = [...users];
+    copy.sort((a, b) => (a.created_at || '').localeCompare(b.created_at || ''));
+    return copy;
+  }, [users]);
+
+  const reload = async () => {
+    setError('');
+    try {
+      setLoading(true);
+      const { data, error } = await supabase.functions.invoke('admin_users', { body: { action: 'list' } });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to load users');
+      setUsers((data.users ?? []) as AdminUserRow[]);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load users');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    reload();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  const roleBadgeStatus = (role: AdminUserRow['role']) =>
+    role === 'admin' ? 'published' : role === 'auditor' ? 'in_progress' : 'draft';
+
+  const onInvite = async () => {
+    setError('');
+    try {
+      setInviting(true);
+      const email = inviteEmail.trim();
+      const { data, error } = await supabase.functions.invoke('admin_users', {
+        body: { action: 'invite', email },
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Invite failed');
+      setInviteEmail('');
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Invite failed');
+    } finally {
+      setInviting(false);
+    }
+  };
+
+  const onChangeRole = async (userId: string, role: AdminUserRow['role']) => {
+    setError('');
+    const prev = users;
+    setUsers(u => u.map(x => x.id === userId ? { ...x, role } : x));
+    try {
+      setSavingRoleFor(userId);
+      const { data, error } = await supabase.functions.invoke('admin_users', {
+        body: { action: 'update_role', user_id: userId, role },
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to save role');
+    } catch (e) {
+      setUsers(prev);
+      setError(e instanceof Error ? e.message : 'Failed to save role');
+    } finally {
+      setSavingRoleFor(null);
+    }
+  };
+
+  const onRemove = async (userId: string) => {
+    setError('');
+    if (userId === currentUserId) {
+      setError("You can't remove your own account.");
+      return;
+    }
+    if (!window.confirm('Remove this user? This cannot be undone.')) return;
+    try {
+      setRemovingFor(userId);
+      const { data, error } = await supabase.functions.invoke('admin_users', {
+        body: { action: 'remove', user_id: userId },
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to remove user');
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to remove user');
+    } finally {
+      setRemovingFor(null);
+    }
+  };
+
   return (
     <div className="bg-white rounded-xl card-shadow animate-slide-up">
       <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
         <h2 className="text-base font-semibold text-gray-900">Team Members</h2>
-        <button className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity">
-          Invite User
-        </button>
+        <div className="flex items-center gap-2">
+          <div className="hidden sm:block">
+            <input
+              type="email"
+              value={inviteEmail}
+              onChange={e => setInviteEmail(e.target.value)}
+              placeholder="name@ecdigitalstrategy.com"
+              className="w-[260px] px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            />
+          </div>
+          <button
+            onClick={onInvite}
+            disabled={inviting || !inviteEmail.trim()}
+            className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed inline-flex items-center gap-2"
+          >
+            <UserPlus className="w-4 h-4" />
+            {inviting ? 'Inviting...' : 'Invite User'}
+          </button>
+        </div>
       </div>
+
+      {error && (
+        <div className="px-6 pt-4">
+          <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
+        </div>
+      )}
+
+      {loading ? (
+        <div className="px-6 py-6 text-sm text-gray-500">Loading users...</div>
+      ) : (
       <div className="divide-y divide-gray-50">
-        {DEMO_USERS.map(user => (
-          <div key={user.id} className="flex items-center justify-between px-6 py-4">
+        {sorted.map(user => (
+          <div key={user.id} className="flex items-center justify-between px-6 py-4 gap-4">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full gradient-bg flex items-center justify-center text-white text-xs font-bold">
-                {user.name.split(' ').map(n => n[0]).join('')}
+                {(user.name || user.email || 'U')
+                  .split(' ')
+                  .filter(Boolean)
+                  .slice(0, 2)
+                  .map(n => n[0])
+                  .join('')
+                  .toUpperCase()}
               </div>
               <div>
-                <p className="text-sm font-medium text-gray-900">{user.name}</p>
-                <p className="text-xs text-gray-500">{user.email}</p>
+                <p className="text-sm font-medium text-gray-900">{user.name || '—'}</p>
+                <p className="text-xs text-gray-500">{user.email || '—'}</p>
               </div>
             </div>
             <div className="flex items-center gap-3">
-              <StatusBadge status={user.role === 'admin' ? 'published' : user.role === 'auditor' ? 'in_progress' : 'draft'} />
+              <StatusBadge status={roleBadgeStatus(user.role)} />
               <div className="min-w-[140px]">
-                <Select defaultValue={user.role}>
+                <Select value={user.role} onValueChange={v => onChangeRole(user.id, v as any)}>
                   <SelectTrigger className="h-9 text-xs">
                     <SelectValue />
                   </SelectTrigger>
@@ -110,112 +239,75 @@ function UsersTab() {
                   </SelectContent>
                 </Select>
               </div>
+              <button
+                onClick={() => onRemove(user.id)}
+                disabled={removingFor === user.id || user.id === currentUserId}
+                className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                title={user.id === currentUserId ? "You can't remove yourself" : 'Remove user'}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+              {savingRoleFor === user.id && (
+                <span className="text-xs text-gray-400">Saving...</span>
+              )}
             </div>
           </div>
         ))}
       </div>
-    </div>
-  );
-}
-
-function ExamplesTab() {
-  const [filterIndustry, setFilterIndustry] = useState('');
-  const examples = DEMO_INDUSTRY_EXAMPLES.filter(
-    e => !filterIndustry || e.industry === filterIndustry,
-  );
-
-  return (
-    <div className="space-y-4 animate-slide-up">
-      <div className="flex items-center justify-between">
-        <div className="min-w-[220px]">
-          <Select value={filterIndustry} onValueChange={v => setFilterIndustry(v)}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder="All Industries" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="">All Industries</SelectItem>
-              {INDUSTRIES.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
-            </SelectContent>
-          </Select>
-        </div>
-        <button className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity">
-          Add Example
-        </button>
-      </div>
-
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {examples.map(ex => (
-          <div key={ex.id} className="bg-white rounded-xl card-shadow overflow-hidden group">
-            <div className="aspect-video bg-gray-100 overflow-hidden">
-              <img
-                src={ex.image_url}
-                alt={ex.title}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              />
-            </div>
-            <div className="p-4">
-              <h3 className="text-sm font-semibold text-gray-900 mb-1">{ex.title}</h3>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-[10px] font-medium px-1.5 py-0.5 bg-gray-100 rounded text-gray-600">
-                  {ex.industry}
-                </span>
-                <span className="text-[10px] font-medium px-1.5 py-0.5 bg-brand-primary/10 rounded text-brand-primary">
-                  {ex.email_type}
-                </span>
-              </div>
-              <p className="text-xs text-gray-500 line-clamp-2">{ex.notes}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function BenchmarksTab() {
-  const benchmarks = [
-    { flow: 'Abandoned Cart', low: '$150', high: '$300', unit: 'per 1K subs/mo' },
-    { flow: 'Browse Abandonment', low: '$80', high: '$150', unit: 'per 1K subs/mo' },
-    { flow: 'Welcome Series', low: '$100', high: '$200', unit: 'per 1K subs/mo' },
-    { flow: 'Post-Purchase', low: '$60', high: '$120', unit: 'per 1K subs/mo' },
-    { flow: 'Winback', low: '$40', high: '$80', unit: 'per 1K subs/mo' },
-  ];
-
-  return (
-    <div className="bg-white rounded-xl card-shadow animate-slide-up">
-      <div className="px-6 py-4 border-b border-gray-50">
-        <h2 className="text-base font-semibold text-gray-900">Revenue Benchmarks</h2>
-        <p className="text-xs text-gray-500 mt-0.5">
-          These benchmarks are used to calculate revenue opportunity estimates.
-        </p>
-      </div>
-      <div className="overflow-x-auto">
-        <table className="w-full">
-          <thead>
-            <tr className="bg-gray-50">
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Flow Type</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Low Range</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">High Range</th>
-              <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Unit</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-50">
-            {benchmarks.map(b => (
-              <tr key={b.flow} className="hover:bg-gray-50/50">
-                <td className="px-6 py-3 text-sm font-medium text-gray-900">{b.flow}</td>
-                <td className="px-6 py-3 text-sm text-gray-700">{b.low}</td>
-                <td className="px-6 py-3 text-sm text-gray-700">{b.high}</td>
-                <td className="px-6 py-3 text-xs text-gray-400">{b.unit}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+      )}
     </div>
   );
 }
 
 function SettingsTab() {
+  const [status, setStatus] = useState<{ configured: boolean; updated_at: string | null } | null>(null);
+  const [apiKey, setApiKey] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { data, error } = await supabase.functions.invoke('openai_key_admin', {
+          body: { action: 'status' },
+        });
+        if (cancelled) return;
+        if (error) throw error;
+        if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to load OpenAI key status');
+        setStatus({ configured: Boolean(data.configured), updated_at: data.updated_at ?? null });
+      } catch (e) {
+        if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load status');
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const onSave = async () => {
+    setError('');
+    setSuccess('');
+    try {
+      setSaving(true);
+      const { data, error } = await supabase.functions.invoke('openai_key_admin', {
+        body: { action: 'set', openai_api_key: apiKey },
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to save key');
+      setApiKey('');
+      setSuccess('Saved. Edge Functions will use this key for AI analysis.');
+      // refresh status
+      const st = await supabase.functions.invoke('openai_key_admin', { body: { action: 'status' } });
+      if (!st.error && st.data?.ok === true) {
+        setStatus({ configured: Boolean(st.data.configured), updated_at: st.data.updated_at ?? null });
+      }
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save key');
+    } finally {
+      setSaving(false);
+    }
+  };
+
   return (
     <div className="space-y-6 max-w-2xl animate-slide-up">
       <div className="bg-white rounded-xl p-6 card-shadow">
@@ -227,16 +319,36 @@ function SettingsTab() {
           Configure your OpenAI API key to enable AI-powered audit analysis. This key is stored securely
           and used only for generating audit findings.
         </p>
+        {status && (
+          <div className="mb-4 text-xs text-gray-500">
+            Status: {status.configured ? 'Configured' : 'Not configured'}
+            {status.updated_at ? ` • Updated ${new Date(status.updated_at).toLocaleString()}` : ''}
+          </div>
+        )}
         <div>
           <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
           <input
             type="password"
             placeholder="sk-..."
             className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            value={apiKey}
+            onChange={e => setApiKey(e.target.value)}
           />
           <p className="text-xs text-gray-400 mt-1">
-            Stored as an environment variable in Supabase Edge Functions.
+            Stored encrypted in Supabase and used server-side only.
           </p>
+        </div>
+        {error && <div className="mt-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>}
+        {success && <div className="mt-3 text-sm text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg">{success}</div>}
+        <div className="mt-4">
+          <button
+            type="button"
+            onClick={onSave}
+            disabled={saving || !apiKey.trim()}
+            className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {saving ? 'Saving...' : 'Save'}
+          </button>
         </div>
       </div>
 

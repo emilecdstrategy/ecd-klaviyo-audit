@@ -1,4 +1,4 @@
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ClipboardCheck,
   Users,
@@ -19,6 +19,7 @@ import { formatCurrency } from '../lib/revenue-calculator';
 
 export default function Dashboard() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isDemo } = useAuth();
 
   const clients = isDemo ? DEMO_CLIENTS : [];
@@ -43,14 +44,14 @@ export default function Dashboard() {
 
         <div className="flex flex-wrap gap-3">
           <button
-            onClick={() => navigate('/audits/new')}
+            onClick={() => navigate('/audits/new', { state: { backgroundLocation: location } })}
             className="flex items-center gap-2 px-5 py-2.5 bg-brand-primary text-white text-sm font-medium rounded-lg hover:bg-brand-primary-dark transition-colors"
           >
             <Plus className="w-4 h-4" />
             Start New Audit
           </button>
           <button
-            onClick={() => navigate('/clients/new')}
+            onClick={() => navigate('/clients/new', { state: { backgroundLocation: location } })}
             className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
           >
             <UserPlus className="w-4 h-4" />

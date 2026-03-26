@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Users, Plus, Search, ArrowRight, Globe, Calendar } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import EmptyState from '../components/ui/EmptyState';
@@ -10,6 +10,7 @@ import type { Audit, Client } from '../lib/types';
 
 export default function Clients() {
   const navigate = useNavigate();
+  const location = useLocation();
   const { isDemo } = useAuth();
   const [search, setSearch] = useState('');
 
@@ -56,7 +57,7 @@ export default function Clients() {
         subtitle={`${clients.length} total clients`}
         actions={
           <button
-            onClick={() => navigate('/clients/new')}
+            onClick={() => navigate('/clients/new', { state: { backgroundLocation: location } })}
             className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
           >
             <Plus className="w-4 h-4" />
@@ -94,7 +95,7 @@ export default function Clients() {
             description="Add your first client to start running audits."
             action={
               <button
-                onClick={() => navigate('/clients/new')}
+                onClick={() => navigate('/clients/new', { state: { backgroundLocation: location } })}
                 className="flex items-center gap-2 px-5 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
               >
                 <Plus className="w-4 h-4" />

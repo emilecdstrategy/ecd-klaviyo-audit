@@ -37,6 +37,12 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
     if (collapsedProp === undefined) setCollapsedState(next);
   };
   const { user, isDemo, hasRole, signOut, exitDemo } = useAuth();
+  const initials = (user?.name || user?.email || 'U')
+    .split(' ')
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(p => p[0]?.toUpperCase())
+    .join('') || 'U';
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>
     `flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all duration-200 ${
@@ -87,14 +93,21 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
       </nav>
 
       <div className="border-t border-gray-100 p-3 space-y-2">
-        {!collapsed && user && (
-          <div className="px-2 py-1.5">
-            <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
-            <p className="text-xs text-gray-400 truncate">{user.email}</p>
-            {isDemo && (
-              <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-brand-primary/10 text-brand-primary">
-                Demo Mode
-              </span>
+        {user && (
+          <div className={`flex items-center gap-3 rounded-lg ${collapsed ? 'justify-center px-1 py-2' : 'px-2 py-2'} bg-gray-50`}>
+            <div className="w-9 h-9 rounded-full gradient-bg flex items-center justify-center text-white text-xs font-bold shrink-0">
+              {initials}
+            </div>
+            {!collapsed && (
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
+                <p className="text-xs text-gray-400 truncate">{user.email}</p>
+                {isDemo && (
+                  <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-brand-primary/10 text-brand-primary">
+                    Demo Mode
+                  </span>
+                )}
+              </div>
             )}
           </div>
         )}
