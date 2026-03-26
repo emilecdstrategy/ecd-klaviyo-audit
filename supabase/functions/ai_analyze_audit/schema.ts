@@ -1,4 +1,4 @@
-export const AI_SCHEMA_VERSION = "2026-03-26.v2";
+export const AI_SCHEMA_VERSION = "2026-03-26.v3";
 
 export const AUDIT_SECTION_KEYS = [
   "account_health",
@@ -24,18 +24,26 @@ export type AISection = {
   confidence: Confidence;
 };
 
+export type AITimelinePhase = {
+  phase: string;
+  timeframe: string;
+  label: string;
+  items: string[];
+};
+
 export type AIOutput = {
   schemaVersion: string;
   executiveSummary: string;
   strengths: string[];
   concerns: string[];
+  implementationTimeline: AITimelinePhase[];
   sections: AISection[];
 };
 
 export const AI_OUTPUT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["schemaVersion", "executiveSummary", "strengths", "concerns", "sections"],
+  required: ["schemaVersion", "executiveSummary", "strengths", "concerns", "implementationTimeline", "sections"],
   properties: {
     schemaVersion: { type: "string" },
     executiveSummary: { type: "string", minLength: 80, maxLength: 4000 },
@@ -50,6 +58,22 @@ export const AI_OUTPUT_JSON_SCHEMA = {
       minItems: 3,
       maxItems: 7,
       items: { type: "string", minLength: 20, maxLength: 300 },
+    },
+    implementationTimeline: {
+      type: "array",
+      minItems: 4,
+      maxItems: 4,
+      items: {
+        type: "object",
+        additionalProperties: false,
+        required: ["phase", "timeframe", "label", "items"],
+        properties: {
+          phase: { type: "string" },
+          timeframe: { type: "string" },
+          label: { type: "string" },
+          items: { type: "array", minItems: 2, maxItems: 4, items: { type: "string" } },
+        },
+      },
     },
     sections: {
       type: "array",
@@ -76,7 +100,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
           optimized_notes: { type: "string", minLength: 40, maxLength: 3000 },
           ai_findings: { type: "string", minLength: 40, maxLength: 3000 },
           summary_text: { type: "string", minLength: 40, maxLength: 1200 },
-          revenue_opportunity: { type: "number", minimum: 0, maximum: 10000000 },
+          revenue_opportunity: { type: "number", minimum: 0, maximum: 500000 },
           confidence: { type: "string", enum: ["low", "medium", "high"] },
         },
       },
@@ -102,6 +126,9 @@ export function validateOutput(input: unknown, requiredSectionKeys: readonly Sec
   }
   if (!Array.isArray(out.concerns) || out.concerns.length < 3) {
     errors.push("concerns must have at least 3 items");
+  }
+  if (!Array.isArray(out.implementationTimeline) || out.implementationTimeline.length < 4) {
+    errors.push("implementationTimeline must have 4 phases");
   }
   if (!Array.isArray(out.sections) || out.sections.length === 0) {
     errors.push("sections must be a non-empty array");
@@ -135,6 +162,12 @@ export function validateOutput(input: unknown, requiredSectionKeys: readonly Sec
       executiveSummary: out.executiveSummary!.trim(),
       strengths: (out.strengths ?? []).map((s: string) => s.trim()),
       concerns: (out.concerns ?? []).map((s: string) => s.trim()),
+      implementationTimeline: (out.implementationTimeline ?? []).map((p) => ({
+        phase: p.phase,
+        timeframe: p.timeframe,
+        label: p.label,
+        items: p.items.map((i: string) => i.trim()),
+      })),
       sections: requiredSectionKeys.map((k) => byKey.get(k)!),
     },
   };

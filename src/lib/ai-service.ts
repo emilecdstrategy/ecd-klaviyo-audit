@@ -10,6 +10,7 @@ interface AIAnalysisResult {
   executiveSummary: string;
   strengths?: string[];
   concerns?: string[];
+  implementationTimeline?: { phase: string; timeframe: string; label: string; items: string[] }[];
 }
 
 type AIErrorCode =
@@ -89,6 +90,7 @@ export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisR
       executiveSummary: first.executiveSummary,
       strengths: first.strengths ?? [],
       concerns: first.concerns ?? [],
+      implementationTimeline: first.implementationTimeline ?? [],
       sections,
     };
   } catch (e) {

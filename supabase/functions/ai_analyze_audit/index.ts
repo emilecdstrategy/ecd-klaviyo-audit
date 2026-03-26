@@ -340,6 +340,7 @@ serve(async (req) => {
         executiveSummary: validation.value.executiveSummary,
         strengths: validation.value.strengths ?? [],
         concerns: validation.value.concerns ?? [],
+        implementationTimeline: validation.value.implementationTimeline ?? [],
         sections: validation.value.sections,
       },
       { status: 200 },

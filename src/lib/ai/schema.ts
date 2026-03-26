@@ -1,4 +1,4 @@
-export const AI_SCHEMA_VERSION = "2026-03-26.v2";
+export const AI_SCHEMA_VERSION = "2026-03-26.v3";
 
 export const AUDIT_SECTION_KEYS = [
   "account_health",

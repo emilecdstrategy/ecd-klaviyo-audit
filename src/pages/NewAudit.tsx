@@ -238,20 +238,31 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       // 6) Run AI analysis and persist section updates
       setAnalysisProgress(40);
       setAnalysisStage('Running AI analysis…');
-      const ai = await runAIAnalysis({
-        auditId: audit.id,
-        clientId,
-        clientName: form.clientName,
-        companyName: form.companyName,
-        espPlatform: 'Klaviyo',
-        websiteUrl: '',
-        listSize: 0,
-        aov: 0,
-        monthlyTraffic: 0,
-        notes: form.notes,
-        auditMethod: form.auditMethod as any,
-        screenshots,
-      });
+      const ticker = setInterval(() => {
+        setAnalysisProgress(prev => {
+          if (prev >= 68) return 68;
+          return Math.round((prev + (68 - prev) * 0.08) * 10) / 10;
+        });
+      }, 2000);
+      let ai;
+      try {
+        ai = await runAIAnalysis({
+          auditId: audit.id,
+          clientId,
+          clientName: form.clientName,
+          companyName: form.companyName,
+          espPlatform: 'Klaviyo',
+          websiteUrl: '',
+          listSize: 0,
+          aov: 0,
+          monthlyTraffic: 0,
+          notes: form.notes,
+          auditMethod: form.auditMethod as any,
+          screenshots,
+        });
+      } finally {
+        clearInterval(ticker);
+      }
       setAnalysisProgress(70);
       setAnalysisStage('Saving results…');
 
@@ -264,8 +275,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
       const totalOpportunity = ai.sections.reduce((sum, s) => sum + (Number((s as any).revenue_opportunity) || 0), 0);
 
-      const execPayload = (ai.strengths?.length || ai.concerns?.length)
-        ? JSON.stringify({ text: ai.executiveSummary, strengths: ai.strengths ?? [], concerns: ai.concerns ?? [] })
+      const execPayload = (ai.strengths?.length || ai.concerns?.length || ai.implementationTimeline?.length)
+        ? JSON.stringify({ text: ai.executiveSummary, strengths: ai.strengths ?? [], concerns: ai.concerns ?? [], timeline: ai.implementationTimeline ?? [] })
         : ai.executiveSummary;
 
       await updateAudit(audit.id, {

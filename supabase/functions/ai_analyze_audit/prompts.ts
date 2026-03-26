@@ -42,7 +42,9 @@ export function buildAuditSystemPrompt() {
     "Analyze the ACTUAL data provided — do NOT say data is missing if it is present in the input.",
     "Return only valid JSON matching the provided schema.",
     `Set schemaVersion to '${AI_SCHEMA_VERSION}'.`,
-    "Use crisp, client-facing writing with concrete findings and realistic revenue opportunities.",
+    "Use crisp, client-facing writing with concrete findings and CONSERVATIVE, realistic revenue opportunities.",
+    "Revenue opportunities MUST be grounded in the actual data. A section's revenue_opportunity should not exceed 2-3x the current monthly flow revenue annualized unless there is a clearly evidenced gap like a completely missing core flow.",
+    "For accounts with under $10,000/month in flow revenue, total combined opportunity across all 6 sections should rarely exceed $50,000-$100,000 annually.",
     "Reference specific flow names, campaign names, segment names, and form names from the data.",
     "Do not use placeholders, hedging, or vague generic statements.",
     "",
@@ -53,6 +55,14 @@ export function buildAuditSystemPrompt() {
     "Example concerns: 'No active post-purchase flow — the #1 gap for repeat purchase revenue', '45 draft flows (47%) sitting idle, some with past revenue — quick wins being left on the table'.",
     "Be specific: use actual flow names, dollar amounts, percentages, and recipient counts from the data.",
     "Do NOT be generic. Every bullet must reference concrete data from this specific Klaviyo account.",
+    "Do NOT use markdown formatting like ** or * in your output. The rendering layer handles bold formatting automatically based on the em-dash separator.",
+    "",
+    "IMPLEMENTATION TIMELINE: Return exactly 4 phases based on the audit findings.",
+    "Phase 1 (Week 1-2, 'Quick Wins'): low-effort high-impact fixes found in the data (e.g., activating draft flows, fixing broken forms).",
+    "Phase 2 (Week 3-6, 'Core Flows'): building/rebuilding key revenue flows identified as gaps.",
+    "Phase 3 (Month 2-3, 'Strategic'): segmentation improvements, template redesigns, testing programs.",
+    "Phase 4 (Month 3+, 'Long-Term'): advanced personalization, data programs, sophisticated automations.",
+    "Each phase should have 2-4 specific items referencing actual findings from this account.",
   ].join(" ");
 }
 
@@ -158,6 +168,7 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext)
       required_top_level_fields: {
         strengths: "Array of 4-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages from the data.",
         concerns: "Array of 4-6 strings. Each is a specific issue or gap with bold lead phrase and evidence. Reference actual missing flows, underperforming metrics, inactive flows by name.",
+        implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
       },
       style: {
         audience: "ecommerce founder/marketing lead",
@@ -167,6 +178,7 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext)
       constraints: {
         currency: "USD",
         no_negative_revenue_opportunity: true,
+        revenue_realism: "Be CONSERVATIVE with revenue_opportunity estimates. Base them on actual monthly revenue in the data. Each section should max at 2-3x current annualized revenue for that area. Total across all sections should rarely exceed $100K for smaller accounts.",
         analyze_actual_data: "You MUST reference and analyze the actual Klaviyo data above. Do NOT claim data is missing if it is provided.",
       },
     },

@@ -73,10 +73,10 @@ export default function ReportCampaignTable({ campaigns }: { campaigns: KlaviyoC
       )}
 
       {needsExpand && (
-        <div className="flex justify-center pt-2">
+        <div className="relative z-10 flex justify-center pt-3 pb-1">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1.5 text-sm font-medium text-brand-primary hover:text-brand-primary/80 transition-colors py-2 px-4"
+            className="flex items-center gap-1.5 text-sm font-semibold bg-brand-primary text-white rounded-lg px-5 py-2 hover:bg-brand-primary-dark transition-colors shadow-sm"
           >
             {expanded ? (
               <>Collapse <ChevronUp className="w-4 h-4" /></>

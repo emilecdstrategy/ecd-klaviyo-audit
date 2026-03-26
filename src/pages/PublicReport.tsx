@@ -165,12 +165,15 @@ export default function PublicReport() {
   let execText = audit.executive_summary || '';
   let aiStrengths: string[] = [];
   let aiConcerns: string[] = [];
+  let aiTimeline: { phase: string; timeframe: string; label: string; items: string[] }[] = [];
   try {
     const parsed = JSON.parse(execText);
     if (parsed && typeof parsed.text === 'string') {
       execText = parsed.text;
-      aiStrengths = Array.isArray(parsed.strengths) ? parsed.strengths : [];
-      aiConcerns = Array.isArray(parsed.concerns) ? parsed.concerns : [];
+      const strip = (s: string) => s.replace(/\*\*/g, '');
+      aiStrengths = Array.isArray(parsed.strengths) ? parsed.strengths.map(strip) : [];
+      aiConcerns = Array.isArray(parsed.concerns) ? parsed.concerns.map(strip) : [];
+      aiTimeline = Array.isArray(parsed.timeline) ? parsed.timeline : [];
     }
   } catch {
     // plain text — keep as-is
@@ -537,29 +540,32 @@ export default function PublicReport() {
             <h3 className="text-sm font-semibold text-gray-900 mb-6">Implementation Timeline</h3>
             <div className="grid grid-cols-1 md:grid-cols-4 gap-4 relative">
               <div className="hidden md:block absolute top-5 left-[12.5%] right-[12.5%] h-px bg-gray-100 z-0" />
-              {[
-                { phase: 'Phase 1', timeframe: 'Week 1–2', label: 'Quick Wins', color: 'bg-emerald-500', items: ['Browse Abandonment flow', 'Popup timing fix', 'Cart flow expansion'] },
-                { phase: 'Phase 2', timeframe: 'Week 3–6', label: 'Core Flows', color: 'bg-brand-primary', items: ['Post-Purchase sequence', 'Welcome Series rebuild', 'Segmentation tiers'] },
-                { phase: 'Phase 3', timeframe: 'Month 2–3', label: 'Strategic', color: 'bg-amber-500', items: ['Winback + Sunset flows', 'Template redesign', 'A/B test program'] },
-                { phase: 'Phase 4', timeframe: 'Month 3+', label: 'Long-Term', color: 'bg-gray-300', items: ['Skin quiz / personalization', 'Zero-party data program', 'Advanced RFM segments'] },
-              ].map((p, i) => (
-                <div key={i} className="relative flex flex-col items-center text-center px-2">
-                  <div className={`w-10 h-10 rounded-full ${p.color} flex items-center justify-center text-white text-xs font-bold mb-3 z-10 relative`}>
-                    {i + 1}
+              {(aiTimeline.length >= 4 ? aiTimeline : [
+                { phase: 'Phase 1', timeframe: 'Week 1–2', label: 'Quick Wins', items: ['Activate draft flows', 'Fix form triggers', 'Cart flow expansion'] },
+                { phase: 'Phase 2', timeframe: 'Week 3–6', label: 'Core Flows', items: ['Post-Purchase sequence', 'Welcome Series rebuild', 'Segmentation tiers'] },
+                { phase: 'Phase 3', timeframe: 'Month 2–3', label: 'Strategic', items: ['Winback + Sunset flows', 'Template redesign', 'A/B test program'] },
+                { phase: 'Phase 4', timeframe: 'Month 3+', label: 'Long-Term', items: ['Advanced personalization', 'Zero-party data program', 'RFM segments'] },
+              ]).map((p, i) => {
+                const colors = ['bg-emerald-500', 'bg-brand-primary', 'bg-amber-500', 'bg-gray-300'];
+                return (
+                  <div key={i} className="relative flex flex-col items-center text-center px-2">
+                    <div className={`w-10 h-10 rounded-full ${colors[i] ?? 'bg-gray-300'} flex items-center justify-center text-white text-xs font-bold mb-3 z-10 relative`}>
+                      {i + 1}
+                    </div>
+                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{p.phase}</p>
+                    <p className="text-xs text-gray-400 mb-1">{p.timeframe}</p>
+                    <p className="text-sm font-semibold text-gray-900 mb-3">{p.label}</p>
+                    <ul className="space-y-1 text-left w-full">
+                      {p.items.map((item, j) => (
+                        <li key={j} className="flex items-start gap-1.5 text-xs text-gray-500">
+                          <ChevronRight className="w-3 h-3 shrink-0 mt-0.5 text-gray-300" />
+                          {item}
+                        </li>
+                      ))}
+                    </ul>
                   </div>
-                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{p.phase}</p>
-                  <p className="text-xs text-gray-400 mb-1">{p.timeframe}</p>
-                  <p className="text-sm font-semibold text-gray-900 mb-3">{p.label}</p>
-                  <ul className="space-y-1 text-left w-full">
-                    {p.items.map((item, j) => (
-                      <li key={j} className="flex items-start gap-1.5 text-xs text-gray-500">
-                        <ChevronRight className="w-3 h-3 shrink-0 mt-0.5 text-gray-300" />
-                        {item}
-                      </li>
-                    ))}
-                  </ul>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </div>
 
