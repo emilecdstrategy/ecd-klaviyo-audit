@@ -41,7 +41,7 @@ serve(async (req) => {
     const { apiKey } = (await req.json()) as { apiKey?: string };
     if (!apiKey || typeof apiKey !== "string") return json({ error: "Missing apiKey" }, { status: 400 });
 
-    const accountRes = await klaviyoCall(apiKey, "/api/accounts/?page%5Bsize%5D=1");
+    const accountRes = await klaviyoCall(apiKey, "/api/accounts/");
     if (!accountRes.ok) {
       return json({
         ok: false,

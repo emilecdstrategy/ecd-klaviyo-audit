@@ -116,7 +116,7 @@ serve(async (req) => {
     }
 
     // Verify against Klaviyo
-    const accountRes = await klaviyoCall(apiKey, "/api/accounts/?page%5Bsize%5D=1");
+    const accountRes = await klaviyoCall(apiKey, "/api/accounts/");
     if (!accountRes.ok) {
       return json(
         { ok: false, error: { code: "invalid_key_or_scope", message: "Account lookup failed", status: accountRes.status }, correlationId },

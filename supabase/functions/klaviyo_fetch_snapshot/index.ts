@@ -268,7 +268,7 @@ serve(async (req) => {
     }
 
     // 1) Validate + account identity
-    const accountRes = await fetchWithRetry(() => klaviyoFetch(apiKey, revision, "/api/accounts/?page%5Bsize%5D=1"), 3);
+    const accountRes = await fetchWithRetry(() => klaviyoFetch(apiKey, revision, "/api/accounts/"), 3);
     if (!accountRes.ok) {
       const detail =
         (accountRes.body as any)?.errors?.[0]?.detail ??
