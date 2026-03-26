@@ -12,6 +12,7 @@ import StatusBadge from '../components/ui/StatusBadge';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_INDUSTRY_EXAMPLES } from '../lib/demo-data';
 import { INDUSTRIES } from '../lib/constants';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 const TABS = [
   { id: 'users', label: 'Users', icon: Users },
@@ -21,9 +22,9 @@ const TABS = [
 ];
 
 const DEMO_USERS = [
-  { id: '1', name: 'Sarah Chen', email: 'sarah@ecdagency.com', role: 'admin' },
-  { id: '2', name: 'Marcus Kim', email: 'marcus@ecdagency.com', role: 'auditor' },
-  { id: '3', name: 'Priya Patel', email: 'priya@ecdagency.com', role: 'viewer' },
+  { id: '1', name: 'Emil G', email: 'emil@ecdigitalstrategy.com', role: 'admin' },
+  { id: '2', name: 'Marcus Kim', email: 'marcus@ecdigitalstrategy.com', role: 'auditor' },
+  { id: '3', name: 'Priya Patel', email: 'priya@ecdigitalstrategy.com', role: 'viewer' },
 ];
 
 export default function AdminArea() {
@@ -97,14 +98,18 @@ function UsersTab() {
             </div>
             <div className="flex items-center gap-3">
               <StatusBadge status={user.role === 'admin' ? 'published' : user.role === 'auditor' ? 'in_progress' : 'draft'} />
-              <select
-                defaultValue={user.role}
-                className="text-xs border border-gray-200 rounded-lg px-2 py-1.5 bg-white focus:outline-none focus:border-brand-primary"
-              >
-                <option value="admin">Admin</option>
-                <option value="auditor">Auditor</option>
-                <option value="viewer">Viewer</option>
-              </select>
+              <div className="min-w-[140px]">
+                <Select defaultValue={user.role}>
+                  <SelectTrigger className="h-9 text-xs">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="admin">Admin</SelectItem>
+                    <SelectItem value="auditor">Auditor</SelectItem>
+                    <SelectItem value="viewer">Viewer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </div>
         ))}
@@ -122,14 +127,17 @@ function ExamplesTab() {
   return (
     <div className="space-y-4 animate-slide-up">
       <div className="flex items-center justify-between">
-        <select
-          value={filterIndustry}
-          onChange={e => setFilterIndustry(e.target.value)}
-          className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-brand-primary"
-        >
-          <option value="">All Industries</option>
-          {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-        </select>
+        <div className="min-w-[220px]">
+          <Select value={filterIndustry} onValueChange={v => setFilterIndustry(v)}>
+            <SelectTrigger className="w-full">
+              <SelectValue placeholder="All Industries" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="">All Industries</SelectItem>
+              {INDUSTRIES.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
+            </SelectContent>
+          </Select>
+        </div>
         <button className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity">
           Add Example
         </button>

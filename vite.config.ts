@@ -7,4 +7,9 @@ export default defineConfig({
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
+  build: {
+    // Windows can intermittently lock files in dist/ (AV/indexer).
+    // Avoid failing builds due to outDir cleanup; Vite will overwrite changed assets.
+    emptyOutDir: false,
+  },
 });

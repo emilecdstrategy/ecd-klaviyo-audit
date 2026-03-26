@@ -205,7 +205,7 @@ export default function AuditWorkspace() {
       />
 
       <div className="flex h-[calc(100vh-64px)]">
-        <div className="w-56 bg-white border-r border-gray-100 p-3 overflow-y-auto shrink-0">
+        <div className="hidden lg:block w-56 bg-white border-r border-gray-100 p-3 overflow-y-auto shrink-0">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-3 mb-2">
             Audit Sections
           </p>
@@ -309,7 +309,7 @@ export default function AuditWorkspace() {
           )}
         </div>
 
-        <div className="w-64 bg-white border-l border-gray-100 p-4 overflow-y-auto shrink-0 space-y-4">
+        <div className="hidden xl:block w-72 bg-white border-l border-gray-100 p-4 overflow-y-auto shrink-0 space-y-4">
           <ShareLinkPanel
             shareToken={audit.public_share_token}
             onPublish={handlePublish}

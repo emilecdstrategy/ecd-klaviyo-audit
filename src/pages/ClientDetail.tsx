@@ -97,6 +97,13 @@ export default function ClientDetail() {
   }
 
   const hasApiKey = !!client.api_key_placeholder;
+  const firstAuditDate = clientAudits.length
+    ? new Date(
+      clientAudits
+        .map(a => new Date(a.created_at).getTime())
+        .reduce((min, t) => Math.min(min, t), Infinity),
+    ).toLocaleDateString()
+    : '—';
 
   return (
     <div>
@@ -147,7 +154,18 @@ export default function ClientDetail() {
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Website</p>
                   <div className="flex items-center gap-1.5">
                     <Globe className="w-3.5 h-3.5 text-gray-400" />
-                    <p className="text-sm text-brand-primary">{client.website_url || 'Not provided'}</p>
+                    {client.website_url ? (
+                      <a
+                        href={client.website_url}
+                        target="_blank"
+                        rel="noreferrer"
+                        className="text-sm text-brand-primary hover:underline"
+                      >
+                        {client.website_url}
+                      </a>
+                    ) : (
+                      <p className="text-sm text-gray-500">Not provided</p>
+                    )}
                   </div>
                 </div>
               </div>
@@ -234,9 +252,9 @@ export default function ClientDetail() {
                   </span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-500">Client Since</span>
+                  <span className="text-sm text-gray-500">First Audit</span>
                   <span className="text-sm text-gray-900">
-                    {new Date(client.created_at).toLocaleDateString()}
+                    {firstAuditDate}
                   </span>
                 </div>
               </div>

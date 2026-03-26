@@ -434,18 +434,18 @@ export const DEMO_INDUSTRY_EXAMPLES: IndustryExample[] = [
 
 export const DEMO_USER = {
   id: 'demo-user',
-  name: 'Sarah Chen',
-  email: 'sarah@ecdagency.com',
+  name: 'Emil G',
+  email: 'emil@ecdigitalstrategy.com',
   role: 'admin' as const,
   created_at: '2025-01-01T00:00:00Z',
 };
 
 export const DEMO_ACTIVITY = [
-  { id: '1', action: 'Published audit report', target: 'Luxe Glow Beauty', user: 'Sarah Chen', time: '2 hours ago' },
-  { id: '2', action: 'Completed section review', target: 'Flows Audit - Luxe Glow', user: 'Sarah Chen', time: '3 hours ago' },
+  { id: '1', action: 'Published audit report', target: 'Luxe Glow Beauty', user: 'Emil G', time: '2 hours ago' },
+  { id: '2', action: 'Completed section review', target: 'Flows Audit - Luxe Glow', user: 'Emil G', time: '3 hours ago' },
   { id: '3', action: 'Started new audit', target: 'Bloom & Petal', user: 'Marcus Kim', time: '1 day ago' },
-  { id: '4', action: 'Added client', target: 'ThreadCraft Apparel', user: 'Sarah Chen', time: '2 days ago' },
-  { id: '5', action: 'Ran AI analysis', target: 'Luxe Glow Beauty Audit', user: 'Sarah Chen', time: '3 days ago' },
+  { id: '4', action: 'Added client', target: 'ThreadCraft Apparel', user: 'Emil G', time: '2 days ago' },
+  { id: '5', action: 'Ran AI analysis', target: 'Luxe Glow Beauty Audit', user: 'Emil G', time: '3 days ago' },
   { id: '6', action: 'Uploaded screenshots', target: 'ThreadCraft - Campaign Review', user: 'Marcus Kim', time: '4 days ago' },
 ];
 

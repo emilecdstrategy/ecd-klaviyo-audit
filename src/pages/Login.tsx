@@ -1,26 +1,21 @@
 import { useState } from 'react';
-import { Zap, ArrowRight, Sparkles } from 'lucide-react';
+import { Zap, ArrowRight, Sparkles, Mail } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
-  const { signIn, signUp, enterDemo } = useAuth();
-  const [isSignUp, setIsSignUp] = useState(false);
+  const { sendMagicLink, enterDemo, authError } = useAuth();
   const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
-  const [name, setName] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  const [sent, setSent] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
     try {
-      if (isSignUp) {
-        await signUp(email, password, name);
-      } else {
-        await signIn(email, password);
-      }
+      await sendMagicLink(email);
+      setSent(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred');
     } finally {
@@ -42,72 +37,61 @@ export default function Login() {
             </div>
           </div>
 
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">
-            {isSignUp ? 'Create an account' : 'Welcome back'}
-          </h2>
+          <h2 className="text-2xl font-bold text-gray-900 mb-2">Sign in</h2>
           <p className="text-sm text-gray-500 mb-8">
-            {isSignUp ? 'Set up your auditor account' : 'Sign in to your audit dashboard'}
+            We’ll email you a magic link. Only <span className="font-medium">@ecdigitalstrategy.com</span> accounts are allowed.
           </p>
 
-          <form onSubmit={handleSubmit} className="space-y-4">
-            {isSignUp && (
+          {sent ? (
+            <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-5">
+              <div className="flex items-start gap-3">
+                <div className="w-9 h-9 rounded-lg bg-emerald-500/10 flex items-center justify-center shrink-0">
+                  <Mail className="w-4 h-4 text-emerald-600" />
+                </div>
+                <div>
+                  <p className="text-sm font-semibold text-emerald-900">Magic link sent</p>
+                  <p className="text-sm text-emerald-800/80 mt-1">
+                    Check your inbox for <span className="font-medium">{email}</span> and click the sign-in link.
+                  </p>
+                  <button
+                    onClick={() => { setSent(false); setError(''); }}
+                    className="mt-3 text-sm font-medium text-emerald-700 hover:underline"
+                  >
+                    Use a different email
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <form onSubmit={handleSubmit} className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Work Email</label>
                 <input
-                  type="text"
-                  value={name}
-                  onChange={e => setName(e.target.value)}
+                  type="email"
+                  value={email}
+                  onChange={e => setEmail(e.target.value)}
                   required
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20"
-                  placeholder="Sarah Chen"
+                  placeholder="you@ecdigitalstrategy.com"
                 />
               </div>
-            )}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
-              <input
-                type="email"
-                value={email}
-                onChange={e => setEmail(e.target.value)}
-                required
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20"
-                placeholder="you@company.com"
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Password</label>
-              <input
-                type="password"
-                value={password}
-                onChange={e => setPassword(e.target.value)}
-                required
-                className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20"
-                placeholder="Minimum 6 characters"
-              />
-            </div>
 
-            {error && (
-              <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
-            )}
+              {(error || authError) && (
+                <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">
+                  {error || authError}
+                </div>
+              )}
 
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex items-center justify-center gap-2 px-4 py-2.5 gradient-bg text-white font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {loading ? 'Please wait...' : isSignUp ? 'Create Account' : 'Sign In'}
-              <ArrowRight className="w-4 h-4" />
-            </button>
-          </form>
-
-          <div className="mt-4 text-center">
-            <button
-              onClick={() => { setIsSignUp(!isSignUp); setError(''); }}
-              className="text-sm text-gray-500 hover:text-brand-primary transition-colors"
-            >
-              {isSignUp ? 'Already have an account? Sign in' : 'Need an account? Sign up'}
-            </button>
-          </div>
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 gradient-bg text-white font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+              >
+                {loading ? 'Sending link...' : 'Send magic link'}
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </form>
+          )}
 
           <div className="mt-8 pt-8 border-t border-gray-100">
             <button

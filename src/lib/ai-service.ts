@@ -1,4 +1,5 @@
 import type { AuditSection, WizardData } from './types';
+import { supabase } from './supabase';
 
 // Future: Replace with real OpenAI API calls through a Supabase Edge Function
 // The edge function would accept section data and return AI-generated findings
@@ -9,6 +10,18 @@ interface AIAnalysisResult {
 }
 
 export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisResult> {
+  // If an Edge Function is deployed, prefer it.
+  try {
+    const { data, error } = await supabase.functions.invoke('ai_analyze_audit', {
+      body: wizardData,
+    });
+    if (!error && data?.executiveSummary && Array.isArray(data?.sections)) {
+      return data as AIAnalysisResult;
+    }
+  } catch {
+    // fall back to demo implementation below
+  }
+
   await new Promise(r => setTimeout(r, 3000));
 
   const { industry, listSize, aov } = wizardData;

@@ -13,6 +13,11 @@ import {
 import { useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 
+interface SidebarProps {
+  collapsed?: boolean;
+  onCollapsedChange?: (collapsed: boolean) => void;
+}
+
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/clients', icon: Users, label: 'Clients' },
@@ -24,8 +29,13 @@ const ADMIN_ITEMS = [
   { to: '/admin', icon: Settings, label: 'Admin' },
 ];
 
-export default function Sidebar() {
-  const [collapsed, setCollapsed] = useState(false);
+export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }: SidebarProps) {
+  const [collapsedState, setCollapsedState] = useState(false);
+  const collapsed = collapsedProp ?? collapsedState;
+  const setCollapsed = (next: boolean) => {
+    onCollapsedChange?.(next);
+    if (collapsedProp === undefined) setCollapsedState(next);
+  };
   const { user, isDemo, hasRole, signOut, exitDemo } = useAuth();
 
   const linkClass = ({ isActive }: { isActive: boolean }) =>

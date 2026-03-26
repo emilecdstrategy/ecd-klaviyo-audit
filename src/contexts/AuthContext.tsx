@@ -7,8 +7,8 @@ interface AuthState {
   user: Profile | null;
   isDemo: boolean;
   isLoading: boolean;
-  signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, name: string) => Promise<void>;
+  authError: string;
+  sendMagicLink: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
   enterDemo: () => void;
   exitDemo: () => void;
@@ -21,6 +21,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Profile | null>(null);
   const [isDemo, setIsDemo] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
+  const [authError, setAuthError] = useState('');
+
+  const allowedDomain = 'ecdigitalstrategy.com';
+  const isAllowedEmail = (email?: string | null) => {
+    if (!email) return false;
+    const lower = email.toLowerCase().trim();
+    return lower.endsWith(`@${allowedDomain}`);
+  };
 
   useEffect(() => {
     const stored = localStorage.getItem('ecd-demo-mode');
@@ -34,16 +42,56 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.onAuthStateChange((_event, session) => {
       if (session?.user) {
         (async () => {
-          const { data } = await supabase
+          const email = session.user.email ?? '';
+          if (!isAllowedEmail(email)) {
+            setAuthError(`Only @${allowedDomain} accounts are allowed.`);
+            await supabase.auth.signOut();
+            setUser(null);
+            setIsDemo(false);
+            localStorage.setItem('ecd-demo-mode', 'false');
+            return;
+          }
+
+          const { data: existing, error: profileErr } = await supabase
             .from('profiles')
             .select('*')
             .eq('id', session.user.id)
             .maybeSingle();
-          if (data) {
-            setUser(data);
+
+          if (profileErr) {
+            setAuthError(profileErr.message);
+            return;
+          }
+
+          if (existing) {
+            setUser(existing);
             setIsDemo(false);
             localStorage.setItem('ecd-demo-mode', 'false');
+            setAuthError('');
+            return;
           }
+
+          const defaultName = (email.split('@')[0] || '').replace(/\./g, ' ').trim();
+          const { data: created, error: insertErr } = await supabase
+            .from('profiles')
+            .insert({
+              id: session.user.id,
+              name: defaultName,
+              email,
+              role: 'auditor',
+            })
+            .select('*')
+            .single();
+
+          if (insertErr) {
+            setAuthError(insertErr.message);
+            return;
+          }
+
+          setUser(created);
+          setIsDemo(false);
+          localStorage.setItem('ecd-demo-mode', 'false');
+          setAuthError('');
         })();
       } else if (!isDemo) {
         setUser(null);
@@ -53,22 +101,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setIsLoading(false);
   }, []);
 
-  const signIn = async (email: string, password: string) => {
-    const { error } = await supabase.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-  };
-
-  const signUp = async (email: string, password: string, name: string) => {
-    const { data, error } = await supabase.auth.signUp({ email, password });
-    if (error) throw error;
-    if (data.user) {
-      await supabase.from('profiles').insert({
-        id: data.user.id,
-        name,
-        email,
-        role: 'auditor',
-      });
+  const sendMagicLink = async (email: string) => {
+    const trimmed = email.trim().toLowerCase();
+    setAuthError('');
+    if (!isAllowedEmail(trimmed)) {
+      throw new Error(`Only @${allowedDomain} accounts are allowed.`);
     }
+
+    const { error } = await supabase.auth.signInWithOtp({
+      email: trimmed,
+      options: {
+        emailRedirectTo: window.location.origin,
+        shouldCreateUser: true,
+      },
+    });
+    if (error) throw error;
   };
 
   const signOut = async () => {
@@ -97,7 +144,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isDemo, isLoading, signIn, signUp, signOut, enterDemo, exitDemo, hasRole }}>
+    <AuthContext.Provider value={{ user, isDemo, isLoading, authError, sendMagicLink, signOut, enterDemo, exitDemo, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

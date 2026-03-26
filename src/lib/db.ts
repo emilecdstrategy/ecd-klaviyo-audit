@@ -43,6 +43,32 @@ export async function listAuditsByClient(clientId: string): Promise<Audit[]> {
   return (data ?? []) as Audit[];
 }
 
+export async function searchClients(query: string, limit = 5): Promise<Client[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { data, error } = await supabase
+    .from('clients')
+    .select('*')
+    .or(`company_name.ilike.%${q}%,name.ilike.%${q}%,industry.ilike.%${q}%`)
+    .order('created_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as Client[];
+}
+
+export async function searchAudits(query: string, limit = 5): Promise<Audit[]> {
+  const q = query.trim();
+  if (!q) return [];
+  const { data, error } = await supabase
+    .from('audits')
+    .select('*')
+    .ilike('title', `%${q}%`)
+    .order('updated_at', { ascending: false })
+    .limit(limit);
+  if (error) throw error;
+  return (data ?? []) as Audit[];
+}
+
 export async function getAudit(id: string): Promise<Audit | null> {
   const { data, error } = await supabase.from('audits').select('*').eq('id', id).maybeSingle();
   if (error) throw error;

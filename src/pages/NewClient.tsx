@@ -5,6 +5,7 @@ import TopBar from '../components/layout/TopBar';
 import { INDUSTRIES, ESP_PLATFORMS } from '../lib/constants';
 import { useAuth } from '../contexts/AuthContext';
 import { createClient, ensureClientCreator } from '../lib/db';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 export default function NewClient() {
   const navigate = useNavigate();
@@ -98,24 +99,25 @@ export default function NewClient() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-                <select
-                  value={form.industry}
-                  onChange={e => updateField('industry', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 bg-white"
-                >
-                  <option value="">Select industry</option>
-                  {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-                </select>
+                <Select value={form.industry} onValueChange={v => updateField('industry', v)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select industry" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INDUSTRIES.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">ESP Platform</label>
-                <select
-                  value={form.esp_platform}
-                  onChange={e => updateField('esp_platform', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 bg-white"
-                >
-                  {ESP_PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
+                <Select value={form.esp_platform} onValueChange={v => updateField('esp_platform', v)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ESP_PLATFORMS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

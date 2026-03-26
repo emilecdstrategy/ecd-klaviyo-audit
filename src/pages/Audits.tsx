@@ -16,12 +16,13 @@ import { formatCurrency } from '../lib/revenue-calculator';
 import { listAudits, listClients } from '../lib/db';
 import { useEffect } from 'react';
 import type { Audit, Client } from '../lib/types';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 export default function Audits() {
   const navigate = useNavigate();
   const { isDemo } = useAuth();
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter] = useState<string>('');
 
   const [audits, setAudits] = useState<Audit[]>(isDemo ? DEMO_AUDITS : []);
   const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
@@ -88,18 +89,21 @@ export default function Audits() {
           </div>
           <div className="relative">
             <Filter className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <select
-              value={statusFilter}
-              onChange={e => setStatusFilter(e.target.value)}
-              className="pl-9 pr-8 py-2.5 bg-white border border-gray-200 rounded-lg text-sm appearance-none focus:outline-none focus:border-brand-primary"
-            >
-              <option value="">All Status</option>
-              <option value="draft">Draft</option>
-              <option value="in_progress">In Progress</option>
-              <option value="review">In Review</option>
-              <option value="completed">Completed</option>
-              <option value="published">Published</option>
-            </select>
+            <div className="min-w-[160px]">
+              <Select value={statusFilter} onValueChange={v => setStatusFilter(v)}>
+                <SelectTrigger className="pl-9">
+                  <SelectValue placeholder="All Status" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="">All Status</SelectItem>
+                  <SelectItem value="draft">Draft</SelectItem>
+                  <SelectItem value="in_progress">In Progress</SelectItem>
+                  <SelectItem value="review">In Review</SelectItem>
+                  <SelectItem value="completed">Completed</SelectItem>
+                  <SelectItem value="published">Published</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
           </div>
         </div>
 

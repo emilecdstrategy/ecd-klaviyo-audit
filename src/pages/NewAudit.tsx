@@ -18,6 +18,7 @@ import { INDUSTRIES, ESP_PLATFORMS, SCREENSHOT_CATEGORIES } from '../lib/constan
 import { createAudit, createAuditAsset, createAuditSections, createClient, ensureClientCreator, updateAudit, updateAuditSection, uploadAuditAssetFile } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
 
 const STEPS = [
   { label: 'Prospect Details', description: 'Basic information' },
@@ -226,14 +227,14 @@ export default function NewAudit() {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Select Existing Client</label>
-              <select
-                value={form.clientId}
-                onChange={e => handleClientSelect(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-brand-primary"
-              >
-                <option value="">Create new client or select existing</option>
-                {clients.map(c => <option key={c.id} value={c.id}>{c.company_name}</option>)}
-              </select>
+              <Select value={form.clientId} onValueChange={v => handleClientSelect(v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Create new client or select existing" />
+                </SelectTrigger>
+                <SelectContent>
+                  {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}
+                </SelectContent>
+              </Select>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -249,27 +250,28 @@ export default function NewAudit() {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-                <select
-                  value={form.industry}
-                  onChange={e => updateField('industry', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-brand-primary"
-                >
-                  <option value="">Select</option>
-                  {INDUSTRIES.map(i => <option key={i} value={i}>{i}</option>)}
-                </select>
+                <Select value={form.industry} onValueChange={v => updateField('industry', v)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INDUSTRIES.map(i => <SelectItem key={i} value={i}>{i}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">ESP Platform</label>
-                <select
-                  value={form.espPlatform}
-                  onChange={e => updateField('espPlatform', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-brand-primary"
-                >
-                  {ESP_PLATFORMS.map(p => <option key={p} value={p}>{p}</option>)}
-                </select>
+                <Select value={form.espPlatform} onValueChange={v => updateField('espPlatform', v)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ESP_PLATFORMS.map(p => <SelectItem key={p} value={p}>{p}</SelectItem>)}
+                  </SelectContent>
+                </Select>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Website URL</label>

@@ -5,6 +5,7 @@ import { SECTION_LABELS, CONFIDENCE_LABELS } from '../../lib/constants';
 import RevenueOpportunityCard from '../ui/RevenueOpportunityCard';
 import StatusBadge from '../ui/StatusBadge';
 import SideBySideComparison from './SideBySideComparison';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 
 interface AuditSectionEditorProps {
   section: AuditSection;
@@ -167,15 +168,16 @@ export default function AuditSectionEditor({
               <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
                 Confidence
               </label>
-              <select
-                value={section.confidence}
-                onChange={e => onUpdate({ confidence: e.target.value as AuditSection['confidence'] })}
-                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 bg-white"
-              >
-                {Object.entries(CONFIDENCE_LABELS).map(([key, label]) => (
-                  <option key={key} value={key}>{label}</option>
-                ))}
-              </select>
+              <Select value={section.confidence} onValueChange={v => onUpdate({ confidence: v as AuditSection['confidence'] })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(CONFIDENCE_LABELS).map(([key, label]) => (
+                    <SelectItem key={key} value={key}>{label}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">

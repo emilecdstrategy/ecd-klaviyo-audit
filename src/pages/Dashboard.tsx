@@ -14,7 +14,7 @@ import TopBar from '../components/layout/TopBar';
 import KPICard from '../components/ui/KPICard';
 import StatusBadge from '../components/ui/StatusBadge';
 import { useAuth } from '../contexts/AuthContext';
-import { DEMO_CLIENTS, DEMO_AUDITS, DEMO_ACTIVITY } from '../lib/demo-data';
+import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
 
 export default function Dashboard() {
@@ -23,7 +23,6 @@ export default function Dashboard() {
 
   const clients = isDemo ? DEMO_CLIENTS : [];
   const audits = isDemo ? DEMO_AUDITS : [];
-  const activity = isDemo ? DEMO_ACTIVITY : [];
 
   const totalAudits = audits.length;
   const inProgress = audits.filter(a => a.status === 'in_progress').length;
@@ -68,8 +67,8 @@ export default function Dashboard() {
           )}
         </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2 space-y-6">
+        <div className="grid grid-cols-1 gap-6">
+          <div className="space-y-6">
             <div className="bg-white rounded-xl card-shadow">
               <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900">Recent Audits</h2>
@@ -142,53 +141,6 @@ export default function Dashboard() {
                 })}
               </div>
             </div>
-          </div>
-
-          <div className="space-y-6">
-            <div className="bg-white rounded-xl card-shadow">
-              <div className="px-5 py-4 border-b border-gray-50">
-                <h2 className="text-sm font-semibold text-gray-900">Recent Activity</h2>
-              </div>
-              <div className="p-5 space-y-4">
-                {activity.map(item => (
-                  <div key={item.id} className="flex gap-3">
-                    <div className="w-2 h-2 rounded-full bg-brand-primary mt-1.5 shrink-0" />
-                    <div>
-                      <p className="text-sm text-gray-700">
-                        <span className="font-medium">{item.action}</span>
-                        {' for '}
-                        <span className="font-medium text-gray-900">{item.target}</span>
-                      </p>
-                      <p className="text-xs text-gray-400 mt-0.5">
-                        {item.user} &middot; {item.time}
-                      </p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-
-            {isDemo && (
-              <div className="bg-white rounded-xl card-shadow p-5">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">How it works</p>
-                <ol className="space-y-3">
-                  {[
-                    'Add a client and enter their details',
-                    'Start a new audit and upload screenshots',
-                    'Run AI analysis to generate findings',
-                    'Review, edit, and publish the report',
-                    'Share the report link with your client',
-                  ].map((step, i) => (
-                    <li key={i} className="flex items-start gap-3">
-                      <span className="w-5 h-5 rounded-full bg-brand-primary/10 text-brand-primary text-[10px] font-bold flex items-center justify-center shrink-0 mt-0.5">
-                        {i + 1}
-                      </span>
-                      <span className="text-sm text-gray-600">{step}</span>
-                    </li>
-                  ))}
-                </ol>
-              </div>
-            )}
           </div>
         </div>
       </div>
