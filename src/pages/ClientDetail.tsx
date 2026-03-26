@@ -110,7 +110,7 @@ export default function ClientDetail() {
     <div>
       <TopBar
         title={client.company_name}
-        subtitle={client.industry}
+        subtitle={client.website_url || ' '}
         actions={
           <button
             onClick={() => navigate('/audits/new', { state: { clientId: client.id, backgroundLocation: location } })}
@@ -139,10 +139,6 @@ export default function ClientDetail() {
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Company</p>
                   <p className="text-sm text-gray-900">{client.company_name}</p>
-                </div>
-                <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Industry</p>
-                  <p className="text-sm text-gray-900">{client.industry}</p>
                 </div>
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">ESP Platform</p>

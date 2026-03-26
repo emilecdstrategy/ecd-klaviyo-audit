@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useEffect, useLocation, useNavigate, useState } from 'react';
 import {
   ClipboardCheck,
   Users,
@@ -16,14 +16,32 @@ import StatusBadge from '../components/ui/StatusBadge';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
+import { listAudits, listClients } from '../lib/db';
+import type { Audit, Client } from '../lib/types';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const { isDemo } = useAuth();
 
-  const clients = isDemo ? DEMO_CLIENTS : [];
-  const audits = isDemo ? DEMO_AUDITS : [];
+  const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
+  const [audits, setAudits] = useState<Audit[]>(isDemo ? DEMO_AUDITS : []);
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isDemo) return;
+    (async () => {
+      try {
+        const [c, a] = await Promise.all([listClients(), listAudits()]);
+        if (cancelled) return;
+        setClients(c.slice(0, 5));
+        setAudits(a.slice(0, 5));
+      } catch {
+        // dashboard should still render even if lists fail
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isDemo]);
 
   const totalAudits = audits.length;
   const inProgress = audits.filter(a => a.status === 'in_progress').length;
@@ -81,7 +99,7 @@ export default function Dashboard() {
                 </button>
               </div>
               <div className="divide-y divide-gray-50">
-                {audits.map(audit => {
+                {audits.slice(0, 5).map(audit => {
                   const client = clients.find(c => c.id === audit.client_id);
                   return (
                     <button
@@ -116,7 +134,7 @@ export default function Dashboard() {
                 </button>
               </div>
               <div className="divide-y divide-gray-50">
-                {clients.map(client => {
+                {clients.slice(0, 5).map(client => {
                   const clientAudits = audits.filter(a => a.client_id === client.id);
                   return (
                     <button
@@ -130,7 +148,7 @@ export default function Dashboard() {
                         </div>
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{client.company_name}</p>
-                          <p className="text-xs text-gray-500">{client.industry}</p>
+                          <p className="text-xs text-gray-500">{client.website_url || '—'}</p>
                         </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0 ml-4">

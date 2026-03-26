@@ -314,7 +314,7 @@ export default function AuditWorkspace() {
           )}
         </div>
 
-        <div className="hidden xl:block w-72 bg-white border-l border-gray-100 p-4 overflow-y-auto shrink-0 space-y-4">
+        <div className="hidden xl:block w-[360px] 2xl:w-[420px] bg-white border-l border-gray-100 p-4 overflow-y-auto shrink-0 space-y-4">
           <ShareLinkPanel
             shareToken={audit.public_share_token}
             onPublish={handlePublish}
