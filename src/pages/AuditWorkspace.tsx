@@ -52,6 +52,7 @@ export default function AuditWorkspace() {
   const [activeSection, setActiveSection] = useState<string>(SECTION_KEYS[0]);
 
   const saveTimers = useRef<Record<string, number>>({});
+  const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
 
   // Hooks must run unconditionally on every render.
   // Compute derived values before any early returns to avoid hook-order crashes.
@@ -186,8 +187,10 @@ export default function AuditWorkspace() {
     try {
       const updated = await publishAudit(audit.id);
       setAudit(updated);
+      setPublishBlockedReason('');
     } catch {
-      // ignore
+      // expose actionable message in UI
+      setPublishBlockedReason('Can’t publish yet. Please re-run the snapshot so performance data is available.');
     }
   };
 
@@ -319,6 +322,8 @@ export default function AuditWorkspace() {
             shareToken={audit.public_share_token}
             onPublish={handlePublish}
             isPublished={audit.status === 'published'}
+            publishDisabled={audit.audit_method === 'api' && audit.status !== 'published' && Boolean(publishBlockedReason)}
+            publishDisabledReason={publishBlockedReason || undefined}
           />
 
           {currentSection && currentSection.revenue_opportunity > 0 && (

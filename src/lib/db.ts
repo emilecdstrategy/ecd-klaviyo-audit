@@ -1,5 +1,19 @@
 import { supabase } from './supabase';
-import type { Audit, AuditSection, Client, Profile, Annotation, AuditAsset, FlowPerformance, Recommendation, HealthScoreItem } from './types';
+import type {
+  Audit,
+  AuditSection,
+  Client,
+  Profile,
+  Annotation,
+  AuditAsset,
+  FlowPerformance,
+  Recommendation,
+  HealthScoreItem,
+  KlaviyoFlowSnapshot,
+  KlaviyoSegmentSnapshot,
+  KlaviyoFormSnapshot,
+  KlaviyoCampaignSnapshot,
+} from './types';
 
 function requireUserId(user: Profile | null): string {
   if (!user) throw new Error('Not signed in');
@@ -93,6 +107,26 @@ export async function updateAudit(id: string, updates: Partial<Audit>): Promise<
 }
 
 export async function publishAudit(auditId: string): Promise<Audit> {
+  const audit = await getAudit(auditId);
+  if (!audit) throw new Error('Audit not found');
+
+  // For API-based audits we require performance data before allowing publishing,
+  // so reports don’t look empty/misleading.
+  if (audit.audit_method === 'api') {
+    const [flowPerf, flowInv] = await Promise.all([
+      supabase.from('flow_performance').select('id').eq('audit_id', auditId).limit(1),
+      supabase.from('klaviyo_flow_snapshots').select('id').eq('audit_id', auditId).limit(1),
+    ]);
+    if (flowPerf.error) throw flowPerf.error;
+    if (flowInv.error) throw flowInv.error;
+    if ((flowInv.data ?? []).length === 0) {
+      throw new Error("Can’t publish yet: Klaviyo snapshot is missing. Re-run the audit snapshot and try again.");
+    }
+    if ((flowPerf.data ?? []).length === 0) {
+      throw new Error("Can’t publish yet: performance data isn’t available. Re-run the audit snapshot and try again.");
+    }
+  }
+
   // Generate a token in-app to avoid needing DB extensions.
   const token = crypto.randomUUID().replace(/-/g, '').slice(0, 24);
   const now = new Date().toISOString();
@@ -191,6 +225,10 @@ export async function getPublicReportByToken(token: string): Promise<{
   assets: AuditAsset[];
   annotations: Annotation[];
   flowPerformance: FlowPerformance[];
+  flowSnapshots: KlaviyoFlowSnapshot[];
+  segmentSnapshots: KlaviyoSegmentSnapshot[];
+  formSnapshots: KlaviyoFormSnapshot[];
+  campaignSnapshots: KlaviyoCampaignSnapshot[];
   healthScores: HealthScoreItem[];
   recommendations: Recommendation[];
 } | null> {
@@ -203,11 +241,15 @@ export async function getPublicReportByToken(token: string): Promise<{
   if (auditErr) throw auditErr;
   if (!audit) return null;
 
-  const [client, sections, assets, flows, scores, recs] = await Promise.all([
+  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, scores, recs] = await Promise.all([
     supabase.from('clients').select('*').eq('id', (audit as any).client_id).maybeSingle(),
     supabase.from('audit_sections').select('*').eq('audit_id', (audit as any).id),
     supabase.from('audit_assets').select('*').eq('audit_id', (audit as any).id),
     supabase.from('flow_performance').select('*').eq('audit_id', (audit as any).id),
+    supabase.from('klaviyo_flow_snapshots').select('*').eq('audit_id', (audit as any).id),
+    supabase.from('klaviyo_segment_snapshots').select('*').eq('audit_id', (audit as any).id),
+    supabase.from('klaviyo_form_snapshots').select('*').eq('audit_id', (audit as any).id),
+    supabase.from('klaviyo_campaign_snapshots').select('*').eq('audit_id', (audit as any).id),
     supabase.from('health_scores').select('*').eq('audit_id', (audit as any).id),
     supabase.from('recommendations').select('*').eq('audit_id', (audit as any).id).order('sort_order', { ascending: true }),
   ]);
@@ -216,6 +258,10 @@ export async function getPublicReportByToken(token: string): Promise<{
   if (sections.error) throw sections.error;
   if (assets.error) throw assets.error;
   if (flows.error) throw flows.error;
+  if (flowSnaps.error) throw flowSnaps.error;
+  if (segSnaps.error) throw segSnaps.error;
+  if (formSnaps.error) throw formSnaps.error;
+  if (campSnaps.error) throw campSnaps.error;
   if (scores.error) throw scores.error;
   if (recs.error) throw recs.error;
   if (!client.data) return null;
@@ -230,6 +276,10 @@ export async function getPublicReportByToken(token: string): Promise<{
     assets: (assets.data ?? []) as AuditAsset[],
     annotations,
     flowPerformance: (flows.data ?? []) as FlowPerformance[],
+    flowSnapshots: (flowSnaps.data ?? []) as KlaviyoFlowSnapshot[],
+    segmentSnapshots: (segSnaps.data ?? []) as KlaviyoSegmentSnapshot[],
+    formSnapshots: (formSnaps.data ?? []) as KlaviyoFormSnapshot[],
+    campaignSnapshots: (campSnaps.data ?? []) as KlaviyoCampaignSnapshot[],
     healthScores: (scores.data ?? []) as HealthScoreItem[],
     recommendations: (recs.data ?? []) as Recommendation[],
   };

@@ -39,6 +39,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisStage, setAnalysisStage] = useState<string>('');
   const [error, setError] = useState('');
+  const [snapshotMeta, setSnapshotMeta] = useState<null | {
+    counts?: Record<string, number | null>;
+    reporting?: { flow_reports?: Array<{ timeframe: string; rows: number }>; campaign_reports?: Array<{ timeframe: string; rows: number }> };
+    elapsed_ms?: number;
+    correlationId?: string;
+  }>(null);
   const [form, setForm] = useState({
     clientId: '',
     clientName: '',
@@ -96,6 +102,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     setAnalyzing(true);
     setAnalysisProgress(0);
     setAnalysisStage('Starting…');
+    setSnapshotMeta(null);
 
     if (isDemo) {
       const labels = ['Account Health', 'Flows', 'Segmentation', 'Campaigns', 'Email Design', 'Signup Forms'];
@@ -206,6 +213,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         });
         if (fnErr) throw fnErr;
         if (!data?.ok) throw new Error(data?.error?.message || 'Failed to fetch Klaviyo snapshot');
+        setSnapshotMeta({
+          counts: data?.counts,
+          reporting: data?.reporting,
+          elapsed_ms: data?.elapsed_ms,
+          correlationId: data?.correlationId,
+        });
       }
 
       // 6) Run AI analysis and persist section updates
@@ -505,6 +518,22 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                     </div>
                   ))}
                 </div>
+                {form.auditMethod === 'api' && snapshotMeta?.counts && (
+                  <div className="max-w-md mx-auto mt-4 text-left bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Klaviyo data pulled</p>
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
+                      <div className="flex items-center justify-between"><span>Flows</span><span className="font-medium text-gray-900">{snapshotMeta.counts.flows ?? '—'}</span></div>
+                      <div className="flex items-center justify-between"><span>Campaigns</span><span className="font-medium text-gray-900">{snapshotMeta.counts.campaigns ?? '—'}</span></div>
+                      <div className="flex items-center justify-between"><span>Segments</span><span className="font-medium text-gray-900">{snapshotMeta.counts.segments ?? '—'}</span></div>
+                      <div className="flex items-center justify-between"><span>Forms</span><span className="font-medium text-gray-900">{snapshotMeta.counts.forms ?? '—'}</span></div>
+                    </div>
+                    {snapshotMeta.reporting && (
+                      <p className="text-[11px] text-gray-500 mt-2">
+                        Reporting rows: flows {snapshotMeta.reporting.flow_reports?.find(r => r.timeframe === 'last_30_days')?.rows ?? '—'} / campaigns {snapshotMeta.reporting.campaign_reports?.find(r => r.timeframe === 'last_30_days')?.rows ?? '—'}
+                      </p>
+                    )}
+                  </div>
+                )}
               </>
             )}
           </div>

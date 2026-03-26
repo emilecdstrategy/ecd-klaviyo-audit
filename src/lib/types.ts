@@ -61,6 +61,57 @@ export interface FlowPerformance {
   notes: string;
 }
 
+export interface KlaviyoFlowSnapshot {
+  id: string;
+  audit_id: string;
+  client_id: string;
+  flow_id: string;
+  name: string;
+  status: string;
+  trigger_type: string | null;
+  archived: boolean | null;
+  created_at_klaviyo: string | null;
+  updated_at_klaviyo: string | null;
+  raw: any;
+}
+
+export interface KlaviyoCampaignSnapshot {
+  id: string;
+  audit_id: string;
+  client_id: string;
+  campaign_id: string;
+  name: string;
+  status: string;
+  send_channel: string;
+  created_at_klaviyo: string | null;
+  updated_at_klaviyo: string | null;
+  raw: any;
+}
+
+export interface KlaviyoFormSnapshot {
+  id: string;
+  audit_id: string;
+  client_id: string;
+  form_id: string;
+  name: string;
+  status: string;
+  ab_test: any;
+  created_at_klaviyo: string | null;
+  updated_at_klaviyo: string | null;
+  raw: any;
+}
+
+export interface KlaviyoSegmentSnapshot {
+  id: string;
+  audit_id: string;
+  client_id: string;
+  segment_id: string;
+  name: string;
+  created_at_klaviyo: string | null;
+  updated_at_klaviyo: string | null;
+  raw: any;
+}
+
 export interface Recommendation {
   id: string;
   audit_id: string;

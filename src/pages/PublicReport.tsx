@@ -15,7 +15,11 @@ import { SECTION_LABELS } from '../lib/constants';
 import { formatCurrency } from '../lib/revenue-calculator';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
 import ReportFlowTable from '../components/report/ReportFlowTable';
+import ReportFlowInventoryTable from '../components/report/ReportFlowInventoryTable';
 import ReportHealthScore from '../components/report/ReportHealthScore';
+import ReportSegmentTable from '../components/report/ReportSegmentTable';
+import ReportFormTable from '../components/report/ReportFormTable';
+import ReportCampaignTable from '../components/report/ReportCampaignTable';
 import ReportRecommendations from '../components/report/ReportRecommendations';
 import type { AuditSection } from '../lib/types';
 import { getPublicReportByToken } from '../lib/db';
@@ -24,7 +28,10 @@ import { useAuth } from '../contexts/AuthContext';
 const NAV_ITEMS = [
   { id: 'summary', label: 'Summary' },
   { id: 'health', label: 'Health Score' },
-  { id: 'flows', label: 'Flow Inventory' },
+  { id: 'flows', label: 'Flows' },
+  { id: 'segments', label: 'Segments' },
+  { id: 'forms', label: 'Signup Forms' },
+  { id: 'campaigns', label: 'Campaigns' },
   { id: 'findings', label: 'Findings' },
   { id: 'recommendations', label: 'Recommendations' },
   { id: 'opportunity', label: 'Revenue' },
@@ -45,6 +52,10 @@ export default function PublicReport() {
   const [assets, setAssets] = useState(() => (audit ? DEMO_ASSETS.filter(a => a.audit_id === audit.id) : []));
   const [annotations, setAnnotations] = useState(() => DEMO_ANNOTATIONS);
   const [flowPerformance, setFlowPerformance] = useState(() => (audit ? DEMO_FLOW_PERFORMANCE.filter(f => f.audit_id === audit.id) : []));
+  const [flowSnapshots, setFlowSnapshots] = useState<any[]>([]);
+  const [segmentSnapshots, setSegmentSnapshots] = useState<any[]>([]);
+  const [formSnapshots, setFormSnapshots] = useState<any[]>([]);
+  const [campaignSnapshots, setCampaignSnapshots] = useState<any[]>([]);
   const [healthScores, setHealthScores] = useState(() => DEMO_HEALTH_SCORES);
   const [recommendations, setRecommendations] = useState(() => (audit ? DEMO_RECOMMENDATIONS.filter(r => r.audit_id === audit.id) : []));
 
@@ -65,6 +76,10 @@ export default function PublicReport() {
           setAssets([]);
           setAnnotations([]);
           setFlowPerformance([]);
+          setFlowSnapshots([]);
+          setSegmentSnapshots([]);
+          setFormSnapshots([]);
+          setCampaignSnapshots([]);
           setHealthScores([]);
           setRecommendations([]);
           return;
@@ -75,6 +90,10 @@ export default function PublicReport() {
         setAssets(report.assets);
         setAnnotations(report.annotations);
         setFlowPerformance(report.flowPerformance);
+        setFlowSnapshots(report.flowSnapshots ?? []);
+        setSegmentSnapshots(report.segmentSnapshots ?? []);
+        setFormSnapshots(report.formSnapshots ?? []);
+        setCampaignSnapshots(report.campaignSnapshots ?? []);
         setHealthScores(report.healthScores);
         setRecommendations(report.recommendations);
       } catch (e: unknown) {
@@ -143,7 +162,10 @@ export default function PublicReport() {
 
   const visibleNavItems = NAV_ITEMS.filter(n => {
     if (n.id === 'recommendations' && !audit.show_recommendations) return false;
-    if (n.id === 'flows' && flowPerformance.length === 0) return false;
+    if (n.id === 'flows' && flowSnapshots.length === 0 && flowPerformance.length === 0) return false;
+    if (n.id === 'segments' && segmentSnapshots.length === 0) return false;
+    if (n.id === 'forms' && formSnapshots.length === 0) return false;
+    if (n.id === 'campaigns' && campaignSnapshots.length === 0) return false;
     if (n.id === 'health' && healthScores.length === 0) return false;
     return true;
   });
@@ -290,24 +312,88 @@ export default function PublicReport() {
           </section>
         )}
 
-        {flowPerformance.length > 0 && (
+        {(flowSnapshots.length > 0 || flowPerformance.length > 0) && (
           <section id="flows" ref={setRef('flows')}>
-            <SectionHeader number="03" label="Flow Inventory & Performance" />
+            <SectionHeader number="03" label="Flows" />
+
+            {flowSnapshots.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6">
+                <div className="px-6 py-4 border-b border-gray-50">
+                  <p className="text-sm text-gray-500">
+                    Inventory of flows pulled directly from Klaviyo for this audit.
+                  </p>
+                </div>
+                <div className="p-6">
+                  <ReportFlowInventoryTable flows={flowSnapshots as any} />
+                </div>
+              </div>
+            )}
+
+            {flowPerformance.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                <div className="px-6 py-4 border-b border-gray-50">
+                  <p className="text-sm text-gray-500">
+                    Performance snapshot for key flows (Reporting API).
+                  </p>
+                </div>
+                <div className="p-6">
+                  <ReportFlowTable flows={flowPerformance} />
+                </div>
+              </div>
+            )}
+          </section>
+        )}
+
+        {segmentSnapshots.length > 0 && (
+          <section id="segments" ref={setRef('segments')}>
+            <SectionHeader number="04" label="Segments" />
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-50">
                 <p className="text-sm text-gray-500">
-                  Analysis of all active, draft, and missing automated flows against industry benchmarks.
+                  Inventory of segments pulled directly from Klaviyo for this audit.
                 </p>
               </div>
               <div className="p-6">
-                <ReportFlowTable flows={flowPerformance} />
+                <ReportSegmentTable segments={segmentSnapshots as any} />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {formSnapshots.length > 0 && (
+          <section id="forms" ref={setRef('forms')}>
+            <SectionHeader number="05" label="Signup Forms" />
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-50">
+                <p className="text-sm text-gray-500">
+                  Inventory of signup forms pulled directly from Klaviyo for this audit.
+                </p>
+              </div>
+              <div className="p-6">
+                <ReportFormTable forms={formSnapshots as any} />
+              </div>
+            </div>
+          </section>
+        )}
+
+        {campaignSnapshots.length > 0 && (
+          <section id="campaigns" ref={setRef('campaigns')}>
+            <SectionHeader number="06" label="Campaigns" />
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-50">
+                <p className="text-sm text-gray-500">
+                  Inventory of campaigns pulled directly from Klaviyo for this audit.
+                </p>
+              </div>
+              <div className="p-6">
+                <ReportCampaignTable campaigns={campaignSnapshots as any} />
               </div>
             </div>
           </section>
         )}
 
         <section id="findings" ref={setRef('findings')}>
-          <SectionHeader number="04" label="Section-by-Section Findings" />
+          <SectionHeader number="07" label="Section-by-Section Findings" />
           <div className="space-y-6">
             {reportSections.map((section, index) => (
               <ReportSectionBlock
@@ -323,7 +409,7 @@ export default function PublicReport() {
 
         {audit.show_recommendations && recommendations.length > 0 && (
           <section id="recommendations" ref={setRef('recommendations')}>
-            <SectionHeader number="05" label="Priority Action Plan" />
+            <SectionHeader number="08" label="Priority Action Plan" />
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-50">
                 <p className="text-sm text-gray-500">
@@ -338,7 +424,7 @@ export default function PublicReport() {
         )}
 
         <section id="opportunity" ref={setRef('opportunity')}>
-          <SectionHeader number={audit.show_recommendations ? '06' : '05'} label="Revenue Opportunity" />
+          <SectionHeader number="09" label="Revenue Opportunity" />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
             <div className="bg-white rounded-xl p-6 border border-gray-100">
