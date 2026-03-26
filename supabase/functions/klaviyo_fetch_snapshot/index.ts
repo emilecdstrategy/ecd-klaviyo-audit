@@ -15,7 +15,7 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 
 const KLAVIYO_BASE = "https://a.klaviyo.com";
-const DEFAULT_REVISION = "2026-01-15";
+const DEFAULT_REVISION = "2024-10-15";
 const MAX_REPORT_IDS = 50;
 
 const corsHeaders: Record<string, string> = {
@@ -268,7 +268,7 @@ serve(async (req) => {
     }
 
     // 1) Validate + account identity
-    const accountRes = await fetchWithRetry(() => klaviyoFetch(apiKey, revision, "/api/accounts/?page[size]=1"), 3);
+    const accountRes = await fetchWithRetry(() => klaviyoFetch(apiKey, revision, "/api/accounts/?page%5Bsize%5D=1"), 3);
     if (!accountRes.ok) {
       const detail =
         (accountRes.body as any)?.errors?.[0]?.detail ??
@@ -296,12 +296,12 @@ serve(async (req) => {
 
     // 2) Fetch configuration snapshots
     const [flows, lists, segments, forms, campaigns] = await Promise.all([
-      klaviyoPaged(apiKey, revision, "/api/flows/?page[size]=50"),
-      klaviyoPaged(apiKey, revision, "/api/lists/?page[size]=10"),
-      klaviyoPaged(apiKey, revision, "/api/segments/?page[size]=10"),
-      klaviyoPaged(apiKey, revision, "/api/forms/?page[size]=100"),
+      klaviyoPaged(apiKey, revision, "/api/flows/?page%5Bsize%5D=50"),
+      klaviyoPaged(apiKey, revision, "/api/lists/?page%5Bsize%5D=10"),
+      klaviyoPaged(apiKey, revision, "/api/segments/?page%5Bsize%5D=10"),
+      klaviyoPaged(apiKey, revision, "/api/forms/?page%5Bsize%5D=100"),
       // Campaign listing requires channel filter per docs (use email).
-      klaviyoPaged(apiKey, revision, "/api/campaigns/?page[size]=10&filter=equals(messages.channel,'email')"),
+      klaviyoPaged(apiKey, revision, "/api/campaigns/?page%5Bsize%5D=10&filter=equals(messages.channel,'email')"),
     ]);
 
     // 3) Persist snapshots (clear prior snapshots for this audit_id to keep latest)
@@ -406,7 +406,7 @@ serve(async (req) => {
 
     // 5) Reporting rollups (values reports)
     // Reporting endpoints require conversion_metric_id. We'll attempt to resolve "Placed Order" metric id.
-    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/?page[size]=50", 5);
+    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/?page%5Bsize%5D=50", 5);
     const placedOrderMetric = metricsRes.ok
       ? metricsRes.items.find((m: any) => (m?.attributes?.name ?? "").toLowerCase() === "placed order")
       : null;

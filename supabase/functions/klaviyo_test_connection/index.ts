@@ -41,7 +41,7 @@ serve(async (req) => {
     const { apiKey } = (await req.json()) as { apiKey?: string };
     if (!apiKey || typeof apiKey !== "string") return json({ error: "Missing apiKey" }, { status: 400 });
 
-    const accountRes = await klaviyoCall(apiKey, "/api/accounts/?page[size]=1");
+    const accountRes = await klaviyoCall(apiKey, "/api/accounts/?page%5Bsize%5D=1");
     if (!accountRes.ok) {
       return json({
         ok: false,
@@ -54,9 +54,9 @@ serve(async (req) => {
       }, { status: 200 });
     }
 
-    const listsRes = await klaviyoCall(apiKey, "/api/lists/?page[size]=1");
+    const listsRes = await klaviyoCall(apiKey, "/api/lists/?page%5Bsize%5D=1");
     // Campaign listing requires a channel filter per Klaviyo docs.
-    const campaignsRes = await klaviyoCall(apiKey, "/api/campaigns/?page[size]=1&filter=equals(messages.channel,'email')");
+    const campaignsRes = await klaviyoCall(apiKey, "/api/campaigns/?page%5Bsize%5D=1&filter=equals(messages.channel,'email')");
 
     const accountData = (accountRes.body as any)?.data?.[0] ?? null;
     return json({
