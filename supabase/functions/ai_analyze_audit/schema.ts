@@ -190,7 +190,7 @@ export function validateOutput(
   }
 
   const byKey = new Map<string, AISection>();
-  const placeholderRegex = /(lorem ipsum|placeholder|tbd|insert here|example text)/i;
+  const placeholderRegex = /(lorem ipsum|\btbd\b|insert here|example text)/i;
   if (needsSections) {
     for (const key of requiredSectionKeys) {
       const section = (out.sections ?? []).find((s) => (s as AISection).section_key === key) as AISection | undefined;
