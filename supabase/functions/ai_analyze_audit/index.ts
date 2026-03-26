@@ -8,7 +8,7 @@ import {
   failedSectionKeysFromErrors,
   validateOutput,
 } from "./schema.ts";
-import { buildAuditSystemPrompt, buildAuditUserPrompt, buildRepairUserPrompt } from "./prompts.ts";
+import { buildAuditSystemPrompt, buildAuditUserPrompt, buildRepairUserPrompt, type KlaviyoContext } from "./prompts.ts";
 
 type WizardData = Record<string, unknown>;
 
@@ -197,6 +197,40 @@ async function callOpenAI(params: {
   throw lastErr instanceof Error ? lastErr : new Error(`OpenAI call failed: ${errToMessage(lastErr)}`);
 }
 
+async function fetchKlaviyoContext(auditId: string, clientId: string): Promise<KlaviyoContext | null> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return null;
+  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+    auth: { persistSession: false, autoRefreshToken: false },
+  });
+
+  const [connRes, flowsRes, campaignsRes, segmentsRes, formsRes, perfRes] = await Promise.all([
+    sb.from("klaviyo_connections").select("account_name, timezone, website_url").eq("client_id", clientId).maybeSingle(),
+    sb.from("klaviyo_flow_snapshots").select("name, status, trigger_type").eq("audit_id", auditId),
+    sb.from("klaviyo_campaign_snapshots").select("name, status, send_channel, created_at_klaviyo, updated_at_klaviyo").eq("audit_id", auditId),
+    sb.from("klaviyo_segment_snapshots").select("name, created_at_klaviyo, updated_at_klaviyo").eq("audit_id", auditId),
+    sb.from("klaviyo_form_snapshots").select("name, status").eq("audit_id", auditId),
+    sb.from("flow_performance").select("flow_name, flow_status, recipients_per_month, actual_open_rate, actual_click_rate, actual_conv_rate, monthly_revenue_current").eq("audit_id", auditId),
+  ]);
+
+  const hasData = (flowsRes.data?.length ?? 0) > 0 || (campaignsRes.data?.length ?? 0) > 0 ||
+                  (segmentsRes.data?.length ?? 0) > 0 || (formsRes.data?.length ?? 0) > 0;
+  if (!hasData) return null;
+
+  return {
+    account: connRes.data ? { name: connRes.data.account_name, timezone: connRes.data.timezone, website_url: connRes.data.website_url } : undefined,
+    flows: (flowsRes.data ?? []).map((f: any) => ({ name: f.name, status: f.status, trigger_type: f.trigger_type })),
+    campaigns: (campaignsRes.data ?? []).map((c: any) => ({ name: c.name, status: c.status, send_channel: c.send_channel, created_at: c.created_at_klaviyo, updated_at: c.updated_at_klaviyo })),
+    segments: (segmentsRes.data ?? []).map((s: any) => ({ name: s.name, created: s.created_at_klaviyo, updated: s.updated_at_klaviyo })),
+    forms: (formsRes.data ?? []).map((f: any) => ({ name: f.name, status: f.status })),
+    flowPerformance: (perfRes.data ?? []).map((fp: any) => ({
+      flow_name: fp.flow_name, flow_status: fp.flow_status,
+      recipients_per_month: fp.recipients_per_month, actual_open_rate: fp.actual_open_rate,
+      actual_click_rate: fp.actual_click_rate, actual_conv_rate: fp.actual_conv_rate,
+      monthly_revenue_current: fp.monthly_revenue_current,
+    })),
+  };
+}
+
 async function logRun(payload: Record<string, unknown>) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
   const client = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
@@ -230,10 +264,22 @@ serve(async (req) => {
       : null;
     const systemPrompt = buildAuditSystemPrompt();
 
+    // Fetch Klaviyo snapshot data from DB to enrich the prompt
+    let klaviyoCtx: KlaviyoContext | null = null;
+    const auditId = (body as any)?.auditId;
+    const clientId = (body as any)?.clientId;
+    if (auditId && clientId) {
+      try {
+        klaviyoCtx = await fetchKlaviyoContext(auditId, clientId);
+      } catch {
+        // Non-critical: proceed without snapshot data
+      }
+    }
+
     const first = await callOpenAI({
       model: PRIMARY_MODEL,
       systemPrompt,
-      userPrompt: buildAuditUserPrompt(body),
+      userPrompt: buildAuditUserPrompt(body, klaviyoCtx ?? undefined),
     });
 
     let output = first.output;
