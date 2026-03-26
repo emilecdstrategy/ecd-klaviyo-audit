@@ -248,8 +248,13 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         await updateAuditSection(s.id, patch as any);
       }
 
-      // Save exec summary onto audit
-      await updateAudit(audit.id, { executive_summary: ai.executiveSummary } as any);
+      const totalOpportunity = ai.sections.reduce((sum, s) => sum + (Number((s as any).revenue_opportunity) || 0), 0);
+
+      // Save exec summary + totals onto audit
+      await updateAudit(audit.id, {
+        executive_summary: ai.executiveSummary,
+        total_revenue_opportunity: totalOpportunity,
+      } as any);
 
       setAnalysisProgress(100);
       setAnalysisStage('Done');

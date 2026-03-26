@@ -8,6 +8,7 @@ import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { listAudits, listClients } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
 import { supabase } from '../lib/supabase';
+import Modal from '../components/ui/Modal';
 
 export default function Clients() {
   const navigate = useNavigate();
@@ -19,6 +20,9 @@ export default function Clients() {
   const [audits, setAudits] = useState<Audit[]>(isDemo ? DEMO_AUDITS : []);
   const [loading, setLoading] = useState(!isDemo);
   const [error, setError] = useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingClient, setDeletingClient] = useState<Client | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -67,6 +71,68 @@ export default function Clients() {
       />
 
       <div className="p-8 animate-fade-in">
+        <Modal
+          open={deleteConfirmOpen}
+          title="Delete client?"
+          onClose={() => {
+            if (deleting) return;
+            setDeleteConfirmOpen(false);
+            setDeletingClient(null);
+          }}
+          className="max-w-lg"
+        >
+          <div className="p-5">
+            <p className="text-sm text-gray-700">
+              {deletingClient
+                ? `Delete “${deletingClient.company_name}”? This will also delete all audits for this client.`
+                : 'Delete this client? This will also delete its audits.'}
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => {
+                  setDeleteConfirmOpen(false);
+                  setDeletingClient(null);
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting || !deletingClient}
+                onClick={async () => {
+                  if (!deletingClient) return;
+                  try {
+                    setDeleting(true);
+                    const { data: sessionData } = await supabase.auth.getSession();
+                    const token = sessionData.session?.access_token;
+                    if (!token) throw new Error('Your session expired. Please sign in again and retry.');
+                    const { data, error } = await supabase.functions.invoke('admin_delete_client', {
+                      body: { client_id: deletingClient.id },
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    if (error) throw error;
+                    if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to delete client');
+                    setClients(prev => prev.filter(c => c.id !== deletingClient.id));
+                    setAudits(prev => prev.filter(a => a.client_id !== deletingClient.id));
+                    setDeleteConfirmOpen(false);
+                    setDeletingClient(null);
+                  } catch (err: unknown) {
+                    alert(err instanceof Error ? err.message : 'Failed to delete client');
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleting ? 'Deleting…' : 'Delete client'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+
         <div className="mb-6">
           <div className="relative max-w-md">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -127,22 +193,8 @@ export default function Clients() {
                           type="button"
                           onClick={async e => {
                             e.stopPropagation();
-                            if (!window.confirm(`Delete client \"${client.company_name}\"? This will also delete its audits.`)) return;
-                            try {
-                              const { data: sessionData } = await supabase.auth.getSession();
-                              const token = sessionData.session?.access_token;
-                              if (!token) throw new Error('Your session expired. Please sign in again and retry.');
-                              const { data, error } = await supabase.functions.invoke('admin_delete_client', {
-                                body: { client_id: client.id },
-                                headers: { Authorization: `Bearer ${token}` },
-                              });
-                              if (error) throw error;
-                              if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to delete client');
-                              setClients(prev => prev.filter(c => c.id !== client.id));
-                              setAudits(prev => prev.filter(a => a.client_id !== client.id));
-                            } catch (err: unknown) {
-                              alert(err instanceof Error ? err.message : 'Failed to delete client');
-                            }
+                            setDeletingClient(client);
+                            setDeleteConfirmOpen(true);
                           }}
                           className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors"
                           title="Delete client"

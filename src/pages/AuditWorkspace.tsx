@@ -90,20 +90,6 @@ export default function AuditWorkspace() {
     return () => { cancelled = true; };
   }, [id, isDemo]);
 
-  if (!audit) {
-    return (
-      <div>
-        <TopBar title="Audit Not Found" />
-        <div className="p-8 text-center">
-          <p className="text-gray-500">This audit could not be found.</p>
-          <button onClick={() => navigate('/')} className="mt-4 text-sm text-brand-primary font-medium hover:underline">
-            Back to Dashboard
-          </button>
-        </div>
-      </div>
-    );
-  }
-
   if (loading) {
     return (
       <div>
@@ -119,6 +105,20 @@ export default function AuditWorkspace() {
         <TopBar title="Audit" />
         <div className="p-8">
           <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
+          <button onClick={() => navigate('/')} className="mt-4 text-sm text-brand-primary font-medium hover:underline">
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  if (!audit) {
+    return (
+      <div>
+        <TopBar title="Audit Not Found" />
+        <div className="p-8 text-center">
+          <p className="text-gray-500">This audit could not be found.</p>
           <button onClick={() => navigate('/')} className="mt-4 text-sm text-brand-primary font-medium hover:underline">
             Back to Dashboard
           </button>
@@ -339,7 +339,9 @@ export default function AuditWorkspace() {
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-500">Method</span>
-                <span className="font-medium text-gray-800 capitalize">{audit.audit_method}</span>
+                <span className="font-medium text-gray-800">
+                  {audit.audit_method === 'api' ? 'API' : audit.audit_method === 'screenshot' ? 'Screenshot' : audit.audit_method}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">List Size</span>

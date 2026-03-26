@@ -266,13 +266,17 @@ export async function getPublicReportByToken(token: string): Promise<{
   if (recs.error) throw recs.error;
   if (!client.data) return null;
 
-  const sectionIds = (sections.data ?? []).map(s => (s as any).id);
+  const allSections = (sections.data ?? []) as AuditSection[];
+  const visibleSections = allSections.filter(s => (s as any).status === 'approved');
+  const finalSections = visibleSections.length > 0 ? visibleSections : allSections;
+
+  const sectionIds = finalSections.map(s => (s as any).id);
   const annotations = await listAnnotationsForAuditSections(sectionIds);
 
   return {
     audit: audit as Audit,
     client: client.data as Client,
-    sections: (sections.data ?? []) as AuditSection[],
+    sections: finalSections,
     assets: (assets.data ?? []) as AuditAsset[],
     annotations,
     flowPerformance: (flows.data ?? []) as FlowPerformance[],

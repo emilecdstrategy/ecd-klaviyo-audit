@@ -75,7 +75,8 @@ export default function AdminArea() {
 function UsersTab() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<AdminUserRow[]>([]);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
+  const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
@@ -93,7 +94,7 @@ function UsersTab() {
   const reload = async () => {
     setError('');
     try {
-      setLoading(true);
+      setRefreshing(true);
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Your session expired. Please sign in again and retry.');
@@ -107,11 +108,27 @@ function UsersTab() {
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load users');
     } finally {
-      setLoading(false);
+      setRefreshing(false);
     }
   };
 
   useEffect(() => {
+    // Show current user immediately to avoid a "blank loading" feel.
+    if (currentUser?.id) {
+      setUsers(prev => {
+        if (prev.some(u => u.id === currentUser.id)) return prev;
+        return [
+          {
+            id: currentUser.id,
+            email: currentUser.email ?? null,
+            name: currentUser.name ?? null,
+            role: (currentUser.role as any) ?? 'viewer',
+            created_at: null,
+          },
+          ...prev,
+        ];
+      });
+    }
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -222,10 +239,10 @@ function UsersTab() {
         </div>
       )}
 
-      {loading ? (
-        <div className="px-6 py-6 text-sm text-gray-500">Loading users...</div>
-      ) : (
       <div className="divide-y divide-gray-50">
+        {refreshing && (
+          <div className="px-6 py-3 text-xs text-gray-400">Refreshing users…</div>
+        )}
         {sorted.map(user => (
           <div key={user.id} className="flex items-center justify-between px-6 py-4 gap-4">
             <div className="flex items-center gap-3">
@@ -272,7 +289,6 @@ function UsersTab() {
           </div>
         ))}
       </div>
-      )}
     </div>
   );
 }

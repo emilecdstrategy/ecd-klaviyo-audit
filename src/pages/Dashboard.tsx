@@ -1,4 +1,5 @@
-import { useEffect, useLocation, useNavigate, useState } from 'react';
+import { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ClipboardCheck,
   Users,
@@ -34,8 +35,8 @@ export default function Dashboard() {
       try {
         const [c, a] = await Promise.all([listClients(), listAudits()]);
         if (cancelled) return;
-        setClients(c.slice(0, 5));
-        setAudits(a.slice(0, 5));
+        setClients(c);
+        setAudits(a);
       } catch {
         // dashboard should still render even if lists fail
       }
