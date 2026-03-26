@@ -3,9 +3,12 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save, HelpCircle, Key, ChevronDown, ChevronUp } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import { INDUSTRIES, ESP_PLATFORMS } from '../lib/constants';
+import { useAuth } from '../contexts/AuthContext';
+import { createClient, ensureClientCreator } from '../lib/db';
 
 export default function NewClient() {
   const navigate = useNavigate();
+  const { user, isDemo } = useAuth();
   const [showApiHelp, setShowApiHelp] = useState(false);
   const [form, setForm] = useState({
     name: '',
@@ -16,14 +19,38 @@ export default function NewClient() {
     api_key: '',
     notes: '',
   });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
 
   const updateField = (field: string, value: string) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    navigate('/clients');
+    setError('');
+    if (isDemo) {
+      navigate('/clients');
+      return;
+    }
+    try {
+      setSaving(true);
+      const payload = await ensureClientCreator(user, {
+        name: form.name,
+        company_name: form.company_name,
+        website_url: form.website_url,
+        industry: form.industry,
+        esp_platform: form.esp_platform,
+        api_key_placeholder: form.api_key,
+        notes: form.notes,
+      });
+      await createClient(payload as any);
+      navigate('/clients');
+    } catch (err: unknown) {
+      setError(err instanceof Error ? err.message : 'Failed to create client');
+    } finally {
+      setSaving(false);
+    }
   };
 
   return (
@@ -165,6 +192,11 @@ export default function NewClient() {
           </div>
 
           <div className="flex items-center justify-end gap-3">
+            {error && (
+              <div className="mr-auto text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">
+                {error}
+              </div>
+            )}
             <button
               type="button"
               onClick={() => navigate('/clients')}
@@ -174,10 +206,11 @@ export default function NewClient() {
             </button>
             <button
               type="submit"
+              disabled={saving}
               className="flex items-center gap-2 px-5 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
             >
               <Save className="w-4 h-4" />
-              Save Client
+              {saving ? 'Saving...' : 'Save Client'}
             </button>
           </div>
         </form>

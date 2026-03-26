@@ -15,6 +15,9 @@ import UploadDropzone from '../components/ui/UploadDropzone';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS } from '../lib/demo-data';
 import { INDUSTRIES, ESP_PLATFORMS, SCREENSHOT_CATEGORIES } from '../lib/constants';
+import { createAudit, createAuditAsset, createAuditSections, createClient, ensureClientCreator, updateAudit, updateAuditSection, uploadAuditAssetFile } from '../lib/db';
+import type { Audit, Client } from '../lib/types';
+import { runAIAnalysis } from '../lib/ai-service';
 
 const STEPS = [
   { label: 'Prospect Details', description: 'Basic information' },
@@ -25,10 +28,11 @@ const STEPS = [
 
 export default function NewAudit() {
   const navigate = useNavigate();
-  const { isDemo } = useAuth();
+  const { isDemo, user } = useAuth();
   const [step, setStep] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [error, setError] = useState('');
   const [form, setForm] = useState({
     clientId: '',
     clientName: '',
@@ -45,7 +49,7 @@ export default function NewAudit() {
   });
   const [screenshots, setScreenshots] = useState<Record<string, File[]>>({});
 
-  const clients = isDemo ? DEMO_CLIENTS : [];
+  const [clients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
 
   const updateField = (field: string, value: string | number) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -67,15 +71,129 @@ export default function NewAudit() {
   };
 
   const runAnalysis = async () => {
+    setError('');
     setAnalyzing(true);
     setAnalysisProgress(0);
-    const sections = ['Account Health', 'Flows', 'Segmentation', 'Campaigns', 'Email Design', 'Signup Forms'];
-    for (let i = 0; i < sections.length; i++) {
-      await new Promise(r => setTimeout(r, 800));
-      setAnalysisProgress(Math.round(((i + 1) / sections.length) * 100));
+
+    if (isDemo) {
+      const labels = ['Account Health', 'Flows', 'Segmentation', 'Campaigns', 'Email Design', 'Signup Forms'];
+      for (let i = 0; i < labels.length; i++) {
+        await new Promise(r => setTimeout(r, 800));
+        setAnalysisProgress(Math.round(((i + 1) / labels.length) * 100));
+      }
+      setAnalyzing(false);
+      navigate('/audits/demo-audit-1');
+      return;
     }
-    setAnalyzing(false);
-    navigate('/audits/demo-audit-1');
+
+    try {
+      // 1) Ensure client exists
+      let clientId = form.clientId;
+      if (!clientId) {
+        const created = await createClient(await ensureClientCreator(user, {
+          name: form.clientName || form.companyName,
+          company_name: form.companyName,
+          website_url: form.websiteUrl,
+          industry: form.industry,
+          esp_platform: form.espPlatform,
+          api_key_placeholder: form.apiKey || '',
+          notes: form.notes,
+        }) as any);
+        clientId = created.id;
+      }
+
+      // 2) Create audit row
+      const title = `${form.companyName} - Klaviyo Audit`;
+      const audit = await createAudit({
+        client_id: clientId,
+        title,
+        status: 'in_progress',
+        audit_method: form.auditMethod as Audit['audit_method'],
+        list_size: Number(form.listSize) || 0,
+        aov: Number(form.aov) || 0,
+        monthly_traffic: Number(form.monthlyTraffic) || 0,
+        total_revenue_opportunity: 0,
+        executive_summary: '',
+        created_by: user?.id || '',
+        show_recommendations: true,
+      } as any);
+
+      // 3) Create default section rows
+      const sectionKeys = ['account_health', 'flows', 'segmentation', 'campaigns', 'email_design', 'signup_forms', 'revenue_summary'];
+      const createdSections = await createAuditSections(audit.id, sectionKeys);
+
+      // 4) Upload screenshots (screenshot method)
+      const mapCategoryToSection: Record<string, string> = {
+        account_overview: 'account_health',
+        flows: 'flows',
+        campaigns: 'campaigns',
+        segments: 'segmentation',
+        signup_forms: 'signup_forms',
+        email_examples: 'email_design',
+      };
+
+      const allFiles = Object.entries(screenshots).flatMap(([cat, files]) => files.map(f => ({ cat, file: f })));
+      if (form.auditMethod === 'screenshot' && allFiles.length > 0) {
+        // upload sequentially to keep progress meaningful
+        for (let i = 0; i < allFiles.length; i++) {
+          const { cat, file } = allFiles[i];
+          const sectionKey = mapCategoryToSection[cat] ?? 'account_health';
+          const uploaded = await uploadAuditAssetFile({
+            auditId: audit.id,
+            clientId,
+            sectionKey,
+            side: 'current',
+            file,
+          });
+          await createAuditAsset({
+            audit_id: audit.id,
+            client_id: clientId,
+            asset_type: 'screenshot',
+            file_url: uploaded.publicUrl,
+            file_name: file.name,
+            section_key: sectionKey,
+            side: 'current',
+          });
+          setAnalysisProgress(Math.round(((i + 1) / Math.max(1, allFiles.length)) * 30));
+        }
+      }
+
+      // 5) Run AI analysis and persist section updates
+      setAnalysisProgress(40);
+      const ai = await runAIAnalysis({
+        clientId,
+        clientName: form.clientName,
+        companyName: form.companyName,
+        industry: form.industry,
+        espPlatform: form.espPlatform,
+        websiteUrl: form.websiteUrl,
+        listSize: Number(form.listSize) || 0,
+        aov: Number(form.aov) || 0,
+        monthlyTraffic: Number(form.monthlyTraffic) || 0,
+        notes: form.notes,
+        auditMethod: form.auditMethod as any,
+        apiKey: form.apiKey,
+        screenshots,
+      });
+      setAnalysisProgress(70);
+
+      // Apply AI updates by matching section_key
+      for (const s of createdSections) {
+        const patch = ai.sections.find(p => p.section_key === s.section_key);
+        if (!patch) continue;
+        await updateAuditSection(s.id, patch as any);
+      }
+
+      // Save exec summary onto audit
+      await updateAudit(audit.id, { executive_summary: ai.executiveSummary } as any);
+
+      setAnalysisProgress(100);
+      setAnalyzing(false);
+      navigate(`/audits/${audit.id}`);
+    } catch (e: unknown) {
+      setAnalyzing(false);
+      setError(e instanceof Error ? e.message : 'Failed to run analysis');
+    }
   };
 
   const canProceed = () => {
@@ -316,6 +434,11 @@ export default function NewAudit() {
 
         {step === 3 && (
           <div className="bg-white rounded-xl p-8 card-shadow text-center animate-slide-up">
+            {error && (
+              <div className="mb-4 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg text-left">
+                {error}
+              </div>
+            )}
             {!analyzing ? (
               <>
                 <div className="w-16 h-16 rounded-2xl gradient-bg flex items-center justify-center mx-auto mb-4">

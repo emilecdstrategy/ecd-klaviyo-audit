@@ -13,6 +13,9 @@ import EmptyState from '../components/ui/EmptyState';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_AUDITS, DEMO_CLIENTS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
+import { listAudits, listClients } from '../lib/db';
+import { useEffect } from 'react';
+import type { Audit, Client } from '../lib/types';
 
 export default function Audits() {
   const navigate = useNavigate();
@@ -20,8 +23,31 @@ export default function Audits() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('');
 
-  const audits = isDemo ? DEMO_AUDITS : [];
-  const clients = isDemo ? DEMO_CLIENTS : [];
+  const [audits, setAudits] = useState<Audit[]>(isDemo ? DEMO_AUDITS : []);
+  const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
+  const [loading, setLoading] = useState(!isDemo);
+  const [error, setError] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isDemo) return;
+    (async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const [a, c] = await Promise.all([listAudits(), listClients()]);
+        if (cancelled) return;
+        setAudits(a);
+        setClients(c);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Failed to load audits');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isDemo]);
 
   const filtered = audits.filter(a => {
     const client = clients.find(c => c.id === a.client_id);
@@ -77,7 +103,15 @@ export default function Audits() {
           </div>
         </div>
 
-        {filtered.length === 0 ? (
+        {error && (
+          <div className="mb-6 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-sm text-gray-500">Loading audits...</div>
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon={ClipboardCheck}
             title="No audits found"

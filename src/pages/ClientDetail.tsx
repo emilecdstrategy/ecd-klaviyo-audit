@@ -14,17 +14,70 @@ import StatusBadge from '../components/ui/StatusBadge';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
+import { useEffect, useState } from 'react';
+import type { Audit, Client } from '../lib/types';
+import { getClient, listAuditsByClient } from '../lib/db';
 
 export default function ClientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const { isDemo } = useAuth();
 
-  const clients = isDemo ? DEMO_CLIENTS : [];
-  const audits = isDemo ? DEMO_AUDITS : [];
+  const [client, setClient] = useState<Client | null>(
+    isDemo ? (DEMO_CLIENTS.find(c => c.id === id) ?? null) : null,
+  );
+  const [clientAudits, setClientAudits] = useState<Audit[]>(
+    isDemo ? DEMO_AUDITS.filter(a => a.client_id === id) : [],
+  );
+  const [loading, setLoading] = useState(!isDemo);
+  const [error, setError] = useState('');
 
-  const client = clients.find(c => c.id === id);
-  const clientAudits = audits.filter(a => a.client_id === id);
+  useEffect(() => {
+    let cancelled = false;
+    if (isDemo || !id) return;
+    (async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const [c, a] = await Promise.all([getClient(id), listAuditsByClient(id)]);
+        if (cancelled) return;
+        setClient(c);
+        setClientAudits(a);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Failed to load client');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, isDemo]);
+
+  if (loading) {
+    return (
+      <div>
+        <TopBar title="Client" />
+        <div className="p-8 text-sm text-gray-500">Loading client...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div>
+        <TopBar title="Client" />
+        <div className="p-8">
+          <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
+          <button
+            onClick={() => navigate('/clients')}
+            className="mt-4 text-sm text-brand-primary font-medium hover:underline"
+          >
+            Back to Clients
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (!client) {
     return (

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { FileText, BarChart3, LayoutGrid as Layout, Target, Mail, Palette, FormInput, DollarSign, ExternalLink } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
@@ -17,6 +17,8 @@ import {
 import { SECTION_KEYS, SECTION_LABELS } from '../lib/constants';
 import { formatCurrency } from '../lib/revenue-calculator';
 import type { AuditSection, Annotation } from '../lib/types';
+import type { Audit, AuditAsset, Client } from '../lib/types';
+import { createAnnotation, deleteAnnotation, getAudit, getClient, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAuditSection } from '../lib/db';
 
 const SECTION_ICONS: Record<string, React.ElementType> = {
   account_health: BarChart3,
@@ -33,10 +35,13 @@ export default function AuditWorkspace() {
   const navigate = useNavigate();
   const { isDemo } = useAuth();
 
-  const audits = isDemo ? DEMO_AUDITS : [];
-  const clients = isDemo ? DEMO_CLIENTS : [];
-  const audit = audits.find(a => a.id === id);
-  const client = audit ? clients.find(c => c.id === audit.client_id) : null;
+  const [audit, setAudit] = useState<Audit | null>(isDemo ? (DEMO_AUDITS.find(a => a.id === id) ?? null) : null);
+  const [client, setClient] = useState<Client | null>(
+    isDemo && audit ? (DEMO_CLIENTS.find(c => c.id === audit.client_id) ?? null) : null,
+  );
+  const [assets, setAssets] = useState<AuditAsset[]>(isDemo ? DEMO_ASSETS.filter(a => a.audit_id === id) : []);
+  const [loading, setLoading] = useState(!isDemo);
+  const [error, setError] = useState('');
 
   const [sections, setSections] = useState<AuditSection[]>(
     isDemo ? DEMO_AUDIT_SECTIONS.filter(s => s.audit_id === id) : [],
@@ -45,7 +50,36 @@ export default function AuditWorkspace() {
     isDemo ? DEMO_ANNOTATIONS : [],
   );
   const [activeSection, setActiveSection] = useState<string>(SECTION_KEYS[0]);
-  const assets = isDemo ? DEMO_ASSETS.filter(a => a.audit_id === id) : [];
+
+  const saveTimers = useRef<Record<string, number>>({});
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isDemo || !id) return;
+    (async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const a = await getAudit(id);
+        if (!a) throw new Error('Audit not found');
+        const c = await getClient(a.client_id);
+        const [secs, as] = await Promise.all([listAuditSections(id), listAssets(id)]);
+        const anns = await listAnnotationsForAuditSections(secs.map(s => s.id));
+        if (cancelled) return;
+        setAudit(a);
+        setClient(c);
+        setSections(secs);
+        setAssets(as);
+        setAnnotations(anns);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Failed to load audit');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [id, isDemo]);
 
   if (!audit) {
     return (
@@ -61,29 +95,95 @@ export default function AuditWorkspace() {
     );
   }
 
+  if (loading) {
+    return (
+      <div>
+        <TopBar title="Audit" />
+        <div className="p-8 text-sm text-gray-500">Loading audit...</div>
+      </div>
+    );
+  }
+
+  if (error) {
+    return (
+      <div>
+        <TopBar title="Audit" />
+        <div className="p-8">
+          <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
+          <button onClick={() => navigate('/')} className="mt-4 text-sm text-brand-primary font-medium hover:underline">
+            Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
   const currentSection = sections.find(s => s.section_key === activeSection);
-  const totalRevenue = sections.reduce((s, sec) => s + sec.revenue_opportunity, 0);
+  const totalRevenue = useMemo(() => sections.reduce((s, sec) => s + sec.revenue_opportunity, 0), [sections]);
 
   const handleSectionUpdate = (sectionId: string, updates: Partial<AuditSection>) => {
     setSections(prev => prev.map(s => (s.id === sectionId ? { ...s, ...updates } : s)));
+    if (isDemo) return;
+    if (saveTimers.current[sectionId]) window.clearTimeout(saveTimers.current[sectionId]);
+    saveTimers.current[sectionId] = window.setTimeout(async () => {
+      try {
+        await updateAuditSection(sectionId, updates);
+      } catch {
+        // keep UI responsive; errors surface on next reload
+      }
+    }, 400);
   };
 
-  const handleAddAnnotation = (side: 'current' | 'optimized', x: number, y: number, label: string) => {
-    const newAnnotation: Annotation = {
-      id: `ann-${Date.now()}`,
-      audit_section_id: currentSection?.id || '',
-      asset_id: '',
-      x_position: x,
-      y_position: y,
-      label,
-      side,
-      created_at: new Date().toISOString(),
-    };
-    setAnnotations(prev => [...prev, newAnnotation]);
+  const handleAddAnnotation = async (side: 'current' | 'optimized', x: number, y: number, label: string) => {
+    if (!currentSection) return;
+    const asset = assets.find(a => a.section_key === currentSection.section_key && a.side === side);
+    if (isDemo) {
+      const newAnnotation: Annotation = {
+        id: `ann-${Date.now()}`,
+        audit_section_id: currentSection.id,
+        asset_id: asset?.id || '',
+        x_position: x,
+        y_position: y,
+        label,
+        side,
+        created_at: new Date().toISOString(),
+      };
+      setAnnotations(prev => [...prev, newAnnotation]);
+      return;
+    }
+    try {
+      const created = await createAnnotation({
+        audit_section_id: currentSection.id,
+        asset_id: asset?.id || '',
+        x_position: x,
+        y_position: y,
+        label,
+        side,
+      });
+      setAnnotations(prev => [...prev, created]);
+    } catch {
+      // ignore for now
+    }
   };
 
-  const handleRemoveAnnotation = (annId: string) => {
+  const handleRemoveAnnotation = async (annId: string) => {
     setAnnotations(prev => prev.filter(a => a.id !== annId));
+    if (isDemo) return;
+    try {
+      await deleteAnnotation(annId);
+    } catch {
+      // ignore for now
+    }
+  };
+
+  const handlePublish = async () => {
+    if (isDemo || !audit) return;
+    try {
+      const updated = await publishAudit(audit.id);
+      setAudit(updated);
+    } catch {
+      // ignore
+    }
   };
 
   return (
@@ -212,6 +312,7 @@ export default function AuditWorkspace() {
         <div className="w-64 bg-white border-l border-gray-100 p-4 overflow-y-auto shrink-0 space-y-4">
           <ShareLinkPanel
             shareToken={audit.public_share_token}
+            onPublish={handlePublish}
             isPublished={audit.status === 'published'}
           />
 

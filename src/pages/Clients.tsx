@@ -1,25 +1,53 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Users, Plus, Search, ArrowRight, Globe, Calendar } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import EmptyState from '../components/ui/EmptyState';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
+import { listAudits, listClients } from '../lib/db';
+import type { Audit, Client } from '../lib/types';
 
 export default function Clients() {
   const navigate = useNavigate();
   const { isDemo } = useAuth();
   const [search, setSearch] = useState('');
 
-  const clients = isDemo ? DEMO_CLIENTS : [];
-  const audits = isDemo ? DEMO_AUDITS : [];
+  const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
+  const [audits, setAudits] = useState<Audit[]>(isDemo ? DEMO_AUDITS : []);
+  const [loading, setLoading] = useState(!isDemo);
+  const [error, setError] = useState('');
 
-  const filtered = clients.filter(
-    c =>
-      c.name.toLowerCase().includes(search.toLowerCase()) ||
-      c.company_name.toLowerCase().includes(search.toLowerCase()) ||
-      c.industry.toLowerCase().includes(search.toLowerCase()),
-  );
+  useEffect(() => {
+    let cancelled = false;
+    if (isDemo) return;
+    (async () => {
+      try {
+        setLoading(true);
+        setError('');
+        const [c, a] = await Promise.all([listClients(), listAudits()]);
+        if (cancelled) return;
+        setClients(c);
+        setAudits(a);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setError(e instanceof Error ? e.message : 'Failed to load clients');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isDemo]);
+
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return clients.filter(
+      c =>
+        c.name.toLowerCase().includes(q) ||
+        c.company_name.toLowerCase().includes(q) ||
+        c.industry.toLowerCase().includes(q),
+    );
+  }, [clients, search]);
 
   return (
     <div>
@@ -51,7 +79,15 @@ export default function Clients() {
           </div>
         </div>
 
-        {filtered.length === 0 ? (
+        {error && (
+          <div className="mb-6 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">
+            {error}
+          </div>
+        )}
+
+        {loading ? (
+          <div className="text-sm text-gray-500">Loading clients...</div>
+        ) : filtered.length === 0 ? (
           <EmptyState
             icon={Users}
             title="No clients yet"

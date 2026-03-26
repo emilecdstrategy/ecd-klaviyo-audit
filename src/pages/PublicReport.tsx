@@ -18,6 +18,8 @@ import ReportFlowTable from '../components/report/ReportFlowTable';
 import ReportHealthScore from '../components/report/ReportHealthScore';
 import ReportRecommendations from '../components/report/ReportRecommendations';
 import type { AuditSection } from '../lib/types';
+import { getPublicReportByToken } from '../lib/db';
+import { useAuth } from '../contexts/AuthContext';
 
 const NAV_ITEMS = [
   { id: 'summary', label: 'Summary' },
@@ -30,17 +32,60 @@ const NAV_ITEMS = [
 
 export default function PublicReport() {
   const { token } = useParams();
+  const { isDemo } = useAuth();
   const [activeSection, setActiveSection] = useState('summary');
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
-  const audit = DEMO_AUDITS.find(a => a.public_share_token === token);
-  const client = audit ? DEMO_CLIENTS.find(c => c.id === audit.client_id) : null;
-  const sections = audit ? DEMO_AUDIT_SECTIONS.filter(s => s.audit_id === audit.id) : [];
-  const assets = audit ? DEMO_ASSETS.filter(a => a.audit_id === audit.id) : [];
-  const annotations = DEMO_ANNOTATIONS;
-  const flowPerformance = audit ? DEMO_FLOW_PERFORMANCE.filter(f => f.audit_id === audit.id) : [];
-  const healthScores = DEMO_HEALTH_SCORES;
-  const recommendations = audit ? DEMO_RECOMMENDATIONS.filter(r => r.audit_id === audit.id) : [];
+  const [loading, setLoading] = useState(!isDemo);
+  const [loadError, setLoadError] = useState('');
+
+  const [audit, setAudit] = useState(() => DEMO_AUDITS.find(a => a.public_share_token === token) ?? null);
+  const [client, setClient] = useState(() => (audit ? (DEMO_CLIENTS.find(c => c.id === audit.client_id) ?? null) : null));
+  const [sections, setSections] = useState(() => (audit ? DEMO_AUDIT_SECTIONS.filter(s => s.audit_id === audit.id) : []));
+  const [assets, setAssets] = useState(() => (audit ? DEMO_ASSETS.filter(a => a.audit_id === audit.id) : []));
+  const [annotations, setAnnotations] = useState(() => DEMO_ANNOTATIONS);
+  const [flowPerformance, setFlowPerformance] = useState(() => (audit ? DEMO_FLOW_PERFORMANCE.filter(f => f.audit_id === audit.id) : []));
+  const [healthScores, setHealthScores] = useState(() => DEMO_HEALTH_SCORES);
+  const [recommendations, setRecommendations] = useState(() => (audit ? DEMO_RECOMMENDATIONS.filter(r => r.audit_id === audit.id) : []));
+
+  useEffect(() => {
+    let cancelled = false;
+    if (isDemo) return;
+    if (!token) return;
+    (async () => {
+      try {
+        setLoading(true);
+        setLoadError('');
+        const report = await getPublicReportByToken(token);
+        if (cancelled) return;
+        if (!report) {
+          setAudit(null);
+          setClient(null);
+          setSections([]);
+          setAssets([]);
+          setAnnotations([]);
+          setFlowPerformance([]);
+          setHealthScores([]);
+          setRecommendations([]);
+          return;
+        }
+        setAudit(report.audit);
+        setClient(report.client);
+        setSections(report.sections);
+        setAssets(report.assets);
+        setAnnotations(report.annotations);
+        setFlowPerformance(report.flowPerformance);
+        setHealthScores(report.healthScores);
+        setRecommendations(report.recommendations);
+      } catch (e: unknown) {
+        if (cancelled) return;
+        setLoadError(e instanceof Error ? e.message : 'Failed to load report');
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [isDemo, token]);
 
   useEffect(() => {
     const observers: IntersectionObserver[] = [];
@@ -56,6 +101,27 @@ export default function PublicReport() {
     });
     return () => observers.forEach(o => o.disconnect());
   }, [audit]);
+
+  if (loading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center">
+          <p className="text-gray-500">Loading report...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (loadError) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-center max-w-md">
+          <h1 className="text-2xl font-bold text-gray-900 mb-2">Couldn’t load report</h1>
+          <p className="text-gray-500">{loadError}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!audit || !client) {
     return (

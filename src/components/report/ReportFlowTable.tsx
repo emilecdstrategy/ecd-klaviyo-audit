@@ -3,7 +3,7 @@ import { formatCurrency } from '../../lib/revenue-calculator';
 
 type MetricStatus = 'good' | 'warning' | 'bad' | 'missing';
 
-function metricStatus(actual: number | null, low: number, high: number): MetricStatus {
+function metricStatus(actual: number | null, low: number, _high: number): MetricStatus {
   if (actual === null) return 'missing';
   if (actual >= low) return 'good';
   if (actual >= low * 0.7) return 'warning';
