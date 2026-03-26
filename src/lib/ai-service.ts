@@ -1,5 +1,6 @@
 import type { AuditSection, WizardData } from './types';
 import { supabase } from './supabase';
+import { AI_SCHEMA_VERSION } from './ai/schema';
 
 // Future: Replace with real OpenAI API calls through a Supabase Edge Function
 // The edge function would accept section data and return AI-generated findings
@@ -9,19 +10,74 @@ interface AIAnalysisResult {
   executiveSummary: string;
 }
 
+type AIErrorCode =
+  | 'retry'
+  | 'provider_timeout'
+  | 'validation_failed'
+  | 'provider_error'
+  | 'bad_response';
+
+export class AIAnalysisError extends Error {
+  code: AIErrorCode;
+  correlationId?: string;
+
+  constructor(message: string, code: AIErrorCode, correlationId?: string) {
+    super(message);
+    this.name = 'AIAnalysisError';
+    this.code = code;
+    this.correlationId = correlationId;
+  }
+}
+
+function validateClientPayload(data: any): data is AIAnalysisResult {
+  return Boolean(
+    data &&
+    data.schemaVersion === AI_SCHEMA_VERSION &&
+    typeof data.executiveSummary === 'string' &&
+    Array.isArray(data.sections) &&
+    data.sections.length > 0,
+  );
+}
+
 export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisResult> {
-  // If an Edge Function is deployed, prefer it.
+  // Production path: Edge function only.
+  // Demo fallback is only allowed when explicitly enabled.
+  const allowFallback = import.meta.env.DEV && import.meta.env.VITE_ALLOW_AI_FALLBACK === 'true';
+
   try {
-    const { data, error } = await supabase.functions.invoke('ai_analyze_audit', {
+    const { data, error } = await supabase.functions.invoke<any>('ai_analyze_audit', {
       body: wizardData,
     });
-    if (!error && data?.executiveSummary && Array.isArray(data?.sections)) {
-      return data as AIAnalysisResult;
+
+    if (error) {
+      throw new AIAnalysisError(error.message || 'AI request failed', 'provider_error');
     }
-  } catch {
-    // fall back to demo implementation below
+
+    if (data?.ok === false) {
+      const code = (data?.error?.code ?? 'provider_error') as AIErrorCode;
+      const msg = data?.error?.message ?? 'AI request failed';
+      throw new AIAnalysisError(msg, code, data?.correlationId);
+    }
+
+    if (validateClientPayload(data)) {
+      return {
+        executiveSummary: data.executiveSummary,
+        sections: data.sections,
+      };
+    }
+
+    throw new AIAnalysisError('Invalid AI response shape', 'bad_response', data?.correlationId);
+  } catch (e) {
+    if (!allowFallback) {
+      if (e instanceof AIAnalysisError) throw e;
+      throw new AIAnalysisError(
+        e instanceof Error ? e.message : 'Unknown AI error',
+        'provider_error',
+      );
+    }
   }
 
+  // Explicitly gated development fallback only.
   await new Promise(r => setTimeout(r, 3000));
 
   const { industry, listSize, aov } = wizardData;

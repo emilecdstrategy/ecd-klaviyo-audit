@@ -31,74 +31,111 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   useEffect(() => {
-    const stored = localStorage.getItem('ecd-demo-mode');
-    if (stored === 'false') {
-      setIsDemo(false);
-    } else {
-      setUser(DEMO_USER);
-      setIsDemo(true);
-    }
+    let isMounted = true;
 
-    supabase.auth.onAuthStateChange((_event, session) => {
-      if (session?.user) {
-        (async () => {
-          const email = session.user.email ?? '';
-          if (!isAllowedEmail(email)) {
-            setAuthError(`Only @${allowedDomain} accounts are allowed.`);
-            await supabase.auth.signOut();
-            setUser(null);
-            setIsDemo(false);
-            localStorage.setItem('ecd-demo-mode', 'false');
-            return;
-          }
-
-          const { data: existing, error: profileErr } = await supabase
-            .from('profiles')
-            .select('*')
-            .eq('id', session.user.id)
-            .maybeSingle();
-
-          if (profileErr) {
-            setAuthError(profileErr.message);
-            return;
-          }
-
-          if (existing) {
-            setUser(existing);
-            setIsDemo(false);
-            localStorage.setItem('ecd-demo-mode', 'false');
-            setAuthError('');
-            return;
-          }
-
-          const defaultName = (email.split('@')[0] || '').replace(/\./g, ' ').trim();
-          const { data: created, error: insertErr } = await supabase
-            .from('profiles')
-            .insert({
-              id: session.user.id,
-              name: defaultName,
-              email,
-              role: 'auditor',
-            })
-            .select('*')
-            .single();
-
-          if (insertErr) {
-            setAuthError(insertErr.message);
-            return;
-          }
-
-          setUser(created);
-          setIsDemo(false);
-          localStorage.setItem('ecd-demo-mode', 'false');
-          setAuthError('');
-        })();
-      } else if (!isDemo) {
+    const handleSessionUser = async (sessionUser: { id: string; email?: string | null }) => {
+      const email = sessionUser.email ?? '';
+      if (!isAllowedEmail(email)) {
+        setAuthError(`Only @${allowedDomain} accounts are allowed.`);
+        await supabase.auth.signOut();
+        if (!isMounted) return;
         setUser(null);
+        setIsDemo(false);
+        localStorage.setItem('ecd-demo-mode', 'false');
+        return;
+      }
+
+      const { data: existing, error: profileErr } = await supabase
+        .from('profiles')
+        .select('*')
+        .eq('id', sessionUser.id)
+        .maybeSingle();
+
+      if (!isMounted) return;
+      if (profileErr) {
+        setAuthError(profileErr.message);
+        return;
+      }
+
+      if (existing) {
+        setUser(existing);
+        setIsDemo(false);
+        localStorage.setItem('ecd-demo-mode', 'false');
+        setAuthError('');
+        return;
+      }
+
+      const defaultName = (email.split('@')[0] || '').replace(/\./g, ' ').trim();
+      const { data: created, error: insertErr } = await supabase
+        .from('profiles')
+        .insert({
+          id: sessionUser.id,
+          name: defaultName,
+          email,
+          role: 'auditor',
+        })
+        .select('*')
+        .single();
+
+      if (!isMounted) return;
+      if (insertErr) {
+        setAuthError(insertErr.message);
+        return;
+      }
+
+      setUser(created);
+      setIsDemo(false);
+      localStorage.setItem('ecd-demo-mode', 'false');
+      setAuthError('');
+    };
+
+    const init = async () => {
+      // First, attempt to hydrate any session from the URL or storage.
+      const { data, error } = await supabase.auth.getSession();
+      if (!isMounted) return;
+
+      if (error) setAuthError(error.message);
+
+      const sessionUser = data.session?.user
+        ? { id: data.session.user.id, email: data.session.user.email }
+        : null;
+
+      if (sessionUser) {
+        await handleSessionUser(sessionUser);
+        if (!isMounted) return;
+        setIsLoading(false);
+        return;
+      }
+
+      // No session: fall back to demo mode unless user explicitly disabled it.
+      const stored = localStorage.getItem('ecd-demo-mode');
+      if (stored === 'false') {
+        setIsDemo(false);
+        setUser(null);
+      } else {
+        setUser(DEMO_USER);
+        setIsDemo(true);
+      }
+      setIsLoading(false);
+    };
+
+    void init();
+
+    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session?.user) {
+        void handleSessionUser({ id: session.user.id, email: session.user.email });
+      } else {
+        // Logged out: keep demo off unless user explicitly re-enters it.
+        setUser(null);
+        setIsDemo(false);
+        localStorage.setItem('ecd-demo-mode', 'false');
       }
     });
 
-    setIsLoading(false);
+    return () => {
+      isMounted = false;
+      sub.subscription.unsubscribe();
+    };
   }, []);
 
   const sendMagicLink = async (email: string) => {

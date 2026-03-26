@@ -13,7 +13,18 @@ import PublicReport from './pages/PublicReport';
 import AdminArea from './pages/AdminArea';
 
 function AppRoutes() {
-  const { user } = useAuth();
+  const { user, isLoading } = useAuth();
+
+  // Important: during a magic-link redirect, Supabase needs a moment to hydrate
+  // the session from the URL/storage. If we redirect to /login while loading,
+  // we can get stuck in an auth bounce.
+  if (isLoading) {
+    return (
+      <div className="min-h-screen bg-white flex items-center justify-center">
+        <div className="text-sm text-gray-500">Signing you in…</div>
+      </div>
+    );
+  }
 
   return (
     <Routes>
