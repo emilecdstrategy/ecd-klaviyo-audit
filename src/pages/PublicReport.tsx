@@ -16,6 +16,9 @@ import { formatCurrency } from '../lib/revenue-calculator';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
 import ReportFlowTable from '../components/report/ReportFlowTable';
 import ReportFlowInventoryTable from '../components/report/ReportFlowInventoryTable';
+import ReportFlowStats from '../components/report/ReportFlowStats';
+import ReportFlowHealthScore from '../components/report/ReportFlowHealthScore';
+import ReportFlowRevenueBreakdown from '../components/report/ReportFlowRevenueBreakdown';
 import ReportHealthScore from '../components/report/ReportHealthScore';
 import ReportSegmentTable from '../components/report/ReportSegmentTable';
 import ReportFormTable from '../components/report/ReportFormTable';
@@ -316,28 +319,53 @@ export default function PublicReport() {
           <section id="flows" ref={setRef('flows')}>
             <SectionHeader number="03" label="Flows" />
 
-            {flowSnapshots.length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6">
-                <div className="px-6 py-4 border-b border-gray-50">
-                  <p className="text-sm text-gray-500">
-                    Inventory of flows pulled directly from Klaviyo for this audit.
-                  </p>
-                </div>
-                <div className="p-6">
-                  <ReportFlowInventoryTable flows={flowSnapshots as any} />
-                </div>
+            {(flowSnapshots.length > 0 || flowPerformance.length > 0) && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
+                <ReportFlowStats
+                  snapshots={flowSnapshots as any}
+                  performance={flowPerformance}
+                  clientName={client.company_name}
+                />
               </div>
             )}
 
             {flowPerformance.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
+                <ReportFlowHealthScore
+                  snapshots={flowSnapshots as any}
+                  performance={flowPerformance}
+                  segmentCount={segmentSnapshots.length}
+                />
+              </div>
+            )}
+
+            {flowPerformance.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
+                <ReportFlowRevenueBreakdown performance={flowPerformance} />
+              </div>
+            )}
+
+            {flowPerformance.length > 0 && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6">
+                <div className="px-6 py-4 border-b border-gray-50">
+                  <h3 className="text-lg font-bold text-gray-900">Flow Performance Details</h3>
+                </div>
+                <div className="p-6">
+                  <ReportFlowTable flows={flowPerformance} snapshots={flowSnapshots as any} />
+                </div>
+              </div>
+            )}
+
+            {flowSnapshots.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-50">
-                  <p className="text-sm text-gray-500">
-                    Performance snapshot for key flows (Reporting API).
+                  <h3 className="text-lg font-bold text-gray-900">Full Flow Inventory</h3>
+                  <p className="text-sm text-gray-500 mt-1">
+                    All flows pulled from Klaviyo ({flowSnapshots.length} total).
                   </p>
                 </div>
                 <div className="p-6">
-                  <ReportFlowTable flows={flowPerformance} />
+                  <ReportFlowInventoryTable flows={flowSnapshots as any} />
                 </div>
               </div>
             )}

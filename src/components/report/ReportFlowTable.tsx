@@ -1,4 +1,4 @@
-import type { FlowPerformance } from '../../lib/types';
+import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
 import { formatCurrency } from '../../lib/revenue-calculator';
 
 type MetricStatus = 'good' | 'warning' | 'bad' | 'missing';
@@ -10,14 +10,57 @@ function metricStatus(actual: number | null, low: number, _high: number): Metric
   return 'bad';
 }
 
-function TrafficLight({ status }: { status: MetricStatus }) {
+function overallRating(flow: FlowPerformance): MetricStatus {
+  const scores = [
+    metricStatus(flow.actual_open_rate, flow.benchmark_open_rate_low, flow.benchmark_open_rate_high),
+    metricStatus(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high),
+    metricStatus(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high),
+  ];
+  const bad = scores.filter(s => s === 'bad').length;
+  const good = scores.filter(s => s === 'good').length;
+  if (bad >= 2) return 'bad';
+  if (good >= 2) return 'good';
+  return 'warning';
+}
+
+function buildAssessment(flow: FlowPerformance): string {
+  const parts: string[] = [];
+  const openStatus = metricStatus(flow.actual_open_rate, flow.benchmark_open_rate_low, flow.benchmark_open_rate_high);
+  const clickStatus = metricStatus(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high);
+  const convStatus = metricStatus(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high);
+
+  if (openStatus === 'bad' && flow.actual_open_rate !== null) {
+    parts.push(`Open rate ${(flow.actual_open_rate * 100).toFixed(1)}% below ${(flow.benchmark_open_rate_low * 100).toFixed(0)}-${(flow.benchmark_open_rate_high * 100).toFixed(0)}% benchmark`);
+  }
+  if (clickStatus === 'bad' && flow.actual_click_rate !== null) {
+    parts.push(`Click ${(flow.actual_click_rate * 100).toFixed(1)}% vs. ${(flow.benchmark_click_rate_low * 100).toFixed(0)}-${(flow.benchmark_click_rate_high * 100).toFixed(0)}% benchmark`);
+  }
+  if (convStatus === 'bad' && flow.actual_conv_rate !== null) {
+    parts.push(`Conv ${(flow.actual_conv_rate * 100).toFixed(2)}% vs. ${(flow.benchmark_conv_rate_low * 100).toFixed(1)}-${(flow.benchmark_conv_rate_high * 100).toFixed(0)}% benchmark`);
+  }
+
+  const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
+  if (flow.recipients_per_month > 50_000 && rpr < 0.02) {
+    parts.push(`Massive volume, tiny conversion. ${flow.recipients_per_month.toLocaleString()} recipients for ${formatCurrency(flow.monthly_revenue_current)}`);
+  }
+
+  if (parts.length === 0) {
+    const rating = overallRating(flow);
+    if (rating === 'good') return 'Performing well relative to benchmarks.';
+    return 'Moderate performance, room for improvement.';
+  }
+
+  return parts.slice(0, 2).join('. ') + '.';
+}
+
+function RatingDot({ status }: { status: MetricStatus }) {
   const colors: Record<MetricStatus, string> = {
     good: 'bg-emerald-500',
     warning: 'bg-amber-400',
     bad: 'bg-red-400',
     missing: 'bg-gray-200',
   };
-  return <span className={`inline-block w-2 h-2 rounded-full ${colors[status]} shrink-0`} />;
+  return <span className={`inline-block w-3 h-3 rounded-full ${colors[status]}`} />;
 }
 
 function FlowStatusBadge({ status }: { status: FlowPerformance['flow_status'] }) {
@@ -31,144 +74,134 @@ function FlowStatusBadge({ status }: { status: FlowPerformance['flow_status'] })
   return <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${cls}`}>{label}</span>;
 }
 
-function PriorityTag({ priority }: { priority: FlowPerformance['priority'] }) {
-  const map: Record<FlowPerformance['priority'], { label: string; cls: string }> = {
-    critical: { label: 'Critical', cls: 'text-red-600 font-bold' },
-    high: { label: 'High', cls: 'text-amber-600 font-semibold' },
-    medium: { label: 'Medium', cls: 'text-blue-600 font-medium' },
-    low: { label: 'Low', cls: 'text-gray-400 font-medium' },
-    quick_win: { label: 'Quick Win', cls: 'text-emerald-600 font-semibold' },
-  };
-  const { label, cls } = map[priority];
-  return <span className={`text-xs ${cls}`}>{label}</span>;
-}
-
-function MetricCell({ actual, low, high, suffix = '%' }: { actual: number | null; low: number; high: number; suffix?: string }) {
+function pctCell(actual: number | null, low: number, high: number) {
   const status = metricStatus(actual, low, high);
+  const colorMap: Record<MetricStatus, string> = {
+    good: 'text-emerald-700',
+    warning: 'text-amber-600',
+    bad: 'text-red-600',
+    missing: 'text-gray-300',
+  };
   return (
-    <td className="px-4 py-3 text-center">
-      <div className="flex flex-col items-center gap-0.5">
-        <div className="flex items-center gap-1.5">
-          <TrafficLight status={status} />
-          <span className={`text-sm font-semibold tabular-nums ${
-            status === 'good' ? 'text-emerald-700' :
-            status === 'warning' ? 'text-amber-600' :
-            status === 'bad' ? 'text-red-600' : 'text-gray-300'
-          }`}>
-            {actual !== null ? `${actual}${suffix}` : '—'}
-          </span>
-        </div>
-        <span className="text-[10px] text-gray-400">{low}–{high}{suffix}</span>
-      </div>
-    </td>
+    <span className={`text-sm font-semibold tabular-nums ${colorMap[status]}`}>
+      {actual !== null ? `${(actual * 100).toFixed(actual < 0.01 ? 2 : 1)}%` : '—'}
+    </span>
   );
 }
 
 interface ReportFlowTableProps {
   flows: FlowPerformance[];
+  snapshots?: KlaviyoFlowSnapshot[];
 }
 
-export default function ReportFlowTable({ flows }: ReportFlowTableProps) {
-  const totalCurrentRevenue = flows.reduce((s, f) => s + f.monthly_revenue_current, 0);
-  const totalOpportunity = flows.reduce((s, f) => s + f.monthly_revenue_opportunity, 0);
+export default function ReportFlowTable({ flows, snapshots }: ReportFlowTableProps) {
+  const sorted = [...flows].sort((a, b) => b.monthly_revenue_current - a.monthly_revenue_current);
+
+  const snapshotMap = new Map<string, KlaviyoFlowSnapshot>();
+  if (snapshots) {
+    for (const s of snapshots) {
+      snapshotMap.set(s.name, s);
+    }
+  }
+
+  const totalRecipients = sorted.reduce((s, f) => s + f.recipients_per_month, 0);
+  const totalRevenue = sorted.reduce((s, f) => s + f.monthly_revenue_current, 0);
+
+  const revenueGenerators = sorted.filter(f => f.monthly_revenue_current > 0);
+  const subtitle = `${revenueGenerators.length} flows generating ${totalRevenue > 0 ? ((revenueGenerators.reduce((s, f) => s + f.monthly_revenue_current, 0) / totalRevenue) * 100).toFixed(1) : 0}% of total flow revenue.`;
 
   return (
     <div>
+      <p className="text-sm text-gray-500 mb-4">{subtitle}</p>
       <div className="overflow-x-auto -mx-6 px-6">
-        <table className="w-full min-w-[900px] text-sm border-collapse">
+        <table className="w-full min-w-[1100px] text-sm border-collapse">
           <thead>
-            <tr className="border-b border-gray-100">
-              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider w-48">Flow</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">Priority</th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Open Rate
-                <div className="text-[10px] font-normal text-gray-400 normal-case tracking-normal">actual vs benchmark</div>
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Click Rate
-                <div className="text-[10px] font-normal text-gray-400 normal-case tracking-normal">actual vs benchmark</div>
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Conv. Rate
-                <div className="text-[10px] font-normal text-gray-400 normal-case tracking-normal">actual vs benchmark</div>
-              </th>
-              <th className="px-4 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider">
-                Opportunity
-                <div className="text-[10px] font-normal text-gray-400 normal-case tracking-normal">per month</div>
-              </th>
+            <tr className="border-b border-gray-200 bg-gray-50">
+              <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Flow</th>
+              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-16">Status</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-24">Recipients</th>
+              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-16">Actions</th>
+              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Open Rate</th>
+              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Click Rate</th>
+              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Conv Rate</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Revenue</th>
+              <th className="px-3 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-16">RPR</th>
+              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-14">Rating</th>
+              <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider min-w-[200px]">Assessment</th>
             </tr>
           </thead>
           <tbody>
-            {flows.map((flow, i) => (
-              <tr
-                key={flow.id}
-                className={`border-b border-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} ${
-                  flow.flow_status === 'missing' ? 'opacity-75' : ''
-                }`}
-              >
-                <td className="px-4 py-3">
-                  <div>
-                    <p className="text-sm font-semibold text-gray-900">{flow.flow_name}</p>
-                    {flow.flow_status !== 'missing' && (
-                      <p className="text-xs text-gray-400 mt-0.5">{flow.recipients_per_month.toLocaleString()}/mo</p>
-                    )}
-                  </div>
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <FlowStatusBadge status={flow.flow_status} />
-                </td>
-                <td className="px-4 py-3 text-center">
-                  <PriorityTag priority={flow.priority} />
-                </td>
-                <MetricCell
-                  actual={flow.actual_open_rate}
-                  low={flow.benchmark_open_rate_low}
-                  high={flow.benchmark_open_rate_high}
-                />
-                <MetricCell
-                  actual={flow.actual_click_rate}
-                  low={flow.benchmark_click_rate_low}
-                  high={flow.benchmark_click_rate_high}
-                />
-                <MetricCell
-                  actual={flow.actual_conv_rate}
-                  low={flow.benchmark_conv_rate_low}
-                  high={flow.benchmark_conv_rate_high}
-                />
-                <td className="px-4 py-3 text-center">
-                  {flow.monthly_revenue_opportunity > 0 ? (
-                    <span className="text-sm font-bold text-emerald-700">
-                      +{formatCurrency(flow.monthly_revenue_opportunity)}
-                    </span>
-                  ) : (
-                    <span className="text-xs text-gray-300">—</span>
-                  )}
-                </td>
-              </tr>
-            ))}
+            {sorted.map((flow, i) => {
+              const snap = snapshotMap.get(flow.flow_name);
+              const actionCount = snap?.raw?.attributes?.action_count ?? snap?.raw?.relationships?.flow_actions?.data?.length ?? null;
+              const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
+              const rating = overallRating(flow);
+              const assessment = buildAssessment(flow);
+
+              return (
+                <tr
+                  key={flow.id}
+                  className={`border-b border-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} ${
+                    flow.flow_status === 'missing' ? 'opacity-75' : ''
+                  }`}
+                >
+                  <td className="px-3 py-3">
+                    <p className="text-sm font-semibold text-gray-900 leading-tight">{flow.flow_name}</p>
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <FlowStatusBadge status={flow.flow_status} />
+                  </td>
+                  <td className="px-3 py-3 text-right text-sm tabular-nums text-gray-700">
+                    {flow.recipients_per_month.toLocaleString()}
+                  </td>
+                  <td className="px-3 py-3 text-center text-sm tabular-nums text-gray-600">
+                    {actionCount ?? '—'}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    {pctCell(flow.actual_open_rate, flow.benchmark_open_rate_low, flow.benchmark_open_rate_high)}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    {pctCell(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high)}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    {pctCell(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high)}
+                  </td>
+                  <td className="px-3 py-3 text-right text-sm font-semibold text-gray-900 tabular-nums">
+                    {formatCurrency(flow.monthly_revenue_current)}
+                  </td>
+                  <td className="px-3 py-3 text-right text-sm tabular-nums text-gray-600">
+                    ${rpr.toFixed(2)}
+                  </td>
+                  <td className="px-3 py-3 text-center">
+                    <RatingDot status={rating} />
+                  </td>
+                  <td className="px-3 py-3">
+                    <p className={`text-xs leading-relaxed ${rating === 'bad' ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                      {assessment}
+                    </p>
+                  </td>
+                </tr>
+              );
+            })}
           </tbody>
           <tfoot>
-            <tr className="border-t-2 border-gray-200 bg-gray-50">
-              <td colSpan={6} className="px-4 py-3 text-right">
-                <span className="text-xs font-semibold text-gray-600 uppercase tracking-wide">Total Current Revenue</span>
-                <span className="text-sm font-bold text-gray-900 ml-3">{formatCurrency(totalCurrentRevenue)}/mo</span>
+            <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
+              <td className="px-3 py-3 text-sm text-gray-700">Totals</td>
+              <td />
+              <td className="px-3 py-3 text-right text-sm tabular-nums text-gray-700">{totalRecipients.toLocaleString()}</td>
+              <td />
+              <td />
+              <td />
+              <td />
+              <td className="px-3 py-3 text-right text-sm font-bold text-gray-900 tabular-nums">{formatCurrency(totalRevenue)}</td>
+              <td className="px-3 py-3 text-right text-sm tabular-nums text-gray-600">
+                ${totalRecipients > 0 ? (totalRevenue / totalRecipients).toFixed(2) : '0.00'}
               </td>
-              <td className="px-4 py-3 text-center">
-                <span className="text-sm font-bold text-emerald-700">+{formatCurrency(totalOpportunity)}/mo</span>
-              </td>
+              <td />
+              <td />
             </tr>
           </tfoot>
         </table>
-      </div>
-
-      <div className="mt-6 space-y-3">
-        {flows.filter(f => f.notes).map(flow => (
-          <div key={flow.id} className="flex gap-3 text-xs">
-            <span className="font-semibold text-gray-700 shrink-0 w-36">{flow.flow_name}:</span>
-            <span className="text-gray-500 leading-relaxed">{flow.notes}</span>
-          </div>
-        ))}
       </div>
     </div>
   );
