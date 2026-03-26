@@ -257,6 +257,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
   const body = (
     <div className={asModal ? 'p-5' : 'p-8 max-w-4xl'}>
+      <style>{`
+        @keyframes shimmer {
+          0% { background-position: 200% 0; }
+          100% { background-position: -200% 0; }
+        }
+      `}</style>
       {!asModal && (
         <button
           onClick={() => step > 0 ? setStep(step - 1) : navigate('/')}
@@ -459,14 +465,49 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 </div>
                 <div className="max-w-md mx-auto mt-5 text-left">
                   {[
-                    { label: 'Create audit', done: analysisProgress >= 10 },
-                    { label: form.auditMethod === 'api' ? 'Fetch Klaviyo snapshot' : 'Upload screenshots', done: analysisProgress >= (form.auditMethod === 'api' ? 40 : 30) },
-                    { label: 'Run AI analysis', done: analysisProgress >= 70 },
-                    { label: 'Save results', done: analysisProgress >= 100 },
+                    {
+                      key: 'create',
+                      label: 'Create audit',
+                      done: analysisProgress >= 10,
+                      active: analysisProgress < 10,
+                    },
+                    {
+                      key: 'input',
+                      label: form.auditMethod === 'api' ? 'Fetch Klaviyo snapshot' : 'Upload screenshots',
+                      done: analysisProgress >= (form.auditMethod === 'api' ? 40 : 30),
+                      active: analysisProgress >= 10 && analysisProgress < (form.auditMethod === 'api' ? 40 : 30),
+                    },
+                    {
+                      key: 'ai',
+                      label: 'Run AI analysis',
+                      done: analysisProgress >= 70,
+                      active: analysisProgress >= (form.auditMethod === 'api' ? 40 : 30) && analysisProgress < 70,
+                    },
+                    {
+                      key: 'save',
+                      label: 'Save results',
+                      done: analysisProgress >= 100,
+                      active: analysisProgress >= 70 && analysisProgress < 100,
+                    },
                   ].map((s) => (
-                    <div key={s.label} className="flex items-center gap-2 text-sm text-gray-600">
-                      <CheckCircle2 className={s.done ? 'w-4 h-4 text-green-600' : 'w-4 h-4 text-gray-300'} />
-                      <span className={s.done ? 'text-gray-900' : ''}>{s.label}</span>
+                    <div
+                      key={s.key}
+                      className={[
+                        'flex items-center gap-2 text-sm rounded-md px-2 py-1 transition-colors',
+                        s.done ? 'text-gray-900' : 'text-gray-600',
+                        s.active ? 'bg-gray-50' : '',
+                      ].join(' ')}
+                    >
+                      <div className="relative">
+                        <CheckCircle2 className={s.done ? 'w-4 h-4 text-green-600' : s.active ? 'w-4 h-4 text-brand-primary' : 'w-4 h-4 text-gray-300'} />
+                        {s.active && (
+                          <span className="absolute inset-0 rounded-full blur-[6px] bg-brand-primary/25 animate-pulse" />
+                        )}
+                      </div>
+                      <span className={s.active ? 'font-medium' : ''}>{s.label}</span>
+                      {s.active && (
+                        <span className="ml-auto h-3 w-16 rounded-full bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 bg-[length:200%_100%] animate-[shimmer_1.2s_linear_infinite]" />
+                      )}
                     </div>
                   ))}
                 </div>

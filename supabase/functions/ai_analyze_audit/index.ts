@@ -19,7 +19,7 @@ const PRIMARY_MODEL = "gpt-5.4";
 const ESCALATION_MODEL = "gpt-5.4-pro";
 // Edge Functions have execution limits; keep OpenAI calls bounded so we don't get terminated mid-run.
 const MAX_ATTEMPTS = 1;
-const REQUEST_TIMEOUT_MS = 25_000;
+const REQUEST_TIMEOUT_MS = 55_000;
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
@@ -59,6 +59,16 @@ function timeoutSignal(ms: number) {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort("timeout"), ms);
   return { signal: ctrl.signal, clear: () => clearTimeout(t) };
+}
+
+function errToMessage(e: unknown) {
+  if (e instanceof Error) return e.message;
+  if (typeof e === "string") return e;
+  try {
+    return JSON.stringify(e);
+  } catch {
+    return "Unknown error";
+  }
 }
 
 function extractOutputText(resBody: any): string {
@@ -154,22 +164,35 @@ async function callOpenAI(params: {
       });
       clear();
 
-      const parsed = await res.json();
+      const textBody = await res.text();
+      let parsed: any = null;
+      try {
+        parsed = textBody ? JSON.parse(textBody) : null;
+      } catch {
+        parsed = { raw: textBody };
+      }
       if (!res.ok) {
         const msg = parsed?.error?.message ?? `OpenAI request failed (${res.status})`;
-        throw new Error(msg);
+        throw new Error(`${msg} (status ${res.status})`);
       }
 
-      const text = extractOutputText(parsed);
-      if (!text) throw new Error("OpenAI response missing output_text");
-      return { output: JSON.parse(text), usage: parsed?.usage ?? null };
+      const outText = extractOutputText(parsed);
+      if (!outText) throw new Error("OpenAI response missing output_text");
+      let output: unknown;
+      try {
+        output = JSON.parse(outText);
+      } catch (e) {
+        throw new Error(`Failed to parse OpenAI JSON output: ${errToMessage(e)}`);
+      }
+      return { output, usage: parsed?.usage ?? null };
     } catch (e) {
-      lastErr = e;
+      const msg = errToMessage(e);
+      lastErr = msg === "timeout" ? new Error("OpenAI request timed out") : e;
       if (attempt === MAX_ATTEMPTS) break;
       await new Promise((r) => setTimeout(r, 600 * attempt));
     }
   }
-  throw lastErr instanceof Error ? lastErr : new Error("OpenAI call failed");
+  throw lastErr instanceof Error ? lastErr : new Error(`OpenAI call failed: ${errToMessage(lastErr)}`);
 }
 
 async function logRun(payload: Record<string, unknown>) {
@@ -232,7 +255,7 @@ serve(async (req) => {
         error_code: "validation_failed",
         error_message: validation.errors.join("; ").slice(0, 1000),
       });
-      return json(
+      return jsonCors(
         {
           ok: false,
           error: {
@@ -242,7 +265,7 @@ serve(async (req) => {
           },
           correlationId,
         },
-        { status: 422 },
+        { status: 200 },
       );
     }
 
@@ -269,7 +292,7 @@ serve(async (req) => {
       { status: 200 },
     );
   } catch (e) {
-    const msg = e instanceof Error ? e.message : "Unknown error";
+    const msg = errToMessage(e);
     const code = /timeout/i.test(msg) ? "provider_timeout" : "provider_error";
     await logRun({
       correlation_id: correlationId,
@@ -286,7 +309,7 @@ serve(async (req) => {
         error: { code, message: msg },
         correlationId,
       },
-      { status: 500 },
+      { status: 200 },
     );
   }
 });
