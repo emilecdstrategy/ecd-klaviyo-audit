@@ -7,11 +7,12 @@ import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { listAudits, listClients } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
+import { supabase } from '../lib/supabase';
 
 export default function Clients() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDemo } = useAuth();
+  const { isDemo, hasRole } = useAuth();
   const [search, setSearch] = useState('');
 
   const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
@@ -121,7 +122,41 @@ export default function Clients() {
                       </h3>
                       <p className="text-xs text-gray-500 mt-0.5">{client.industry}</p>
                     </div>
-                    <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-brand-primary transition-colors" />
+                    <div className="flex items-center gap-2">
+                      {hasRole('admin') && !isDemo && (
+                        <button
+                          type="button"
+                          onClick={async e => {
+                            e.stopPropagation();
+                            if (!window.confirm(`Delete client \"${client.company_name}\"? This will also delete its audits.`)) return;
+                            try {
+                              const { data: sessionData } = await supabase.auth.getSession();
+                              const token = sessionData.session?.access_token;
+                              if (!token) throw new Error('Your session expired. Please sign in again and retry.');
+                              const { data, error } = await supabase.functions.invoke('admin_delete_client', {
+                                body: { client_id: client.id },
+                                headers: { Authorization: `Bearer ${token}` },
+                              });
+                              if (error) throw error;
+                              if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to delete client');
+                              setClients(prev => prev.filter(c => c.id !== client.id));
+                              setAudits(prev => prev.filter(a => a.client_id !== client.id));
+                            } catch (err: unknown) {
+                              alert(err instanceof Error ? err.message : 'Failed to delete client');
+                            }
+                          }}
+                          className="p-1.5 rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors"
+                          title="Delete client"
+                        >
+                          <svg viewBox="0 0 24 24" className="w-4 h-4" fill="none" stroke="currentColor" strokeWidth="2">
+                            <path d="M3 6h18" />
+                            <path d="M8 6V4h8v2" />
+                            <path d="M6 6l1 16h10l1-16" />
+                          </svg>
+                        </button>
+                      )}
+                      <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-brand-primary transition-colors" />
+                    </div>
                   </div>
 
                   <div className="space-y-2.5">

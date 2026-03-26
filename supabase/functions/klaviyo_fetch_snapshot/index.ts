@@ -270,7 +270,22 @@ serve(async (req) => {
     // 1) Validate + account identity
     const accountRes = await fetchWithRetry(() => klaviyoFetch(apiKey, revision, "/api/accounts/?page[size]=1"), 3);
     if (!accountRes.ok) {
-      return json({ ok: false, error: { code: "invalid_key_or_scope", status: accountRes.status, message: "Account lookup failed" }, correlationId }, { status: 200 });
+      const detail =
+        (accountRes.body as any)?.errors?.[0]?.detail ??
+        (accountRes.body as any)?.error?.message ??
+        null;
+      return json(
+        {
+          ok: false,
+          error: {
+            code: "invalid_key_or_scope",
+            status: accountRes.status,
+            message: `Account lookup failed (${accountRes.status})${detail ? `: ${detail}` : ""}`,
+          },
+          correlationId,
+        },
+        { status: 200 },
+      );
     }
     const account = accountRes.body?.data?.[0] ?? null;
     const accountId = account?.id ?? null;

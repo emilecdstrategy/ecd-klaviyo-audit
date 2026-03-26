@@ -24,6 +24,11 @@ export async function createClient(input: Omit<Client, 'id' | 'created_at'>): Pr
   return data;
 }
 
+export async function deleteClient(id: string): Promise<void> {
+  const { error } = await supabase.from('clients').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function listAudits(): Promise<Audit[]> {
   const { data, error } = await supabase.from('audits').select('*').order('updated_at', { ascending: false });
   if (error) throw error;
