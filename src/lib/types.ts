@@ -14,6 +14,7 @@ export interface Client {
   industry: string;
   esp_platform: string;
   api_key_placeholder: string;
+  klaviyo_connected?: boolean;
   notes: string;
   created_by: string;
   created_at: string;
@@ -131,6 +132,7 @@ export interface IndustryExample {
 export type UserRole = 'admin' | 'auditor' | 'viewer';
 
 export interface WizardData {
+  auditId?: string;
   clientId: string;
   clientName: string;
   companyName: string;
@@ -142,6 +144,6 @@ export interface WizardData {
   monthlyTraffic: number;
   notes: string;
   auditMethod: 'api' | 'screenshot';
-  apiKey: string;
+  apiKey?: string;
   screenshots: Record<string, File[]>;
 }

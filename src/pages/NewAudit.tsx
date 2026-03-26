@@ -19,6 +19,7 @@ import { createAudit, createAuditAsset, createAuditSections, createClient, ensur
 import type { Audit, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { supabase } from '../lib/supabase';
 
 const STEPS = [
   { label: 'Prospect Details', description: 'Basic information' },
@@ -97,7 +98,7 @@ export default function NewAudit() {
           website_url: form.websiteUrl,
           industry: form.industry,
           esp_platform: form.espPlatform,
-          api_key_placeholder: form.apiKey || '',
+          api_key_placeholder: '',
           notes: form.notes,
         }) as any);
         clientId = created.id;
@@ -160,8 +161,24 @@ export default function NewAudit() {
       }
 
       // 5) Run AI analysis and persist section updates
+      // 5) Fetch Klaviyo snapshot (API method)
+      if (form.auditMethod === 'api') {
+        setAnalysisProgress(35);
+        const { data, error: fnErr } = await supabase.functions.invoke<any>('klaviyo_fetch_snapshot', {
+          body: {
+            audit_id: audit.id,
+            client_id: clientId,
+            api_key: form.apiKey || undefined,
+          },
+        });
+        if (fnErr) throw fnErr;
+        if (!data?.ok) throw new Error(data?.error?.message || 'Failed to fetch Klaviyo snapshot');
+      }
+
+      // 6) Run AI analysis and persist section updates
       setAnalysisProgress(40);
       const ai = await runAIAnalysis({
+        auditId: audit.id,
         clientId,
         clientName: form.clientName,
         companyName: form.companyName,
@@ -173,7 +190,6 @@ export default function NewAudit() {
         monthlyTraffic: Number(form.monthlyTraffic) || 0,
         notes: form.notes,
         auditMethod: form.auditMethod as any,
-        apiKey: form.apiKey,
         screenshots,
       });
       setAnalysisProgress(70);

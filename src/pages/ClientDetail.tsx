@@ -96,7 +96,7 @@ export default function ClientDetail() {
     );
   }
 
-  const hasApiKey = !!client.api_key_placeholder;
+  const hasApiConnection = Boolean((client as any).klaviyo_connected);
   const firstAuditDate = clientAudits.length
     ? new Date(
       clientAudits
@@ -219,7 +219,7 @@ export default function ClientDetail() {
             <div className="bg-white rounded-xl p-5 card-shadow">
               <h3 className="text-sm font-semibold text-gray-900 mb-3">API Connection</h3>
               <div className="flex items-center gap-2 mb-3">
-                {hasApiKey ? (
+                {hasApiConnection ? (
                   <>
                     <CheckCircle2 className="w-4 h-4 text-emerald-500" />
                     <span className="text-sm text-emerald-700 font-medium">Connected</span>
@@ -231,9 +231,9 @@ export default function ClientDetail() {
                   </>
                 )}
               </div>
-              {!hasApiKey && (
+              {!hasApiConnection && (
                 <p className="text-xs text-gray-400">
-                  Add a Klaviyo private API key to enable direct account analysis.
+                  Connect a Klaviyo private API key during an API-based audit to enable automated analysis.
                 </p>
               )}
             </div>

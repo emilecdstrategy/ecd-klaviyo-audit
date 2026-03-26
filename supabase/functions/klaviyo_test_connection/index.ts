@@ -55,7 +55,8 @@ serve(async (req) => {
     }
 
     const listsRes = await klaviyoCall(apiKey, "/api/lists/?page[size]=1");
-    const campaignsRes = await klaviyoCall(apiKey, "/api/campaigns/?page[size]=1");
+    // Campaign listing requires a channel filter per Klaviyo docs.
+    const campaignsRes = await klaviyoCall(apiKey, "/api/campaigns/?page[size]=1&filter=equals(messages.channel,'email')");
 
     const accountData = (accountRes.body as any)?.data?.[0] ?? null;
     return json({

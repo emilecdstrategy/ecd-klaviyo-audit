@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { ArrowLeft, Save, HelpCircle, Key, ChevronDown, ChevronUp } from 'lucide-react';
+import { ArrowLeft, Save } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import { INDUSTRIES, ESP_PLATFORMS } from '../lib/constants';
 import { useAuth } from '../contexts/AuthContext';
@@ -10,14 +10,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 export default function NewClient() {
   const navigate = useNavigate();
   const { user, isDemo } = useAuth();
-  const [showApiHelp, setShowApiHelp] = useState(false);
   const [form, setForm] = useState({
     name: '',
     company_name: '',
     website_url: '',
     industry: '',
     esp_platform: 'Klaviyo',
-    api_key: '',
     notes: '',
   });
   const [saving, setSaving] = useState(false);
@@ -42,7 +40,7 @@ export default function NewClient() {
         website_url: form.website_url,
         industry: form.industry,
         esp_platform: form.esp_platform,
-        api_key_placeholder: form.api_key,
+        api_key_placeholder: '',
         notes: form.notes,
       });
       await createClient(payload as any);
@@ -144,53 +142,12 @@ export default function NewClient() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-6 card-shadow space-y-5">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Key className="w-4 h-4 text-gray-400" />
-                <h2 className="text-base font-semibold text-gray-900">API Connection (Optional)</h2>
-              </div>
-              <button
-                type="button"
-                onClick={() => setShowApiHelp(!showApiHelp)}
-                className="flex items-center gap-1 text-xs text-brand-primary font-medium hover:underline"
-              >
-                <HelpCircle className="w-3.5 h-3.5" />
-                How to get API key
-                {showApiHelp ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
-              </button>
-            </div>
-
-            {showApiHelp && (
-              <div className="bg-gray-50 rounded-lg p-4 text-sm text-gray-600 space-y-2">
-                <p className="font-medium text-gray-800">How to generate a Klaviyo Private API Key:</p>
-                <ol className="list-decimal list-inside space-y-1 text-xs">
-                  <li>Log in to your Klaviyo account</li>
-                  <li>Navigate to Settings &rarr; API Keys</li>
-                  <li>Click "Create Private API Key"</li>
-                  <li>Give it a descriptive name (e.g., "ECD Audit")</li>
-                  <li>Select Read-Only access for all scopes</li>
-                  <li>Copy the generated key and paste it below</li>
-                </ol>
-                <p className="text-xs text-gray-400 mt-2">
-                  The API key is used only for read-only data analysis during the audit process.
-                </p>
-              </div>
-            )}
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Klaviyo Private API Key</label>
-              <input
-                type="password"
-                value={form.api_key}
-                onChange={e => updateField('api_key', e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                placeholder="pk_xxxxxxxxxxxxxxxxxxxx"
-              />
-              <p className="text-xs text-gray-400 mt-1">
-                Optional. You can also run screenshot-based audits without an API key.
-              </p>
-            </div>
+          <div className="bg-white rounded-xl p-6 card-shadow">
+            <h2 className="text-base font-semibold text-gray-900">API Connection</h2>
+            <p className="text-sm text-gray-500 mt-1">
+              Klaviyo keys are connected during an <span className="font-medium">API-based audit</span> and stored securely.
+              You don’t need to add a key when creating the client.
+            </p>
           </div>
 
           <div className="flex items-center justify-end gap-3">
