@@ -295,13 +295,14 @@ serve(async (req) => {
     const preferredCurrency = account?.attributes?.preferred_currency ?? null;
 
     // 2) Fetch configuration snapshots
+    // Flows and forms support page[size]; campaigns, lists, and segments use
+    // cursor-only pagination with fixed page sizes (do NOT pass page[size]).
     const [flows, lists, segments, forms, campaigns] = await Promise.all([
       klaviyoPaged(apiKey, revision, "/api/flows/?page%5Bsize%5D=50"),
-      klaviyoPaged(apiKey, revision, "/api/lists/?page%5Bsize%5D=10"),
-      klaviyoPaged(apiKey, revision, "/api/segments/?page%5Bsize%5D=10"),
+      klaviyoPaged(apiKey, revision, "/api/lists/", 20),
+      klaviyoPaged(apiKey, revision, "/api/segments/", 20),
       klaviyoPaged(apiKey, revision, "/api/forms/?page%5Bsize%5D=100"),
-      // Campaign listing requires channel filter per docs (use email).
-      klaviyoPaged(apiKey, revision, "/api/campaigns/?page%5Bsize%5D=10&filter=equals(messages.channel,'email')"),
+      klaviyoPaged(apiKey, revision, "/api/campaigns/?filter=equals(messages.channel,'email')", 20),
     ]);
 
     // 3) Persist snapshots (clear prior snapshots for this audit_id to keep latest)
@@ -372,15 +373,24 @@ serve(async (req) => {
       if (rows.length) await sb.from("klaviyo_segment_snapshots").insert(rows);
     }
 
-    // 4) Store connection metadata
-    const scopes = {
-      accounts: accountRes.ok,
-      flows: flows.ok,
-      lists: lists.ok,
-      segments: segments.ok,
-      forms: forms.ok,
-      campaigns: campaigns.ok,
-    };
+    // 4) Store connection metadata (with diagnostic info for failures)
+    function extractKlaviyoError(res: any): string | null {
+      if (res.ok) return null;
+      const errs = res.body?.errors;
+      if (Array.isArray(errs) && errs.length > 0) {
+        return errs.map((e: any) => `${e.status ?? ""} ${e.title ?? ""}: ${e.detail ?? ""}`).join("; ").slice(0, 500);
+      }
+      if (typeof res.body === "string") return res.body.slice(0, 500);
+      try { return JSON.stringify(res.body).slice(0, 500); } catch { return "unknown"; }
+    }
+    const scopeDiag: Record<string, any> = {};
+    const resources = { accounts: accountRes, flows, lists, segments, forms, campaigns } as Record<string, any>;
+    for (const [name, res] of Object.entries(resources)) {
+      scopeDiag[name] = res.ok
+        ? true
+        : { ok: false, status: res.status ?? null, error: extractKlaviyoError(res) };
+    }
+    const scopes = scopeDiag;
     await sb.from("klaviyo_connections").upsert({
       client_id: clientId,
       account_id: accountId,
@@ -546,14 +556,16 @@ serve(async (req) => {
     }
 
     // Observability
+    const failedEndpoints = Object.entries(scopeDiag).filter(([, v]) => v !== true);
     try {
       await sb.from("klaviyo_runs").insert({
         correlation_id: correlationId,
         audit_id: auditId,
         client_id: clientId,
-        status: "success",
+        status: failedEndpoints.length > 0 ? "partial" : "success",
         revision,
         elapsed_ms: Date.now() - startedAt,
+        error_message: failedEndpoints.length > 0 ? JSON.stringify(Object.fromEntries(failedEndpoints)).slice(0, 1000) : null,
       });
     } catch {
       // swallow logging errors
@@ -571,14 +583,14 @@ serve(async (req) => {
         segments: segments.ok ? segments.items.length : null,
         lists: lists.ok ? lists.items.length : null,
       },
-      fetch: {
-        accounts: { ok: accountRes.ok, status: (accountRes as any).status ?? null, error: accountRes.ok ? null : String((accountRes as any).error ?? "") },
-        flows: { ok: flows.ok, status: (flows as any).status ?? null, error: flows.ok ? null : String((flows as any).error ?? "") },
-        lists: { ok: lists.ok, status: (lists as any).status ?? null, error: lists.ok ? null : String((lists as any).error ?? "") },
-        segments: { ok: segments.ok, status: (segments as any).status ?? null, error: segments.ok ? null : String((segments as any).error ?? "") },
-        forms: { ok: forms.ok, status: (forms as any).status ?? null, error: forms.ok ? null : String((forms as any).error ?? "") },
-        campaigns: { ok: campaigns.ok, status: (campaigns as any).status ?? null, error: campaigns.ok ? null : String((campaigns as any).error ?? "") },
-      },
+      fetch: Object.fromEntries(
+        Object.entries(resources).map(([name, res]) => [
+          name,
+          res.ok
+            ? { ok: true, status: res.status ?? 200 }
+            : { ok: false, status: res.status ?? null, error: extractKlaviyoError(res) },
+        ]),
+      ),
       reporting: {
         conversion_metric_id: conversionMetricId,
         campaign_reports: campaignReports.map((r) => ({ timeframe: r.timeframe, rows: (r.results ?? []).length })),

@@ -92,8 +92,8 @@ export default function AuditWorkspace() {
               .eq('client_id', a.client_id)
               .maybeSingle();
             if (conn?.scopes) {
-              const missing = Object.entries(conn.scopes as Record<string, boolean>)
-                .filter(([, ok]) => !ok)
+              const missing = Object.entries(conn.scopes as Record<string, unknown>)
+                .filter(([, v]) => v !== true)
                 .map(([k]) => k);
               if (missing.length > 0) setScopeWarnings(missing);
             }
