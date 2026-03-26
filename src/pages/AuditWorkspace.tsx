@@ -53,6 +53,14 @@ export default function AuditWorkspace() {
 
   const saveTimers = useRef<Record<string, number>>({});
 
+  // Hooks must run unconditionally on every render.
+  // Compute derived values before any early returns to avoid hook-order crashes.
+  const totalRevenue = useMemo(
+    () => sections.reduce((sum, sec) => sum + (Number(sec.revenue_opportunity) || 0), 0),
+    [sections],
+  );
+  const currentSection = sections.find(s => s.section_key === activeSection);
+
   useEffect(() => {
     let cancelled = false;
     if (isDemo || !id) return;
@@ -117,9 +125,6 @@ export default function AuditWorkspace() {
       </div>
     );
   }
-
-  const currentSection = sections.find(s => s.section_key === activeSection);
-  const totalRevenue = useMemo(() => sections.reduce((s, sec) => s + sec.revenue_opportunity, 0), [sections]);
 
   const handleSectionUpdate = (sectionId: string, updates: Partial<AuditSection>) => {
     setSections(prev => prev.map(s => (s.id === sectionId ? { ...s, ...updates } : s)));
