@@ -39,7 +39,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
     executiveSummary: { type: "string", minLength: 80, maxLength: 4000 },
     sections: {
       type: "array",
-      minItems: 6,
+      minItems: 1,
       items: {
         type: "object",
         additionalProperties: false,
@@ -72,7 +72,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
 
 type ValidationResult = { ok: true; value: AIOutput } | { ok: false; errors: string[] };
 
-export function validateOutput(input: unknown): ValidationResult {
+export function validateOutput(input: unknown, requiredSectionKeys: readonly SectionKey[] = AUDIT_SECTION_KEYS): ValidationResult {
   if (!input || typeof input !== "object") return { ok: false, errors: ["Output is not an object"] };
   const out = input as Partial<AIOutput>;
   const errors: string[] = [];
@@ -89,7 +89,7 @@ export function validateOutput(input: unknown): ValidationResult {
 
   const byKey = new Map<string, AISection>();
   const placeholderRegex = /(lorem ipsum|placeholder|tbd|insert here|example text)/i;
-  for (const key of AUDIT_SECTION_KEYS) {
+  for (const key of requiredSectionKeys) {
     const section = (out.sections ?? []).find((s) => (s as AISection).section_key === key) as AISection | undefined;
     if (!section) {
       errors.push(`missing section ${key}`);
@@ -113,7 +113,7 @@ export function validateOutput(input: unknown): ValidationResult {
     value: {
       schemaVersion: AI_SCHEMA_VERSION,
       executiveSummary: out.executiveSummary!.trim(),
-      sections: AUDIT_SECTION_KEYS.map((k) => byKey.get(k)!),
+      sections: requiredSectionKeys.map((k) => byKey.get(k)!),
     },
   };
 }

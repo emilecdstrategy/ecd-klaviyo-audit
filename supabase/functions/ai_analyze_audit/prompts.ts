@@ -1,4 +1,5 @@
 import { AI_SCHEMA_VERSION } from "./schema.ts";
+import { AUDIT_SECTION_KEYS, type SectionKey } from "./schema.ts";
 
 type WizardData = {
   clientId?: string;
@@ -12,6 +13,7 @@ type WizardData = {
   monthlyTraffic?: number;
   notes?: string;
   auditMethod?: "api" | "screenshot";
+  requestedSectionKeys?: SectionKey[];
 };
 
 export function buildAuditSystemPrompt() {
@@ -25,18 +27,14 @@ export function buildAuditSystemPrompt() {
 }
 
 export function buildAuditUserPrompt(data: WizardData) {
+  const requested = Array.isArray(data.requestedSectionKeys) && data.requestedSectionKeys.length > 0
+    ? data.requestedSectionKeys
+    : AUDIT_SECTION_KEYS;
   return JSON.stringify(
     {
       task: "Generate a full audit analysis.",
       input: data,
-      required_sections: [
-        "account_health",
-        "flows",
-        "segmentation",
-        "campaigns",
-        "email_design",
-        "signup_forms",
-      ],
+      required_sections: requested,
       style: {
         audience: "ecommerce founder/marketing lead",
         tone: "executive, practical",

@@ -49,31 +49,32 @@ export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisR
     const token = sessionData.session?.access_token;
     if (!token) throw new AIAnalysisError('Your session expired. Please sign in again and retry.', 'provider_error');
 
-    const { data, error } = await supabase.functions.invoke<any>('ai_analyze_audit', {
-      body: wizardData,
-      headers: {
-        Authorization: `Bearer ${token}`,
-      },
-    });
+    const call = async (requestedSectionKeys: string[]) => {
+      const { data, error } = await supabase.functions.invoke<any>('ai_analyze_audit', {
+        body: { ...wizardData, requestedSectionKeys },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (error) throw new AIAnalysisError(error.message || 'AI request failed', 'provider_error');
+      if (data?.ok === false) {
+        const code = (data?.error?.code ?? 'provider_error') as AIErrorCode;
+        const msg = data?.error?.message ?? 'AI request failed';
+        throw new AIAnalysisError(msg, code, data?.correlationId);
+      }
+      if (!validateClientPayload(data)) throw new AIAnalysisError('Invalid AI response shape', 'bad_response', data?.correlationId);
+      return data as AIAnalysisResult;
+    };
 
-    if (error) {
-      throw new AIAnalysisError(error.message || 'AI request failed', 'provider_error');
-    }
+    // Split into two smaller requests to avoid provider timeouts.
+    const first = await call(['account_health', 'flows', 'segmentation']);
+    const second = await call(['campaigns', 'email_design', 'signup_forms']);
 
-    if (data?.ok === false) {
-      const code = (data?.error?.code ?? 'provider_error') as AIErrorCode;
-      const msg = data?.error?.message ?? 'AI request failed';
-      throw new AIAnalysisError(msg, code, data?.correlationId);
-    }
+    const sections = [...(first.sections ?? []), ...(second.sections ?? [])];
+    if (!sections.length) throw new AIAnalysisError('AI returned no sections', 'bad_response');
 
-    if (validateClientPayload(data)) {
-      return {
-        executiveSummary: data.executiveSummary,
-        sections: data.sections,
-      };
-    }
-
-    throw new AIAnalysisError('Invalid AI response shape', 'bad_response', data?.correlationId);
+    return {
+      executiveSummary: first.executiveSummary,
+      sections,
+    };
   } catch (e) {
     if (!allowFallback) {
       if (e instanceof AIAnalysisError) throw e;

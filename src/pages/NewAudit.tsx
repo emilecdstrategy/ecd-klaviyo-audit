@@ -257,12 +257,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
   const body = (
     <div className={asModal ? 'p-5' : 'p-8 max-w-4xl'}>
-      <style>{`
-        @keyframes shimmer {
-          0% { background-position: 200% 0; }
-          100% { background-position: -200% 0; }
-        }
-      `}</style>
+      <style>{``}</style>
       {!asModal && (
         <button
           onClick={() => step > 0 ? setStep(step - 1) : navigate('/')}
@@ -504,10 +499,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                           <span className="absolute inset-0 rounded-full blur-[6px] bg-brand-primary/25 animate-pulse" />
                         )}
                       </div>
-                      <span className={s.active ? 'font-medium' : ''}>{s.label}</span>
-                      {s.active && (
-                        <span className="ml-auto h-3 w-16 rounded-full bg-gradient-to-r from-gray-100 via-gray-200 to-gray-100 bg-[length:200%_100%] animate-[shimmer_1.2s_linear_infinite]" />
-                      )}
+                      <span className={s.active ? 'font-medium text-brand-primary animate-pulse [text-shadow:0_0_18px_rgba(99,102,241,0.35)]' : ''}>
+                        {s.label}
+                      </span>
                     </div>
                   ))}
                 </div>

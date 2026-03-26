@@ -3,6 +3,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   AI_OUTPUT_JSON_SCHEMA,
   AI_SCHEMA_VERSION,
+  AUDIT_SECTION_KEYS,
+  type SectionKey,
   failedSectionKeysFromErrors,
   validateOutput,
 } from "./schema.ts";
@@ -223,6 +225,9 @@ serve(async (req) => {
     }
 
     const body = (await req.json()) as WizardData;
+    const requestedSectionKeys: SectionKey[] | null = Array.isArray((body as any)?.requestedSectionKeys)
+      ? ((body as any).requestedSectionKeys as SectionKey[]).filter((k) => (AUDIT_SECTION_KEYS as readonly string[]).includes(k))
+      : null;
     const systemPrompt = buildAuditSystemPrompt();
 
     const first = await callOpenAI({
@@ -233,7 +238,7 @@ serve(async (req) => {
 
     let output = first.output;
     let usage = first.usage;
-    let validation = validateOutput(output);
+    let validation = validateOutput(output, requestedSectionKeys?.length ? requestedSectionKeys : AUDIT_SECTION_KEYS);
 
     if (!validation.ok) {
       const failedSections = failedSectionKeysFromErrors(validation.errors);
