@@ -77,8 +77,9 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
             return (
               <button
                 key={item.to}
+                type="button"
                 onClick={() => navigate('/audits/new', { state: { backgroundLocation: location } })}
-                className={linkClass({ isActive: false })}
+                className={`${linkClass({ isActive: false })} w-full`}
               >
                 <item.icon className="w-[18px] h-[18px] shrink-0" />
                 {!collapsed && <span>{item.label}</span>}

@@ -46,8 +46,7 @@ export default function Clients() {
     return clients.filter(
       c =>
         c.name.toLowerCase().includes(q) ||
-        c.company_name.toLowerCase().includes(q) ||
-        c.industry.toLowerCase().includes(q),
+        c.company_name.toLowerCase().includes(q),
     );
   }, [clients, search]);
 
@@ -75,7 +74,7 @@ export default function Clients() {
               type="text"
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search clients by name or industry..."
+              placeholder="Search clients by name..."
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
@@ -162,7 +161,7 @@ export default function Clients() {
                   <div className="space-y-2.5">
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       <Globe className="w-3.5 h-3.5" />
-                      <span className="truncate">{client.esp_platform}</span>
+                      <span className="truncate">{client.website_url || '—'}</span>
                     </div>
                     <div className="flex items-center gap-2 text-xs text-gray-500">
                       <Calendar className="w-3.5 h-3.5" />

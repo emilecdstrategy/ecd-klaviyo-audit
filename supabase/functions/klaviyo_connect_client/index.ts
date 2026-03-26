@@ -133,6 +133,30 @@ serve(async (req) => {
 
     const sb = assertServiceClient();
 
+    // Enforce 1 Klaviyo account = 1 client. If another client already connected this account, block.
+    if (accountId) {
+      const { data: existingConn, error: existingConnErr } = await sb
+        .from("klaviyo_connections")
+        .select("client_id")
+        .eq("account_id", accountId)
+        .neq("client_id", clientId)
+        .maybeSingle();
+      if (existingConnErr) throw existingConnErr;
+      if (existingConn?.client_id) {
+        return json(
+          {
+            ok: false,
+            correlationId,
+            error: {
+              code: "client_exists",
+              message: "A client with this Klaviyo account already exists.",
+            },
+          },
+          { status: 200 },
+        );
+      }
+    }
+
     // Store encrypted key
     const enc = await encryptString(apiKey);
     await sb.from("client_secrets").upsert(

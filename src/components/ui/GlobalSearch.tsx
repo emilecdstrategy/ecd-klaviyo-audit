@@ -176,12 +176,18 @@ export default function GlobalSearch() {
                   {audits.map((a, idx) => {
                     const absoluteIndex = clients.length + idx;
                     const active = absoluteIndex === activeIndex;
+                    const ranAt = (a.updated_at || (a as any).created_at)
+                      ? new Date((a.updated_at || (a as any).created_at) as any)
+                      : null;
+                    const ranLabel = ranAt ? ranAt.toLocaleDateString() : '';
+                    const statusLabel = a.status.replace('_', ' ');
+                    const subtitle = ranLabel ? `${statusLabel} • ${ranLabel}` : statusLabel;
                     return (
                       <Row
                         key={a.id}
                         active={active}
                         title={a.title}
-                        subtitle={a.status.replace('_', ' ')}
+                        subtitle={subtitle}
                         onClick={() => onPick({ type: 'audit', item: a })}
                         onMouseEnter={() => setActiveIndex(absoluteIndex)}
                       />
