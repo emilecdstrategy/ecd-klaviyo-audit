@@ -138,7 +138,7 @@ function summarizeFlowPerformance(perf: KlaviyoContext["flowPerformance"]): stri
   return lines.join("\n");
 }
 
-export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext) {
+export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext, sectionsOnly = false) {
   const requested = Array.isArray(data.requestedSectionKeys) && data.requestedSectionKeys.length > 0
     ? data.requestedSectionKeys
     : AUDIT_SECTION_KEYS;
@@ -153,38 +153,41 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext)
     flow_performance: summarizeFlowPerformance(klaviyo.flowPerformance),
   } : null;
 
-  return JSON.stringify(
-    {
-      task: "Generate a full audit analysis based on the actual Klaviyo account data provided below.",
-      client_info: {
-        name: data.clientName || data.companyName,
-        website: data.websiteUrl || klaviyo?.account?.website_url,
-        esp: data.espPlatform || "Klaviyo",
-        audit_method: data.auditMethod,
-        notes: data.notes || undefined,
-      },
-      klaviyo_data: klaviyoSection,
-      required_sections: requested,
-      required_top_level_fields: {
-        strengths: "Array of 4-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages from the data.",
-        concerns: "Array of 4-6 strings. Each is a specific issue or gap with bold lead phrase and evidence. Reference actual missing flows, underperforming metrics, inactive flows by name.",
-        implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
-      },
-      style: {
-        audience: "ecommerce founder/marketing lead",
-        tone: "executive, practical, actionable",
-        include_benchmarks: true,
-      },
-      constraints: {
-        currency: "USD",
-        no_negative_revenue_opportunity: true,
-        revenue_realism: "Be CONSERVATIVE with revenue_opportunity estimates. Base them on actual monthly revenue in the data. Each section should max at 2-3x current annualized revenue for that area. Total across all sections should rarely exceed $100K for smaller accounts.",
-        analyze_actual_data: "You MUST reference and analyze the actual Klaviyo data above. Do NOT claim data is missing if it is provided.",
-      },
+  const payload: Record<string, unknown> = {
+    task: sectionsOnly
+      ? "Generate ONLY the requested audit sections below. Do NOT include executiveSummary, strengths, concerns, or implementationTimeline."
+      : "Generate a full audit analysis based on the actual Klaviyo account data provided below.",
+    client_info: {
+      name: data.clientName || data.companyName,
+      website: data.websiteUrl || klaviyo?.account?.website_url,
+      esp: data.espPlatform || "Klaviyo",
+      audit_method: data.auditMethod,
+      notes: data.notes || undefined,
     },
-    null,
-    2,
-  );
+    klaviyo_data: klaviyoSection,
+    required_sections: requested,
+    style: {
+      audience: "ecommerce founder/marketing lead",
+      tone: "executive, practical, actionable",
+      include_benchmarks: true,
+    },
+    constraints: {
+      currency: "USD",
+      no_negative_revenue_opportunity: true,
+      revenue_realism: "Be CONSERVATIVE with revenue_opportunity estimates. Base them on actual monthly revenue in the data. Each section should max at 2-3x current annualized revenue for that area. Total across all sections should rarely exceed $100K for smaller accounts.",
+      analyze_actual_data: "You MUST reference and analyze the actual Klaviyo data above. Do NOT claim data is missing if it is provided.",
+    },
+  };
+
+  if (!sectionsOnly) {
+    payload.required_top_level_fields = {
+      strengths: "Array of 4-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages from the data.",
+      concerns: "Array of 4-6 strings. Each is a specific issue or gap with bold lead phrase and evidence. Reference actual missing flows, underperforming metrics, inactive flows by name.",
+      implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
+    };
+  }
+
+  return JSON.stringify(payload, null, 2);
 }
 
 export function buildRepairUserPrompt(params: {

@@ -52,9 +52,9 @@ export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisR
     const token = sessionData.session?.access_token;
     if (!token) throw new AIAnalysisError('Your session expired. Please sign in again and retry.', 'provider_error');
 
-    const call = async (requestedSectionKeys: string[]) => {
+    const call = async (requestedSectionKeys: string[], sectionsOnly = false) => {
       const { data, error } = await supabase.functions.invoke<any>('ai_analyze_audit', {
-        body: { ...wizardData, requestedSectionKeys },
+        body: { ...wizardData, requestedSectionKeys, sectionsOnly },
         headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw new AIAnalysisError(error.message || 'AI request failed', 'provider_error');
@@ -81,7 +81,7 @@ export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisR
     };
 
     const first = await withRetryOnTimeout(() => call(['account_health', 'flows', 'segmentation']));
-    const second = await withRetryOnTimeout(() => call(['campaigns', 'email_design', 'signup_forms']));
+    const second = await withRetryOnTimeout(() => call(['campaigns', 'email_design', 'signup_forms'], true));
 
     const sections = [...(first.sections ?? []), ...(second.sections ?? [])];
     if (!sections.length) throw new AIAnalysisError('AI returned no sections', 'bad_response');

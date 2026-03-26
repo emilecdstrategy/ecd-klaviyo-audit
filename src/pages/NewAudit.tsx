@@ -586,11 +586,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                           Regenerate the key in Klaviyo with full read access for complete data.
                         </div>
                       )}
-                      {snapshotMeta.reporting && (
-                        <p className="text-[11px] text-gray-500 mt-2">
-                          Reporting rows: flows {snapshotMeta.reporting.flow_reports?.find(r => r.timeframe === 'last_30_days')?.rows ?? '—'} / campaigns {snapshotMeta.reporting.campaign_reports?.find(r => r.timeframe === 'last_30_days')?.rows ?? '—'}
-                        </p>
-                      )}
+                      
                     </div>
                   );
                 })()}

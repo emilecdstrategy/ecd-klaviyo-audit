@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import {
   AI_OUTPUT_JSON_SCHEMA,
+  AI_SECTIONS_ONLY_SCHEMA,
   AI_SCHEMA_VERSION,
   AUDIT_SECTION_KEYS,
   type SectionKey,
@@ -126,6 +127,7 @@ async function callOpenAI(params: {
   model: string;
   systemPrompt: string;
   userPrompt: string;
+  jsonSchema?: unknown;
 }): Promise<{ output: unknown; usage: any }> {
   const OPENAI_API_KEY = await getOpenAiKey();
 
@@ -146,7 +148,7 @@ async function callOpenAI(params: {
       format: {
         type: "json_schema",
         name: "audit_analysis",
-        schema: AI_OUTPUT_JSON_SCHEMA,
+        schema: params.jsonSchema ?? AI_OUTPUT_JSON_SCHEMA,
       },
     },
   };
@@ -262,6 +264,7 @@ serve(async (req) => {
     const requestedSectionKeys: SectionKey[] | null = Array.isArray((body as any)?.requestedSectionKeys)
       ? ((body as any).requestedSectionKeys as SectionKey[]).filter((k) => (AUDIT_SECTION_KEYS as readonly string[]).includes(k))
       : null;
+    const sectionsOnly = (body as any)?.sectionsOnly === true;
     const systemPrompt = buildAuditSystemPrompt();
 
     // Fetch Klaviyo snapshot data from DB to enrich the prompt
@@ -279,12 +282,13 @@ serve(async (req) => {
     const first = await callOpenAI({
       model: PRIMARY_MODEL,
       systemPrompt,
-      userPrompt: buildAuditUserPrompt(body, klaviyoCtx ?? undefined),
+      userPrompt: buildAuditUserPrompt(body, klaviyoCtx ?? undefined, sectionsOnly),
+      jsonSchema: sectionsOnly ? AI_SECTIONS_ONLY_SCHEMA : AI_OUTPUT_JSON_SCHEMA,
     });
 
     let output = first.output;
     let usage = first.usage;
-    let validation = validateOutput(output, requestedSectionKeys?.length ? requestedSectionKeys : AUDIT_SECTION_KEYS);
+    let validation = validateOutput(output, requestedSectionKeys?.length ? requestedSectionKeys : AUDIT_SECTION_KEYS, sectionsOnly);
 
     if (!validation.ok) {
       const failedSections = failedSectionKeysFromErrors(validation.errors);

@@ -40,6 +40,33 @@ export type AIOutput = {
   sections: AISection[];
 };
 
+const SECTION_ITEM_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: [
+    "section_key",
+    "current_state_title",
+    "optimized_state_title",
+    "current_state_notes",
+    "optimized_notes",
+    "ai_findings",
+    "summary_text",
+    "revenue_opportunity",
+    "confidence",
+  ],
+  properties: {
+    section_key: { type: "string", enum: AUDIT_SECTION_KEYS },
+    current_state_title: { type: "string", minLength: 3, maxLength: 200 },
+    optimized_state_title: { type: "string", minLength: 3, maxLength: 200 },
+    current_state_notes: { type: "string", minLength: 40, maxLength: 3000 },
+    optimized_notes: { type: "string", minLength: 40, maxLength: 3000 },
+    ai_findings: { type: "string", minLength: 40, maxLength: 3000 },
+    summary_text: { type: "string", minLength: 40, maxLength: 1200 },
+    revenue_opportunity: { type: "number", minimum: 0, maximum: 500000 },
+    confidence: { type: "string", enum: ["low", "medium", "high"] },
+  },
+} as const;
+
 export const AI_OUTPUT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
@@ -75,42 +102,23 @@ export const AI_OUTPUT_JSON_SCHEMA = {
         },
       },
     },
-    sections: {
-      type: "array",
-      minItems: 1,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: [
-          "section_key",
-          "current_state_title",
-          "optimized_state_title",
-          "current_state_notes",
-          "optimized_notes",
-          "ai_findings",
-          "summary_text",
-          "revenue_opportunity",
-          "confidence",
-        ],
-        properties: {
-          section_key: { type: "string", enum: AUDIT_SECTION_KEYS },
-          current_state_title: { type: "string", minLength: 3, maxLength: 200 },
-          optimized_state_title: { type: "string", minLength: 3, maxLength: 200 },
-          current_state_notes: { type: "string", minLength: 40, maxLength: 3000 },
-          optimized_notes: { type: "string", minLength: 40, maxLength: 3000 },
-          ai_findings: { type: "string", minLength: 40, maxLength: 3000 },
-          summary_text: { type: "string", minLength: 40, maxLength: 1200 },
-          revenue_opportunity: { type: "number", minimum: 0, maximum: 500000 },
-          confidence: { type: "string", enum: ["low", "medium", "high"] },
-        },
-      },
-    },
+    sections: { type: "array", minItems: 1, items: SECTION_ITEM_SCHEMA },
+  },
+} as const;
+
+export const AI_SECTIONS_ONLY_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["schemaVersion", "sections"],
+  properties: {
+    schemaVersion: { type: "string" },
+    sections: { type: "array", minItems: 1, items: SECTION_ITEM_SCHEMA },
   },
 } as const;
 
 type ValidationResult = { ok: true; value: AIOutput } | { ok: false; errors: string[] };
 
-export function validateOutput(input: unknown, requiredSectionKeys: readonly SectionKey[] = AUDIT_SECTION_KEYS): ValidationResult {
+export function validateOutput(input: unknown, requiredSectionKeys: readonly SectionKey[] = AUDIT_SECTION_KEYS, sectionsOnly = false): ValidationResult {
   if (!input || typeof input !== "object") return { ok: false, errors: ["Output is not an object"] };
   const out = input as Partial<AIOutput>;
   const errors: string[] = [];
@@ -118,17 +126,19 @@ export function validateOutput(input: unknown, requiredSectionKeys: readonly Sec
   if (out.schemaVersion !== AI_SCHEMA_VERSION) {
     errors.push(`schemaVersion must be ${AI_SCHEMA_VERSION}`);
   }
-  if (!out.executiveSummary || out.executiveSummary.trim().length < 80) {
-    errors.push("executiveSummary is too short");
-  }
-  if (!Array.isArray(out.strengths) || out.strengths.length < 3) {
-    errors.push("strengths must have at least 3 items");
-  }
-  if (!Array.isArray(out.concerns) || out.concerns.length < 3) {
-    errors.push("concerns must have at least 3 items");
-  }
-  if (!Array.isArray(out.implementationTimeline) || out.implementationTimeline.length < 4) {
-    errors.push("implementationTimeline must have 4 phases");
+  if (!sectionsOnly) {
+    if (!out.executiveSummary || out.executiveSummary.trim().length < 80) {
+      errors.push("executiveSummary is too short");
+    }
+    if (!Array.isArray(out.strengths) || out.strengths.length < 3) {
+      errors.push("strengths must have at least 3 items");
+    }
+    if (!Array.isArray(out.concerns) || out.concerns.length < 3) {
+      errors.push("concerns must have at least 3 items");
+    }
+    if (!Array.isArray(out.implementationTimeline) || out.implementationTimeline.length < 4) {
+      errors.push("implementationTimeline must have 4 phases");
+    }
   }
   if (!Array.isArray(out.sections) || out.sections.length === 0) {
     errors.push("sections must be a non-empty array");
@@ -159,7 +169,7 @@ export function validateOutput(input: unknown, requiredSectionKeys: readonly Sec
     ok: true,
     value: {
       schemaVersion: AI_SCHEMA_VERSION,
-      executiveSummary: out.executiveSummary!.trim(),
+      executiveSummary: (out.executiveSummary ?? "").trim(),
       strengths: (out.strengths ?? []).map((s: string) => s.trim()),
       concerns: (out.concerns ?? []).map((s: string) => s.trim()),
       implementationTimeline: (out.implementationTimeline ?? []).map((p) => ({
