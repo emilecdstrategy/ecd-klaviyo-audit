@@ -17,8 +17,9 @@ const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const PRIMARY_MODEL = "gpt-5.4";
 const ESCALATION_MODEL = "gpt-5.4-pro";
-const MAX_ATTEMPTS = 2;
-const REQUEST_TIMEOUT_MS = 60_000;
+// Edge Functions have execution limits; keep OpenAI calls bounded so we don't get terminated mid-run.
+const MAX_ATTEMPTS = 1;
+const REQUEST_TIMEOUT_MS = 25_000;
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
@@ -118,7 +119,7 @@ async function callOpenAI(params: {
 
   const body = {
     model: params.model,
-    reasoning: { effort: "high" },
+    reasoning: { effort: "medium" },
     input: [
       {
         role: "system",
@@ -214,20 +215,10 @@ serve(async (req) => {
     if (!validation.ok) {
       const failedSections = failedSectionKeysFromErrors(validation.errors);
       if (failedSections.length > 0) {
+        // Avoid long multi-call repair loops inside a single edge invocation.
+        // If validation fails, surface errors to the client so we can retry deterministically.
         selectedModel = ESCALATION_MODEL;
         retries += 1;
-        const second = await callOpenAI({
-          model: ESCALATION_MODEL,
-          systemPrompt,
-          userPrompt: buildRepairUserPrompt({
-            failedSectionKeys: failedSections,
-            originalInput: body,
-            previousOutput: output,
-          }),
-        });
-        output = second.output;
-        usage = second.usage ?? usage;
-        validation = validateOutput(output);
       }
     }
 

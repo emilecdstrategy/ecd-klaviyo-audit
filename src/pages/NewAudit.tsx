@@ -37,6 +37,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [step, setStep] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
+  const [analysisStage, setAnalysisStage] = useState<string>('');
   const [error, setError] = useState('');
   const [form, setForm] = useState({
     clientId: '',
@@ -94,12 +95,14 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     setError('');
     setAnalyzing(true);
     setAnalysisProgress(0);
+    setAnalysisStage('Starting…');
 
     if (isDemo) {
       const labels = ['Account Health', 'Flows', 'Segmentation', 'Campaigns', 'Email Design', 'Signup Forms'];
       for (let i = 0; i < labels.length; i++) {
         await new Promise(r => setTimeout(r, 800));
         setAnalysisProgress(Math.round(((i + 1) / labels.length) * 100));
+        setAnalysisStage(`Analyzing ${labels[i]}…`);
       }
       setAnalyzing(false);
       navigate('/audits/demo-audit-1');
@@ -108,6 +111,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
     try {
       // 1) Ensure client exists
+      setAnalysisStage('Preparing client…');
       let clientId = form.clientId;
       if (!clientId) {
         const created = await createClient(await ensureClientCreator(user, {
@@ -123,6 +127,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       }
 
       // 2) Create audit row
+      setAnalysisStage('Creating audit…');
       const title = `${form.companyName} - Klaviyo Audit`;
       const audit = await createAudit({
         client_id: clientId,
@@ -139,6 +144,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       } as any);
 
       // 3) Create default section rows
+      setAnalysisStage('Setting up audit sections…');
       const sectionKeys = ['account_health', 'flows', 'segmentation', 'campaigns', 'email_design', 'signup_forms', 'revenue_summary'];
       const createdSections = await createAuditSections(audit.id, sectionKeys);
 
@@ -154,6 +160,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
       const allFiles = Object.entries(screenshots).flatMap(([cat, files]) => files.map(f => ({ cat, file: f })));
       if (form.auditMethod === 'screenshot' && allFiles.length > 0) {
+        setAnalysisStage('Uploading screenshots…');
         // upload sequentially to keep progress meaningful
         for (let i = 0; i < allFiles.length; i++) {
           const { cat, file } = allFiles[i];
@@ -175,6 +182,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             side: 'current',
           });
           setAnalysisProgress(Math.round(((i + 1) / Math.max(1, allFiles.length)) * 30));
+          setAnalysisStage(`Uploading screenshots… (${i + 1}/${allFiles.length})`);
         }
       }
 
@@ -182,6 +190,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       // 5) Fetch Klaviyo snapshot (API method)
       if (form.auditMethod === 'api') {
         setAnalysisProgress(35);
+        setAnalysisStage('Fetching Klaviyo account data…');
         const { data: sessionData } = await supabase.auth.getSession();
         const token = sessionData.session?.access_token;
         if (!token) throw new Error('Your session expired. Please sign in again and retry.');
@@ -201,6 +210,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
       // 6) Run AI analysis and persist section updates
       setAnalysisProgress(40);
+      setAnalysisStage('Running AI analysis…');
       const ai = await runAIAnalysis({
         auditId: audit.id,
         clientId,
@@ -216,6 +226,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         screenshots,
       });
       setAnalysisProgress(70);
+      setAnalysisStage('Saving results…');
 
       // Apply AI updates by matching section_key
       for (const s of createdSections) {
@@ -228,6 +239,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       await updateAudit(audit.id, { executive_summary: ai.executiveSummary } as any);
 
       setAnalysisProgress(100);
+      setAnalysisStage('Done');
       setAnalyzing(false);
       navigate(`/audits/${audit.id}`);
     } catch (e: unknown) {
@@ -434,7 +446,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 <Loader2 className="w-12 h-12 text-brand-primary animate-spin mx-auto mb-4" />
                 <h2 className="text-xl font-bold text-gray-900 mb-2">Analyzing Account...</h2>
                 <p className="text-sm text-gray-500 mb-6">
-                  Generating findings across all audit sections.
+                  {analysisStage || 'Generating findings across all audit sections.'}
                 </p>
                 <div className="max-w-xs mx-auto">
                   <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
@@ -444,6 +456,19 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                     />
                   </div>
                   <p className="text-xs text-gray-400 mt-2">{analysisProgress}% complete</p>
+                </div>
+                <div className="max-w-md mx-auto mt-5 text-left">
+                  {[
+                    { label: 'Create audit', done: analysisProgress >= 10 },
+                    { label: form.auditMethod === 'api' ? 'Fetch Klaviyo snapshot' : 'Upload screenshots', done: analysisProgress >= (form.auditMethod === 'api' ? 40 : 30) },
+                    { label: 'Run AI analysis', done: analysisProgress >= 70 },
+                    { label: 'Save results', done: analysisProgress >= 100 },
+                  ].map((s) => (
+                    <div key={s.label} className="flex items-center gap-2 text-sm text-gray-600">
+                      <CheckCircle2 className={s.done ? 'w-4 h-4 text-green-600' : 'w-4 h-4 text-gray-300'} />
+                      <span className={s.done ? 'text-gray-900' : ''}>{s.label}</span>
+                    </div>
+                  ))}
                 </div>
               </>
             )}
