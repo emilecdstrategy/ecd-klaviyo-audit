@@ -264,9 +264,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
       const totalOpportunity = ai.sections.reduce((sum, s) => sum + (Number((s as any).revenue_opportunity) || 0), 0);
 
-      // Save exec summary + totals onto audit
+      const execPayload = (ai.strengths?.length || ai.concerns?.length)
+        ? JSON.stringify({ text: ai.executiveSummary, strengths: ai.strengths ?? [], concerns: ai.concerns ?? [] })
+        : ai.executiveSummary;
+
       await updateAudit(audit.id, {
-        executive_summary: ai.executiveSummary,
+        executive_summary: execPayload,
         total_revenue_opportunity: totalOpportunity,
       } as any);
 

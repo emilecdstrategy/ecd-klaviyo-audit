@@ -161,7 +161,20 @@ export default function PublicReport() {
     .filter(s => s.revenue_opportunity > 0)
     .sort((a, b) => b.revenue_opportunity - a.revenue_opportunity);
   const reportSections = sections.filter(s => s.section_key !== 'revenue_summary');
-  const attentionItems = topOpportunities.slice(0, 4);
+
+  let execText = audit.executive_summary || '';
+  let aiStrengths: string[] = [];
+  let aiConcerns: string[] = [];
+  try {
+    const parsed = JSON.parse(execText);
+    if (parsed && typeof parsed.text === 'string') {
+      execText = parsed.text;
+      aiStrengths = Array.isArray(parsed.strengths) ? parsed.strengths : [];
+      aiConcerns = Array.isArray(parsed.concerns) ? parsed.concerns : [];
+    }
+  } catch {
+    // plain text — keep as-is
+  }
 
   const visibleNavItems = NAV_ITEMS.filter(n => {
     if (n.id === 'recommendations' && !audit.show_recommendations) return false;
@@ -231,16 +244,16 @@ export default function PublicReport() {
               <span className="text-brand-primary">{formatCurrency(totalRevenue)}/month</span>{' '}
               in additional email revenue.
             </h1>
-            <p className="text-base text-gray-600 leading-relaxed max-w-3xl">
-              {audit.executive_summary?.split('\n')[0]}
+            <p className="text-base text-gray-600 leading-relaxed">
+              {execText?.split('\n')[0]}
             </p>
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
             <KPIBlock label="Total Opportunity" value={formatCurrency(totalRevenue)} sub="per month" subColor="text-emerald-600" />
             <KPIBlock label="Sections Audited" value={String(reportSections.length)} sub="areas reviewed" />
-            <KPIBlock label="List Size" value={audit.list_size.toLocaleString()} sub="subscribers" />
-            <KPIBlock label="Avg Order Value" value={formatCurrency(audit.aov)} sub={`${audit.monthly_traffic.toLocaleString()}/mo traffic`} />
+            <KPIBlock label="Total Flows" value={String(flowSnapshots.length)} sub={`${flowSnapshots.filter((f: any) => (f.status || '').toLowerCase() === 'live').length} live`} />
+            <KPIBlock label="Total Campaigns" value={String(campaignSnapshots.length)} sub={`${segmentSnapshots.length} segments`} />
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
@@ -250,31 +263,51 @@ export default function PublicReport() {
                 <h3 className="text-sm font-semibold text-gray-900">What's Working</h3>
               </div>
               <ul className="space-y-2.5">
-                <li className="flex items-start gap-2 text-sm text-gray-700">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-2 shrink-0" />
-                  Welcome Series open rates above industry average at 52.1%
-                </li>
-                <li className="flex items-start gap-2 text-sm text-gray-700">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-2 shrink-0" />
-                  Abandoned Cart flow is live and generating revenue
-                </li>
-                <li className="flex items-start gap-2 text-sm text-gray-700">
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 mt-2 shrink-0" />
-                  Klaviyo is correctly set up with basic tracking in place
-                </li>
+                {aiStrengths.length > 0 ? aiStrengths.map((s, i) => {
+                  const dashIdx = s.indexOf(' — ');
+                  const bold = dashIdx > 0 ? s.slice(0, dashIdx) : '';
+                  const rest = dashIdx > 0 ? s.slice(dashIdx + 3) : s;
+                  return (
+                    <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                      <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
+                      <span>{bold ? <><span className="font-semibold">{bold}</span> — {rest}</> : rest}</span>
+                    </li>
+                  );
+                }) : (
+                  <>
+                    <li className="flex items-start gap-2 text-sm text-gray-700">
+                      <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
+                      Klaviyo account is set up with automated flows generating revenue
+                    </li>
+                    <li className="flex items-start gap-2 text-sm text-gray-700">
+                      <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
+                      {flowSnapshots.length > 0 ? `${flowSnapshots.length} flows configured in the account` : 'Basic tracking and flows in place'}
+                    </li>
+                  </>
+                )}
               </ul>
             </div>
             <div className="bg-white rounded-xl p-5 border border-gray-100">
               <div className="flex items-center gap-2 mb-4">
-                <AlertTriangle className="w-4 h-4 text-amber-500" />
+                <AlertTriangle className="w-4 h-4 text-red-400" />
                 <h3 className="text-sm font-semibold text-gray-900">What Needs Attention</h3>
               </div>
               <ul className="space-y-2.5">
-                {attentionItems.map(s => (
+                {aiConcerns.length > 0 ? aiConcerns.map((s, i) => {
+                  const dashIdx = s.indexOf(' — ');
+                  const bold = dashIdx > 0 ? s.slice(0, dashIdx) : '';
+                  const rest = dashIdx > 0 ? s.slice(dashIdx + 3) : s;
+                  return (
+                    <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
+                      <span className="text-red-400 mt-0.5 shrink-0">→</span>
+                      <span>{bold ? <><span className="font-semibold">{bold}</span> — {rest}</> : rest}</span>
+                    </li>
+                  );
+                }) : topOpportunities.slice(0, 4).map(s => (
                   <li key={s.id} className="flex items-start gap-2 text-sm text-gray-700">
-                    <div className="w-1.5 h-1.5 rounded-full bg-amber-400 mt-2 shrink-0" />
+                    <span className="text-red-400 mt-0.5 shrink-0">→</span>
                     <span>
-                      <span className="font-medium">{SECTION_LABELS[s.section_key]}</span>
+                      <span className="font-semibold">{SECTION_LABELS[s.section_key]}</span>
                       {' — '}
                       <span className="text-emerald-700 font-medium">{formatCurrency(s.revenue_opportunity)}/mo opportunity</span>
                     </span>

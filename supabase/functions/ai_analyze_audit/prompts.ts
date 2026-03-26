@@ -45,6 +45,14 @@ export function buildAuditSystemPrompt() {
     "Use crisp, client-facing writing with concrete findings and realistic revenue opportunities.",
     "Reference specific flow names, campaign names, segment names, and form names from the data.",
     "Do not use placeholders, hedging, or vague generic statements.",
+    "",
+    "STRENGTHS and CONCERNS: Return 4-6 items in each array.",
+    "Each item is a single sentence with a bold lead phrase followed by supporting detail.",
+    "Format: '<bold claim> — <specific evidence from the data>'.",
+    "Example strengths: 'Abandoned Cart/Checkout flows drive 57.5% of all flow revenue ($41,858) — strong foundation to build on', 'Browse Abandonment has solid 83.6% open rate and $5,034 revenue — performing well relative to benchmarks'.",
+    "Example concerns: 'No active post-purchase flow — the #1 gap for repeat purchase revenue', '45 draft flows (47%) sitting idle, some with past revenue — quick wins being left on the table'.",
+    "Be specific: use actual flow names, dollar amounts, percentages, and recipient counts from the data.",
+    "Do NOT be generic. Every bullet must reference concrete data from this specific Klaviyo account.",
   ].join(" ");
 }
 
@@ -147,9 +155,13 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext)
       },
       klaviyo_data: klaviyoSection,
       required_sections: requested,
+      required_top_level_fields: {
+        strengths: "Array of 4-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages from the data.",
+        concerns: "Array of 4-6 strings. Each is a specific issue or gap with bold lead phrase and evidence. Reference actual missing flows, underperforming metrics, inactive flows by name.",
+      },
       style: {
         audience: "ecommerce founder/marketing lead",
-        tone: "executive, practical",
+        tone: "executive, practical, actionable",
         include_benchmarks: true,
       },
       constraints: {

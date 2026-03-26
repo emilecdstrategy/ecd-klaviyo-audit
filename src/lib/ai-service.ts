@@ -8,6 +8,8 @@ import { AI_SCHEMA_VERSION } from './ai/schema';
 interface AIAnalysisResult {
   sections: Partial<AuditSection>[];
   executiveSummary: string;
+  strengths?: string[];
+  concerns?: string[];
 }
 
 type AIErrorCode =
@@ -85,6 +87,8 @@ export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisR
 
     return {
       executiveSummary: first.executiveSummary,
+      strengths: first.strengths ?? [],
+      concerns: first.concerns ?? [],
       sections,
     };
   } catch (e) {

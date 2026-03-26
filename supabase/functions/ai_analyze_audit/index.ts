@@ -338,6 +338,8 @@ serve(async (req) => {
         correlationId,
         schemaVersion: AI_SCHEMA_VERSION,
         executiveSummary: validation.value.executiveSummary,
+        strengths: validation.value.strengths ?? [],
+        concerns: validation.value.concerns ?? [],
         sections: validation.value.sections,
       },
       { status: 200 },

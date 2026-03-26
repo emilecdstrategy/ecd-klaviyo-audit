@@ -1,4 +1,4 @@
-export const AI_SCHEMA_VERSION = "2026-03-26.v1";
+export const AI_SCHEMA_VERSION = "2026-03-26.v2";
 
 export const AUDIT_SECTION_KEYS = [
   "account_health",
@@ -27,16 +27,30 @@ export type AISection = {
 export type AIOutput = {
   schemaVersion: string;
   executiveSummary: string;
+  strengths: string[];
+  concerns: string[];
   sections: AISection[];
 };
 
 export const AI_OUTPUT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["schemaVersion", "executiveSummary", "sections"],
+  required: ["schemaVersion", "executiveSummary", "strengths", "concerns", "sections"],
   properties: {
     schemaVersion: { type: "string" },
     executiveSummary: { type: "string", minLength: 80, maxLength: 4000 },
+    strengths: {
+      type: "array",
+      minItems: 3,
+      maxItems: 7,
+      items: { type: "string", minLength: 20, maxLength: 300 },
+    },
+    concerns: {
+      type: "array",
+      minItems: 3,
+      maxItems: 7,
+      items: { type: "string", minLength: 20, maxLength: 300 },
+    },
     sections: {
       type: "array",
       minItems: 1,
@@ -83,6 +97,12 @@ export function validateOutput(input: unknown, requiredSectionKeys: readonly Sec
   if (!out.executiveSummary || out.executiveSummary.trim().length < 80) {
     errors.push("executiveSummary is too short");
   }
+  if (!Array.isArray(out.strengths) || out.strengths.length < 3) {
+    errors.push("strengths must have at least 3 items");
+  }
+  if (!Array.isArray(out.concerns) || out.concerns.length < 3) {
+    errors.push("concerns must have at least 3 items");
+  }
   if (!Array.isArray(out.sections) || out.sections.length === 0) {
     errors.push("sections must be a non-empty array");
   }
@@ -113,6 +133,8 @@ export function validateOutput(input: unknown, requiredSectionKeys: readonly Sec
     value: {
       schemaVersion: AI_SCHEMA_VERSION,
       executiveSummary: out.executiveSummary!.trim(),
+      strengths: (out.strengths ?? []).map((s: string) => s.trim()),
+      concerns: (out.concerns ?? []).map((s: string) => s.trim()),
       sections: requiredSectionKeys.map((k) => byKey.get(k)!),
     },
   };
@@ -127,4 +149,3 @@ export function failedSectionKeysFromErrors(errors: string[]): SectionKey[] {
   }
   return [...keys];
 }
-
