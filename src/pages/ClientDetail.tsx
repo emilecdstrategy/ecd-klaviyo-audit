@@ -8,6 +8,8 @@ import {
   ExternalLink,
   CheckCircle2,
   XCircle,
+  Loader2,
+  KeyRound,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -17,6 +19,7 @@ import { formatCurrency } from '../lib/revenue-calculator';
 import { useEffect, useState } from 'react';
 import type { Audit, Client } from '../lib/types';
 import { getClient, listAuditsByClient } from '../lib/db';
+import { supabase } from '../lib/supabase';
 
 export default function ClientDetail() {
   const { id } = useParams();
@@ -32,6 +35,10 @@ export default function ClientDetail() {
   );
   const [loading, setLoading] = useState(!isDemo);
   const [error, setError] = useState('');
+  const [editingKey, setEditingKey] = useState(false);
+  const [newApiKey, setNewApiKey] = useState('');
+  const [keySaving, setKeySaving] = useState(false);
+  const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -98,6 +105,31 @@ export default function ClientDetail() {
   }
 
   const hasApiConnection = Boolean((client as any).klaviyo_connected);
+
+  const handleSaveApiKey = async () => {
+    if (!client || !newApiKey.trim()) return;
+    setKeySaving(true);
+    setKeyMsg(null);
+    try {
+      const { data: sessionData } = await supabase.auth.getSession();
+      const token = sessionData.session?.access_token;
+      if (!token) throw new Error('Session expired. Please sign in again.');
+      const { data, error: fnErr } = await supabase.functions.invoke('klaviyo_connect_client', {
+        body: { client_id: client.id, api_key: newApiKey.trim() },
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (fnErr) throw fnErr;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to connect Klaviyo');
+      setKeyMsg({ ok: true, text: 'API key updated successfully.' });
+      setEditingKey(false);
+      setNewApiKey('');
+      setClient(prev => prev ? { ...prev, klaviyo_connected: true } as any : prev);
+    } catch (e: unknown) {
+      setKeyMsg({ ok: false, text: e instanceof Error ? e.message : 'Failed to update API key' });
+    } finally {
+      setKeySaving(false);
+    }
+  };
   const firstAuditDate = clientAudits.length
     ? new Date(
       clientAudits
@@ -228,10 +260,48 @@ export default function ClientDetail() {
                   </>
                 )}
               </div>
-              {!hasApiConnection && (
-                <p className="text-xs text-gray-400">
-                  Connect a Klaviyo private API key during an API-based audit to enable automated analysis.
-                </p>
+
+              {keyMsg && (
+                <div className={`text-xs px-3 py-2 rounded-lg mb-3 ${keyMsg.ok ? 'text-emerald-700 bg-emerald-50 border border-emerald-100' : 'text-red-700 bg-red-50 border border-red-100'}`}>
+                  {keyMsg.text}
+                </div>
+              )}
+
+              {editingKey ? (
+                <div className="space-y-2">
+                  <input
+                    type="password"
+                    value={newApiKey}
+                    onChange={e => setNewApiKey(e.target.value)}
+                    placeholder="pk_..."
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-xs font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={handleSaveApiKey}
+                      disabled={keySaving || !newApiKey.trim()}
+                      className="flex items-center gap-1.5 px-3 py-1.5 gradient-bg text-white text-xs font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+                    >
+                      {keySaving && <Loader2 className="w-3 h-3 animate-spin" />}
+                      {keySaving ? 'Saving...' : 'Save Key'}
+                    </button>
+                    <button
+                      onClick={() => { setEditingKey(false); setNewApiKey(''); setKeyMsg(null); }}
+                      disabled={keySaving}
+                      className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700 transition-colors"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <button
+                  onClick={() => { setEditingKey(true); setKeyMsg(null); }}
+                  className="flex items-center gap-1.5 text-xs text-brand-primary font-medium hover:underline"
+                >
+                  <KeyRound className="w-3.5 h-3.5" />
+                  {hasApiConnection ? 'Update API Key' : 'Connect API Key'}
+                </button>
               )}
             </div>
 

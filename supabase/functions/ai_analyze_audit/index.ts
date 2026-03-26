@@ -19,9 +19,9 @@ const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const PRIMARY_MODEL = "gpt-5.4";
 const ESCALATION_MODEL = "gpt-5.4-pro";
-// Edge Functions have execution limits; keep OpenAI calls bounded so we don't get terminated mid-run.
+// Supabase Edge Functions support up to 150s. Give OpenAI plenty of headroom.
 const MAX_ATTEMPTS = 1;
-const REQUEST_TIMEOUT_MS = 55_000;
+const REQUEST_TIMEOUT_MS = 120_000;
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
