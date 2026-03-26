@@ -19,6 +19,7 @@ import { formatCurrency } from '../lib/revenue-calculator';
 import type { AuditSection, Annotation } from '../lib/types';
 import type { Audit, AuditAsset, Client } from '../lib/types';
 import { createAnnotation, deleteAnnotation, getAudit, getClient, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAuditSection } from '../lib/db';
+import { supabase } from '../lib/supabase';
 
 const SECTION_ICONS: Record<string, React.ElementType> = {
   account_health: BarChart3,
@@ -53,6 +54,7 @@ export default function AuditWorkspace() {
 
   const saveTimers = useRef<Record<string, number>>({});
   const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
+  const [scopeWarnings, setScopeWarnings] = useState<string[]>([]);
 
   // Hooks must run unconditionally on every render.
   // Compute derived values before any early returns to avoid hook-order crashes.
@@ -80,6 +82,25 @@ export default function AuditWorkspace() {
         setSections(secs);
         setAssets(as);
         setAnnotations(anns);
+
+        // Check Klaviyo scope warnings for API audits
+        if (a.audit_method === 'api') {
+          try {
+            const { data: conn } = await supabase
+              .from('klaviyo_connections')
+              .select('scopes')
+              .eq('client_id', a.client_id)
+              .maybeSingle();
+            if (conn?.scopes) {
+              const missing = Object.entries(conn.scopes as Record<string, boolean>)
+                .filter(([, ok]) => !ok)
+                .map(([k]) => k);
+              if (missing.length > 0) setScopeWarnings(missing);
+            }
+          } catch {
+            // non-critical
+          }
+        }
       } catch (e: unknown) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : 'Failed to load audit');
@@ -188,9 +209,8 @@ export default function AuditWorkspace() {
       const updated = await publishAudit(audit.id);
       setAudit(updated);
       setPublishBlockedReason('');
-    } catch {
-      // expose actionable message in UI
-      setPublishBlockedReason('Can’t publish yet. Please re-run the snapshot so performance data is available.');
+    } catch (e) {
+      setPublishBlockedReason(e instanceof Error ? e.message : 'Failed to publish. Please try again.');
     }
   };
 
@@ -211,6 +231,13 @@ export default function AuditWorkspace() {
           ) : undefined
         }
       />
+
+      {scopeWarnings.length > 0 && (
+        <div className="mx-6 mt-3 px-4 py-2.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg">
+          <strong>Incomplete Klaviyo data:</strong> Your API key is missing permissions for <strong>{scopeWarnings.join(', ')}</strong>.
+          Regenerate the key in Klaviyo with full read access, then re-run the audit for complete data.
+        </div>
+      )}
 
       <div className="flex h-[calc(100vh-64px)]">
         <div className="hidden lg:block w-56 bg-white border-r border-gray-100 p-3 overflow-y-auto shrink-0">

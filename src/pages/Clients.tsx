@@ -43,7 +43,7 @@ export default function Clients() {
       }
     })();
     return () => { cancelled = true; };
-  }, [isDemo]);
+  }, [isDemo, location.key]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();

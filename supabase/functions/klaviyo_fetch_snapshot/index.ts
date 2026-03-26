@@ -571,6 +571,14 @@ serve(async (req) => {
         segments: segments.ok ? segments.items.length : null,
         lists: lists.ok ? lists.items.length : null,
       },
+      fetch: {
+        accounts: { ok: accountRes.ok, status: (accountRes as any).status ?? null, error: accountRes.ok ? null : String((accountRes as any).error ?? "") },
+        flows: { ok: flows.ok, status: (flows as any).status ?? null, error: flows.ok ? null : String((flows as any).error ?? "") },
+        lists: { ok: lists.ok, status: (lists as any).status ?? null, error: lists.ok ? null : String((lists as any).error ?? "") },
+        segments: { ok: segments.ok, status: (segments as any).status ?? null, error: segments.ok ? null : String((segments as any).error ?? "") },
+        forms: { ok: forms.ok, status: (forms as any).status ?? null, error: forms.ok ? null : String((forms as any).error ?? "") },
+        campaigns: { ok: campaigns.ok, status: (campaigns as any).status ?? null, error: campaigns.ok ? null : String((campaigns as any).error ?? "") },
+      },
       reporting: {
         conversion_metric_id: conversionMetricId,
         campaign_reports: campaignReports.map((r) => ({ timeframe: r.timeframe, rows: (r.results ?? []).length })),

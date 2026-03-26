@@ -42,6 +42,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [snapshotMeta, setSnapshotMeta] = useState<null | {
     counts?: Record<string, number | null>;
     reporting?: { flow_reports?: Array<{ timeframe: string; rows: number }>; campaign_reports?: Array<{ timeframe: string; rows: number }> };
+    fetch?: any;
     elapsed_ms?: number;
     correlationId?: string;
   }>(null);
@@ -56,6 +57,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [screenshots, setScreenshots] = useState<Record<string, File[]>>({});
 
   const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
+  const selectedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
+  const hasSavedKlaviyoConnection = Boolean((selectedClient as any)?.klaviyo_connected);
 
   useEffect(() => {
     let cancelled = false;
@@ -75,11 +78,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   useEffect(() => {
     const st = location.state as any;
     const preClientId = (st?.clientId ?? '').toString();
-    if (preClientId && !form.clientId) {
-      handleClientSelect(preClientId);
-    }
+    if (!preClientId) return;
+    if (form.clientId) return;
+    if (!clients.length) return; // wait until clients load
+    handleClientSelect(preClientId);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [clients, form.clientId, location.state]);
 
   const updateField = (field: string, value: string | number) => {
     setForm(prev => ({ ...prev, [field]: value }));
@@ -93,9 +97,18 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         clientId,
         clientName: client.name,
         companyName: client.company_name,
+        apiKey: '',
       }));
     }
   };
+
+  // If a client already has a saved Klaviyo connection, don't keep an API key in local state.
+  useEffect(() => {
+    if (hasSavedKlaviyoConnection && form.apiKey) {
+      setForm(prev => ({ ...prev, apiKey: '' }));
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hasSavedKlaviyoConnection]);
 
   const runAnalysis = async () => {
     setError('');
@@ -215,6 +228,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         if (!data?.ok) throw new Error(data?.error?.message || 'Failed to fetch Klaviyo snapshot');
         setSnapshotMeta({
           counts: data?.counts,
+          fetch: (data as any)?.fetch,
           reporting: data?.reporting,
           elapsed_ms: data?.elapsed_ms,
           correlationId: data?.correlationId,
@@ -390,16 +404,22 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         {step === 2 && form.auditMethod === 'api' && (
           <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
             <h2 className="text-lg font-semibold text-gray-900">API Connection</h2>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Klaviyo Private API Key</label>
-              <input
-                type="password"
-                value={form.apiKey}
-                onChange={e => updateField('apiKey', e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                placeholder="pk_xxxxxxxxxxxxxxxxxxxx"
-              />
-            </div>
+            {hasSavedKlaviyoConnection ? (
+              <div className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 px-4 py-3 rounded-lg">
+                This client is already connected to Klaviyo. We’ll use the saved connection automatically.
+              </div>
+            ) : (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Klaviyo Private API Key</label>
+                <input
+                  type="password"
+                  value={form.apiKey}
+                  onChange={e => updateField('apiKey', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  placeholder="pk_xxxxxxxxxxxxxxxxxxxx"
+                />
+              </div>
+            )}
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-800">
               <p className="font-medium mb-1">What we'll fetch:</p>
               <ul className="text-xs text-blue-700 space-y-1">
@@ -523,22 +543,43 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                     </div>
                   ))}
                 </div>
-                {form.auditMethod === 'api' && snapshotMeta?.counts && (
-                  <div className="max-w-md mx-auto mt-4 text-left bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-                    <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Klaviyo data pulled</p>
-                    <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
-                      <div className="flex items-center justify-between"><span>Flows</span><span className="font-medium text-gray-900">{snapshotMeta.counts.flows ?? '—'}</span></div>
-                      <div className="flex items-center justify-between"><span>Campaigns</span><span className="font-medium text-gray-900">{snapshotMeta.counts.campaigns ?? '—'}</span></div>
-                      <div className="flex items-center justify-between"><span>Segments</span><span className="font-medium text-gray-900">{snapshotMeta.counts.segments ?? '—'}</span></div>
-                      <div className="flex items-center justify-between"><span>Forms</span><span className="font-medium text-gray-900">{snapshotMeta.counts.forms ?? '—'}</span></div>
+                {form.auditMethod === 'api' && snapshotMeta?.counts && (() => {
+                  const fetch = snapshotMeta.fetch as Record<string, { ok: boolean }> | undefined;
+                  const resources = ['flows', 'campaigns', 'segments', 'forms', 'lists'] as const;
+                  const failedScopes = fetch ? resources.filter(r => fetch[r] && !fetch[r].ok) : [];
+                  return (
+                    <div className="max-w-md mx-auto mt-4 text-left bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
+                      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Klaviyo data pulled</p>
+                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
+                        {resources.filter(r => r !== 'lists').map(r => {
+                          const ok = fetch ? fetch[r]?.ok : true;
+                          const count = snapshotMeta.counts?.[r];
+                          return (
+                            <div key={r} className="flex items-center justify-between">
+                              <span className="capitalize">{r}</span>
+                              {ok === false ? (
+                                <span className="font-medium text-amber-600">No access</span>
+                              ) : (
+                                <span className="font-medium text-gray-900">{count ?? '—'}</span>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                      {failedScopes.length > 0 && (
+                        <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1.5 rounded">
+                          Your API key is missing permissions for: <strong>{failedScopes.join(', ')}</strong>.
+                          Regenerate the key in Klaviyo with full read access for complete data.
+                        </div>
+                      )}
+                      {snapshotMeta.reporting && (
+                        <p className="text-[11px] text-gray-500 mt-2">
+                          Reporting rows: flows {snapshotMeta.reporting.flow_reports?.find(r => r.timeframe === 'last_30_days')?.rows ?? '—'} / campaigns {snapshotMeta.reporting.campaign_reports?.find(r => r.timeframe === 'last_30_days')?.rows ?? '—'}
+                        </p>
+                      )}
                     </div>
-                    {snapshotMeta.reporting && (
-                      <p className="text-[11px] text-gray-500 mt-2">
-                        Reporting rows: flows {snapshotMeta.reporting.flow_reports?.find(r => r.timeframe === 'last_30_days')?.rows ?? '—'} / campaigns {snapshotMeta.reporting.campaign_reports?.find(r => r.timeframe === 'last_30_days')?.rows ?? '—'}
-                      </p>
-                    )}
-                  </div>
-                )}
+                  );
+                })()}
               </>
             )}
           </div>

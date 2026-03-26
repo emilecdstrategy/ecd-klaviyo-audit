@@ -65,8 +65,20 @@ export async function runAIAnalysis(wizardData: WizardData): Promise<AIAnalysisR
     };
 
     // Split into two smaller requests to avoid provider timeouts.
-    const first = await call(['account_health', 'flows', 'segmentation']);
-    const second = await call(['campaigns', 'email_design', 'signup_forms']);
+    const withRetryOnTimeout = async (fn: () => Promise<AIAnalysisResult>) => {
+      try {
+        return await fn();
+      } catch (e) {
+        if (e instanceof AIAnalysisError && e.code === 'provider_timeout') {
+          // One quick retry: timeouts are frequently transient.
+          return await fn();
+        }
+        throw e;
+      }
+    };
+
+    const first = await withRetryOnTimeout(() => call(['account_health', 'flows', 'segmentation']));
+    const second = await withRetryOnTimeout(() => call(['campaigns', 'email_design', 'signup_forms']));
 
     const sections = [...(first.sections ?? []), ...(second.sections ?? [])];
     if (!sections.length) throw new AIAnalysisError('AI returned no sections', 'bad_response');

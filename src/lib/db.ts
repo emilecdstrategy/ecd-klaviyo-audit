@@ -110,21 +110,12 @@ export async function publishAudit(auditId: string): Promise<Audit> {
   const audit = await getAudit(auditId);
   if (!audit) throw new Error('Audit not found');
 
-  // For API-based audits we require performance data before allowing publishing,
-  // so reports don’t look empty/misleading.
-  if (audit.audit_method === 'api') {
-    const [flowPerf, flowInv] = await Promise.all([
-      supabase.from('flow_performance').select('id').eq('audit_id', auditId).limit(1),
-      supabase.from('klaviyo_flow_snapshots').select('id').eq('audit_id', auditId).limit(1),
-    ]);
-    if (flowPerf.error) throw flowPerf.error;
-    if (flowInv.error) throw flowInv.error;
-    if ((flowInv.data ?? []).length === 0) {
-      throw new Error("Can’t publish yet: Klaviyo snapshot is missing. Re-run the audit snapshot and try again.");
-    }
-    if ((flowPerf.data ?? []).length === 0) {
-      throw new Error("Can’t publish yet: performance data isn’t available. Re-run the audit snapshot and try again.");
-    }
+  // Require at least one AI-generated section before allowing publishing.
+  const { data: sectionRows, error: secErr } = await supabase
+    .from('audit_sections').select('id').eq('audit_id', auditId).limit(1);
+  if (secErr) throw secErr;
+  if ((sectionRows ?? []).length === 0) {
+    throw new Error("Can't publish yet: no audit sections found. Run the AI analysis first.");
   }
 
   // Generate a token in-app to avoid needing DB extensions.
