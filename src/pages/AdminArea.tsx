@@ -10,7 +10,7 @@ import {
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
 import { useAuth } from '../contexts/AuthContext';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { supabase } from '../lib/supabase';
 
 const TABS = [
@@ -271,9 +271,9 @@ function UsersTab() {
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="admin">Admin</SelectItem>
-                    <SelectItem value="auditor">Auditor</SelectItem>
-                    <SelectItem value="viewer">Viewer</SelectItem>
+                    <SelectItem value="admin"><SelectItemText>Admin</SelectItemText></SelectItem>
+                    <SelectItem value="auditor"><SelectItemText>Auditor</SelectItemText></SelectItem>
+                    <SelectItem value="viewer"><SelectItemText>Viewer</SelectItemText></SelectItem>
                   </SelectContent>
                 </Select>
               </div>
@@ -299,6 +299,7 @@ function UsersTab() {
 function SettingsTab() {
   const [status, setStatus] = useState<{ configured: boolean; updated_at: string | null } | null>(null);
   const [apiKey, setApiKey] = useState('');
+  const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -340,6 +341,7 @@ function SettingsTab() {
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to save key');
       setApiKey('');
+      setEditing(false);
       setSuccess('Saved. Edge Functions will use this key for AI analysis.');
       // refresh status
       const st = await supabase.functions.invoke('openai_key_admin', { body: { action: 'status' }, headers: { Authorization: `Bearer ${token}` } });
@@ -364,37 +366,70 @@ function SettingsTab() {
           Configure your OpenAI API key to enable AI-powered audit analysis. This key is stored securely
           and used only for generating audit findings.
         </p>
-        {status && (
-          <div className="mb-4 text-xs text-gray-500">
-            Status: {status.configured ? 'Configured' : 'Not configured'}
-            {status.updated_at ? ` • Updated ${new Date(status.updated_at).toLocaleString()}` : ''}
-          </div>
+        {status?.configured && !editing ? (
+          <>
+            <div className="flex items-center gap-3 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-emerald-800">API key is configured</p>
+                <p className="text-xs text-emerald-600 mt-0.5">
+                  {status.updated_at ? `Last updated ${new Date(status.updated_at).toLocaleString()}` : 'Stored encrypted and used server-side only.'}
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setEditing(true); setSuccess(''); setError(''); }}
+                className="px-3 py-1.5 text-sm font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
+              >
+                Edit Key
+              </button>
+            </div>
+            {error && <div className="mt-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>}
+            {success && <div className="mt-3 text-sm text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg">{success}</div>}
+          </>
+        ) : (
+          <>
+            {status && !status.configured && (
+              <div className="mb-4 text-xs text-gray-500">Status: Not configured</div>
+            )}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                {status?.configured ? 'New API Key' : 'API Key'}
+              </label>
+              <input
+                type="password"
+                placeholder="sk-..."
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                value={apiKey}
+                onChange={e => setApiKey(e.target.value)}
+                autoFocus={editing}
+              />
+              <p className="text-xs text-gray-400 mt-1">
+                Stored encrypted in Supabase and used server-side only.
+              </p>
+            </div>
+            {error && <div className="mt-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>}
+            {success && <div className="mt-3 text-sm text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg">{success}</div>}
+            <div className="mt-4 flex items-center gap-2">
+              <button
+                type="button"
+                onClick={onSave}
+                disabled={saving || !apiKey.trim()}
+                className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {saving ? 'Saving...' : 'Save'}
+              </button>
+              {editing && (
+                <button
+                  type="button"
+                  onClick={() => { setEditing(false); setApiKey(''); setError(''); }}
+                  className="px-4 py-2 text-sm font-medium text-gray-500 hover:text-gray-700 transition-colors"
+                >
+                  Cancel
+                </button>
+              )}
+            </div>
+          </>
         )}
-        <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">API Key</label>
-          <input
-            type="password"
-            placeholder="sk-..."
-            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-            value={apiKey}
-            onChange={e => setApiKey(e.target.value)}
-          />
-          <p className="text-xs text-gray-400 mt-1">
-            Stored encrypted in Supabase and used server-side only.
-          </p>
-        </div>
-        {error && <div className="mt-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>}
-        {success && <div className="mt-3 text-sm text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg">{success}</div>}
-        <div className="mt-4">
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={saving || !apiKey.trim()}
-            className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {saving ? 'Saving...' : 'Save'}
-          </button>
-        </div>
       </div>
 
       {SHOW_ADMIN_SETTINGS_PLACEHOLDERS && (

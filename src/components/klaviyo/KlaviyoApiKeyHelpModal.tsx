@@ -96,18 +96,7 @@ export function KlaviyoApiKeyHelpModal({ open, onClose }: KlaviyoApiKeyHelpModal
               Enter a <span className="font-medium text-gray-900">name</span> you will recognize (for example, “ECD Audit”).
             </li>
             <li>
-              Choose a <span className="font-medium text-gray-900">scope</span>:
-              <ul className="mt-2 list-disc space-y-1.5 pl-5 text-gray-600">
-                <li>
-                  <strong className="font-semibold text-gray-800">Full</strong> — recommended here so the audit can read flows, campaigns, segments, signup forms, lists, profiles, and reporting metrics without missing permissions.
-                </li>
-                <li>
-                  <strong className="font-semibold text-gray-800">Read-only</strong> — may work if it covers all endpoints this tool reads; if you see scope warnings after running an audit, create a new key with <strong className="font-semibold text-gray-800">Full</strong> access.
-                </li>
-                <li>
-                  <strong className="font-semibold text-gray-800">Custom</strong> — only if you know exactly which scopes to enable; missing scopes will limit what appears in the report.
-                </li>
-              </ul>
+              Choose the <strong className="font-semibold text-gray-900">Full</strong> scope so the audit can read flows, campaigns, segments, signup forms, lists, profiles, and reporting metrics without missing permissions.
             </li>
             <li>
               Create the key, then <span className="font-medium text-gray-900">copy it immediately</span> and paste it into this app. Klaviyo does not show the full key again after you leave the screen.
@@ -136,7 +125,7 @@ export function KlaviyoApiKeyHelpModal({ open, onClose }: KlaviyoApiKeyHelpModal
           <button
             type="button"
             onClick={onClose}
-            className="w-full rounded-lg bg-gray-900 px-4 py-2.5 text-sm font-medium text-white transition-colors hover:bg-gray-800"
+            className="w-full rounded-lg gradient-bg px-4 py-2.5 text-sm font-medium text-white transition-opacity hover:opacity-90"
           >
             Got it
           </button>

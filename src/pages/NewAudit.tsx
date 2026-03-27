@@ -206,10 +206,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       if (fnErr) {
         const firstAnyErr = fnErr as any;
         const firstStatus = firstAnyErr?.context?.status ?? firstAnyErr?.status ?? null;
-        const isRuntimeTimeout = Number(firstStatus) === 546 || String(fnErr.message || '').includes('status code (status 546');
-        if (isRuntimeTimeout) {
-          setAnalysisStage('Klaviyo snapshot timed out once, retrying…');
-          await new Promise((r) => setTimeout(r, 1800));
+        const errMsg = String(fnErr.message || '').toLowerCase();
+        const isRetryable =
+          Number(firstStatus) === 546 || errMsg.includes('status 546') ||
+          Number(firstStatus) === 504 || errMsg.includes('status 504') ||
+          errMsg.includes('failed to send') || errMsg.includes('networkerror') ||
+          errMsg.includes('failed to fetch');
+        if (isRetryable) {
+          setAnalysisStage('Klaviyo snapshot timed out, retrying…');
+          await new Promise((r) => setTimeout(r, 2500));
           const retried = await invokeSnapshot();
           data = retried.data;
           fnErr = retried.error;

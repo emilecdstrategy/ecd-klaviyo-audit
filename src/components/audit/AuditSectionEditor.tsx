@@ -5,7 +5,7 @@ import { SECTION_LABELS, CONFIDENCE_LABELS } from '../../lib/constants';
 import RevenueOpportunityCard from '../ui/RevenueOpportunityCard';
 import StatusBadge from '../ui/StatusBadge';
 import SideBySideComparison from './SideBySideComparison';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 
 interface AuditSectionEditorProps {
   section: AuditSection;
@@ -174,7 +174,7 @@ export default function AuditSectionEditor({
                 </SelectTrigger>
                 <SelectContent>
                   {Object.entries(CONFIDENCE_LABELS).map(([key, label]) => (
-                    <SelectItem key={key} value={key}>{label}</SelectItem>
+                    <SelectItem key={key} value={key}><SelectItemText>{label}</SelectItemText></SelectItem>
                   ))}
                 </SelectContent>
               </Select>

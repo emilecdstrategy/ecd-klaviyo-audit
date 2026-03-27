@@ -17,7 +17,7 @@ import { formatCurrency } from '../lib/revenue-calculator';
 import { listAudits, listClients } from '../lib/db';
 import { useEffect } from 'react';
 import type { Audit, Client } from '../lib/types';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import Modal from '../components/ui/Modal';
 import { supabase } from '../lib/supabase';
 
@@ -163,12 +163,12 @@ export default function Audits() {
                   <SelectValue placeholder="All Status" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__all__">All Status</SelectItem>
-                  <SelectItem value="draft">Draft</SelectItem>
-                  <SelectItem value="in_progress">In Progress</SelectItem>
-                  <SelectItem value="review">In Review</SelectItem>
-                  <SelectItem value="completed">Completed</SelectItem>
-                  <SelectItem value="published">Published</SelectItem>
+                  <SelectItem value="__all__"><SelectItemText>All Status</SelectItemText></SelectItem>
+                  <SelectItem value="draft"><SelectItemText>Draft</SelectItemText></SelectItem>
+                  <SelectItem value="in_progress"><SelectItemText>In Progress</SelectItemText></SelectItem>
+                  <SelectItem value="review"><SelectItemText>In Review</SelectItemText></SelectItem>
+                  <SelectItem value="completed"><SelectItemText>Completed</SelectItemText></SelectItem>
+                  <SelectItem value="published"><SelectItemText>Published</SelectItemText></SelectItem>
                 </SelectContent>
               </Select>
             </div>
