@@ -641,6 +641,34 @@ function parseSectionDetails(raw: unknown): Record<string, any> | null {
   return null;
 }
 
+function renderInlineMarkdownBold(text: string) {
+  const src = String(text ?? '');
+  const parts = src.split('\n');
+  return (
+    <>
+      {parts.map((line, lineIdx) => {
+        const nodes: React.ReactNode[] = [];
+        const regex = /\*\*(.+?)\*\*/g;
+        let last = 0;
+        let match: RegExpExecArray | null;
+        while ((match = regex.exec(line)) !== null) {
+          if (match.index > last) nodes.push(line.slice(last, match.index));
+          nodes.push(<strong key={`${lineIdx}-${match.index}-${match[1]}`}>{match[1]}</strong>);
+          last = regex.lastIndex;
+        }
+        if (last < line.length) nodes.push(line.slice(last));
+
+        return (
+          <span key={`line-${lineIdx}`}>
+            {nodes}
+            {lineIdx < parts.length - 1 ? <br /> : null}
+          </span>
+        );
+      })}
+    </>
+  );
+}
+
 function SectionRubricDetails({ section }: { section: AuditSection }) {
   const details = parseSectionDetails((section as any).section_details);
   if (!details) return null;
@@ -664,8 +692,8 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
                 <td className="py-2 pr-2">{r.present ? 'Yes' : 'No'}</td>
                 <td className="py-2 pr-2">{r.live ? 'Yes' : 'No'}</td>
                 <td className="py-2 pr-2">{typeof r.email_count === 'number' ? r.email_count : 'N/A'}</td>
-                <td className="py-2 pr-2">{r.current_structure_note || 'N/A'}</td>
-                <td className="py-2">{r.recommended_structure || 'N/A'}</td>
+                <td className="py-2 pr-2">{renderInlineMarkdownBold(r.current_structure_note || 'N/A')}</td>
+                <td className="py-2">{renderInlineMarkdownBold(r.recommended_structure || 'N/A')}</td>
               </tr>
             ))}
           </tbody>
@@ -682,7 +710,7 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
         <p><strong>Full-list sends:</strong> {d.sends_to_full_list ? 'Yes' : 'No'}</p>
         <p><strong>Engaged/unengaged segments:</strong> {d.has_engaged_unengaged_segments ? 'Defined' : 'Missing'}</p>
         <p><strong>VIP/high-LTV segments:</strong> {d.has_vip_segments ? 'Defined' : 'Missing'}</p>
-        <p><strong>ECD benchmark:</strong> {d.benchmark_architecture_note || 'N/A'}</p>
+        <p><strong>ECD benchmark:</strong> {renderInlineMarkdownBold(d.benchmark_architecture_note || 'N/A')}</p>
       </div>
     );
   }
@@ -692,10 +720,10 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
     if (!d) return null;
     return (
       <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-700 space-y-1.5">
-        <p><strong>Cadence:</strong> {d.send_frequency_consistency || 'N/A'}</p>
-        <p><strong>Targeting quality:</strong> {d.segmented_vs_blast_note || 'N/A'}</p>
-        <p><strong>Subject/preview hygiene:</strong> {d.subject_preview_hygiene_note || 'N/A'}</p>
-        <p><strong>Type mix:</strong> {d.campaign_type_mix_note || 'N/A'}</p>
+        <p><strong>Cadence:</strong> {renderInlineMarkdownBold(d.send_frequency_consistency || 'N/A')}</p>
+        <p><strong>Targeting quality:</strong> {renderInlineMarkdownBold(d.segmented_vs_blast_note || 'N/A')}</p>
+        <p><strong>Subject/preview hygiene:</strong> {renderInlineMarkdownBold(d.subject_preview_hygiene_note || 'N/A')}</p>
+        <p><strong>Type mix:</strong> {renderInlineMarkdownBold(d.campaign_type_mix_note || 'N/A')}</p>
       </div>
     );
   }
@@ -707,9 +735,9 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
       <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-700 space-y-1.5">
         <p><strong>Popup:</strong> {d.has_popup ? 'Present' : 'Missing'}</p>
         <p><strong>Embedded form:</strong> {d.has_embedded_form ? 'Present' : 'Missing'}</p>
-        <p><strong>Offer quality:</strong> {d.offer_note || 'N/A'}</p>
-        <p><strong>Mobile optimization:</strong> {d.mobile_optimization_note || 'N/A'}</p>
-        <p><strong>Benchmark conversion:</strong> {d.benchmark_conversion_note || 'N/A'}</p>
+        <p><strong>Offer quality:</strong> {renderInlineMarkdownBold(d.offer_note || 'N/A')}</p>
+        <p><strong>Mobile optimization:</strong> {renderInlineMarkdownBold(d.mobile_optimization_note || 'N/A')}</p>
+        <p><strong>Benchmark conversion:</strong> {renderInlineMarkdownBold(d.benchmark_conversion_note || 'N/A')}</p>
       </div>
     );
   }
