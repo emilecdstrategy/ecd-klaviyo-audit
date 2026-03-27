@@ -18,6 +18,11 @@ function formatPct(n: number | null) {
   return `${(n * 100).toFixed(n < 0.01 ? 2 : 1)}%`;
 }
 
+function formatInt(n: number | null) {
+  if (n == null || !Number.isFinite(n)) return 'N/A';
+  return new Intl.NumberFormat('en-US').format(Math.round(n));
+}
+
 function calcWeeklySendFrequency(campaigns: KlaviyoCampaignSnapshot[]) {
   const now = Date.now();
   const days30 = 30 * 24 * 60 * 60 * 1000;
@@ -46,11 +51,21 @@ export default function ReportAccountSnapshot({
   flowPerformance,
   campaignSnapshots,
   reportingDiagnostic,
+  accountSnapshot,
 }: {
   flowSnapshots: KlaviyoFlowSnapshot[];
   flowPerformance: FlowPerformance[];
   campaignSnapshots: KlaviyoCampaignSnapshot[];
   reportingDiagnostic?: string | null;
+  accountSnapshot?: {
+    email_subscribed_profiles_count: number | null;
+    active_profiles_90d_count: number | null;
+    suppressed_profiles_count: number | null;
+    bounce_rate_90d: number | null;
+    spam_rate_90d: number | null;
+    active_profiles_definition?: string | null;
+    computed_at?: string | null;
+  } | null;
 }) {
   const totalFlows = flowSnapshots.length;
   const liveFlows = flowSnapshots.filter((f) => f.status?.toLowerCase() === 'live' || f.status?.toLowerCase() === 'manual').length;
@@ -80,18 +95,20 @@ export default function ReportAccountSnapshot({
 
         <Card
           label="List Size"
-          value="N/A"
-          sub="not pulled yet (needs profiles/list metrics)"
+          value={formatInt(accountSnapshot?.email_subscribed_profiles_count ?? null)}
+          sub={accountSnapshot?.email_subscribed_profiles_count != null ? 'email-subscribed profiles' : 'requires profiles:read scope'}
         />
         <Card
           label="Active Profiles"
-          value="N/A"
-          sub="not pulled yet (needs active profile definition)"
+          value={formatInt(accountSnapshot?.active_profiles_90d_count ?? null)}
+          sub={accountSnapshot?.active_profiles_90d_count != null
+            ? (accountSnapshot?.active_profiles_definition ?? 'engaged last 90 days')
+            : 'requires profiles:read scope'}
         />
         <Card
           label="Suppressions"
-          value="N/A"
-          sub="not pulled yet (needs suppression metrics)"
+          value={formatInt(accountSnapshot?.suppressed_profiles_count ?? null)}
+          sub={accountSnapshot?.suppressed_profiles_count != null ? 'globally suppressed profiles' : 'requires profiles:read scope'}
         />
         <Card
           label="Send Frequency"
@@ -103,13 +120,13 @@ export default function ReportAccountSnapshot({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
         <Card
           label="Bounce Rate"
-          value="N/A"
-          sub="not pulled yet (deliverability metrics)"
+          value={accountSnapshot?.bounce_rate_90d != null ? formatPct(accountSnapshot.bounce_rate_90d) : 'N/A'}
+          sub={accountSnapshot?.bounce_rate_90d != null ? 'last 90 days (email campaigns)' : 'requires campaigns:read scope'}
         />
         <Card
           label="Spam Rate"
-          value="N/A"
-          sub="not pulled yet (deliverability metrics)"
+          value={accountSnapshot?.spam_rate_90d != null ? formatPct(accountSnapshot.spam_rate_90d) : 'N/A'}
+          sub={accountSnapshot?.spam_rate_90d != null ? 'last 90 days (email campaigns)' : 'requires campaigns:read scope'}
         />
         <Card
           label="Flow Conv. Rate"

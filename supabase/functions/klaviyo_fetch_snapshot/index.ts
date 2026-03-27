@@ -154,6 +154,42 @@ async function klaviyoPaged(apiKey: string, revision: string, path: string, maxP
   return { ok: true as const, status: 200, items: out };
 }
 
+async function klaviyoCountProfiles(params: {
+  apiKey: string;
+  revision: string;
+  // Optional filter string using Klaviyo filtering syntax
+  filter?: string;
+  // If provided, count only when predicate returns true
+  predicate?: (profile: any) => boolean;
+  // Guard rails to avoid blowing the function timeout on huge accounts
+  maxPages?: number;
+}) {
+  const maxPages = params.maxPages ?? 200; // 200 * 100 = 20k profiles max
+  let count = 0;
+  let next = `/api/profiles/?page%5Bsize%5D=100&additional-fields%5Bprofile%5D=subscriptions`;
+  if (params.filter) next += `&filter=${encodeURIComponent(params.filter)}`;
+  let truncated = false;
+
+  for (let i = 0; i < maxPages && next; i++) {
+    const res = await fetchWithRetry(() => klaviyoFetch(params.apiKey, params.revision, next), 3);
+    if (!res.ok) return { ok: false as const, status: res.status, body: res.body, count: null, truncated: false };
+    const items = res.body?.data ?? [];
+    for (const p of items) {
+      if (!params.predicate || params.predicate(p)) count += 1;
+    }
+    const nextUrl: string | null = res.body?.links?.next ?? null;
+    if (!nextUrl) {
+      next = "";
+      break;
+    }
+    const u = new URL(nextUrl);
+    next = `${u.pathname}${u.search}`;
+  }
+
+  if (next) truncated = true;
+  return { ok: true as const, status: 200, body: null, count, truncated };
+}
+
 async function queryValuesReport(params: {
   apiKey: string;
   revision: string;
@@ -517,7 +553,17 @@ serve(async (req) => {
     const conversionMetricId = pickedMetric.metricId;
 
     const timeframeKeys: Array<"last_30_days" | "last_90_days"> = ["last_30_days", "last_90_days"];
-    const reportStats = ["recipients", "open_rate", "click_rate", "conversion_rate", "conversion_value", "revenue_per_recipient"];
+    const flowReportStats = ["recipients", "open_rate", "click_rate", "conversion_rate", "conversion_value", "revenue_per_recipient"];
+    const campaignReportStats = [
+      "recipients",
+      "open_rate",
+      "click_rate",
+      "conversion_rate",
+      "conversion_value",
+      "revenue_per_recipient",
+      "bounce_rate",
+      "spam_complaint_rate",
+    ];
     const reportingErrors: Array<{ stage: string; status?: number | null; message: string }> = [];
 
     let campaignReports: any[] = [];
@@ -548,7 +594,7 @@ serve(async (req) => {
           timeframeKey: tf,
           conversionMetricId,
           filter: "contains-any(send_channel,[\"email\"])",
-          statistics: reportStats,
+          statistics: campaignReportStats,
           groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
         });
         if (rep.ok) {
@@ -576,7 +622,7 @@ serve(async (req) => {
           timeframeKey: tf,
           conversionMetricId,
           filter: flowFilter,
-          statistics: reportStats,
+          statistics: flowReportStats,
           groupBy: ["flow_id", "flow_message_id", "send_channel"],
         });
         if (rep.ok) {
@@ -658,6 +704,111 @@ serve(async (req) => {
     }
 
     // Persist rollup record(s) for traceability regardless of report availability
+    const emailConsent = (p: any) => {
+      const consent = p?.attributes?.subscriptions?.email?.marketing?.consent;
+      return typeof consent === "string" ? consent.toUpperCase() : "";
+    };
+    const isSubscribedEmail = (p: any) => emailConsent(p) === "SUBSCRIBED";
+
+    // List Size: email-subscribed profiles (may truncate on very large accounts)
+    const subscribedProfilesRes = await klaviyoCountProfiles({
+      apiKey,
+      revision,
+      predicate: isSubscribedEmail,
+      maxPages: 400, // up to 40k profiles counted before truncation
+    });
+    if (!subscribedProfilesRes.ok) {
+      reportingErrors.push({
+        stage: "email_subscribed_profiles_count",
+        status: subscribedProfilesRes.status ?? null,
+        message: trimBody(subscribedProfilesRes.body) ?? "Failed to count email-subscribed profiles",
+      });
+    } else if (subscribedProfilesRes.truncated) {
+      reportingErrors.push({
+        stage: "email_subscribed_profiles_count",
+        status: 200,
+        message: "Count truncated for very large account (increase maxPages to compute full list size).",
+      });
+    }
+
+    // Suppressions: globally suppressed profiles (all reasons)
+    const suppressedProfilesRes = await klaviyoCountProfiles({
+      apiKey,
+      revision,
+      filter: `greater-than(subscriptions.email.marketing.suppression.timestamp,\"1970-01-01T00:00:00Z\")`,
+      maxPages: 400,
+    });
+    if (!suppressedProfilesRes.ok) {
+      reportingErrors.push({
+        stage: "suppressed_profiles_count",
+        status: suppressedProfilesRes.status ?? null,
+        message: trimBody(suppressedProfilesRes.body) ?? "Failed to count suppressed profiles",
+      });
+    } else if (suppressedProfilesRes.truncated) {
+      reportingErrors.push({
+        stage: "suppressed_profiles_count",
+        status: 200,
+        message: "Count truncated for very large account (increase maxPages to compute full suppressions).",
+      });
+    }
+
+    // Active Profiles: engaged last 90d (proxy: subscribed profiles updated in last 90 days)
+    const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const activeProfilesRes = await klaviyoCountProfiles({
+      apiKey,
+      revision,
+      filter: `greater-than(updated,\"${since90}\")`,
+      predicate: isSubscribedEmail,
+      maxPages: 400,
+    });
+    if (!activeProfilesRes.ok) {
+      reportingErrors.push({
+        stage: "active_profiles_90d_count",
+        status: activeProfilesRes.status ?? null,
+        message: trimBody(activeProfilesRes.body) ?? "Failed to count active profiles (90d)",
+      });
+    } else if (activeProfilesRes.truncated) {
+      reportingErrors.push({
+        stage: "active_profiles_90d_count",
+        status: 200,
+        message: "Count truncated for very large account (increase maxPages to compute full active profiles).",
+      });
+    }
+
+    // Deliverability indicators (last 90 days, email campaigns only) computed from campaign values report
+    let bounceRate90d: number | null = null;
+    let spamRate90d: number | null = null;
+    const camp90 = campaignReports.find((r) => r.timeframe === "last_90_days")?.results ?? [];
+    if (Array.isArray(camp90) && camp90.length > 0) {
+      let denom = 0;
+      let bounceNum = 0;
+      let spamNum = 0;
+      for (const row of camp90) {
+        const stats = row?.statistics ?? {};
+        const recipients = Number(stats.recipients ?? 0) || 0;
+        const b = Number(stats.bounce_rate ?? NaN);
+        const s = Number(stats.spam_complaint_rate ?? NaN);
+        if (recipients <= 0) continue;
+        denom += recipients;
+        if (Number.isFinite(b)) bounceNum += b * recipients;
+        if (Number.isFinite(s)) spamNum += s * recipients;
+      }
+      if (denom > 0) {
+        bounceRate90d = bounceNum / denom;
+        spamRate90d = spamNum / denom;
+      }
+    }
+
+    const accountSnapshot = {
+      email_subscribed_profiles_count: subscribedProfilesRes.ok ? subscribedProfilesRes.count : null,
+      active_profiles_90d_count: activeProfilesRes.ok ? activeProfilesRes.count : null,
+      suppressed_profiles_count: suppressedProfilesRes.ok ? suppressedProfilesRes.count : null,
+      bounce_rate_90d: bounceRate90d,
+      spam_rate_90d: spamRate90d,
+      active_profiles_definition: "Proxy: email-subscribed profiles updated in last 90 days",
+      computed_at: new Date().toISOString(),
+    };
+
     for (const tf of ["last_30_days", "last_90_days"] as const) {
       const camp = campaignReports.find((r) => r.timeframe === tf)?.results ?? [];
       const flw = flowReports.find((r) => r.timeframe === tf)?.results ?? [];
@@ -677,6 +828,7 @@ serve(async (req) => {
             lists: lists.ok ? lists.items.length : null,
           },
           reporting_errors: reportingErrors,
+          account_snapshot: accountSnapshot,
         },
       }));
     }

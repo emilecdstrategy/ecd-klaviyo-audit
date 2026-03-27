@@ -224,6 +224,15 @@ export async function getPublicReportByToken(token: string): Promise<{
   healthScores: HealthScoreItem[];
   recommendations: Recommendation[];
   reportingDiagnostic?: string | null;
+  accountSnapshot?: {
+    email_subscribed_profiles_count: number | null;
+    active_profiles_90d_count: number | null;
+    suppressed_profiles_count: number | null;
+    bounce_rate_90d: number | null;
+    spam_rate_90d: number | null;
+    active_profiles_definition?: string | null;
+    computed_at?: string | null;
+  } | null;
 } | null> {
   const { data: audit, error: auditErr } = await supabase
     .from('audits')
@@ -272,6 +281,10 @@ export async function getPublicReportByToken(token: string): Promise<{
     .find((r: any) => r.timeframe_key === 'last_30_days')?.computed?.reporting_errors?.[0]?.message
     ?? null;
 
+  const accountSnapshot = ((rollups.data ?? []) as any[])
+    .find((r: any) => r.timeframe_key === 'last_30_days')?.computed?.account_snapshot
+    ?? null;
+
   return {
     audit: audit as Audit,
     client: client.data as Client,
@@ -286,6 +299,7 @@ export async function getPublicReportByToken(token: string): Promise<{
     healthScores: (scores.data ?? []) as HealthScoreItem[],
     recommendations: (recs.data ?? []) as Recommendation[],
     reportingDiagnostic,
+    accountSnapshot,
   };
 }
 

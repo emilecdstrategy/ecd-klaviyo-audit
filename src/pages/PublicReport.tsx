@@ -62,6 +62,7 @@ export default function PublicReport() {
   const [healthScores, setHealthScores] = useState(() => DEMO_HEALTH_SCORES);
   const [recommendations, setRecommendations] = useState(() => (audit ? DEMO_RECOMMENDATIONS.filter(r => r.audit_id === audit.id) : []));
   const [reportingDiagnostic, setReportingDiagnostic] = useState<string | null>(null);
+  const [accountSnapshot, setAccountSnapshot] = useState<any | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -102,6 +103,7 @@ export default function PublicReport() {
         setHealthScores(report.healthScores);
         setRecommendations(report.recommendations);
         setReportingDiagnostic(report.reportingDiagnostic ?? null);
+        setAccountSnapshot((report as any).accountSnapshot ?? null);
       } catch (e: unknown) {
         if (cancelled) return;
         setLoadError(e instanceof Error ? e.message : 'Failed to load report');
@@ -270,6 +272,7 @@ export default function PublicReport() {
                 flowPerformance={flowPerformance}
                 campaignSnapshots={campaignSnapshots as any}
                 reportingDiagnostic={reportingDiagnostic}
+                accountSnapshot={accountSnapshot}
               />
             </div>
           )}
