@@ -77,12 +77,19 @@ export async function runAIAnalysis(
         const anyErr = error as any;
         const status = anyErr?.context?.status ?? anyErr?.status ?? null;
         const body = anyErr?.context?.body ?? anyErr?.body ?? null;
+        const bodyPreview =
+          body && typeof body === 'object' && (body as any).getReader
+            ? '[ReadableStream]'
+            : body
+              ? String(body).slice(0, 240)
+              : null;
         const details = [
           status ? `status ${status}` : null,
-          body ? `body ${String(body).slice(0, 240)}` : null,
+          bodyPreview ? `body ${bodyPreview}` : null,
+          import.meta.env.VITE_SUPABASE_URL ? `supabase ${String(import.meta.env.VITE_SUPABASE_URL)}` : null,
         ].filter(Boolean).join(' • ');
         throw new AIAnalysisError(
-          `${error.message || 'AI request failed'}${details ? ` (${details})` : ''}`,
+          `ai_analyze_audit failed (${label}): ${error.message || 'AI request failed'}${details ? ` (${details})` : ''}`,
           'provider_error',
         );
       }
