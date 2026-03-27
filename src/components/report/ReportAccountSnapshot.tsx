@@ -38,10 +38,10 @@ function calcWeeklySendFrequency(campaigns: KlaviyoCampaignSnapshot[]) {
 
 function Card({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="bg-white rounded-xl p-5 border border-gray-100">
-      <p className="text-xs font-medium text-gray-500 mb-1">{label}</p>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
-      <p className="text-xs font-medium mt-0.5 text-gray-400">{sub}</p>
+    <div className="rounded-xl border border-gray-200/80 bg-gradient-to-b from-slate-50/60 to-white px-4 py-4 shadow-sm ring-1 ring-gray-100/60">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">{label}</p>
+      <p className="text-2xl font-bold tabular-nums text-gray-900 tracking-tight">{value}</p>
+      <p className="text-xs font-medium mt-1 leading-snug text-gray-500">{sub}</p>
     </div>
   );
 }
@@ -69,7 +69,7 @@ export default function ReportAccountSnapshot({
 }) {
   const totalFlows = flowSnapshots.length;
   const liveFlows = flowSnapshots.filter((f) => f.status?.toLowerCase() === 'live' || f.status?.toLowerCase() === 'manual').length;
-  const draftPausedFlows = flowSnapshots.filter((f) => ['draft', 'paused'].includes(f.status?.toLowerCase())).length;
+  const totalCampaigns = campaignSnapshots.length;
   const manualFlows = flowSnapshots.filter((f) => f.status?.toLowerCase() === 'manual' || f.trigger_type === 'Unconfigured').length;
 
   const hasPerf = flowPerformance.length > 0;
@@ -87,10 +87,10 @@ export default function ReportAccountSnapshot({
 
   return (
     <div>
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <Card label="Total Flows" value={String(totalFlows)} sub="in Klaviyo account" />
         <Card label="Live Flows" value={String(liveFlows)} sub="actively sending" />
-        <Card label="Draft / Paused" value={String(draftPausedFlows)} sub={`${totalFlows > 0 ? Math.round((draftPausedFlows / totalFlows) * 100) : 0}% inactive`} />
+        <Card label="Total Campaigns" value={String(totalCampaigns)} sub="email campaigns in account" />
         <Card label="Manual Flows" value={String(manualFlows)} sub="require manual trigger" />
 
         <Card
@@ -115,9 +115,7 @@ export default function ReportAccountSnapshot({
           value={recentSent > 0 ? `${perWeek.toFixed(perWeek < 1 ? 1 : 0)}/wk` : '—'}
           sub={recentSent > 0 ? `${recentSent} campaigns sent (last 30 days)` : 'based on recent sent campaigns'}
         />
-      </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
         <Card
           label="Bounce Rate"
           value={accountSnapshot?.bounce_rate_90d != null ? formatPct(accountSnapshot.bounce_rate_90d) : 'N/A'}
@@ -140,8 +138,8 @@ export default function ReportAccountSnapshot({
         />
       </div>
 
-      <div className="mt-4 bg-gray-50 border border-gray-100 rounded-xl p-4">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Benchmark: Healthy account hygiene</p>
+      <div className="mt-4 rounded-xl border border-gray-200/80 bg-gradient-to-b from-slate-50/40 to-white p-4 shadow-sm ring-1 ring-gray-100/60">
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">Benchmark: Healthy account hygiene</p>
         <p className="text-sm text-gray-700 leading-relaxed">
           A healthy account typically has consistent sending cadence, low complaint/bounce signals, a clear suppression strategy,
           and a clean engaged/unengaged segmentation framework. This audit will surface hygiene risks once deliverability indicators are available.

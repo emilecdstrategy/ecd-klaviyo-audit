@@ -203,7 +203,7 @@ export default function PublicReport() {
   return (
     <div className="min-h-screen bg-[#f9f9f9]">
       <header className="bg-white border-b border-gray-100 sticky top-0 z-50">
-        <div className="max-w-[77rem] mx-auto px-6 py-3.5 flex items-center justify-between">
+        <div className="max-w-[90rem] mx-auto px-6 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center">
               <Zap className="w-4 h-4 text-white" />
@@ -221,7 +221,7 @@ export default function PublicReport() {
       </header>
 
       <div className="bg-white border-b border-gray-100 sticky top-[57px] z-40">
-        <div className="max-w-[77rem] mx-auto px-6">
+        <div className="max-w-[90rem] mx-auto px-6">
           <nav className="flex overflow-x-auto">
             {visibleNavItems.map(item => (
               <a
@@ -241,7 +241,7 @@ export default function PublicReport() {
         </div>
       </div>
 
-      <main className="max-w-[77rem] mx-auto px-6 py-10 space-y-16">
+      <main className="max-w-[90rem] mx-auto px-6 py-10 space-y-16">
         <section id="summary" ref={setRef('summary')}>
           <SectionHeader number="01" label="Executive Summary" />
 
@@ -255,13 +255,6 @@ export default function PublicReport() {
               in additional email revenue.
             </h1>
             <RichAuditText text={toOneOrTwoSentences(execText?.split('\n')[0] || '')} className="text-base text-gray-600 leading-relaxed" />
-          </div>
-
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-            <KPIBlock label="Total Opportunity" value={formatCurrency(totalRevenue)} sub="per month" subColor="text-emerald-600" />
-            <KPIBlock label="Sections Audited" value={String(reportSections.length)} sub="areas reviewed" />
-            <KPIBlock label="Total Flows" value={String(flowSnapshots.length)} sub={`${flowSnapshots.filter((f: any) => (f.status || '').toLowerCase() === 'live').length} live`} />
-            <KPIBlock label="Total Campaigns" value={String(campaignSnapshots.length)} sub={`${segmentSnapshots.length} segments`} />
           </div>
 
           {(flowSnapshots.length > 0 || campaignSnapshots.length > 0) && (
@@ -652,7 +645,7 @@ export default function PublicReport() {
       </main>
 
       <footer className="bg-white border-t border-gray-100 py-8 mt-16">
-        <div className="max-w-[77rem] mx-auto px-6 flex items-center justify-between">
+        <div className="max-w-[90rem] mx-auto px-6 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-brand-primary flex items-center justify-center">
               <Zap className="w-3.5 h-3.5 text-white" />
@@ -677,16 +670,6 @@ function SectionHeader({ number, label }: { number: string; label: string }) {
       <span className="text-[11px] font-bold text-gray-300 tabular-nums">{number}</span>
       <div className="w-px h-4 bg-gray-200" />
       <h2 className="text-lg font-bold text-gray-900">{label}</h2>
-    </div>
-  );
-}
-
-function KPIBlock({ label, value, sub, subColor = 'text-gray-400' }: { label: string; value: string; sub: string; subColor?: string }) {
-  return (
-    <div className="bg-white rounded-xl p-5 border border-gray-100">
-      <p className="text-xs font-medium text-gray-500 mb-1">{label}</p>
-      <p className="text-2xl font-bold text-gray-900">{value}</p>
-      <p className={`text-xs font-medium mt-0.5 ${subColor}`}>{sub}</p>
     </div>
   );
 }
@@ -736,6 +719,20 @@ function renderInlineMarkdownBold(text: string) {
   );
 }
 
+function YesNoPill({ value }: { value: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
+        value
+          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+          : 'bg-rose-50 text-rose-700 border-rose-200'
+      }`}
+    >
+      {value ? 'Yes' : 'No'}
+    </span>
+  );
+}
+
 function SectionRubricDetails({ section }: { section: AuditSection }) {
   const details = parseSectionDetails((section as any).section_details);
   if (!details) return null;
@@ -755,9 +752,9 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
           <tbody>
             {rows.map((r: any, i: number) => (
               <tr key={i} className="border-t border-gray-100 text-gray-700 align-top">
-                <td className="py-2 pr-2 font-medium">{r.flow_name}</td>
-                <td className="py-2 pr-2">{r.present ? 'Yes' : 'No'}</td>
-                <td className="py-2 pr-2">{r.live ? 'Yes' : 'No'}</td>
+                <td className="py-2 pr-2 font-medium">{renderInlineMarkdownBold(r.flow_name || 'N/A')}</td>
+                <td className="py-2 pr-2"><YesNoPill value={Boolean(r.present)} /></td>
+                <td className="py-2 pr-2"><YesNoPill value={Boolean(r.live)} /></td>
                 <td className="py-2 pr-2">{typeof r.email_count === 'number' ? r.email_count : 'N/A'}</td>
                 <td className="py-2 pr-2">{renderInlineMarkdownBold(r.current_structure_note || 'N/A')}</td>
                 <td className="py-2">{renderInlineMarkdownBold(r.recommended_structure || 'N/A')}</td>

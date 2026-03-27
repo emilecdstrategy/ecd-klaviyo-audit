@@ -196,6 +196,77 @@ async function klaviyoCountProfiles(params: {
   return { ok: true as const, status: 200, body: null, count, truncated };
 }
 
+async function computeProfileSnapshot(params: {
+  apiKey: string;
+  revision: string;
+  since90Iso: string;
+  maxPages?: number;
+  deadlineAtMs?: number;
+}) {
+  const maxPages = params.maxPages ?? 800;
+  const since90Ms = Date.parse(params.since90Iso);
+  let subscribed = 0;
+  let active90d = 0;
+  let suppressed = 0;
+  let next = `/api/profiles/?page%5Bsize%5D=100&additional-fields%5Bprofile%5D=subscriptions`;
+  let truncated = false;
+
+  for (let i = 0; i < maxPages && next; i++) {
+    if (params.deadlineAtMs && Date.now() >= params.deadlineAtMs) {
+      truncated = true;
+      break;
+    }
+    const res = await fetchWithRetry(() => klaviyoFetch(params.apiKey, params.revision, next), 3);
+    if (!res.ok) {
+      return {
+        ok: false as const,
+        status: res.status,
+        body: res.body,
+        snapshot: null,
+        truncated: false,
+      };
+    }
+    const items = res.body?.data ?? [];
+    for (const p of items) {
+      const consent = String(p?.attributes?.subscriptions?.email?.marketing?.consent ?? "").toUpperCase();
+      const isSubscribed = consent === "SUBSCRIBED";
+      if (isSubscribed) subscribed += 1;
+
+      if (p?.attributes?.subscriptions?.email?.marketing?.suppression?.timestamp) {
+        suppressed += 1;
+      }
+
+      if (isSubscribed) {
+        const updated = p?.attributes?.updated;
+        const updatedMs = typeof updated === "string" ? Date.parse(updated) : NaN;
+        if (Number.isFinite(updatedMs) && Number.isFinite(since90Ms) && updatedMs >= since90Ms) {
+          active90d += 1;
+        }
+      }
+    }
+    const nextUrl: string | null = res.body?.links?.next ?? null;
+    if (!nextUrl) {
+      next = "";
+      break;
+    }
+    const u = new URL(nextUrl);
+    next = `${u.pathname}${u.search}`;
+  }
+
+  if (next) truncated = true;
+  return {
+    ok: true as const,
+    status: 200,
+    body: null,
+    snapshot: {
+      email_subscribed_profiles_count: subscribed,
+      active_profiles_90d_count: active90d,
+      suppressed_profiles_count: suppressed,
+    },
+    truncated,
+  };
+}
+
 async function queryValuesReport(params: {
   apiKey: string;
   revision: string;
@@ -541,52 +612,12 @@ serve(async (req) => {
     await mustSucceed("update clients.klaviyo_connected", sb.from("clients").update({ klaviyo_connected: true }).eq("id", clientId));
 
     // 5) Account snapshot KPIs (time-budgeted to avoid edge runtime timeout)
-    const emailConsent = (p: any) => {
-      const consent = p?.attributes?.subscriptions?.email?.marketing?.consent;
-      return typeof consent === "string" ? consent.toUpperCase() : "";
-    };
-    const isSubscribedEmail = (p: any) => emailConsent(p) === "SUBSCRIBED";
-
-    const profilePageBudget = 120; // cap worst-case request count
-
-    // List Size: email-subscribed profiles (may truncate)
-    const subscribedProfilesRes = await klaviyoCountProfiles({
-      apiKey,
-      revision,
-      predicate: isSubscribedEmail,
-      maxPages: profilePageBudget,
-      deadlineAtMs,
-    });
-    if (!subscribedProfilesRes.ok) {
-      // We'll attach errors onto reportingErrors below after it's declared; stash now.
-    }
-
-    // Suppressions: globally suppressed profiles (all reasons)
-    // Avoid API filter syntax edge cases by evaluating from fetched profile payload.
-    const suppressedProfilesRes = await klaviyoCountProfiles({
-      apiKey,
-      revision,
-      predicate: (p: any) => {
-        const ts = p?.attributes?.subscriptions?.email?.marketing?.suppression?.timestamp;
-        return Boolean(ts);
-      },
-      maxPages: profilePageBudget,
-      deadlineAtMs,
-    });
-
-    // Active Profiles: engaged last 90d (proxy: subscribed profiles updated in last 90 days)
     const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    const since90Ms = Date.parse(since90);
-    const activeProfilesRes = await klaviyoCountProfiles({
+    const profileSnapshotRes = await computeProfileSnapshot({
       apiKey,
       revision,
-      predicate: (p: any) => {
-        if (!isSubscribedEmail(p)) return false;
-        const updated = p?.attributes?.updated;
-        const updatedMs = typeof updated === "string" ? Date.parse(updated) : NaN;
-        return Number.isFinite(updatedMs) && updatedMs >= since90Ms;
-      },
-      maxPages: profilePageBudget,
+      since90Iso: since90,
+      maxPages: 800,
       deadlineAtMs,
     });
 
@@ -766,27 +797,11 @@ serve(async (req) => {
       }
     }
 
-    if (!subscribedProfilesRes.ok) {
-      reportingErrors.push({
-        stage: "email_subscribed_profiles_count",
-        status: subscribedProfilesRes.status ?? null,
-        message: trimBody(subscribedProfilesRes.body) ?? "Failed to count email-subscribed profiles",
-      });
-    }
-
-    if (!suppressedProfilesRes.ok) {
+    if (!profileSnapshotRes.ok) {
       reportingErrors.push({
         stage: "suppressed_profiles_count",
-        status: suppressedProfilesRes.status ?? null,
-        message: trimBody(suppressedProfilesRes.body) ?? "Failed to count suppressed profiles",
-      });
-    }
-
-    if (!activeProfilesRes.ok) {
-      reportingErrors.push({
-        stage: "active_profiles_90d_count",
-        status: activeProfilesRes.status ?? null,
-        message: trimBody(activeProfilesRes.body) ?? "Failed to count active profiles (90d)",
+        status: profileSnapshotRes.status ?? null,
+        message: trimBody(profileSnapshotRes.body) ?? "Failed to compute profile snapshot metrics",
       });
     }
 
@@ -818,15 +833,15 @@ serve(async (req) => {
     }
 
     const accountSnapshot = {
-      email_subscribed_profiles_count: subscribedProfilesRes.ok ? subscribedProfilesRes.count : null,
-      active_profiles_90d_count: activeProfilesRes.ok ? activeProfilesRes.count : null,
-      suppressed_profiles_count: suppressedProfilesRes.ok ? suppressedProfilesRes.count : null,
+      email_subscribed_profiles_count: profileSnapshotRes.ok ? profileSnapshotRes.snapshot?.email_subscribed_profiles_count ?? null : null,
+      active_profiles_90d_count: profileSnapshotRes.ok ? profileSnapshotRes.snapshot?.active_profiles_90d_count ?? null : null,
+      suppressed_profiles_count: profileSnapshotRes.ok ? profileSnapshotRes.snapshot?.suppressed_profiles_count ?? null : null,
       bounce_rate_90d: bounceRate90d,
       spam_rate_90d: spamRate90d,
       active_profiles_definition: "Proxy: email-subscribed profiles updated in last 90 days",
-      email_subscribed_profiles_truncated: subscribedProfilesRes.ok ? subscribedProfilesRes.truncated : null,
-      active_profiles_90d_truncated: activeProfilesRes.ok ? activeProfilesRes.truncated : null,
-      suppressed_profiles_truncated: suppressedProfilesRes.ok ? suppressedProfilesRes.truncated : null,
+      email_subscribed_profiles_truncated: profileSnapshotRes.ok ? profileSnapshotRes.truncated : null,
+      active_profiles_90d_truncated: profileSnapshotRes.ok ? profileSnapshotRes.truncated : null,
+      suppressed_profiles_truncated: profileSnapshotRes.ok ? profileSnapshotRes.truncated : null,
       computed_at: new Date().toISOString(),
     };
 
