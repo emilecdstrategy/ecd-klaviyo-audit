@@ -232,7 +232,9 @@ async function computeProfileSnapshot(params: {
       const isSubscribed = consent === "SUBSCRIBED";
       if (isSubscribed) subscribed += 1;
 
-      if (p?.attributes?.subscriptions?.email?.marketing?.suppression?.timestamp) {
+      // Count any email marketing suppression record (timestamp may be absent in some API shapes).
+      const emailM = p?.attributes?.subscriptions?.email?.marketing;
+      if (emailM?.suppression != null) {
         suppressed += 1;
       }
 
@@ -701,6 +703,30 @@ serve(async (req) => {
         }
       }
 
+      // Separate 90-day campaign report for bounce/spam (UI promises "last 90 days"; timeframeKeys stays last_30 only for flows).
+      if (!timeframeKeys.includes("last_90_days")) {
+        const repCamp90 = await queryValuesReportWithBackoff({
+          apiKey,
+          revision,
+          endpointPath: "/api/campaign-values-reports/",
+          timeframeKey: "last_90_days",
+          conversionMetricId,
+          filter: "contains-any(send_channel,[\"email\"])",
+          statistics: campaignReportStats,
+          groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
+          deadlineAtMs,
+        });
+        if (repCamp90.ok) {
+          campaignReports.push({ timeframe: "last_90_days", results: repCamp90.body?.data?.attributes?.results ?? [] });
+        } else {
+          reportingErrors.push({
+            stage: "campaign_values_last_90_days",
+            status: repCamp90.status ?? null,
+            message: trimBody(repCamp90.body) ?? "Campaign values report failed (last_90_days)",
+          });
+        }
+      }
+
       // Flow values: limit to first N flows to stay within rate limits and filter limits.
       const flowIds = flows.ok ? flows.items.map((f: any) => f.id).slice(0, MAX_REPORT_IDS) : [];
       const flowFilter = flowIds.length
@@ -838,6 +864,7 @@ serve(async (req) => {
       suppressed_profiles_count: profileSnapshotRes.ok ? profileSnapshotRes.snapshot?.suppressed_profiles_count ?? null : null,
       bounce_rate_90d: bounceRate90d,
       spam_rate_90d: spamRate90d,
+      deliverability_campaign_timeframe: campaignReports.some((r) => r.timeframe === "last_90_days") ? "last_90_days" : "last_30_days",
       active_profiles_definition: "Proxy: email-subscribed profiles updated in last 90 days",
       email_subscribed_profiles_truncated: profileSnapshotRes.ok ? profileSnapshotRes.truncated : null,
       active_profiles_90d_truncated: profileSnapshotRes.ok ? profileSnapshotRes.truncated : null,

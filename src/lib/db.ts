@@ -232,6 +232,10 @@ export async function getPublicReportByToken(token: string): Promise<{
     spam_rate_90d: number | null;
     active_profiles_definition?: string | null;
     computed_at?: string | null;
+    email_subscribed_profiles_truncated?: boolean | null;
+    active_profiles_90d_truncated?: boolean | null;
+    suppressed_profiles_truncated?: boolean | null;
+    deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
   } | null;
 } | null> {
   const { data: audit, error: auditErr } = await supabase

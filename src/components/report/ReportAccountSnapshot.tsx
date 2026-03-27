@@ -18,9 +18,25 @@ function formatPct(n: number | null) {
   return `${(n * 100).toFixed(n < 0.01 ? 2 : 1)}%`;
 }
 
+/** Spam/bounce rates can be tiny; show extra precision when above zero but under 0.01%. */
+function formatRatePct(n: number | null) {
+  if (n == null || Number.isNaN(n)) return '—';
+  const pct = n * 100;
+  if (pct <= 0) return '0.00%';
+  if (pct < 0.01) return `${pct.toFixed(3)}%`;
+  return `${pct.toFixed(pct < 1 ? 2 : 1)}%`;
+}
+
 function formatInt(n: number | null) {
   if (n == null || !Number.isFinite(n)) return 'N/A';
   return new Intl.NumberFormat('en-US').format(Math.round(n));
+}
+
+function formatIntWithTruncFlag(n: number | null, truncated: boolean | null | undefined) {
+  if (n == null || !Number.isFinite(n)) return 'N/A';
+  const s = new Intl.NumberFormat('en-US').format(Math.round(n));
+  if (truncated) return `~${s}`;
+  return s;
 }
 
 function calcWeeklySendFrequency(campaigns: KlaviyoCampaignSnapshot[]) {
@@ -38,7 +54,7 @@ function calcWeeklySendFrequency(campaigns: KlaviyoCampaignSnapshot[]) {
 
 function Card({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
+    <div className="rounded-xl border border-gray-100/90 bg-[#f9f9f9] px-4 py-4">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">{label}</p>
       <p className="text-2xl font-bold tabular-nums text-gray-900 tracking-tight">{value}</p>
       <p className="text-xs font-medium mt-1 leading-snug text-gray-500">{sub}</p>
@@ -65,6 +81,10 @@ export default function ReportAccountSnapshot({
     spam_rate_90d: number | null;
     active_profiles_definition?: string | null;
     computed_at?: string | null;
+    email_subscribed_profiles_truncated?: boolean | null;
+    active_profiles_90d_truncated?: boolean | null;
+    suppressed_profiles_truncated?: boolean | null;
+    deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
   } | null;
 }) {
   const totalFlows = flowSnapshots.length;
@@ -95,20 +115,50 @@ export default function ReportAccountSnapshot({
 
         <Card
           label="List Size"
-          value={formatInt(accountSnapshot?.email_subscribed_profiles_count ?? null)}
-          sub={accountSnapshot?.email_subscribed_profiles_count != null ? 'email-subscribed profiles' : 'requires profiles:read scope'}
+          value={formatIntWithTruncFlag(
+            accountSnapshot?.email_subscribed_profiles_count ?? null,
+            accountSnapshot?.email_subscribed_profiles_truncated,
+          )}
+          sub={
+            accountSnapshot?.email_subscribed_profiles_count == null
+              ? 'requires profiles:read scope'
+              : [
+                  'email-subscribed profiles',
+                  accountSnapshot?.email_subscribed_profiles_truncated ? 'partial scan (time budget) — count may be incomplete' : null,
+                ].filter(Boolean).join(' · ')
+          }
         />
         <Card
           label="Active Profiles"
-          value={formatInt(accountSnapshot?.active_profiles_90d_count ?? null)}
-          sub={accountSnapshot?.active_profiles_90d_count != null
-            ? (accountSnapshot?.active_profiles_definition ?? 'engaged last 90 days')
-            : 'requires profiles:read scope'}
+          value={formatIntWithTruncFlag(
+            accountSnapshot?.active_profiles_90d_count ?? null,
+            accountSnapshot?.active_profiles_90d_truncated,
+          )}
+          sub={
+            accountSnapshot?.active_profiles_90d_count == null
+              ? 'requires profiles:read scope'
+              : [
+                  accountSnapshot?.active_profiles_definition ?? 'engaged last 90 days',
+                  accountSnapshot?.active_profiles_90d_truncated ? 'partial scan — proxy may be low' : null,
+                ].filter(Boolean).join(' · ')
+          }
         />
         <Card
           label="Suppressions"
-          value={formatInt(accountSnapshot?.suppressed_profiles_count ?? null)}
-          sub={accountSnapshot?.suppressed_profiles_count != null ? 'globally suppressed profiles' : 'requires profiles:read scope'}
+          value={formatIntWithTruncFlag(
+            accountSnapshot?.suppressed_profiles_count ?? null,
+            accountSnapshot?.suppressed_profiles_truncated,
+          )}
+          sub={
+            accountSnapshot?.suppressed_profiles_count == null
+              ? 'requires profiles:read scope'
+              : [
+                  'email marketing suppression on profile',
+                  accountSnapshot?.suppressed_profiles_truncated
+                    ? 'partial scan — 0 often means “not counted yet”, not “none in Klaviyo”'
+                    : null,
+                ].filter(Boolean).join(' · ')
+          }
         />
         <Card
           label="Send Frequency"
@@ -118,13 +168,21 @@ export default function ReportAccountSnapshot({
 
         <Card
           label="Bounce Rate"
-          value={accountSnapshot?.bounce_rate_90d != null ? formatPct(accountSnapshot.bounce_rate_90d) : 'N/A'}
-          sub={accountSnapshot?.bounce_rate_90d != null ? 'last 90 days (email campaigns)' : 'requires campaigns:read scope'}
+          value={accountSnapshot?.bounce_rate_90d != null ? formatRatePct(accountSnapshot.bounce_rate_90d) : 'N/A'}
+          sub={
+            accountSnapshot?.bounce_rate_90d != null
+              ? `${accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30' : 'last 90'} days · email campaigns (weighted by recipients)`
+              : 'requires campaigns:read scope'
+          }
         />
         <Card
           label="Spam Rate"
-          value={accountSnapshot?.spam_rate_90d != null ? formatPct(accountSnapshot.spam_rate_90d) : 'N/A'}
-          sub={accountSnapshot?.spam_rate_90d != null ? 'last 90 days (email campaigns)' : 'requires campaigns:read scope'}
+          value={accountSnapshot?.spam_rate_90d != null ? formatRatePct(accountSnapshot.spam_rate_90d) : 'N/A'}
+          sub={
+            accountSnapshot?.spam_rate_90d != null
+              ? `${accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30' : 'last 90'} days · email campaigns (weighted by recipients)`
+              : 'requires campaigns:read scope'
+          }
         />
         <Card
           label="Flow Conv. Rate"
