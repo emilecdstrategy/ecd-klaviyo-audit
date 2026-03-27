@@ -281,18 +281,27 @@ async function computeProfileSnapshotChunk(params: {
   }
 }
 
-function chainProfileResume(auditId: string) {
+async function chainProfileResume(auditId: string) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
   const url = `${SUPABASE_URL}/functions/v1/klaviyo_fetch_snapshot`;
-  void fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
-      apikey: SUPABASE_SERVICE_ROLE_KEY,
-    },
-    body: JSON.stringify({ mode: "resume_profile_scan", audit_id: auditId }),
-  }).catch(() => {});
+  // Await the fetch so the HTTP request is guaranteed to leave before the
+  // edge function isolate shuts down.  We race with a 4s timeout so we never
+  // block the response for long — we only need the request to be *sent*, not
+  // for the downstream invocation to finish.
+  try {
+    await Promise.race([
+      fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+        },
+        body: JSON.stringify({ mode: "resume_profile_scan", audit_id: auditId }),
+      }),
+      sleep(4_000),
+    ]);
+  } catch { /* swallow – best effort */ }
 }
 
 async function finalizeProfileScan(
@@ -418,7 +427,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       suppressed: chunk.suppressed,
       updated_at: new Date().toISOString(),
     }).eq("audit_id", auditId));
-    chainProfileResume(auditId);
+    await chainProfileResume(auditId);
     return json({ ok: true, correlationId, profile_metrics_status: "in_progress" });
   }
 
@@ -1138,7 +1147,7 @@ serve(async (req) => {
       updated_at: new Date().toISOString(),
     }, { onConflict: "audit_id" }));
 
-    chainProfileResume(auditId);
+    await chainProfileResume(auditId);
 
     // Observability
     const failedEndpoints = Object.entries(scopeDiag).filter(([, v]) => v !== true);
