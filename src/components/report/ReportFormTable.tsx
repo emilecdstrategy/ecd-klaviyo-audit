@@ -15,7 +15,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-const COLLAPSED_COUNT = 10;
+const COLLAPSED_COUNT = 5;
 
 export default function ReportFormTable({ forms }: { forms: KlaviyoFormSnapshot[] }) {
   const rows = [...forms].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
@@ -67,10 +67,10 @@ export default function ReportFormTable({ forms }: { forms: KlaviyoFormSnapshot[
       )}
 
       {needsExpand && (
-        <div className="relative z-10 flex justify-center pt-3 pb-1">
+        <div className="absolute bottom-6 left-0 right-0 z-10 flex justify-center pointer-events-none">
           <button
             onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1.5 text-sm font-semibold text-brand-primary hover:text-brand-primary-dark transition-colors"
+            className="flex items-center gap-1.5 text-sm font-semibold text-brand-primary hover:text-brand-primary-dark transition-colors pointer-events-auto"
           >
             {expanded ? (
               <>Collapse <ChevronUp className="w-4 h-4" /></>
