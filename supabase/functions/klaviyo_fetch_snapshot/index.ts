@@ -317,18 +317,23 @@ async function finalizeProfileScan(
     computed_at: new Date().toISOString(),
   };
 
-  const dm = {
-    list_size: subscribed,
-    monthly_engagement: active90d,
-    revenue_per_recipient: stagedRpr,
-  };
-
+  let finalRprForAudit: number | null = stagedRpr;
   for (const row of rollups) {
     const c = (row.computed ?? {}) as Record<string, unknown>;
     const existing = (c.account_snapshot ?? {}) as Record<string, unknown>;
     const prevDm = (c.derived_metrics ?? {}) as Record<string, unknown>;
+    const prevRpr = prevDm.revenue_per_recipient;
+    const rprMerged =
+      stagedRpr ??
+      (typeof prevRpr === "number" && Number.isFinite(prevRpr) ? prevRpr : null);
+    if (finalRprForAudit == null && rprMerged != null) finalRprForAudit = rprMerged;
+    const derived_metrics = {
+      ...prevDm,
+      list_size: subscribed,
+      monthly_engagement: active90d,
+      revenue_per_recipient: rprMerged,
+    };
     const account_snapshot = { ...existing, ...accountSnapshotPatch };
-    const derived_metrics = { ...prevDm, ...dm };
     const computed = { ...c, account_snapshot, derived_metrics };
     await mustSucceed("update klaviyo_reporting_rollups profile merge", sb.from("klaviyo_reporting_rollups").update({ computed }).eq("id", row.id));
   }
@@ -336,7 +341,7 @@ async function finalizeProfileScan(
   await mustSucceed("update audits profile metrics", sb.from("audits").update({
     list_size: subscribed,
     monthly_traffic: active90d,
-    aov: stagedRpr ?? 0,
+    aov: finalRprForAudit ?? 0,
   }).eq("id", auditId));
 
   await mustSucceed("complete profile scan job", sb.from("klaviyo_profile_scan_jobs").update({
