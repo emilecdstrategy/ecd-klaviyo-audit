@@ -163,6 +163,8 @@ async function klaviyoCountProfiles(params: {
   predicate?: (profile: any) => boolean;
   // Guard rails to avoid blowing the function timeout on huge accounts
   maxPages?: number;
+  // Stop early if this time budget is exceeded
+  deadlineAtMs?: number;
 }) {
   const maxPages = params.maxPages ?? 200; // 200 * 100 = 20k profiles max
   let count = 0;
@@ -171,6 +173,10 @@ async function klaviyoCountProfiles(params: {
   let truncated = false;
 
   for (let i = 0; i < maxPages && next; i++) {
+    if (params.deadlineAtMs && Date.now() >= params.deadlineAtMs) {
+      truncated = true;
+      break;
+    }
     const res = await fetchWithRetry(() => klaviyoFetch(params.apiKey, params.revision, next), 3);
     if (!res.ok) return { ok: false as const, status: res.status, body: res.body, count: null, truncated: false };
     const items = res.body?.data ?? [];
@@ -341,6 +347,7 @@ serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
   const correlationId = crypto.randomUUID();
   const startedAt = Date.now();
+  const deadlineAtMs = startedAt + 135_000; // stay under edge runtime hard timeout
   let auditId: string | null = null;
   let clientId: string | null = null;
   let revision: string | null = null;
@@ -530,6 +537,47 @@ serve(async (req) => {
 
     await mustSucceed("update clients.klaviyo_connected", sb.from("clients").update({ klaviyo_connected: true }).eq("id", clientId));
 
+    // 5) Account snapshot KPIs (time-budgeted to avoid edge runtime timeout)
+    const emailConsent = (p: any) => {
+      const consent = p?.attributes?.subscriptions?.email?.marketing?.consent;
+      return typeof consent === "string" ? consent.toUpperCase() : "";
+    };
+    const isSubscribedEmail = (p: any) => emailConsent(p) === "SUBSCRIBED";
+
+    const profilePageBudget = 120; // cap worst-case request count
+
+    // List Size: email-subscribed profiles (may truncate)
+    const subscribedProfilesRes = await klaviyoCountProfiles({
+      apiKey,
+      revision,
+      predicate: isSubscribedEmail,
+      maxPages: profilePageBudget,
+      deadlineAtMs,
+    });
+    if (!subscribedProfilesRes.ok) {
+      // We'll attach errors onto reportingErrors below after it's declared; stash now.
+    }
+
+    // Suppressions: globally suppressed profiles (all reasons) (usually small; still time-budgeted)
+    const suppressedProfilesRes = await klaviyoCountProfiles({
+      apiKey,
+      revision,
+      filter: `greater-than(subscriptions.email.marketing.suppression.timestamp,\"1970-01-01T00:00:00Z\")`,
+      maxPages: profilePageBudget,
+      deadlineAtMs,
+    });
+
+    // Active Profiles: engaged last 90d (proxy: subscribed profiles updated in last 90 days)
+    const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const activeProfilesRes = await klaviyoCountProfiles({
+      apiKey,
+      revision,
+      filter: `greater-than(updated,\"${since90}\")`,
+      predicate: isSubscribedEmail,
+      maxPages: profilePageBudget,
+      deadlineAtMs,
+    });
+
     // 5) Reporting rollups (values reports)
     // Reporting endpoints require conversion_metric_id. We'll attempt to resolve "Placed Order" metric id.
     // Metrics endpoint can reject page[size] on some revisions/accounts; use cursor pagination only.
@@ -703,20 +751,6 @@ serve(async (req) => {
       }
     }
 
-    // Persist rollup record(s) for traceability regardless of report availability
-    const emailConsent = (p: any) => {
-      const consent = p?.attributes?.subscriptions?.email?.marketing?.consent;
-      return typeof consent === "string" ? consent.toUpperCase() : "";
-    };
-    const isSubscribedEmail = (p: any) => emailConsent(p) === "SUBSCRIBED";
-
-    // List Size: email-subscribed profiles (may truncate on very large accounts)
-    const subscribedProfilesRes = await klaviyoCountProfiles({
-      apiKey,
-      revision,
-      predicate: isSubscribedEmail,
-      maxPages: 400, // up to 40k profiles counted before truncation
-    });
     if (!subscribedProfilesRes.ok) {
       reportingErrors.push({
         stage: "email_subscribed_profiles_count",
@@ -727,17 +761,10 @@ serve(async (req) => {
       reportingErrors.push({
         stage: "email_subscribed_profiles_count",
         status: 200,
-        message: "Count truncated for very large account (increase maxPages to compute full list size).",
+        message: "Count truncated due to time/page budget (large account).",
       });
     }
 
-    // Suppressions: globally suppressed profiles (all reasons)
-    const suppressedProfilesRes = await klaviyoCountProfiles({
-      apiKey,
-      revision,
-      filter: `greater-than(subscriptions.email.marketing.suppression.timestamp,\"1970-01-01T00:00:00Z\")`,
-      maxPages: 400,
-    });
     if (!suppressedProfilesRes.ok) {
       reportingErrors.push({
         stage: "suppressed_profiles_count",
@@ -748,19 +775,10 @@ serve(async (req) => {
       reportingErrors.push({
         stage: "suppressed_profiles_count",
         status: 200,
-        message: "Count truncated for very large account (increase maxPages to compute full suppressions).",
+        message: "Count truncated due to time/page budget (large account).",
       });
     }
 
-    // Active Profiles: engaged last 90d (proxy: subscribed profiles updated in last 90 days)
-    const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    const activeProfilesRes = await klaviyoCountProfiles({
-      apiKey,
-      revision,
-      filter: `greater-than(updated,\"${since90}\")`,
-      predicate: isSubscribedEmail,
-      maxPages: 400,
-    });
     if (!activeProfilesRes.ok) {
       reportingErrors.push({
         stage: "active_profiles_90d_count",
@@ -771,7 +789,7 @@ serve(async (req) => {
       reportingErrors.push({
         stage: "active_profiles_90d_count",
         status: 200,
-        message: "Count truncated for very large account (increase maxPages to compute full active profiles).",
+        message: "Count truncated due to time/page budget (large account).",
       });
     }
 
