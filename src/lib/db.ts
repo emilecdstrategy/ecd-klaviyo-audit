@@ -223,6 +223,7 @@ export async function getPublicReportByToken(token: string): Promise<{
   campaignSnapshots: KlaviyoCampaignSnapshot[];
   healthScores: HealthScoreItem[];
   recommendations: Recommendation[];
+  reportingDiagnostic?: string | null;
 } | null> {
   const { data: audit, error: auditErr } = await supabase
     .from('audits')
@@ -233,7 +234,7 @@ export async function getPublicReportByToken(token: string): Promise<{
   if (auditErr) throw auditErr;
   if (!audit) return null;
 
-  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, scores, recs] = await Promise.all([
+  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, scores, recs, rollups] = await Promise.all([
     supabase.from('clients').select('*').eq('id', (audit as any).client_id).maybeSingle(),
     supabase.from('audit_sections').select('*').eq('audit_id', (audit as any).id),
     supabase.from('audit_assets').select('*').eq('audit_id', (audit as any).id),
@@ -244,6 +245,7 @@ export async function getPublicReportByToken(token: string): Promise<{
     supabase.from('klaviyo_campaign_snapshots').select('*').eq('audit_id', (audit as any).id),
     supabase.from('health_scores').select('*').eq('audit_id', (audit as any).id),
     supabase.from('recommendations').select('*').eq('audit_id', (audit as any).id).order('sort_order', { ascending: true }),
+    supabase.from('klaviyo_reporting_rollups').select('timeframe_key, computed').eq('audit_id', (audit as any).id),
   ]);
 
   if (client.error) throw client.error;
@@ -256,6 +258,7 @@ export async function getPublicReportByToken(token: string): Promise<{
   if (campSnaps.error) throw campSnaps.error;
   if (scores.error) throw scores.error;
   if (recs.error) throw recs.error;
+  if (rollups.error) throw rollups.error;
   if (!client.data) return null;
 
   const allSections = (sections.data ?? []) as AuditSection[];
@@ -264,6 +267,10 @@ export async function getPublicReportByToken(token: string): Promise<{
 
   const sectionIds = finalSections.map(s => (s as any).id);
   const annotations = await listAnnotationsForAuditSections(sectionIds);
+
+  const reportingDiagnostic = ((rollups.data ?? []) as any[])
+    .find((r: any) => r.timeframe_key === 'last_30_days')?.computed?.reporting_errors?.[0]?.message
+    ?? null;
 
   return {
     audit: audit as Audit,
@@ -278,6 +285,7 @@ export async function getPublicReportByToken(token: string): Promise<{
     campaignSnapshots: (campSnaps.data ?? []) as KlaviyoCampaignSnapshot[],
     healthScores: (scores.data ?? []) as HealthScoreItem[],
     recommendations: (recs.data ?? []) as Recommendation[],
+    reportingDiagnostic,
   };
 }
 

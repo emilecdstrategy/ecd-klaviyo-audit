@@ -54,6 +54,7 @@ const SECTION_ITEM_SCHEMA = {
     "summary_text",
     "revenue_opportunity",
     "confidence",
+    "section_details",
   ],
   properties: {
     section_key: { type: "string", enum: AUDIT_SECTION_KEYS },
@@ -68,10 +69,12 @@ const SECTION_ITEM_SCHEMA = {
     section_details: {
       type: "object",
       additionalProperties: false,
+      required: ["flows", "segmentation", "campaigns", "signup_forms"],
       properties: {
         flows: {
           type: "object",
           additionalProperties: false,
+          required: ["core_flows"],
           properties: {
             core_flows: {
               type: "array",
@@ -94,6 +97,12 @@ const SECTION_ITEM_SCHEMA = {
         segmentation: {
           type: "object",
           additionalProperties: false,
+          required: [
+            "sends_to_full_list",
+            "has_engaged_unengaged_segments",
+            "has_vip_segments",
+            "benchmark_architecture_note",
+          ],
           properties: {
             sends_to_full_list: { type: "boolean" },
             has_engaged_unengaged_segments: { type: "boolean" },
@@ -104,6 +113,12 @@ const SECTION_ITEM_SCHEMA = {
         campaigns: {
           type: "object",
           additionalProperties: false,
+          required: [
+            "send_frequency_consistency",
+            "segmented_vs_blast_note",
+            "subject_preview_hygiene_note",
+            "campaign_type_mix_note",
+          ],
           properties: {
             send_frequency_consistency: { type: "string" },
             segmented_vs_blast_note: { type: "string" },
@@ -114,6 +129,13 @@ const SECTION_ITEM_SCHEMA = {
         signup_forms: {
           type: "object",
           additionalProperties: false,
+          required: [
+            "has_popup",
+            "has_embedded_form",
+            "offer_note",
+            "mobile_optimization_note",
+            "benchmark_conversion_note",
+          ],
           properties: {
             has_popup: { type: "boolean" },
             has_embedded_form: { type: "boolean" },

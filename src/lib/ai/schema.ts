@@ -34,6 +34,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
           "summary_text",
           "revenue_opportunity",
           "confidence",
+          "section_details",
         ],
         properties: {
           section_key: {

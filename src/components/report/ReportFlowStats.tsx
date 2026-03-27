@@ -6,9 +6,10 @@ interface Props {
   snapshots: KlaviyoFlowSnapshot[];
   performance: FlowPerformance[];
   clientName?: string;
+  reportingDiagnostic?: string | null;
 }
 
-export default function ReportFlowStats({ snapshots, performance, clientName }: Props) {
+export default function ReportFlowStats({ snapshots, performance, clientName, reportingDiagnostic }: Props) {
   const total = snapshots.length;
   const live = snapshots.filter(f => f.status?.toLowerCase() === 'live' || f.status?.toLowerCase() === 'manual').length;
   const draftPaused = snapshots.filter(f => ['draft', 'paused'].includes(f.status?.toLowerCase())).length;
@@ -34,10 +35,10 @@ export default function ReportFlowStats({ snapshots, performance, clientName }: 
     { label: 'Live Flows', value: String(live), sub: 'actively sending' },
     { label: 'Draft / Paused', value: String(draftPaused), sub: `${inactivePercent}% inactive` },
     { label: 'Manual Flows', value: String(manual), sub: 'require manual trigger' },
-    { label: 'Annual Flow Revenue', value: hasPerf ? formatCurrency(annualRevenue) : 'N/A', sub: hasPerf ? `${formatCurrency(monthlyRevenue)}/mo` : 'requires Klaviyo metrics scope', subColor: hasPerf ? 'text-emerald-600' : undefined },
-    { label: 'Total Recipients', value: hasPerf ? fmtRecipients : 'N/A', sub: hasPerf ? 'per month' : 'requires Klaviyo metrics scope' },
-    { label: 'Overall Conv. Rate', value: hasPerf ? `${(weightedConv * 100).toFixed(2)}%` : 'N/A', sub: hasPerf ? 'weighted average' : 'requires Klaviyo metrics scope' },
-    { label: 'Revenue Per Recipient', value: hasPerf ? `$${rpr.toFixed(2)}` : 'N/A', sub: hasPerf ? 'across all flows' : 'requires Klaviyo metrics scope' },
+    { label: 'Annual Flow Revenue', value: hasPerf ? formatCurrency(annualRevenue) : 'N/A', sub: hasPerf ? `${formatCurrency(monthlyRevenue)}/mo` : (reportingDiagnostic || 'requires Klaviyo metrics scope'), subColor: hasPerf ? 'text-emerald-600' : undefined },
+    { label: 'Total Recipients', value: hasPerf ? fmtRecipients : 'N/A', sub: hasPerf ? 'per month' : (reportingDiagnostic || 'requires Klaviyo metrics scope') },
+    { label: 'Overall Conv. Rate', value: hasPerf ? `${(weightedConv * 100).toFixed(2)}%` : 'N/A', sub: hasPerf ? 'weighted average' : (reportingDiagnostic || 'requires Klaviyo metrics scope') },
+    { label: 'Revenue Per Recipient', value: hasPerf ? `$${rpr.toFixed(2)}` : 'N/A', sub: hasPerf ? 'across all flows' : (reportingDiagnostic || 'requires Klaviyo metrics scope') },
   ];
 
   return (

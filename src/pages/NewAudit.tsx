@@ -36,7 +36,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [error, setError] = useState('');
   const [snapshotMeta, setSnapshotMeta] = useState<null | {
     counts?: Record<string, number | null>;
-    reporting?: { flow_reports?: Array<{ timeframe: string; rows: number }>; campaign_reports?: Array<{ timeframe: string; rows: number }> };
+    reporting?: {
+      flow_reports?: Array<{ timeframe: string; rows: number }>;
+      campaign_reports?: Array<{ timeframe: string; rows: number }>;
+      errors?: Array<{ stage: string; status?: number | null; message: string }>;
+      reporting_ok?: boolean;
+    };
     fetch?: any;
     elapsed_ms?: number;
     correlationId?: string;
@@ -467,7 +472,18 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                           Regenerate the key in Klaviyo with full read access for complete data.
                         </div>
                       )}
-                      
+                      {Array.isArray(snapshotMeta.reporting?.errors) && snapshotMeta.reporting!.errors!.length > 0 && (
+                        <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1.5 rounded space-y-1">
+                          <p className="font-semibold">Reporting metrics could not be fully pulled.</p>
+                          {snapshotMeta.reporting!.errors!.slice(0, 3).map((e, idx) => (
+                            <p key={`${e.stage}-${idx}`}>
+                              <span className="font-medium">{e.stage}</span>
+                              {e.status ? ` (${e.status})` : ''}: {String(e.message).slice(0, 140)}
+                            </p>
+                          ))}
+                          <p>Flow KPI cards may show N/A until reporting access succeeds.</p>
+                        </div>
+                      )}
                     </div>
                   );
                 })()}

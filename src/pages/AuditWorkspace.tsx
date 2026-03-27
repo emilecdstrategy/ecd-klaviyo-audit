@@ -20,6 +20,7 @@ import type { AuditSection, Annotation } from '../lib/types';
 import type { Audit, AuditAsset, Client } from '../lib/types';
 import { createAnnotation, deleteAnnotation, getAudit, getClient, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAuditSection } from '../lib/db';
 import { supabase } from '../lib/supabase';
+import { RichAuditText } from '../components/ui/RichAuditText';
 
 const SECTION_ICONS: Record<string, React.ElementType> = {
   account_health: BarChart3,
@@ -320,9 +321,7 @@ export default function AuditWorkspace() {
               {audit.executive_summary && (
                 <div className="bg-white rounded-xl p-6 card-shadow">
                   <h3 className="text-sm font-semibold text-gray-900 mb-3">Executive Summary</h3>
-                  <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">
-                    {audit.executive_summary}
-                  </p>
+                  <RichAuditText text={audit.executive_summary || ''} className="text-sm text-gray-700 leading-relaxed" />
                 </div>
               )}
             </div>

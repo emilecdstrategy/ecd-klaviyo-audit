@@ -195,6 +195,45 @@ async function queryValuesReport(params: {
   return { ok: res.ok, status: res.status, body };
 }
 
+async function pickBestConversionMetricId(params: {
+  apiKey: string;
+  revision: string;
+  candidateMetricIds: string[];
+  flowIds: string[];
+}) {
+  const candidates = Array.from(new Set(params.candidateMetricIds.filter(Boolean)));
+  for (const metricId of candidates) {
+    const sampleFlowIds = params.flowIds.slice(0, 10);
+    const filter = sampleFlowIds.length
+      ? `contains-any(flow_id,[${sampleFlowIds.map((id) => JSON.stringify(id)).join(",")}])`
+      : undefined;
+    const probe = await fetchWithRetry(
+      () =>
+        queryValuesReport({
+          apiKey: params.apiKey,
+          revision: params.revision,
+          endpointPath: "/api/flow-values-reports/",
+          timeframeKey: "last_30_days",
+          conversionMetricId: metricId,
+          filter,
+          statistics: ["recipients", "conversion_rate", "conversion_value", "revenue_per_recipient"],
+          groupBy: ["flow_id", "send_channel"],
+        }),
+      2,
+    );
+    if (!probe.ok) continue;
+    const rows = probe.body?.data?.attributes?.results ?? [];
+    const hasConversionData = rows.some((r: any) => {
+      const stats = r?.statistics ?? {};
+      return Number(stats.conversion_value ?? 0) > 0 || Number(stats.conversion_uniques ?? 0) > 0;
+    });
+    if (hasConversionData) {
+      return { metricId, reason: "probe_nonzero_conversion" as const };
+    }
+  }
+  return { metricId: candidates[0] ?? null, reason: "fallback_first_candidate" as const };
+}
+
 async function klaviyoPostJson(apiKey: string, revision: string, path: string, body: unknown) {
   const res = await fetch(`${KLAVIYO_BASE}${path}`, {
     method: "POST",
@@ -214,6 +253,21 @@ async function klaviyoPostJson(apiKey: string, revision: string, path: string, b
     parsed = text;
   }
   return { ok: res.ok, status: res.status, body: parsed };
+}
+
+function trimBody(body: unknown, max = 500) {
+  if (body == null) return null;
+  if (typeof body === "string") return body.slice(0, max);
+  try {
+    return JSON.stringify(body).slice(0, max);
+  } catch {
+    return "unserializable";
+  }
+}
+
+async function mustSucceed(label: string, p: Promise<{ error: any }>) {
+  const { error } = await p;
+  if (error) throw new Error(`${label} failed: ${error.message ?? "unknown error"}`);
 }
 
 serve(async (req) => {
@@ -258,13 +312,13 @@ serve(async (req) => {
     } else {
       // Store/refresh encrypted key for the client
       const enc = await encryptString(apiKey);
-      await sb.from("client_secrets").upsert({
+      await mustSucceed("client_secrets upsert", sb.from("client_secrets").upsert({
         client_id: clientId,
         klaviyo_private_key_ciphertext: enc.ciphertext,
         klaviyo_private_key_iv: enc.iv,
         klaviyo_private_key_alg: enc.alg,
         updated_at: new Date().toISOString(),
-      }, { onConflict: "client_id" });
+      }, { onConflict: "client_id" }));
     }
 
     // 1) Validate + account identity
@@ -306,13 +360,11 @@ serve(async (req) => {
     ]);
 
     // 3) Persist snapshots (clear prior snapshots for this audit_id to keep latest)
-    await Promise.all([
-      sb.from("klaviyo_flow_snapshots").delete().eq("audit_id", auditId),
-      sb.from("klaviyo_campaign_snapshots").delete().eq("audit_id", auditId),
-      sb.from("klaviyo_form_snapshots").delete().eq("audit_id", auditId),
-      sb.from("klaviyo_segment_snapshots").delete().eq("audit_id", auditId),
-      sb.from("klaviyo_reporting_rollups").delete().eq("audit_id", auditId),
-    ]);
+    await mustSucceed("delete klaviyo_flow_snapshots", sb.from("klaviyo_flow_snapshots").delete().eq("audit_id", auditId));
+    await mustSucceed("delete klaviyo_campaign_snapshots", sb.from("klaviyo_campaign_snapshots").delete().eq("audit_id", auditId));
+    await mustSucceed("delete klaviyo_form_snapshots", sb.from("klaviyo_form_snapshots").delete().eq("audit_id", auditId));
+    await mustSucceed("delete klaviyo_segment_snapshots", sb.from("klaviyo_segment_snapshots").delete().eq("audit_id", auditId));
+    await mustSucceed("delete klaviyo_reporting_rollups", sb.from("klaviyo_reporting_rollups").delete().eq("audit_id", auditId));
 
     if (flows.ok) {
       const rows = flows.items.map((f: any) => ({
@@ -327,7 +379,7 @@ serve(async (req) => {
         updated_at_klaviyo: f.attributes?.updated ? new Date(f.attributes.updated).toISOString() : null,
         raw: f,
       }));
-      if (rows.length) await sb.from("klaviyo_flow_snapshots").insert(rows);
+      if (rows.length) await mustSucceed("insert klaviyo_flow_snapshots", sb.from("klaviyo_flow_snapshots").insert(rows));
     }
 
     if (campaigns.ok) {
@@ -342,7 +394,7 @@ serve(async (req) => {
         updated_at_klaviyo: c.attributes?.updated_at ?? null,
         raw: c,
       }));
-      if (rows.length) await sb.from("klaviyo_campaign_snapshots").insert(rows);
+      if (rows.length) await mustSucceed("insert klaviyo_campaign_snapshots", sb.from("klaviyo_campaign_snapshots").insert(rows));
     }
 
     if (forms.ok) {
@@ -357,7 +409,7 @@ serve(async (req) => {
         updated_at_klaviyo: f.attributes?.updated_at ?? null,
         raw: f,
       }));
-      if (rows.length) await sb.from("klaviyo_form_snapshots").insert(rows);
+      if (rows.length) await mustSucceed("insert klaviyo_form_snapshots", sb.from("klaviyo_form_snapshots").insert(rows));
     }
 
     if (segments.ok) {
@@ -370,7 +422,7 @@ serve(async (req) => {
         updated_at_klaviyo: s.attributes?.updated ?? null,
         raw: s,
       }));
-      if (rows.length) await sb.from("klaviyo_segment_snapshots").insert(rows);
+      if (rows.length) await mustSucceed("insert klaviyo_segment_snapshots", sb.from("klaviyo_segment_snapshots").insert(rows));
     }
 
     // 4) Store connection metadata (with diagnostic info for failures)
@@ -391,7 +443,7 @@ serve(async (req) => {
         : { ok: false, status: res.status ?? null, error: extractKlaviyoError(res) };
     }
     const scopes = scopeDiag;
-    await sb.from("klaviyo_connections").upsert({
+    await mustSucceed("upsert klaviyo_connections", sb.from("klaviyo_connections").upsert({
       client_id: clientId,
       account_id: accountId,
       account_name: accountName,
@@ -402,31 +454,61 @@ serve(async (req) => {
       scopes,
       last_verified_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
-    }, { onConflict: "client_id" });
+    }, { onConflict: "client_id" }));
 
     // Backfill client website if missing.
     if (websiteUrl) {
       const { data: existingClient } = await sb.from("clients").select("website_url").eq("id", clientId).maybeSingle();
       if (!existingClient?.website_url) {
-        await sb.from("clients").update({ website_url: websiteUrl }).eq("id", clientId);
+        await mustSucceed("update clients.website_url", sb.from("clients").update({ website_url: websiteUrl }).eq("id", clientId));
       }
     }
 
-    await sb.from("clients").update({ klaviyo_connected: true }).eq("id", clientId);
+    await mustSucceed("update clients.klaviyo_connected", sb.from("clients").update({ klaviyo_connected: true }).eq("id", clientId));
 
     // 5) Reporting rollups (values reports)
     // Reporting endpoints require conversion_metric_id. We'll attempt to resolve "Placed Order" metric id.
-    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/?page%5Bsize%5D=50", 5);
-    const placedOrderMetric = metricsRes.ok
-      ? metricsRes.items.find((m: any) => (m?.attributes?.name ?? "").toLowerCase() === "placed order")
-      : null;
-    const conversionMetricId = placedOrderMetric?.id ?? (metricsRes.ok ? metricsRes.items?.[0]?.id : null);
+    // Metrics endpoint can reject page[size] on some revisions/accounts; use cursor pagination only.
+    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/", 5);
+    const flowIdsForMetricProbe = flows.ok ? flows.items.map((f: any) => f.id) : [];
+    const placedOrderCandidates = metricsRes.ok
+      ? metricsRes.items
+          .filter((m: any) => (m?.attributes?.name ?? "").toLowerCase().includes("placed order"))
+          .map((m: any) => m.id)
+      : [];
+    const fallbackCandidates = metricsRes.ok ? metricsRes.items.map((m: any) => m.id).slice(0, 10) : [];
+    const metricCandidates = placedOrderCandidates.length > 0 ? placedOrderCandidates : fallbackCandidates;
+    const pickedMetric = metricsRes.ok
+      ? await pickBestConversionMetricId({
+          apiKey,
+          revision,
+          candidateMetricIds: metricCandidates,
+          flowIds: flowIdsForMetricProbe,
+        })
+      : { metricId: null, reason: "metrics_fetch_failed" as const };
+    const conversionMetricId = pickedMetric.metricId;
 
     const timeframeKeys: Array<"last_30_days" | "last_90_days"> = ["last_30_days", "last_90_days"];
     const reportStats = ["recipients", "open_rate", "click_rate", "conversion_rate", "conversion_value", "revenue_per_recipient"];
+    const reportingErrors: Array<{ stage: string; status?: number | null; message: string }> = [];
 
     let campaignReports: any[] = [];
     let flowReports: any[] = [];
+    await mustSucceed("delete flow_performance", sb.from("flow_performance").delete().eq("audit_id", auditId));
+
+    if (!metricsRes.ok) {
+      reportingErrors.push({
+        stage: "metrics_lookup",
+        status: metricsRes.status ?? null,
+        message: trimBody(metricsRes.body) ?? "Metrics lookup failed",
+      });
+    } else if (!conversionMetricId) {
+      reportingErrors.push({
+        stage: "metrics_lookup",
+        status: 200,
+        message: "No conversion metric id available from /api/metrics",
+      });
+    }
 
     if (conversionMetricId) {
       // Campaign values: email only
@@ -445,7 +527,15 @@ serve(async (req) => {
             }),
           3,
         );
-        if (rep.ok) campaignReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
+        if (rep.ok) {
+          campaignReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
+        } else {
+          reportingErrors.push({
+            stage: `campaign_values_${tf}`,
+            status: rep.status ?? null,
+            message: trimBody(rep.body) ?? "Campaign values report failed",
+          });
+        }
       }
 
       // Flow values: limit to first N flows to stay within rate limits and filter limits.
@@ -469,7 +559,15 @@ serve(async (req) => {
             }),
           3,
         );
-        if (rep.ok) flowReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
+        if (rep.ok) {
+          flowReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
+        } else {
+          reportingErrors.push({
+            stage: `flow_values_${tf}`,
+            status: rep.status ?? null,
+            message: trimBody(rep.body) ?? "Flow values report failed",
+          });
+        }
       }
 
       // Compute flow_performance rows (aggregate by flow_id)
@@ -495,7 +593,6 @@ serve(async (req) => {
       }
 
       // Replace flow_performance rows for this audit_id
-      await sb.from("flow_performance").delete().eq("audit_id", auditId);
       const flowPerfRows = Object.entries(flowAgg).map(([flowId, a]) => {
         const denom = Math.max(1, a.recipients);
         const actual_open = a.open / denom;
@@ -529,14 +626,22 @@ serve(async (req) => {
           notes: "Computed from Klaviyo Reporting API (last_30_days).",
         };
       });
-      if (flowPerfRows.length) await sb.from("flow_performance").insert(flowPerfRows);
+      if (flowPerfRows.length) {
+        await mustSucceed("insert flow_performance", sb.from("flow_performance").insert(flowPerfRows));
+      } else {
+        reportingErrors.push({
+          stage: "flow_performance",
+          status: 200,
+          message: "No flow reporting rows returned for last_30_days; flow_performance was not populated.",
+        });
+      }
     }
 
     // Persist rollup record(s) for traceability regardless of report availability
     for (const tf of ["last_30_days", "last_90_days"] as const) {
       const camp = campaignReports.find((r) => r.timeframe === tf)?.results ?? [];
       const flw = flowReports.find((r) => r.timeframe === tf)?.results ?? [];
-      await sb.from("klaviyo_reporting_rollups").insert({
+      await mustSucceed("insert klaviyo_reporting_rollups", sb.from("klaviyo_reporting_rollups").insert({
         audit_id: auditId,
         client_id: clientId,
         timeframe_key: tf,
@@ -551,8 +656,9 @@ serve(async (req) => {
             segments: segments.ok ? segments.items.length : null,
             lists: lists.ok ? lists.items.length : null,
           },
+          reporting_errors: reportingErrors,
         },
-      });
+      }));
     }
 
     // Observability
@@ -593,8 +699,14 @@ serve(async (req) => {
       ),
       reporting: {
         conversion_metric_id: conversionMetricId,
+        conversion_metric_selection: {
+          reason: pickedMetric.reason,
+          candidates_tested: metricCandidates.slice(0, 10),
+        },
         campaign_reports: campaignReports.map((r) => ({ timeframe: r.timeframe, rows: (r.results ?? []).length })),
         flow_reports: flowReports.map((r) => ({ timeframe: r.timeframe, rows: (r.results ?? []).length })),
+        errors: reportingErrors,
+        reporting_ok: reportingErrors.length === 0,
       },
       elapsed_ms: Date.now() - startedAt,
     });

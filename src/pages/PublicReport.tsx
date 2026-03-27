@@ -24,6 +24,7 @@ import ReportSegmentTable from '../components/report/ReportSegmentTable';
 import ReportFormTable from '../components/report/ReportFormTable';
 import ReportCampaignTable from '../components/report/ReportCampaignTable';
 import ReportRecommendations from '../components/report/ReportRecommendations';
+import { RichAuditText } from '../components/ui/RichAuditText';
 import type { AuditSection } from '../lib/types';
 import { getPublicReportByToken } from '../lib/db';
 import { useAuth } from '../contexts/AuthContext';
@@ -61,6 +62,7 @@ export default function PublicReport() {
   const [campaignSnapshots, setCampaignSnapshots] = useState<any[]>([]);
   const [healthScores, setHealthScores] = useState(() => DEMO_HEALTH_SCORES);
   const [recommendations, setRecommendations] = useState(() => (audit ? DEMO_RECOMMENDATIONS.filter(r => r.audit_id === audit.id) : []));
+  const [reportingDiagnostic, setReportingDiagnostic] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -85,6 +87,7 @@ export default function PublicReport() {
           setCampaignSnapshots([]);
           setHealthScores([]);
           setRecommendations([]);
+          setReportingDiagnostic(null);
           return;
         }
         setAudit(report.audit);
@@ -99,6 +102,7 @@ export default function PublicReport() {
         setCampaignSnapshots(report.campaignSnapshots ?? []);
         setHealthScores(report.healthScores);
         setRecommendations(report.recommendations);
+        setReportingDiagnostic(report.reportingDiagnostic ?? null);
       } catch (e: unknown) {
         if (cancelled) return;
         setLoadError(e instanceof Error ? e.message : 'Failed to load report');
@@ -171,9 +175,8 @@ export default function PublicReport() {
     const parsed = JSON.parse(execText);
     if (parsed && typeof parsed.text === 'string') {
       execText = parsed.text;
-      const strip = (s: string) => s.replace(/\*\*/g, '');
-      aiStrengths = Array.isArray(parsed.strengths) ? parsed.strengths.map(strip) : [];
-      aiConcerns = Array.isArray(parsed.concerns) ? parsed.concerns.map(strip) : [];
+      aiStrengths = Array.isArray(parsed.strengths) ? parsed.strengths : [];
+      aiConcerns = Array.isArray(parsed.concerns) ? parsed.concerns : [];
       aiTimeline = Array.isArray(parsed.timeline) ? parsed.timeline : [];
     }
   } catch {
@@ -248,9 +251,7 @@ export default function PublicReport() {
               <span className="text-brand-primary">{formatCurrency(totalRevenue)}/month</span>{' '}
               in additional email revenue.
             </h1>
-            <p className="text-base text-gray-600 leading-relaxed">
-              {execText?.split('\n')[0]}
-            </p>
+            <RichAuditText text={execText?.split('\n')[0] || ''} className="text-base text-gray-600 leading-relaxed" />
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -276,7 +277,7 @@ export default function PublicReport() {
                       <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
                       <span>
                         <span className="font-semibold block">{bold}</span>
-                        {rest && <span className="block text-gray-600 leading-relaxed mt-0.5">{rest}</span>}
+                        {rest && <RichAuditText text={rest} className="block text-gray-600 leading-relaxed mt-0.5" />}
                       </span>
                     </li>
                   );
@@ -300,7 +301,7 @@ export default function PublicReport() {
                       <span className="text-red-400 mt-0.5 shrink-0">→</span>
                       <span>
                         <span className="font-semibold block">{bold}</span>
-                        {rest && <span className="block text-gray-600 leading-relaxed mt-0.5">{rest}</span>}
+                        {rest && <RichAuditText text={rest} className="block text-gray-600 leading-relaxed mt-0.5" />}
                       </span>
                     </li>
                   );
@@ -327,7 +328,7 @@ export default function PublicReport() {
                     <p className="text-2xl font-bold text-emerald-700 mb-1">
                       {formatCurrency(s.revenue_opportunity)}<span className="text-sm font-medium text-emerald-600">/mo</span>
                     </p>
-                    <p className="text-xs text-gray-500 leading-relaxed line-clamp-2">{s.summary_text}</p>
+                    <RichAuditText text={s.summary_text || ''} className="text-xs text-gray-500 leading-relaxed line-clamp-2" />
                   </div>
                 </div>
               ))}
@@ -352,6 +353,7 @@ export default function PublicReport() {
                   snapshots={flowSnapshots as any}
                   performance={flowPerformance}
                   clientName={client.company_name}
+                  reportingDiagnostic={reportingDiagnostic}
                 />
               </div>
             )}
@@ -757,7 +759,7 @@ function ReportSectionBlock({
               <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{section.current_state_title || 'Current State'}</h4>
             </div>
             <div className="bg-red-50/40 border border-red-100 rounded-xl p-4 mb-4">
-              <p className="text-sm text-gray-700 leading-relaxed">{section.current_state_notes}</p>
+              <RichAuditText text={section.current_state_notes || ''} className="text-sm text-gray-700 leading-relaxed" />
             </div>
             {currentAsset && (
               <AnnotationLayer
@@ -775,7 +777,7 @@ function ReportSectionBlock({
               <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{section.optimized_state_title || 'Optimized State'}</h4>
             </div>
             <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-4 mb-4">
-              <p className="text-sm text-gray-700 leading-relaxed">{section.optimized_notes}</p>
+              <RichAuditText text={section.optimized_notes || ''} className="text-sm text-gray-700 leading-relaxed" />
             </div>
             {optimizedAsset && (
               <AnnotationLayer
@@ -792,9 +794,7 @@ function ReportSectionBlock({
         {(section.human_edited_findings || section.summary_text) && (
           <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Key Takeaway</p>
-            <p className="text-sm text-gray-700 leading-relaxed">
-              {section.human_edited_findings || section.summary_text}
-            </p>
+            <RichAuditText text={section.human_edited_findings || section.summary_text || ''} className="text-sm text-gray-700 leading-relaxed" />
           </div>
         )}
       </div>
