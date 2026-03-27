@@ -73,7 +73,19 @@ export async function runAIAnalysis(
         body: { ...wizardData, requestedSectionKeys, aiMode },
         headers: { Authorization: `Bearer ${token}` },
       });
-      if (error) throw new AIAnalysisError(error.message || 'AI request failed', 'provider_error');
+      if (error) {
+        const anyErr = error as any;
+        const status = anyErr?.context?.status ?? anyErr?.status ?? null;
+        const body = anyErr?.context?.body ?? anyErr?.body ?? null;
+        const details = [
+          status ? `status ${status}` : null,
+          body ? `body ${String(body).slice(0, 240)}` : null,
+        ].filter(Boolean).join(' • ');
+        throw new AIAnalysisError(
+          `${error.message || 'AI request failed'}${details ? ` (${details})` : ''}`,
+          'provider_error',
+        );
+      }
       if (data?.ok === false) {
         const code = (data?.error?.code ?? 'provider_error') as AIErrorCode;
         const msg = data?.error?.message ?? 'AI request failed';

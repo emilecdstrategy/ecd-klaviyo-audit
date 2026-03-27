@@ -182,7 +182,16 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           Authorization: `Bearer ${token}`,
         },
       });
-      if (fnErr) throw fnErr;
+      if (fnErr) {
+        const anyErr = fnErr as any;
+        const status = anyErr?.context?.status ?? anyErr?.status ?? null;
+        const body = anyErr?.context?.body ?? anyErr?.body ?? null;
+        const details = [
+          status ? `status ${status}` : null,
+          body ? `body ${String(body).slice(0, 240)}` : null,
+        ].filter(Boolean).join(' • ');
+        throw new Error(`Klaviyo snapshot failed: ${fnErr.message}${details ? ` (${details})` : ''}`);
+      }
       if (!data?.ok) throw new Error(data?.error?.message || 'Failed to fetch Klaviyo snapshot');
       setSnapshotMeta({
         counts: data?.counts,
