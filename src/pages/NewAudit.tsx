@@ -28,22 +28,45 @@ const STEPS = [
 type NewAuditProps = { asModal?: boolean };
 
 /** Poll until Edge function finishes full Klaviyo profile pagination (multi-invocation). */
-async function waitForProfileJobComplete(auditId: string) {
+async function waitForProfileJobComplete(
+  auditId: string,
+  onProgress?: (subscribed: number, active90d: number, suppressed: number) => void,
+) {
   const maxMs = 45 * 60 * 1000;
   const t0 = Date.now();
+  let lastUpdated = '';
+  let staleCount = 0;
   while (Date.now() - t0 < maxMs) {
     const { data, error } = await supabase
       .from('klaviyo_profile_scan_jobs')
-      .select('status, error_message')
+      .select('status, error_message, subscribed, active90d, suppressed, updated_at')
       .eq('audit_id', auditId)
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error('Profile scan job not found');
-    if (data.status === 'complete') return;
+    if (data.status === 'complete') {
+      onProgress?.(data.subscribed ?? 0, data.active90d ?? 0, data.suppressed ?? 0);
+      return;
+    }
     if (data.status === 'failed') {
       throw new Error(data.error_message || 'Audience metrics scan failed');
     }
-    await new Promise((r) => setTimeout(r, 2000));
+    onProgress?.(data.subscribed ?? 0, data.active90d ?? 0, data.suppressed ?? 0);
+
+    // Detect stalled scan and re-trigger the resume chain
+    if (data.updated_at === lastUpdated) {
+      staleCount++;
+    } else {
+      staleCount = 0;
+      lastUpdated = data.updated_at ?? '';
+    }
+    if (staleCount >= 5) {
+      staleCount = 0;
+      supabase.functions.invoke('klaviyo_fetch_snapshot', {
+        body: { mode: 'resume_profile_scan', audit_id: auditId },
+      }).catch(() => {});
+    }
+    await new Promise((r) => setTimeout(r, 3000));
   }
   throw new Error('Audience metrics scan timed out. Try again or contact support.');
 }
@@ -270,7 +293,14 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       const profilePending = (data as { profile_metrics_status?: string })?.profile_metrics_status === 'pending';
       if (profilePending) {
         setAnalysisStage('Finishing audience metrics (full Klaviyo profile scan)…');
-        await waitForProfileJobComplete(audit.id);
+        await waitForProfileJobComplete(audit.id, (subscribed, _active90d, suppressed) => {
+          const total = subscribed + suppressed;
+          setAnalysisStage(
+            total > 0
+              ? `Scanning profiles… ${total.toLocaleString()} scanned so far`
+              : 'Finishing audience metrics (full Klaviyo profile scan)…',
+          );
+        });
       }
 
       const dm = (data as { derived_metrics?: { list_size?: number; monthly_engagement?: number; revenue_per_recipient?: number | null } })?.derived_metrics;

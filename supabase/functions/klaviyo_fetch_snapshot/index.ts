@@ -624,10 +624,16 @@ serve(async (req) => {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return json({ ok: false, error: { code: "config_missing", message: "Supabase env missing" }, correlationId }, { status: 500 });
     }
+    // Accept service role key (server-to-server chain) OR authenticated user (frontend retry)
     const auth = req.headers.get("authorization") ?? "";
     const token = auth.replace(/^Bearer\s+/i, "");
-    if (token !== SUPABASE_SERVICE_ROLE_KEY) {
-      return json({ ok: false, error: { code: "unauthorized", message: "Invalid service authorization" }, correlationId }, { status: 401 });
+    const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+    if (!isServiceRole) {
+      try {
+        await requireAuthenticatedUser(req);
+      } catch {
+        return json({ ok: false, error: { code: "unauthorized", message: "Invalid authorization" }, correlationId }, { status: 401 });
+      }
     }
     const resumeAuditId = (bodyJson.audit_id ?? "").trim();
     if (!resumeAuditId) {

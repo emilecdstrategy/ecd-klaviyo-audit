@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
+import Modal from '../components/ui/Modal';
 import { useAuth } from '../contexts/AuthContext';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { supabase } from '../lib/supabase';
@@ -85,6 +86,7 @@ function UsersTab() {
   const [inviting, setInviting] = useState(false);
   const [savingRoleFor, setSavingRoleFor] = useState<string | null>(null);
   const [removingFor, setRemovingFor] = useState<string | null>(null);
+  const [removeConfirmUser, setRemoveConfirmUser] = useState<AdminUserRow | null>(null);
 
   const currentUserId = currentUser?.id || '';
 
@@ -185,13 +187,10 @@ function UsersTab() {
     }
   };
 
-  const onRemove = async (userId: string) => {
+  const confirmRemove = async () => {
+    if (!removeConfirmUser) return;
+    const userId = removeConfirmUser.id;
     setError('');
-    if (userId === currentUserId) {
-      setError("You can't remove your own account.");
-      return;
-    }
-    if (!window.confirm('Remove this user? This cannot be undone.')) return;
     try {
       setRemovingFor(userId);
       const { data: sessionData } = await supabase.auth.getSession();
@@ -203,6 +202,7 @@ function UsersTab() {
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to remove user');
+      setRemoveConfirmUser(null);
       await reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to remove user');
@@ -213,6 +213,39 @@ function UsersTab() {
 
   return (
     <div className="bg-white rounded-xl card-shadow animate-slide-up">
+      <Modal
+        open={!!removeConfirmUser}
+        title="Remove user?"
+        onClose={() => { if (!removingFor) setRemoveConfirmUser(null); }}
+        className="max-w-lg"
+      >
+        <div className="p-5">
+          <p className="text-sm text-gray-700">
+            {removeConfirmUser
+              ? <>Remove <span className="font-semibold">{removeConfirmUser.name || removeConfirmUser.email}</span>? They will lose access to the platform. This cannot be undone.</>
+              : 'Remove this user? This cannot be undone.'}
+          </p>
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={!!removingFor}
+              onClick={() => setRemoveConfirmUser(null)}
+              className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={!!removingFor}
+              onClick={confirmRemove}
+              className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {removingFor ? 'Removing…' : 'Remove user'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
         <h2 className="text-base font-semibold text-gray-900">Team Members</h2>
         <div className="flex items-center gap-2">
@@ -278,7 +311,13 @@ function UsersTab() {
                 </Select>
               </div>
               <button
-                onClick={() => onRemove(user.id)}
+                onClick={() => {
+                  if (user.id === currentUserId) {
+                    setError("You can't remove your own account.");
+                    return;
+                  }
+                  setRemoveConfirmUser(user);
+                }}
                 disabled={removingFor === user.id || user.id === currentUserId}
                 className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                 title={user.id === currentUserId ? "You can't remove yourself" : 'Remove user'}
