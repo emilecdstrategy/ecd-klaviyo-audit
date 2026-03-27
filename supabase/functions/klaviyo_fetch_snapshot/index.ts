@@ -2,10 +2,11 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 type FetchInput = {
-  audit_id: string;
-  client_id: string;
+  audit_id?: string;
+  client_id?: string;
   api_key?: string; // optional if already stored
   revision?: string; // optional override
+  mode?: "resume_profile_scan";
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -17,6 +18,8 @@ const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 const KLAVIYO_BASE = "https://a.klaviyo.com";
 const DEFAULT_REVISION = "2024-10-15";
 const MAX_REPORT_IDS = 50;
+const PROFILE_FIRST_PATH =
+  "/api/profiles/?page%5Bsize%5D=100&additional-fields%5Bprofile%5D=subscriptions";
 /** Space out heavy Reporting API POSTs to reduce 429 bursts (ms). */
 const REPORTING_REQUEST_GAP_MS = 1_600;
 
@@ -202,35 +205,46 @@ async function klaviyoCountProfiles(params: {
   return { ok: true as const, status: 200, body: null, count, truncated };
 }
 
-async function computeProfileSnapshot(params: {
+type ProfileChunkOk = {
+  ok: true;
+  subscribed: number;
+  active90d: number;
+  suppressed: number;
+  truncated: boolean;
+  nextPath: string | null;
+};
+
+async function computeProfileSnapshotChunk(params: {
   apiKey: string;
   revision: string;
   since90Iso: string;
-  maxPages?: number;
-  deadlineAtMs?: number;
-}) {
-  const maxPages = params.maxPages ?? 800;
+  /** Continue from this path; null starts at PROFILE_FIRST_PATH */
+  startPath: string | null;
+  subscribed: number;
+  active90d: number;
+  suppressed: number;
+  deadlineAtMs: number;
+}): Promise<ProfileChunkOk | { ok: false; status: number; body: any }> {
   const since90Ms = Date.parse(params.since90Iso);
-  let subscribed = 0;
-  let active90d = 0;
-  let suppressed = 0;
-  let next = `/api/profiles/?page%5Bsize%5D=100&additional-fields%5Bprofile%5D=subscriptions`;
-  let truncated = false;
+  let subscribed = params.subscribed;
+  let active90d = params.active90d;
+  let suppressed = params.suppressed;
+  let next = params.startPath ?? PROFILE_FIRST_PATH;
 
-  for (let i = 0; i < maxPages && next; i++) {
-    if (params.deadlineAtMs && Date.now() >= params.deadlineAtMs) {
-      truncated = true;
-      break;
+  for (;;) {
+    if (Date.now() >= params.deadlineAtMs) {
+      return {
+        ok: true,
+        subscribed,
+        active90d,
+        suppressed,
+        truncated: true,
+        nextPath: next,
+      };
     }
     const res = await fetchWithRetry(() => klaviyoFetch(params.apiKey, params.revision, next), 3);
     if (!res.ok) {
-      return {
-        ok: false as const,
-        status: res.status,
-        body: res.body,
-        snapshot: null,
-        truncated: false,
-      };
+      return { ok: false, status: res.status, body: res.body };
     }
     const items = res.body?.data ?? [];
     for (const p of items) {
@@ -238,7 +252,6 @@ async function computeProfileSnapshot(params: {
       const isSubscribed = consent === "SUBSCRIBED";
       if (isSubscribed) subscribed += 1;
 
-      // Count any email marketing suppression record (timestamp may be absent in some API shapes).
       const emailM = p?.attributes?.subscriptions?.email?.marketing;
       if (emailM?.suppression != null) {
         suppressed += 1;
@@ -254,25 +267,160 @@ async function computeProfileSnapshot(params: {
     }
     const nextUrl: string | null = res.body?.links?.next ?? null;
     if (!nextUrl) {
-      next = "";
-      break;
+      return {
+        ok: true,
+        subscribed,
+        active90d,
+        suppressed,
+        truncated: false,
+        nextPath: null,
+      };
     }
     const u = new URL(nextUrl);
     next = `${u.pathname}${u.search}`;
   }
+}
 
-  if (next) truncated = true;
-  return {
-    ok: true as const,
-    status: 200,
-    body: null,
-    snapshot: {
-      email_subscribed_profiles_count: subscribed,
-      active_profiles_90d_count: active90d,
-      suppressed_profiles_count: suppressed,
+function chainProfileResume(auditId: string) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
+  const url = `${SUPABASE_URL}/functions/v1/klaviyo_fetch_snapshot`;
+  void fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
     },
-    truncated,
+    body: JSON.stringify({ mode: "resume_profile_scan", audit_id: auditId }),
+  }).catch(() => {});
+}
+
+async function finalizeProfileScan(
+  sb: ReturnType<typeof assertServiceClient>,
+  auditId: string,
+  subscribed: number,
+  active90d: number,
+  suppressed: number,
+  stagedRpr: number | null,
+) {
+  const { data: rollups } = await sb.from("klaviyo_reporting_rollups").select("id, computed").eq("audit_id", auditId);
+  if (!rollups?.length) return;
+
+  const accountSnapshotPatch = {
+    email_subscribed_profiles_count: subscribed,
+    active_profiles_90d_count: active90d,
+    suppressed_profiles_count: suppressed,
+    email_subscribed_profiles_truncated: false,
+    active_profiles_90d_truncated: false,
+    suppressed_profiles_truncated: false,
+    profile_scan_status: "complete",
+    computed_at: new Date().toISOString(),
   };
+
+  const dm = {
+    list_size: subscribed,
+    monthly_engagement: active90d,
+    revenue_per_recipient: stagedRpr,
+  };
+
+  for (const row of rollups) {
+    const c = (row.computed ?? {}) as Record<string, unknown>;
+    const existing = (c.account_snapshot ?? {}) as Record<string, unknown>;
+    const prevDm = (c.derived_metrics ?? {}) as Record<string, unknown>;
+    const account_snapshot = { ...existing, ...accountSnapshotPatch };
+    const derived_metrics = { ...prevDm, ...dm };
+    const computed = { ...c, account_snapshot, derived_metrics };
+    await mustSucceed("update klaviyo_reporting_rollups profile merge", sb.from("klaviyo_reporting_rollups").update({ computed }).eq("id", row.id));
+  }
+
+  await mustSucceed("update audits profile metrics", sb.from("audits").update({
+    list_size: subscribed,
+    monthly_traffic: active90d,
+    aov: stagedRpr ?? 0,
+  }).eq("id", auditId));
+
+  await mustSucceed("complete profile scan job", sb.from("klaviyo_profile_scan_jobs").update({
+    status: "complete",
+    next_path: null,
+    subscribed,
+    active90d,
+    suppressed,
+    error_message: null,
+    updated_at: new Date().toISOString(),
+  }).eq("audit_id", auditId));
+}
+
+async function handleResumeProfileScan(auditId: string, correlationId: string): Promise<Response> {
+  const sb = assertServiceClient();
+  const { data: claimRows, error: claimErr } = await sb.rpc("claim_profile_scan_job", { p_audit_id: auditId });
+  if (claimErr) {
+    return json({ ok: false, error: { code: "claim_failed", message: claimErr.message }, correlationId }, { status: 500 });
+  }
+  const claimed = (Array.isArray(claimRows) ? claimRows[0] : claimRows) as Record<string, unknown> | null | undefined;
+  if (!claimed) {
+    const { data: job } = await sb.from("klaviyo_profile_scan_jobs").select("status").eq("audit_id", auditId).maybeSingle();
+    if (!job) return json({ ok: false, error: { code: "not_found", message: "No profile scan job" }, correlationId }, { status: 404 });
+    if (job.status === "complete") return json({ ok: true, correlationId, profile_metrics_status: "complete" });
+    if (job.status === "failed") return json({ ok: false, correlationId, profile_metrics_status: "failed" });
+    return json({ ok: true, correlationId, profile_metrics_status: "skipped", reason: "already_running" });
+  }
+
+  const startedAt = Date.now();
+  const deadlineAtMs = startedAt + 145_000;
+  let apiKey: string;
+  try {
+    const { data: sec, error } = await sb.from("client_secrets").select("*").eq("client_id", claimed.client_id as string).maybeSingle();
+    if (error) throw error;
+    if (!sec?.klaviyo_private_key_ciphertext || !sec?.klaviyo_private_key_iv) throw new Error("No Klaviyo key for client");
+    apiKey = await decryptString(sec.klaviyo_private_key_ciphertext, sec.klaviyo_private_key_iv);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : "Key error";
+    await sb.from("klaviyo_profile_scan_jobs").update({
+      status: "failed",
+      error_message: msg.slice(0, 500),
+      updated_at: new Date().toISOString(),
+    }).eq("audit_id", auditId);
+    return json({ ok: false, error: { code: "key_error", message: msg }, correlationId }, { status: 200 });
+  }
+
+  const startPath = (claimed.next_path as string | null) ?? null;
+  const chunk = await computeProfileSnapshotChunk({
+    apiKey,
+    revision: String(claimed.revision),
+    since90Iso: String(claimed.since90_iso),
+    startPath,
+    subscribed: Number(claimed.subscribed ?? 0),
+    active90d: Number(claimed.active90d ?? 0),
+    suppressed: Number(claimed.suppressed ?? 0),
+    deadlineAtMs,
+  });
+
+  if (!chunk.ok) {
+    await sb.from("klaviyo_profile_scan_jobs").update({
+      status: "failed",
+      error_message: trimBody(chunk.body) ?? "Klaviyo profile fetch failed",
+      updated_at: new Date().toISOString(),
+    }).eq("audit_id", auditId);
+    return json({ ok: false, correlationId, profile_metrics_status: "failed", error: "profile_fetch_failed" }, { status: 200 });
+  }
+
+  if (chunk.truncated && chunk.nextPath) {
+    await mustSucceed("profile job progress", sb.from("klaviyo_profile_scan_jobs").update({
+      status: "pending",
+      next_path: chunk.nextPath,
+      subscribed: chunk.subscribed,
+      active90d: chunk.active90d,
+      suppressed: chunk.suppressed,
+      updated_at: new Date().toISOString(),
+    }).eq("audit_id", auditId));
+    chainProfileResume(auditId);
+    return json({ ok: true, correlationId, profile_metrics_status: "in_progress" });
+  }
+
+  const staged = claimed.staged_revenue_per_recipient;
+  const stagedRpr = staged != null && Number.isFinite(Number(staged)) ? Number(staged) : null;
+  await finalizeProfileScan(sb, auditId, chunk.subscribed, chunk.active90d, chunk.suppressed, stagedRpr);
+  return json({ ok: true, correlationId, profile_metrics_status: "complete" });
 }
 
 async function queryValuesReport(params: {
@@ -459,6 +607,35 @@ serve(async (req) => {
   }
   if (req.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
   const correlationId = crypto.randomUUID();
+
+  let bodyJson: FetchInput;
+  try {
+    bodyJson = (await req.json()) as FetchInput;
+  } catch {
+    return json({ ok: false, error: { code: "bad_request", message: "Invalid JSON body" }, correlationId }, { status: 400 });
+  }
+
+  if (bodyJson.mode === "resume_profile_scan") {
+    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+      return json({ ok: false, error: { code: "config_missing", message: "Supabase env missing" }, correlationId }, { status: 500 });
+    }
+    const auth = req.headers.get("authorization") ?? "";
+    const token = auth.replace(/^Bearer\s+/i, "");
+    if (token !== SUPABASE_SERVICE_ROLE_KEY) {
+      return json({ ok: false, error: { code: "unauthorized", message: "Invalid service authorization" }, correlationId }, { status: 401 });
+    }
+    const resumeAuditId = (bodyJson.audit_id ?? "").trim();
+    if (!resumeAuditId) {
+      return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id" }, correlationId }, { status: 400 });
+    }
+    try {
+      return await handleResumeProfileScan(resumeAuditId, correlationId);
+    } catch (e) {
+      const msg = redactSecrets(e instanceof Error ? e.message : "Unknown error");
+      return json({ ok: false, error: { code: "resume_failed", message: msg }, correlationId }, { status: 500 });
+    }
+  }
+
   const startedAt = Date.now();
   // Leave ~2s headroom under typical 150s edge limits so retries can finish.
   const deadlineAtMs = startedAt + 148_000;
@@ -477,9 +654,9 @@ serve(async (req) => {
       return json({ ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId }, { status: 401 });
     }
 
-    const input = (await req.json()) as FetchInput;
-    auditId = input.audit_id;
-    clientId = input.client_id;
+    const input = bodyJson;
+    auditId = input.audit_id ?? null;
+    clientId = input.client_id ?? null;
     revision = (input.revision || DEFAULT_REVISION).trim();
     if (!auditId || !clientId) return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id or client_id" }, correlationId }, { status: 400 });
 
@@ -651,18 +828,9 @@ serve(async (req) => {
 
     await mustSucceed("update clients.klaviyo_connected", sb.from("clients").update({ klaviyo_connected: true }).eq("id", clientId));
 
-    // 5) Account snapshot KPIs (time-budgeted to avoid edge runtime timeout)
     const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
-    const profileDeadlineMs = startedAt + 80_000;
-    const profileSnapshotRes = await computeProfileSnapshot({
-      apiKey,
-      revision,
-      since90Iso: since90,
-      maxPages: 400,
-      deadlineAtMs: profileDeadlineMs,
-    });
 
-    // 5) Reporting rollups (values reports)
+    // 5) Reporting rollups (values reports). Profile KPIs are filled by chained resume invocations.
     // Reporting endpoints require conversion_metric_id. We'll attempt to resolve "Placed Order" metric id.
     // Metrics endpoint can reject page[size] on some revisions/accounts; use cursor pagination only.
     const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/", 5);
@@ -871,14 +1039,6 @@ serve(async (req) => {
       }
     }
 
-    if (!profileSnapshotRes.ok) {
-      reportingErrors.push({
-        stage: "suppressed_profiles_count",
-        status: profileSnapshotRes.status ?? null,
-        message: trimBody(profileSnapshotRes.body) ?? "Failed to compute profile snapshot metrics",
-      });
-    }
-
     // Deliverability indicators (last 90 days, email campaigns only) computed from campaign values report
     let bounceRate90d: number | null = null;
     let spamRate90d: number | null = null;
@@ -907,17 +1067,24 @@ serve(async (req) => {
     }
 
     const accountSnapshot = {
-      email_subscribed_profiles_count: profileSnapshotRes.ok ? profileSnapshotRes.snapshot?.email_subscribed_profiles_count ?? null : null,
-      active_profiles_90d_count: profileSnapshotRes.ok ? profileSnapshotRes.snapshot?.active_profiles_90d_count ?? null : null,
-      suppressed_profiles_count: profileSnapshotRes.ok ? profileSnapshotRes.snapshot?.suppressed_profiles_count ?? null : null,
+      email_subscribed_profiles_count: null as number | null,
+      active_profiles_90d_count: null as number | null,
+      suppressed_profiles_count: null as number | null,
       bounce_rate_90d: bounceRate90d,
       spam_rate_90d: spamRate90d,
       deliverability_campaign_timeframe: campaignReports.some((r) => r.timeframe === "last_90_days") ? "last_90_days" : "last_30_days",
       active_profiles_definition: "Proxy: email-subscribed profiles updated in last 90 days",
-      email_subscribed_profiles_truncated: profileSnapshotRes.ok ? profileSnapshotRes.truncated : null,
-      active_profiles_90d_truncated: profileSnapshotRes.ok ? profileSnapshotRes.truncated : null,
-      suppressed_profiles_truncated: profileSnapshotRes.ok ? profileSnapshotRes.truncated : null,
+      email_subscribed_profiles_truncated: null as boolean | null,
+      active_profiles_90d_truncated: null as boolean | null,
+      suppressed_profiles_truncated: null as boolean | null,
+      profile_scan_status: "pending" as const,
       computed_at: new Date().toISOString(),
+    };
+
+    const derivedMetricsPartial = {
+      list_size: 0,
+      monthly_engagement: 0,
+      revenue_per_recipient: revenuePerRecipient,
     };
 
     for (const tf of timeframeKeys) {
@@ -940,9 +1107,27 @@ serve(async (req) => {
           },
           reporting_errors: reportingErrors,
           account_snapshot: accountSnapshot,
+          derived_metrics: derivedMetricsPartial,
         },
       }));
     }
+
+    await mustSucceed("upsert klaviyo_profile_scan_jobs", sb.from("klaviyo_profile_scan_jobs").upsert({
+      audit_id: auditId,
+      client_id: clientId,
+      revision,
+      since90_iso: since90,
+      next_path: null,
+      subscribed: 0,
+      active90d: 0,
+      suppressed: 0,
+      status: "pending",
+      staged_revenue_per_recipient: revenuePerRecipient,
+      error_message: null,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "audit_id" }));
+
+    chainProfileResume(auditId);
 
     // Observability
     const failedEndpoints = Object.entries(scopeDiag).filter(([, v]) => v !== true);
@@ -992,12 +1177,12 @@ serve(async (req) => {
         reporting_ok: reportingErrors.length === 0,
       },
       account_snapshot: accountSnapshot,
+      profile_metrics_status: "pending" as const,
       derived_metrics: {
-        /** Email-subscribed profiles (best list-size proxy from Klaviyo). */
-        list_size: accountSnapshot.email_subscribed_profiles_count ?? 0,
-        /** Engaged profiles in last 90d — used as "traffic / engagement" proxy (not site sessions). */
-        monthly_engagement: accountSnapshot.active_profiles_90d_count ?? 0,
-        /** Flow email revenue per recipient (last 30d); stored on audit.aov for workspace display. */
+        /** Filled to 0 until profile job completes; then finalized in DB and on poll. */
+        list_size: 0,
+        monthly_engagement: 0,
+        /** Flow email revenue per recipient (last 30d); available immediately from reporting. */
         revenue_per_recipient: revenuePerRecipient,
       },
       elapsed_ms: Date.now() - startedAt,

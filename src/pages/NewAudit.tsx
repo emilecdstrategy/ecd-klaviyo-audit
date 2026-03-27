@@ -27,6 +27,27 @@ const STEPS = [
 
 type NewAuditProps = { asModal?: boolean };
 
+/** Poll until Edge function finishes full Klaviyo profile pagination (multi-invocation). */
+async function waitForProfileJobComplete(auditId: string) {
+  const maxMs = 45 * 60 * 1000;
+  const t0 = Date.now();
+  while (Date.now() - t0 < maxMs) {
+    const { data, error } = await supabase
+      .from('klaviyo_profile_scan_jobs')
+      .select('status, error_message')
+      .eq('audit_id', auditId)
+      .maybeSingle();
+    if (error) throw error;
+    if (!data) throw new Error('Profile scan job not found');
+    if (data.status === 'complete') return;
+    if (data.status === 'failed') {
+      throw new Error(data.error_message || 'Audience metrics scan failed');
+    }
+    await new Promise((r) => setTimeout(r, 2000));
+  }
+  throw new Error('Audience metrics scan timed out. Try again or contact support.');
+}
+
 function normalizeReportingDiagnostic(raw?: string | null, status?: number | null) {
   const msg = (raw ?? '').trim();
   if (!msg) return null;
@@ -246,13 +267,35 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         correlationId: data?.correlationId,
       });
 
+      const profilePending = (data as { profile_metrics_status?: string })?.profile_metrics_status === 'pending';
+      if (profilePending) {
+        setAnalysisStage('Finishing audience metrics (full Klaviyo profile scan)…');
+        await waitForProfileJobComplete(audit.id);
+      }
+
       const dm = (data as { derived_metrics?: { list_size?: number; monthly_engagement?: number; revenue_per_recipient?: number | null } })?.derived_metrics;
-      const snapshotListSize = Math.round(Number(dm?.list_size) || 0);
-      const snapshotEngagement = Math.round(Number(dm?.monthly_engagement) || 0);
-      const snapshotRpr =
+      let snapshotListSize = Math.round(Number(dm?.list_size) || 0);
+      let snapshotEngagement = Math.round(Number(dm?.monthly_engagement) || 0);
+      let snapshotRpr =
         dm?.revenue_per_recipient != null && Number.isFinite(Number(dm.revenue_per_recipient))
           ? Math.round(Number(dm.revenue_per_recipient) * 100) / 100
           : 0;
+
+      if (profilePending) {
+        const { data: aud, error: audErr } = await supabase
+          .from('audits')
+          .select('list_size, monthly_traffic, aov')
+          .eq('id', audit.id)
+          .single();
+        if (audErr) throw audErr;
+        if (aud) {
+          snapshotListSize = Math.round(Number(aud.list_size) || 0);
+          snapshotEngagement = Math.round(Number(aud.monthly_traffic) || 0);
+          if (aud.aov != null && Number.isFinite(Number(aud.aov))) {
+            snapshotRpr = Math.round(Number(aud.aov) * 100) / 100;
+          }
+        }
+      }
 
       // 5) Run AI analysis and persist section updates
       setAnalysisProgress(40);
