@@ -321,7 +321,10 @@ export default function AuditWorkspace() {
               {audit.executive_summary && (
                 <div className="bg-white rounded-xl p-6 card-shadow">
                   <h3 className="text-sm font-semibold text-gray-900 mb-3">Executive Summary</h3>
-                  <RichAuditText text={audit.executive_summary || ''} className="text-sm text-gray-700 leading-relaxed" />
+                  <RichAuditText
+                    text={(audit.executive_summary || '').replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/).slice(0, 2).join(' ')}
+                    className="text-sm text-gray-700 leading-relaxed"
+                  />
                 </div>
               )}
             </div>

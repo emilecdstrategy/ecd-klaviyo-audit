@@ -16,10 +16,10 @@ import { formatCurrency } from '../lib/revenue-calculator';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
 import ReportFlowTable from '../components/report/ReportFlowTable';
 import ReportFlowInventoryTable from '../components/report/ReportFlowInventoryTable';
-import ReportFlowStats from '../components/report/ReportFlowStats';
 import ReportFlowHealthScore from '../components/report/ReportFlowHealthScore';
 import ReportFlowRevenueBreakdown from '../components/report/ReportFlowRevenueBreakdown';
 import ReportHealthScore from '../components/report/ReportHealthScore';
+import ReportAccountSnapshot from '../components/report/ReportAccountSnapshot';
 import ReportSegmentTable from '../components/report/ReportSegmentTable';
 import ReportFormTable from '../components/report/ReportFormTable';
 import ReportCampaignTable from '../components/report/ReportCampaignTable';
@@ -253,7 +253,7 @@ export default function PublicReport() {
               <span className="text-brand-primary">{formatCurrency(totalRevenue)}/month</span>{' '}
               in additional email revenue.
             </h1>
-            <RichAuditText text={execText?.split('\n')[0] || ''} className="text-base text-gray-600 leading-relaxed" />
+            <RichAuditText text={toOneOrTwoSentences(execText?.split('\n')[0] || '')} className="text-base text-gray-600 leading-relaxed" />
           </div>
 
           <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
@@ -262,6 +262,18 @@ export default function PublicReport() {
             <KPIBlock label="Total Flows" value={String(flowSnapshots.length)} sub={`${flowSnapshots.filter((f: any) => (f.status || '').toLowerCase() === 'live').length} live`} />
             <KPIBlock label="Total Campaigns" value={String(campaignSnapshots.length)} sub={`${segmentSnapshots.length} segments`} />
           </div>
+
+          {(flowSnapshots.length > 0 || campaignSnapshots.length > 0) && (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-4">Account Snapshot</h3>
+              <ReportAccountSnapshot
+                flowSnapshots={flowSnapshots as any}
+                flowPerformance={flowPerformance}
+                campaignSnapshots={campaignSnapshots as any}
+                reportingDiagnostic={reportingDiagnostic}
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
             <div className="bg-white rounded-xl p-5 border border-gray-100">
@@ -348,17 +360,6 @@ export default function PublicReport() {
         {(flowSnapshots.length > 0 || flowPerformance.length > 0) && (
           <section id="flows" ref={setRef('flows')}>
             <SectionHeader number="03" label="Flows" />
-
-            {(flowSnapshots.length > 0 || flowPerformance.length > 0) && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
-                <ReportFlowStats
-                  snapshots={flowSnapshots as any}
-                  performance={flowPerformance}
-                  clientName={client.company_name}
-                  reportingDiagnostic={reportingDiagnostic}
-                />
-              </div>
-            )}
 
             {flowPerformance.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
@@ -630,6 +631,14 @@ function KPIBlock({ label, value, sub, subColor = 'text-gray-400' }: { label: st
       <p className={`text-xs font-medium mt-0.5 ${subColor}`}>{sub}</p>
     </div>
   );
+}
+
+function toOneOrTwoSentences(text: string) {
+  const t = (text ?? '').trim();
+  if (!t) return '';
+  const normalized = t.replace(/\s+/g, ' ');
+  const parts = normalized.split(/(?<=[.!?])\s+/).filter(Boolean);
+  return parts.slice(0, 2).join(' ');
 }
 
 function parseSectionDetails(raw: unknown): Record<string, any> | null {

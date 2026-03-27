@@ -47,6 +47,7 @@ export function buildAuditSystemPrompt() {
     "For accounts with under $10,000/month in flow revenue, total combined opportunity across all 6 sections should rarely exceed $50,000-$100,000 annually.",
     "Reference specific flow names, campaign names, segment names, and form names from the data.",
     "Do not use placeholders, hedging, or vague generic statements.",
+    "EXECUTIVE SUMMARY: Keep the top executiveSummary text to 1-2 sentences max (no long paragraphs).",
     "",
     "STRENGTHS and CONCERNS: Return 4-6 items in each array.",
     "Each item is a single sentence with a bold lead phrase followed by supporting detail.",
