@@ -252,8 +252,8 @@ async function computeProfileSnapshotChunk(params: {
       const isSubscribed = consent === "SUBSCRIBED";
       if (isSubscribed) subscribed += 1;
 
-      const emailM = p?.attributes?.subscriptions?.email?.marketing;
-      if (emailM?.suppression != null) {
+      const suppressionList = p?.attributes?.subscriptions?.email?.marketing?.suppression;
+      if (Array.isArray(suppressionList) ? suppressionList.length > 0 : suppressionList != null) {
         suppressed += 1;
       }
 
