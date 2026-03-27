@@ -9,6 +9,25 @@ interface Props {
   reportingDiagnostic?: string | null;
 }
 
+function normalizeReportingDiagnostic(raw?: string | null) {
+  const msg = (raw ?? '').trim();
+  if (!msg) return null;
+
+  // If Klaviyo rate-limits reporting, we often end up persisting a large JSON blob.
+  // Detect common shapes and collapse to a single helpful sentence.
+  const lower = msg.toLowerCase();
+  if (lower.includes('throttle') || lower.includes('"code":"throttled"') || lower.includes('status":429')) {
+    // Try to extract “Expected available in X seconds”
+    const m = msg.match(/expected available in\s+(\d+)\s+seconds/i);
+    const wait = m?.[1] ? ` (try again in ~${m[1]}s)` : '';
+    return `Klaviyo rate-limited reporting requests${wait}. Re-run the audit shortly.`;
+  }
+
+  // Keep the UI tidy: clamp noisy diagnostics.
+  if (msg.length > 140) return `${msg.slice(0, 140)}…`;
+  return msg;
+}
+
 export default function ReportFlowStats({ snapshots, performance, clientName, reportingDiagnostic }: Props) {
   const total = snapshots.length;
   const live = snapshots.filter(f => f.status?.toLowerCase() === 'live' || f.status?.toLowerCase() === 'manual').length;
@@ -29,16 +48,17 @@ export default function ReportFlowStats({ snapshots, performance, clientName, re
 
   const inactivePercent = total > 0 ? Math.round((draftPaused / total) * 100) : 0;
   const monthlyRevenue = annualRevenue / 12;
+  const perfUnavailableReason = normalizeReportingDiagnostic(reportingDiagnostic) || 'requires Klaviyo metrics scope';
 
   const stats = [
     { label: 'Total Flows', value: String(total), sub: 'in Klaviyo account' },
     { label: 'Live Flows', value: String(live), sub: 'actively sending' },
     { label: 'Draft / Paused', value: String(draftPaused), sub: `${inactivePercent}% inactive` },
     { label: 'Manual Flows', value: String(manual), sub: 'require manual trigger' },
-    { label: 'Annual Flow Revenue', value: hasPerf ? formatCurrency(annualRevenue) : 'N/A', sub: hasPerf ? `${formatCurrency(monthlyRevenue)}/mo` : (reportingDiagnostic || 'requires Klaviyo metrics scope'), subColor: hasPerf ? 'text-emerald-600' : undefined },
-    { label: 'Total Recipients', value: hasPerf ? fmtRecipients : 'N/A', sub: hasPerf ? 'per month' : (reportingDiagnostic || 'requires Klaviyo metrics scope') },
-    { label: 'Overall Conv. Rate', value: hasPerf ? `${(weightedConv * 100).toFixed(2)}%` : 'N/A', sub: hasPerf ? 'weighted average' : (reportingDiagnostic || 'requires Klaviyo metrics scope') },
-    { label: 'Revenue Per Recipient', value: hasPerf ? `$${rpr.toFixed(2)}` : 'N/A', sub: hasPerf ? 'across all flows' : (reportingDiagnostic || 'requires Klaviyo metrics scope') },
+    { label: 'Annual Flow Revenue', value: hasPerf ? formatCurrency(annualRevenue) : 'N/A', sub: hasPerf ? `${formatCurrency(monthlyRevenue)}/mo` : perfUnavailableReason, subColor: hasPerf ? 'text-emerald-600' : undefined },
+    { label: 'Total Recipients', value: hasPerf ? fmtRecipients : 'N/A', sub: hasPerf ? 'per month' : perfUnavailableReason },
+    { label: 'Overall Conv. Rate', value: hasPerf ? `${(weightedConv * 100).toFixed(2)}%` : 'N/A', sub: hasPerf ? 'weighted average' : perfUnavailableReason },
+    { label: 'Revenue Per Recipient', value: hasPerf ? `$${rpr.toFixed(2)}` : 'N/A', sub: hasPerf ? 'across all flows' : perfUnavailableReason },
   ];
 
   return (

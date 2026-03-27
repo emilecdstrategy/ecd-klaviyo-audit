@@ -70,7 +70,10 @@ export default function ReportFlowRevenueBreakdown({ performance }: Props) {
           const isShortBar = barWidth < 22;
           return (
             <div key={flow.id} className="flex items-center gap-3">
-              <div className="w-44 text-right text-sm text-gray-700 font-medium shrink-0 truncate">
+              <div
+                className="w-44 text-right text-sm text-gray-700 font-medium shrink-0 truncate"
+                title={flow.flow_name}
+              >
                 {flow.flow_name}
               </div>
               <div className="flex-1 flex items-center gap-2 h-7">
@@ -89,9 +92,6 @@ export default function ReportFlowRevenueBreakdown({ performance }: Props) {
                     {formatCurrency(flow.monthly_revenue_current)}
                   </span>
                 )}
-              </div>
-              <div className={`w-20 text-right text-xs font-bold shrink-0 whitespace-nowrap ${TEXT_COLORS[i % TEXT_COLORS.length]}`}>
-                {formatCurrency(flow.monthly_revenue_current)}
               </div>
               <div className="w-14 text-right text-sm text-gray-500 shrink-0">
                 {pct.toFixed(1)}%
@@ -129,9 +129,6 @@ export default function ReportFlowRevenueBreakdown({ performance }: Props) {
                   </>
                 );
               })()}
-            </div>
-            <div className="w-20 text-right text-xs font-bold text-gray-600 shrink-0 whitespace-nowrap">
-              {formatCurrency(restRevenue)}
             </div>
             <div className="w-14 text-right text-sm text-gray-500 shrink-0">
               {((restRevenue / totalRevenue) * 100).toFixed(1)}%

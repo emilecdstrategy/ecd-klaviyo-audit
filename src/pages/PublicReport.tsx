@@ -183,6 +183,8 @@ export default function PublicReport() {
     // plain text — keep as-is
   }
 
+  const stripInlineBoldMarkers = (s: string) => s.replace(/\*\*(.+?)\*\*/g, '$1');
+
   const visibleNavItems = NAV_ITEMS.filter(n => {
     if (n.id === 'recommendations' && !audit.show_recommendations) return false;
     if (n.id === 'flows' && flowSnapshots.length === 0 && flowPerformance.length === 0) return false;
@@ -270,7 +272,7 @@ export default function PublicReport() {
               <ul className="space-y-3">
                 {aiStrengths.length > 0 ? aiStrengths.map((s, i) => {
                   const dashIdx = s.indexOf(' — ');
-                  const bold = dashIdx > 0 ? s.slice(0, dashIdx) : s;
+                  const bold = stripInlineBoldMarkers(dashIdx > 0 ? s.slice(0, dashIdx) : s);
                   const rest = dashIdx > 0 ? s.slice(dashIdx + 3) : '';
                   return (
                     <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
@@ -294,7 +296,7 @@ export default function PublicReport() {
               <ul className="space-y-3">
                 {aiConcerns.length > 0 ? aiConcerns.map((s, i) => {
                   const dashIdx = s.indexOf(' — ');
-                  const bold = dashIdx > 0 ? s.slice(0, dashIdx) : s;
+                  const bold = stripInlineBoldMarkers(dashIdx > 0 ? s.slice(0, dashIdx) : s);
                   const rest = dashIdx > 0 ? s.slice(dashIdx + 3) : '';
                   return (
                     <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
