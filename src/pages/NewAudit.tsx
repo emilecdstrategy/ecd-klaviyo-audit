@@ -25,6 +25,21 @@ const STEPS = [
 
 type NewAuditProps = { asModal?: boolean };
 
+function normalizeReportingDiagnostic(raw?: string | null, status?: number | null) {
+  const msg = (raw ?? '').trim();
+  if (!msg) return null;
+
+  const lower = msg.toLowerCase();
+  if (status === 429 || lower.includes('"code":"throttled"') || lower.includes('request was throttled') || lower.includes('throttle')) {
+    const m = msg.match(/expected available in\s+(\d+)\s+seconds/i);
+    const wait = m?.[1] ? ` (try again in ~${m[1]}s)` : '';
+    return `Klaviyo rate-limited reporting requests${wait}. Re-run the audit shortly.`;
+  }
+
+  if (msg.length > 140) return `${msg.slice(0, 140)}…`;
+  return msg;
+}
+
 export default function NewAudit({ asModal }: NewAuditProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -493,8 +508,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                           <p className="font-semibold">Reporting metrics could not be fully pulled.</p>
                           {snapshotMeta.reporting!.errors!.slice(0, 3).map((e, idx) => (
                             <p key={`${e.stage}-${idx}`}>
+                              {(() => {
+                                const friendly = normalizeReportingDiagnostic(e.message, e.status ?? null);
+                                return (
+                                  <>
                               <span className="font-medium">{e.stage}</span>
-                              {e.status ? ` (${e.status})` : ''}: {String(e.message).slice(0, 140)}
+                              {e.status ? ` (${e.status})` : ''}: {friendly ?? 'Reporting request failed'}
+                                  </>
+                                );
+                              })()}
                             </p>
                           ))}
                           <p>Flow KPI cards may show N/A until reporting access succeeds.</p>

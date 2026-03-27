@@ -256,9 +256,11 @@ serve(async (req) => {
     try {
       await requireAuthenticatedUser(req);
     } catch (e) {
+      // Important: return 200 so supabase-js doesn't surface a non-2xx transport error.
+      // The client handles ok:false responses and can show a friendly message.
       return jsonCors(
         { ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId },
-        { status: 401 },
+        { status: 200 },
       );
     }
 

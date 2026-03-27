@@ -195,6 +195,34 @@ async function queryValuesReport(params: {
   return { ok: res.ok, status: res.status, body };
 }
 
+function retryAfterMsFromKlaviyo429(body: any): number | null {
+  try {
+    const detail = body?.errors?.[0]?.detail;
+    if (typeof detail !== "string") return null;
+    const m = detail.match(/expected available in\s+(\d+)\s+seconds/i);
+    if (!m?.[1]) return null;
+    const seconds = Number(m[1]);
+    if (!Number.isFinite(seconds) || seconds <= 0) return null;
+    return Math.min(60_000, Math.max(800, seconds * 1000));
+  } catch {
+    return null;
+  }
+}
+
+async function queryValuesReportWithBackoff(params: Parameters<typeof queryValuesReport>[0]) {
+  // Values reports are the most likely to throttle; do a gentle backoff on 429 only.
+  let last: { ok: boolean; status: number; body: any } = { ok: false, status: 0, body: null };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    const res = await queryValuesReport(params);
+    last = res;
+    if (res.ok) return res;
+    if (res.status !== 429) return res;
+    const retryMs = retryAfterMsFromKlaviyo429(res.body) ?? (800 * attempt);
+    await new Promise((r) => setTimeout(r, retryMs));
+  }
+  return last;
+}
+
 async function pickBestConversionMetricId(params: {
   apiKey: string;
   revision: string;
@@ -209,7 +237,7 @@ async function pickBestConversionMetricId(params: {
       : undefined;
     const probe = await fetchWithRetry(
       () =>
-        queryValuesReport({
+        queryValuesReportWithBackoff({
           apiKey: params.apiKey,
           revision: params.revision,
           endpointPath: "/api/flow-values-reports/",
@@ -513,20 +541,16 @@ serve(async (req) => {
     if (conversionMetricId) {
       // Campaign values: email only
       for (const tf of timeframeKeys) {
-        const rep = await fetchWithRetry(
-          () =>
-            queryValuesReport({
-              apiKey,
-              revision,
-              endpointPath: "/api/campaign-values-reports/",
-              timeframeKey: tf,
-              conversionMetricId,
-              filter: "contains-any(send_channel,[\"email\"])",
-              statistics: reportStats,
-              groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
-            }),
-          3,
-        );
+        const rep = await queryValuesReportWithBackoff({
+          apiKey,
+          revision,
+          endpointPath: "/api/campaign-values-reports/",
+          timeframeKey: tf,
+          conversionMetricId,
+          filter: "contains-any(send_channel,[\"email\"])",
+          statistics: reportStats,
+          groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
+        });
         if (rep.ok) {
           campaignReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
         } else {
@@ -545,20 +569,16 @@ serve(async (req) => {
         : undefined;
 
       for (const tf of timeframeKeys) {
-        const rep = await fetchWithRetry(
-          () =>
-            queryValuesReport({
-              apiKey,
-              revision,
-              endpointPath: "/api/flow-values-reports/",
-              timeframeKey: tf,
-              conversionMetricId,
-              filter: flowFilter,
-              statistics: reportStats,
-              groupBy: ["flow_id", "flow_message_id", "send_channel"],
-            }),
-          3,
-        );
+        const rep = await queryValuesReportWithBackoff({
+          apiKey,
+          revision,
+          endpointPath: "/api/flow-values-reports/",
+          timeframeKey: tf,
+          conversionMetricId,
+          filter: flowFilter,
+          statistics: reportStats,
+          groupBy: ["flow_id", "flow_message_id", "send_channel"],
+        });
         if (rep.ok) {
           flowReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
         } else {
