@@ -4,15 +4,17 @@ import DemoBanner from '../ui/DemoBanner';
 import { useAuth } from '../../contexts/AuthContext';
 import { useEffect, useMemo, useState } from 'react';
 
+const AUDIT_WORKSPACE_PATH = /^\/audits\/[^/]+$/;
+
 export default function AppShell() {
   const { isDemo } = useAuth();
   const location = useLocation();
-  const isAuditWorkspace = useMemo(() => /^\/audits\/[^/]+$/.test(location.pathname), [location.pathname]);
-  const [collapsed, setCollapsed] = useState(false);
+  const isAuditWorkspace = useMemo(() => AUDIT_WORKSPACE_PATH.test(location.pathname), [location.pathname]);
+  const [collapsed, setCollapsed] = useState(() => AUDIT_WORKSPACE_PATH.test(location.pathname));
 
   useEffect(() => {
-    // Default collapsed on the 3-column audit workspace for breathing room.
-    if (isAuditWorkspace) setCollapsed(true);
+    // Collapsed only on single-audit workspace (/audits/:id); expanded on Dashboard, Clients, Audits list, etc.
+    setCollapsed(isAuditWorkspace);
   }, [isAuditWorkspace]);
 
   return (

@@ -22,6 +22,7 @@ import type { Audit, Client } from '../lib/types';
 import { getClient, listAuditsByClient } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/ui/Modal';
+import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 
 export default function ClientDetail() {
   const { id } = useParams();
@@ -325,7 +326,10 @@ export default function ClientDetail() {
 
           <div className="space-y-6">
             <div className="bg-white rounded-xl p-5 card-shadow">
-              <h3 className="text-sm font-semibold text-gray-900 mb-3">API Connection</h3>
+              <div className="mb-3 flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
+                <h3 className="text-sm font-semibold text-gray-900">API Connection</h3>
+                <KlaviyoApiKeyHelpTrigger className="inline-flex w-fit shrink-0 items-center gap-1.5 text-xs font-medium text-brand-primary transition-colors hover:text-brand-primary-dark hover:underline" />
+              </div>
               <div className="flex items-center gap-2 mb-3">
                 {hasApiConnection ? (
                   <>

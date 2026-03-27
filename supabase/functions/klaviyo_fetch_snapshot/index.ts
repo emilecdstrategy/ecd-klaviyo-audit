@@ -17,6 +17,8 @@ const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 const KLAVIYO_BASE = "https://a.klaviyo.com";
 const DEFAULT_REVISION = "2024-10-15";
 const MAX_REPORT_IDS = 50;
+/** Space out heavy Reporting API POSTs to reduce 429 bursts (ms). */
+const REPORTING_REQUEST_GAP_MS = 1_600;
 
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -38,6 +40,10 @@ function json(data: unknown, init: ResponseInit = {}) {
 
 function redactSecrets(msg: string) {
   return msg.replace(/pk_[a-zA-Z0-9_\\-]+/g, "pk_[REDACTED]");
+}
+
+function sleep(ms: number) {
+  return new Promise<void>((r) => setTimeout(r, ms));
 }
 
 function assertServiceClient() {
@@ -307,7 +313,17 @@ async function queryValuesReport(params: {
   } catch {
     body = text;
   }
-  return { ok: res.ok, status: res.status, body };
+  const retryAfterMs = retryAfterMsFromHttpHeaders(res.headers);
+  return { ok: res.ok, status: res.status, body, retryAfterMs };
+}
+
+/** Standard Retry-After header (seconds). */
+function retryAfterMsFromHttpHeaders(headers: Headers): number | null {
+  const raw = headers.get("retry-after");
+  if (!raw) return null;
+  const sec = Number(raw.trim());
+  if (!Number.isFinite(sec) || sec < 0) return null;
+  return Math.min(120_000, Math.max(1_000, sec * 1000));
 }
 
 function retryAfterMsFromKlaviyo429(body: any): number | null {
@@ -318,25 +334,44 @@ function retryAfterMsFromKlaviyo429(body: any): number | null {
     if (!m?.[1]) return null;
     const seconds = Number(m[1]);
     if (!Number.isFinite(seconds) || seconds <= 0) return null;
-    return Math.min(60_000, Math.max(800, seconds * 1000));
+    return Math.min(90_000, Math.max(1_000, seconds * 1000));
   } catch {
     return null;
   }
 }
 
+type ValuesReportResult = Awaited<ReturnType<typeof queryValuesReport>>;
+
 async function queryValuesReportWithBackoff(
   params: Parameters<typeof queryValuesReport>[0] & { deadlineAtMs?: number },
 ) {
-  // Values reports are the most likely to throttle; do a gentle backoff on 429 only.
-  let last: { ok: boolean; status: number; body: any } = { ok: false, status: 0, body: null };
-  for (let attempt = 1; attempt <= 2; attempt++) {
-    const res = await queryValuesReport(params);
-    last = res;
-    if (res.ok) return res;
-    if (res.status !== 429) return res;
-    const retryMs = Math.min(4_000, retryAfterMsFromKlaviyo429(res.body) ?? (800 * attempt));
-    if (params.deadlineAtMs && Date.now() + retryMs >= params.deadlineAtMs) return res;
-    await new Promise((r) => setTimeout(r, retryMs));
+  // Values reports throttle often; retry 429s with server-suggested or exponential waits (never cap at 4s).
+  const maxAttempts = 8;
+  let last: ValuesReportResult = {
+    ok: false,
+    status: 0,
+    body: null,
+    retryAfterMs: null,
+  };
+
+  for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    last = await queryValuesReport(params);
+    if (last.ok) return last;
+    if (last.status !== 429) return last;
+    if (attempt === maxAttempts) return last;
+
+    const fromBody = retryAfterMsFromKlaviyo429(last.body);
+    const fromHeader = last.retryAfterMs;
+    const exponential = Math.min(90_000, 1_200 * Math.pow(2, attempt - 1));
+    const retryMs = Math.min(90_000, Math.max(1_200, fromBody ?? fromHeader ?? exponential));
+
+    if (params.deadlineAtMs) {
+      const slack = params.deadlineAtMs - Date.now() - 2_000;
+      if (slack < 800) return last;
+      await sleep(Math.min(retryMs, slack));
+    } else {
+      await sleep(retryMs);
+    }
   }
   return last;
 }
@@ -348,7 +383,9 @@ async function pickBestConversionMetricId(params: {
   flowIds: string[];
 }) {
   const candidates = Array.from(new Set(params.candidateMetricIds.filter(Boolean)));
-  for (const metricId of candidates) {
+  for (let i = 0; i < candidates.length; i++) {
+    const metricId = candidates[i];
+    if (i > 0) await sleep(900);
     const sampleFlowIds = params.flowIds.slice(0, 10);
     const filter = sampleFlowIds.length
       ? `contains-any(flow_id,[${sampleFlowIds.map((id) => JSON.stringify(id)).join(",")}])`
@@ -423,7 +460,8 @@ serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
   const correlationId = crypto.randomUUID();
   const startedAt = Date.now();
-  const deadlineAtMs = startedAt + 135_000; // stay under edge runtime hard timeout
+  // Leave ~2s headroom under typical 150s edge limits so retries can finish.
+  const deadlineAtMs = startedAt + 148_000;
   let auditId: string | null = null;
   let clientId: string | null = null;
   let revision: string | null = null;
@@ -659,6 +697,8 @@ serve(async (req) => {
       "spam_complaint_rate",
     ];
     const reportingErrors: Array<{ stage: string; status?: number | null; message: string }> = [];
+    /** Weighted flow revenue / recipients (last_30_days reporting); mirrors public report "Revenue / Recipient". */
+    let revenuePerRecipient: number | null = null;
 
     let campaignReports: any[] = [];
     let flowReports: any[] = [];
@@ -679,6 +719,8 @@ serve(async (req) => {
     }
 
     if (conversionMetricId) {
+      await sleep(REPORTING_REQUEST_GAP_MS);
+
       // Campaign values: email only
       for (const tf of timeframeKeys) {
         const rep = await queryValuesReportWithBackoff({
@@ -701,6 +743,7 @@ serve(async (req) => {
             message: trimBody(rep.body) ?? "Campaign values report failed",
           });
         }
+        await sleep(REPORTING_REQUEST_GAP_MS);
       }
 
       // Separate 90-day campaign report for bounce/spam (UI promises "last 90 days"; timeframeKeys stays last_30 only for flows).
@@ -725,6 +768,7 @@ serve(async (req) => {
             message: trimBody(repCamp90.body) ?? "Campaign values report failed (last_90_days)",
           });
         }
+        await sleep(REPORTING_REQUEST_GAP_MS);
       }
 
       // Flow values: limit to first N flows to stay within rate limits and filter limits.
@@ -814,6 +858,9 @@ serve(async (req) => {
       });
       if (flowPerfRows.length) {
         await mustSucceed("insert flow_performance", sb.from("flow_performance").insert(flowPerfRows));
+        const totalRev = flowPerfRows.reduce((s, r) => s + (Number(r.monthly_revenue_current) || 0), 0);
+        const totalRecip = flowPerfRows.reduce((s, r) => s + (Number(r.recipients_per_month) || 0), 0);
+        if (totalRecip > 0) revenuePerRecipient = totalRev / totalRecip;
       } else {
         reportingErrors.push({
           stage: "flow_performance",
@@ -942,6 +989,15 @@ serve(async (req) => {
         flow_reports: flowReports.map((r) => ({ timeframe: r.timeframe, rows: (r.results ?? []).length })),
         errors: reportingErrors,
         reporting_ok: reportingErrors.length === 0,
+      },
+      account_snapshot: accountSnapshot,
+      derived_metrics: {
+        /** Email-subscribed profiles (best list-size proxy from Klaviyo). */
+        list_size: accountSnapshot.email_subscribed_profiles_count ?? 0,
+        /** Engaged profiles in last 90d — used as "traffic / engagement" proxy (not site sessions). */
+        monthly_engagement: accountSnapshot.active_profiles_90d_count ?? 0,
+        /** Flow email revenue per recipient (last 30d); stored on audit.aov for workspace display. */
+        revenue_per_recipient: revenuePerRecipient,
       },
       elapsed_ms: Date.now() - startedAt,
     });

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, FileText, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
+import { formatClientListMeta } from '../../lib/client-display';
 import { searchAudits, searchClients } from '../../lib/db';
 import { DEMO_AUDITS, DEMO_CLIENTS } from '../../lib/demo-data';
 import type { Audit, Client } from '../../lib/types';
@@ -162,7 +163,7 @@ export default function GlobalSearch() {
                         key={c.id}
                         active={active}
                         title={c.company_name}
-                        subtitle={c.industry}
+                        subtitle={formatClientListMeta(c)}
                         onClick={() => onPick({ type: 'client', item: c })}
                         onMouseEnter={() => setActiveIndex(absoluteIndex)}
                       />
@@ -240,7 +241,7 @@ function Row({
     <button
       onClick={onClick}
       onMouseEnter={onMouseEnter}
-      className={`w-full text-left px-4 py-2.5 flex items-start justify-between gap-3 ${
+      className={`w-full cursor-pointer text-left px-4 py-2.5 flex items-start justify-between gap-3 ${
         active ? 'bg-brand-primary/5' : 'hover:bg-gray-50'
       }`}
     >

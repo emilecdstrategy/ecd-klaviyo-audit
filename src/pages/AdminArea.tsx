@@ -18,6 +18,9 @@ const TABS = [
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
+/** Flip to true to show the Audit Templates & Export Options placeholder cards in Settings again. */
+const SHOW_ADMIN_SETTINGS_PLACEHOLDERS = false;
+
 type AdminUserRow = {
   id: string;
   email: string | null;
@@ -45,7 +48,7 @@ export default function AdminArea() {
 
   return (
     <div>
-      <TopBar title="Admin" subtitle="Manage users, templates, and settings" />
+      <TopBar title="Admin" subtitle="Manage users and platform settings" />
 
       <div className="p-8 animate-fade-in">
         <div className="flex gap-2 mb-6 border-b border-gray-100 pb-3">
@@ -394,26 +397,30 @@ function SettingsTab() {
         </div>
       </div>
 
-      <div className="bg-white rounded-xl p-6 card-shadow">
-        <h3 className="text-base font-semibold text-gray-900 mb-4">Audit Templates</h3>
-        <p className="text-sm text-gray-500 mb-3">
-          Manage audit section templates and default content. Templates define the structure of each audit report.
-        </p>
-        <div className="bg-gray-50 rounded-lg p-4 text-center">
-          <p className="text-sm text-gray-400">Template management coming in a future release.</p>
-        </div>
-      </div>
+      {SHOW_ADMIN_SETTINGS_PLACEHOLDERS && (
+        <>
+          <div className="bg-white rounded-xl p-6 card-shadow">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">Audit Templates</h3>
+            <p className="text-sm text-gray-500 mb-3">
+              Manage audit section templates and default content. Templates define the structure of each audit report.
+            </p>
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              <p className="text-sm text-gray-400">Template management coming in a future release.</p>
+            </div>
+          </div>
 
-      <div className="bg-white rounded-xl p-6 card-shadow">
-        <h3 className="text-base font-semibold text-gray-900 mb-4">Export Options</h3>
-        <p className="text-sm text-gray-500 mb-3">
-          Future integrations for exporting audit reports to external formats.
-        </p>
-        <div className="bg-gray-50 rounded-lg p-4 text-center">
-          {/* Future: Google Slides export integration */}
-          <p className="text-sm text-gray-400">Google Slides and PDF export coming soon.</p>
-        </div>
-      </div>
+          <div className="bg-white rounded-xl p-6 card-shadow">
+            <h3 className="text-base font-semibold text-gray-900 mb-4">Export Options</h3>
+            <p className="text-sm text-gray-500 mb-3">
+              Future integrations for exporting audit reports to external formats.
+            </p>
+            <div className="bg-gray-50 rounded-lg p-4 text-center">
+              {/* Future: Google Slides export integration */}
+              <p className="text-sm text-gray-400">Google Slides and PDF export coming soon.</p>
+            </div>
+          </div>
+        </>
+      )}
     </div>
   );
 }

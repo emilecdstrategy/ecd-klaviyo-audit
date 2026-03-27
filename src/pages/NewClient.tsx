@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
+import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 import { useAuth } from '../contexts/AuthContext';
 import { createClient, ensureClientCreator } from '../lib/db';
 import { supabase } from '../lib/supabase';
@@ -135,7 +136,10 @@ export default function NewClient({ asModal }: NewClientProps) {
             Required. Connect the Klaviyo Private API key now (stored encrypted). We’ll fetch the website URL automatically from Klaviyo.
           </p>
           <div className="mt-4">
-            <label className="block text-sm font-medium text-gray-700 mb-1">Klaviyo Private API Key</label>
+            <div className="mb-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+              <label className="block text-sm font-medium text-gray-700">Klaviyo Private API Key</label>
+              <KlaviyoApiKeyHelpTrigger className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-brand-primary transition-colors hover:text-brand-primary-dark hover:underline" />
+            </div>
             <input
               type="password"
               value={form.api_key}

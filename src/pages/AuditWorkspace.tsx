@@ -56,6 +56,12 @@ export default function AuditWorkspace() {
   const saveTimers = useRef<Record<string, number>>({});
   const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
   const [scopeWarnings, setScopeWarnings] = useState<string[]>([]);
+  /** Rollup-derived KPIs when audit row still has zeros (older API audits). */
+  const [kpiFromSnapshot, setKpiFromSnapshot] = useState<{
+    list_size: number | null;
+    aov: number | null;
+    monthly_traffic: number | null;
+  } | null>(null);
 
   // Hooks must run unconditionally on every render.
   // Compute derived values before any early returns to avoid hook-order crashes.
@@ -64,6 +70,25 @@ export default function AuditWorkspace() {
     [sections],
   );
   const currentSection = sections.find(s => s.section_key === activeSection);
+
+  const auditInfoMetrics = useMemo(() => {
+    if (!audit) return { list_size: 0, aov: 0, monthly_traffic: 0 };
+    if (audit.audit_method !== 'api' || !kpiFromSnapshot) {
+      return {
+        list_size: audit.list_size ?? 0,
+        aov: audit.aov ?? 0,
+        monthly_traffic: audit.monthly_traffic ?? 0,
+      };
+    }
+    const k = kpiFromSnapshot;
+    const pick = (col: number, snap: number | null | undefined) =>
+      (col != null && col > 0) ? col : (snap ?? col ?? 0);
+    return {
+      list_size: pick(audit.list_size, k.list_size ?? null),
+      aov: pick(audit.aov, k.aov ?? null),
+      monthly_traffic: pick(audit.monthly_traffic, k.monthly_traffic ?? null),
+    };
+  }, [audit, kpiFromSnapshot]);
 
   useEffect(() => {
     let cancelled = false;
@@ -111,6 +136,41 @@ export default function AuditWorkspace() {
     })();
     return () => { cancelled = true; };
   }, [id, isDemo]);
+
+  useEffect(() => {
+    if (isDemo || !audit || audit.audit_method !== 'api') {
+      setKpiFromSnapshot(null);
+      return;
+    }
+    let cancelled = false;
+    setKpiFromSnapshot(null);
+    (async () => {
+      const { data: rollup } = await supabase
+        .from('klaviyo_reporting_rollups')
+        .select('computed')
+        .eq('audit_id', audit.id)
+        .eq('timeframe_key', 'last_30_days')
+        .maybeSingle();
+      const snap = (rollup?.computed as { account_snapshot?: { email_subscribed_profiles_count?: number | null; active_profiles_90d_count?: number | null } } | null)?.account_snapshot;
+      const { data: fpRows } = await supabase
+        .from('flow_performance')
+        .select('monthly_revenue_current, recipients_per_month')
+        .eq('audit_id', audit.id);
+      let rpr: number | null = null;
+      if (fpRows?.length) {
+        const totalRev = fpRows.reduce((s, r) => s + (Number(r.monthly_revenue_current) || 0), 0);
+        const totalRecip = fpRows.reduce((s, r) => s + (Number(r.recipients_per_month) || 0), 0);
+        if (totalRecip > 0) rpr = Math.round((totalRev / totalRecip) * 100) / 100;
+      }
+      if (cancelled) return;
+      setKpiFromSnapshot({
+        list_size: snap?.email_subscribed_profiles_count ?? null,
+        monthly_traffic: snap?.active_profiles_90d_count ?? null,
+        aov: rpr,
+      });
+    })();
+    return () => { cancelled = true; };
+  }, [isDemo, audit?.id, audit?.audit_method]);
 
   if (loading) {
     return (
@@ -373,16 +433,20 @@ export default function AuditWorkspace() {
                 </span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">List Size</span>
-                <span className="font-medium text-gray-800">{audit.list_size.toLocaleString()}</span>
+                <span className="text-gray-500">List size</span>
+                <span className="font-medium text-gray-800">{auditInfoMetrics.list_size.toLocaleString()}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">AOV</span>
-                <span className="font-medium text-gray-800">{formatCurrency(audit.aov)}</span>
+                <span className="text-gray-500">
+                  {audit.audit_method === 'api' ? 'Flow $/recipient' : 'AOV'}
+                </span>
+                <span className="font-medium text-gray-800">{formatCurrency(auditInfoMetrics.aov)}</span>
               </div>
               <div className="flex justify-between">
-                <span className="text-gray-500">Traffic</span>
-                <span className="font-medium text-gray-800">{audit.monthly_traffic.toLocaleString()}/mo</span>
+                <span className="text-gray-500">
+                  {audit.audit_method === 'api' ? 'Engaged (90d)' : 'Traffic'}
+                </span>
+                <span className="font-medium text-gray-800">{auditInfoMetrics.monthly_traffic.toLocaleString()}/mo</span>
               </div>
             </div>
           </div>

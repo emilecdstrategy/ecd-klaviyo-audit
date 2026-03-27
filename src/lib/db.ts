@@ -38,6 +38,12 @@ export async function createClient(input: Omit<Client, 'id' | 'created_at'>): Pr
   return data;
 }
 
+export async function updateClient(id: string, updates: Partial<Omit<Client, 'id' | 'created_at'>>): Promise<Client> {
+  const { data, error } = await supabase.from('clients').update(updates).eq('id', id).select('*').single();
+  if (error) throw error;
+  return data as Client;
+}
+
 export async function deleteClient(id: string): Promise<void> {
   const { error } = await supabase.from('clients').delete().eq('id', id);
   if (error) throw error;

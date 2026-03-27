@@ -11,11 +11,13 @@ import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS } from '../lib/demo-data';
-import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection } from '../lib/db';
+import { formatClientListMeta } from '../lib/client-display';
+import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, updateClient } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { supabase } from '../lib/supabase';
+import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 
 const STEPS = [
   { label: 'Prospect Details', description: 'Basic information' },
@@ -110,6 +112,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         clientId,
         clientName: client.name,
         companyName: client.company_name,
+        notes: client.notes ?? '',
         apiKey: '',
       }));
     }
@@ -151,12 +154,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           name: form.clientName || form.companyName,
           company_name: form.companyName,
           website_url: '',
-            industry: '',
+          industry: '',
           esp_platform: 'Klaviyo',
           api_key_placeholder: '',
           notes: form.notes,
         }) as any);
         clientId = created.id;
+      } else {
+        const updated = await updateClient(clientId, { notes: form.notes });
+        setClients(prev => prev.map(c => (c.id === updated.id ? updated : c)));
       }
 
       // 2) Create audit row
@@ -235,6 +241,14 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         correlationId: data?.correlationId,
       });
 
+      const dm = (data as { derived_metrics?: { list_size?: number; monthly_engagement?: number; revenue_per_recipient?: number | null } })?.derived_metrics;
+      const snapshotListSize = Math.round(Number(dm?.list_size) || 0);
+      const snapshotEngagement = Math.round(Number(dm?.monthly_engagement) || 0);
+      const snapshotRpr =
+        dm?.revenue_per_recipient != null && Number.isFinite(Number(dm.revenue_per_recipient))
+          ? Math.round(Number(dm.revenue_per_recipient) * 100) / 100
+          : 0;
+
       // 5) Run AI analysis and persist section updates
       setAnalysisProgress(40);
       setAnalysisStage('Running AI analysis…');
@@ -253,9 +267,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           companyName: form.companyName,
           espPlatform: 'Klaviyo',
           websiteUrl: '',
-          listSize: 0,
-          aov: 0,
-          monthlyTraffic: 0,
+          listSize: snapshotListSize,
+          aov: snapshotRpr,
+          monthlyTraffic: snapshotEngagement,
           notes: form.notes,
           auditMethod: 'api' as any,
         }, (update) => {
@@ -289,6 +303,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       await updateAudit(audit.id, {
         executive_summary: execPayload,
         total_revenue_opportunity: totalOpportunity,
+        list_size: snapshotListSize,
+        monthly_traffic: snapshotEngagement,
+        aov: snapshotRpr,
       } as any);
 
       setAnalysisProgress(100);
@@ -330,12 +347,30 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Select Existing Client</label>
-              <Select value={form.clientId} onValueChange={v => handleClientSelect(v)}>
+              <Select value={form.clientId || undefined} onValueChange={v => handleClientSelect(v)}>
                 <SelectTrigger className="w-full">
                   <SelectValue placeholder="Create new client or select existing" />
                 </SelectTrigger>
-                <SelectContent>
-                  {clients.map(c => <SelectItem key={c.id} value={c.id}>{c.company_name}</SelectItem>)}
+                <SelectContent
+                  position="popper"
+                  className="max-h-[min(360px,70vh)] min-w-[var(--radix-select-trigger-width)] max-w-md"
+                  sideOffset={4}
+                >
+                  {clients.map(c => (
+                    <SelectItem
+                      key={c.id}
+                      value={c.id}
+                      textValue={c.company_name}
+                      className="items-start py-2.5 pl-8 pr-3"
+                    >
+                      <div className="flex flex-col gap-0.5 pr-1">
+                        <SelectItemText className="font-medium leading-snug text-gray-900">
+                          {c.company_name}
+                        </SelectItemText>
+                        <span className="text-[11px] leading-snug text-gray-500">{formatClientListMeta(c)}</span>
+                      </div>
+                    </SelectItem>
+                  ))}
                 </SelectContent>
               </Select>
             </div>
@@ -375,7 +410,10 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               </div>
             ) : (
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Klaviyo Private API Key</label>
+                <div className="mb-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                  <label className="block text-sm font-medium text-gray-700">Klaviyo Private API Key</label>
+                  <KlaviyoApiKeyHelpTrigger className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-brand-primary transition-colors hover:text-brand-primary-dark hover:underline" />
+                </div>
                 <input
                   type="password"
                   value={form.apiKey}

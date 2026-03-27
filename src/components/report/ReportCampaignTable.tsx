@@ -47,7 +47,7 @@ export default function ReportCampaignTable({ campaigns }: { campaigns: KlaviyoC
             </tr>
           </thead>
           <tbody>
-            {visible.map((c, i) => (
+            {rows.map((c, i) => (
               <tr key={c.id} className={`border-b border-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
                 <td className="px-4 py-3">
                   <div className="min-w-0">
