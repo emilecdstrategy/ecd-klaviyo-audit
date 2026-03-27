@@ -653,12 +653,13 @@ serve(async (req) => {
 
     // 5) Account snapshot KPIs (time-budgeted to avoid edge runtime timeout)
     const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const profileDeadlineMs = startedAt + 80_000;
     const profileSnapshotRes = await computeProfileSnapshot({
       apiKey,
       revision,
       since90Iso: since90,
-      maxPages: 800,
-      deadlineAtMs,
+      maxPages: 400,
+      deadlineAtMs: profileDeadlineMs,
     });
 
     // 5) Reporting rollups (values reports)
