@@ -251,15 +251,18 @@ function retryAfterMsFromKlaviyo429(body: any): number | null {
   }
 }
 
-async function queryValuesReportWithBackoff(params: Parameters<typeof queryValuesReport>[0]) {
+async function queryValuesReportWithBackoff(
+  params: Parameters<typeof queryValuesReport>[0] & { deadlineAtMs?: number },
+) {
   // Values reports are the most likely to throttle; do a gentle backoff on 429 only.
   let last: { ok: boolean; status: number; body: any } = { ok: false, status: 0, body: null };
-  for (let attempt = 1; attempt <= 3; attempt++) {
+  for (let attempt = 1; attempt <= 2; attempt++) {
     const res = await queryValuesReport(params);
     last = res;
     if (res.ok) return res;
     if (res.status !== 429) return res;
-    const retryMs = retryAfterMsFromKlaviyo429(res.body) ?? (800 * attempt);
+    const retryMs = Math.min(4_000, retryAfterMsFromKlaviyo429(res.body) ?? (800 * attempt));
+    if (params.deadlineAtMs && Date.now() + retryMs >= params.deadlineAtMs) return res;
     await new Promise((r) => setTimeout(r, retryMs));
   }
   return last;
@@ -558,22 +561,31 @@ serve(async (req) => {
       // We'll attach errors onto reportingErrors below after it's declared; stash now.
     }
 
-    // Suppressions: globally suppressed profiles (all reasons) (usually small; still time-budgeted)
+    // Suppressions: globally suppressed profiles (all reasons)
+    // Avoid API filter syntax edge cases by evaluating from fetched profile payload.
     const suppressedProfilesRes = await klaviyoCountProfiles({
       apiKey,
       revision,
-      filter: `greater-than(subscriptions.email.marketing.suppression.timestamp,\"1970-01-01T00:00:00Z\")`,
+      predicate: (p: any) => {
+        const ts = p?.attributes?.subscriptions?.email?.marketing?.suppression?.timestamp;
+        return Boolean(ts);
+      },
       maxPages: profilePageBudget,
       deadlineAtMs,
     });
 
     // Active Profiles: engaged last 90d (proxy: subscribed profiles updated in last 90 days)
     const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+    const since90Ms = Date.parse(since90);
     const activeProfilesRes = await klaviyoCountProfiles({
       apiKey,
       revision,
-      filter: `greater-than(updated,\"${since90}\")`,
-      predicate: isSubscribedEmail,
+      predicate: (p: any) => {
+        if (!isSubscribedEmail(p)) return false;
+        const updated = p?.attributes?.updated;
+        const updatedMs = typeof updated === "string" ? Date.parse(updated) : NaN;
+        return Number.isFinite(updatedMs) && updatedMs >= since90Ms;
+      },
       maxPages: profilePageBudget,
       deadlineAtMs,
     });
@@ -600,7 +612,8 @@ serve(async (req) => {
       : { metricId: null, reason: "metrics_fetch_failed" as const };
     const conversionMetricId = pickedMetric.metricId;
 
-    const timeframeKeys: Array<"last_30_days" | "last_90_days"> = ["last_30_days", "last_90_days"];
+    // Keep reporting lightweight to avoid edge runtime timeout on large accounts.
+    const timeframeKeys: Array<"last_30_days" | "last_90_days"> = ["last_30_days"];
     const flowReportStats = ["recipients", "open_rate", "click_rate", "conversion_rate", "conversion_value", "revenue_per_recipient"];
     const campaignReportStats = [
       "recipients",
@@ -644,6 +657,7 @@ serve(async (req) => {
           filter: "contains-any(send_channel,[\"email\"])",
           statistics: campaignReportStats,
           groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
+          deadlineAtMs,
         });
         if (rep.ok) {
           campaignReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
@@ -672,6 +686,7 @@ serve(async (req) => {
           filter: flowFilter,
           statistics: flowReportStats,
           groupBy: ["flow_id", "flow_message_id", "send_channel"],
+          deadlineAtMs,
         });
         if (rep.ok) {
           flowReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
@@ -757,12 +772,6 @@ serve(async (req) => {
         status: subscribedProfilesRes.status ?? null,
         message: trimBody(subscribedProfilesRes.body) ?? "Failed to count email-subscribed profiles",
       });
-    } else if (subscribedProfilesRes.truncated) {
-      reportingErrors.push({
-        stage: "email_subscribed_profiles_count",
-        status: 200,
-        message: "Count truncated due to time/page budget (large account).",
-      });
     }
 
     if (!suppressedProfilesRes.ok) {
@@ -770,12 +779,6 @@ serve(async (req) => {
         stage: "suppressed_profiles_count",
         status: suppressedProfilesRes.status ?? null,
         message: trimBody(suppressedProfilesRes.body) ?? "Failed to count suppressed profiles",
-      });
-    } else if (suppressedProfilesRes.truncated) {
-      reportingErrors.push({
-        stage: "suppressed_profiles_count",
-        status: 200,
-        message: "Count truncated due to time/page budget (large account).",
       });
     }
 
@@ -785,18 +788,15 @@ serve(async (req) => {
         status: activeProfilesRes.status ?? null,
         message: trimBody(activeProfilesRes.body) ?? "Failed to count active profiles (90d)",
       });
-    } else if (activeProfilesRes.truncated) {
-      reportingErrors.push({
-        stage: "active_profiles_90d_count",
-        status: 200,
-        message: "Count truncated due to time/page budget (large account).",
-      });
     }
 
     // Deliverability indicators (last 90 days, email campaigns only) computed from campaign values report
     let bounceRate90d: number | null = null;
     let spamRate90d: number | null = null;
-    const camp90 = campaignReports.find((r) => r.timeframe === "last_90_days")?.results ?? [];
+    const camp90 =
+      campaignReports.find((r) => r.timeframe === "last_90_days")?.results
+      ?? campaignReports.find((r) => r.timeframe === "last_30_days")?.results
+      ?? [];
     if (Array.isArray(camp90) && camp90.length > 0) {
       let denom = 0;
       let bounceNum = 0;
@@ -824,10 +824,13 @@ serve(async (req) => {
       bounce_rate_90d: bounceRate90d,
       spam_rate_90d: spamRate90d,
       active_profiles_definition: "Proxy: email-subscribed profiles updated in last 90 days",
+      email_subscribed_profiles_truncated: subscribedProfilesRes.ok ? subscribedProfilesRes.truncated : null,
+      active_profiles_90d_truncated: activeProfilesRes.ok ? activeProfilesRes.truncated : null,
+      suppressed_profiles_truncated: suppressedProfilesRes.ok ? suppressedProfilesRes.truncated : null,
       computed_at: new Date().toISOString(),
     };
 
-    for (const tf of ["last_30_days", "last_90_days"] as const) {
+    for (const tf of timeframeKeys) {
       const camp = campaignReports.find((r) => r.timeframe === tf)?.results ?? [];
       const flw = flowReports.find((r) => r.timeframe === tf)?.results ?? [];
       await mustSucceed("insert klaviyo_reporting_rollups", sb.from("klaviyo_reporting_rollups").insert({
