@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { ChevronDown, Zap, Clock, Target } from 'lucide-react';
+import { cn } from '../../lib/utils';
 import type { Recommendation } from '../../lib/types';
 
 interface Tier {
@@ -64,8 +65,9 @@ export default function ReportRecommendations({ recommendations }: ReportRecomme
         return (
           <div key={tier.key} className="rounded-xl border border-gray-100 overflow-hidden">
             <button
+              type="button"
               onClick={() => setExpanded(isOpen ? null : tier.key)}
-              className={`w-full flex items-center justify-between px-5 py-4 border-b ${tier.headerCls} text-left transition-colors`}
+              className={`w-full flex items-center justify-between px-5 py-4 border-b ${tier.headerCls} text-left transition-colors duration-200`}
             >
               <div className="flex items-center gap-3">
                 <div className={`w-7 h-7 rounded-lg flex items-center justify-center ${tier.badgeCls}`}>
@@ -81,29 +83,52 @@ export default function ReportRecommendations({ recommendations }: ReportRecomme
                   <p className="text-xs text-gray-500 mt-0.5">{tier.description}</p>
                 </div>
               </div>
-              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform ${isOpen ? 'rotate-180' : ''}`} />
+              <ChevronDown
+                className={cn(
+                  'h-4 w-4 text-gray-400 transition-transform duration-300 ease-out motion-reduce:transition-none',
+                  isOpen && 'rotate-180',
+                )}
+              />
             </button>
 
-            {isOpen && (
-              <div className="divide-y divide-gray-50">
-                {items.map(rec => (
-                  <div key={rec.id} className={`px-5 py-4 border-l-4 ${tier.borderCls} bg-white`}>
-                    <div className="flex items-start justify-between gap-4 mb-2">
-                      <h4 className="text-sm font-semibold text-gray-900">{rec.title}</h4>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
-                          {rec.impact}
-                        </span>
-                        <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
-                          {rec.effort}
-                        </span>
+            <div
+              className={cn(
+                'grid transition-[grid-template-rows] duration-300 ease-out motion-reduce:transition-none',
+                isOpen ? 'grid-rows-[1fr]' : 'grid-rows-[0fr]',
+              )}
+            >
+              <div className="min-h-0 overflow-hidden">
+                <div className="divide-y divide-gray-50">
+                  {items.map((rec, idx) => (
+                    <div
+                      key={rec.id}
+                      className={cn(
+                        `px-5 py-4 border-l-4 ${tier.borderCls} bg-white`,
+                        isOpen && 'animate-slide-up motion-reduce:animate-none',
+                      )}
+                      style={
+                        isOpen
+                          ? { animationDelay: `${idx * 40}ms`, animationFillMode: 'backwards' }
+                          : undefined
+                      }
+                    >
+                      <div className="flex items-start justify-between gap-4 mb-2">
+                        <h4 className="text-sm font-semibold text-gray-900">{rec.title}</h4>
+                        <div className="flex items-center gap-2 shrink-0">
+                          <span className="text-xs font-semibold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-100">
+                            {rec.impact}
+                          </span>
+                          <span className="text-xs text-gray-400 bg-gray-50 px-2 py-0.5 rounded-full border border-gray-100">
+                            {rec.effort}
+                          </span>
+                        </div>
                       </div>
+                      <p className="text-sm text-gray-600 leading-relaxed">{rec.description}</p>
                     </div>
-                    <p className="text-sm text-gray-600 leading-relaxed">{rec.description}</p>
-                  </div>
-                ))}
+                  ))}
+                </div>
               </div>
-            )}
+            </div>
           </div>
         );
       })}

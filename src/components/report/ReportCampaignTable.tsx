@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
+import { useExpandableTableClip } from '../../hooks/useExpandableTableClip';
+import { cn } from '../../lib/utils';
 import type { KlaviyoCampaignSnapshot } from '../../lib/types';
 
 function StatusBadge({ status }: { status: string }) {
@@ -23,11 +25,18 @@ export default function ReportCampaignTable({ campaigns }: { campaigns: KlaviyoC
   const rows = [...campaigns].sort((a, b) => (b.updated_at_klaviyo || '').localeCompare(a.updated_at_klaviyo || ''));
   const [expanded, setExpanded] = useState(false);
   const needsExpand = rows.length > COLLAPSED_COUNT;
-  const visible = expanded ? rows : rows.slice(0, COLLAPSED_COUNT);
+  const { wrapRef, maxHeight } = useExpandableTableClip(rows.length, expanded, COLLAPSED_COUNT);
 
   return (
     <div className="relative">
-      <div className="overflow-x-auto -mx-6 px-6">
+      <div
+        ref={needsExpand ? wrapRef : undefined}
+        className={cn(
+          '-mx-6 overflow-x-auto overflow-y-hidden px-6',
+          needsExpand && 'transition-[max-height] duration-300 ease-out motion-reduce:transition-none',
+        )}
+        style={needsExpand ? { maxHeight } : undefined}
+      >
         <table className="w-full min-w-[860px] text-sm border-collapse">
           <thead>
             <tr className="border-b border-gray-100">
@@ -69,20 +78,28 @@ export default function ReportCampaignTable({ campaigns }: { campaigns: KlaviyoC
       </div>
 
       {needsExpand && !expanded && (
-        <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-white via-white/95 to-transparent pointer-events-none" />
+        <>
+          <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-[#fafafa] via-[#fafafa]/95 to-transparent pointer-events-none" />
+          <div className="absolute bottom-6 left-0 right-0 z-10 flex justify-center pointer-events-none">
+            <button
+              type="button"
+              onClick={() => setExpanded(true)}
+              className="flex items-center gap-1.5 text-sm font-semibold text-brand-primary hover:text-brand-primary-dark transition-colors duration-200 pointer-events-auto"
+            >
+              Show all {rows.length} campaigns <ChevronDown className="w-4 h-4 transition-transform duration-300" />
+            </button>
+          </div>
+        </>
       )}
 
-      {needsExpand && (
-        <div className="absolute bottom-6 left-0 right-0 z-10 flex justify-center pointer-events-none">
+      {needsExpand && expanded && (
+        <div className="flex justify-center pt-4">
           <button
-            onClick={() => setExpanded(!expanded)}
-            className="flex items-center gap-1.5 text-sm font-semibold text-brand-primary hover:text-brand-primary-dark transition-colors pointer-events-auto"
+            type="button"
+            onClick={() => setExpanded(false)}
+            className="flex items-center gap-1.5 text-sm font-semibold text-brand-primary hover:text-brand-primary-dark transition-colors duration-200"
           >
-            {expanded ? (
-              <>Collapse <ChevronUp className="w-4 h-4" /></>
-            ) : (
-              <>Show all {rows.length} campaigns <ChevronDown className="w-4 h-4" /></>
-            )}
+            Collapse <ChevronUp className="w-4 h-4 transition-transform duration-300" />
           </button>
         </div>
       )}

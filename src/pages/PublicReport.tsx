@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { Zap, TrendingUp, AlertTriangle, CheckCircle2, ChevronRight } from 'lucide-react';
 import {
@@ -748,46 +748,72 @@ function YesNoPill({ value }: { value: boolean }) {
   );
 }
 
-const rubricTone = {
-  good: 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
-  warn: 'bg-amber-50 text-amber-900 border-amber-200/80',
-  bad: 'bg-rose-50 text-rose-800 border-rose-200/80',
-  neutral: 'bg-gray-50 text-gray-700 border-gray-200/80',
+const snapshotDotTone = {
+  good: 'bg-emerald-500',
+  warn: 'bg-amber-500',
+  bad: 'bg-rose-500',
+  neutral: 'bg-gray-400',
 } as const;
 
-function RubricStatusChip({ children, tone }: { children: ReactNode; tone: keyof typeof rubricTone }) {
+/** Compact status line (dot + label) for snapshot grids — avoids full-width stretched pills. */
+function SnapshotStatusValue({ tone, children }: { children: ReactNode; tone: keyof typeof snapshotDotTone }) {
   return (
-    <span className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-wide', rubricTone[tone])}>
-      {children}
-    </span>
+    <div className="flex items-center gap-2.5 min-w-0">
+      <span className={cn('h-2 w-2 shrink-0 rounded-full', snapshotDotTone[tone])} aria-hidden />
+      <span className="text-sm font-semibold leading-snug text-gray-900">{children}</span>
+    </div>
   );
 }
 
 function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; collapsedLines?: 3 | 4 | 5 }) {
   const [expanded, setExpanded] = useState(false);
+  const [needsToggle, setNeedsToggle] = useState(false);
+  const contentRef = useRef<HTMLDivElement>(null);
   const raw = String(text ?? '').trim();
+  const collapsedMaxClass =
+    collapsedLines === 3 ? 'max-h-[4.5rem]' : collapsedLines === 5 ? 'max-h-[7.5rem]' : 'max-h-[6rem]';
+
+  useLayoutEffect(() => {
+    const el = contentRef.current;
+    if (!el || !raw || raw === 'N/A') {
+      setNeedsToggle(false);
+      return;
+    }
+    if (expanded) {
+      return;
+    }
+    const measure = () => {
+      if (!contentRef.current) return;
+      setNeedsToggle(contentRef.current.scrollHeight > contentRef.current.clientHeight + 1);
+    };
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [raw, expanded, collapsedLines]);
+
   if (!raw || raw === 'N/A') {
     return <p className="text-sm text-gray-400">N/A</p>;
   }
-  const long = raw.length > 260;
-  const clampClass =
-    collapsedLines === 3 ? 'line-clamp-3' : collapsedLines === 5 ? 'line-clamp-5' : 'line-clamp-4';
 
   return (
     <div>
       <div
+        ref={contentRef}
         className={cn(
           'text-sm text-gray-700 leading-relaxed [&_strong]:text-gray-900 [&_strong]:font-semibold',
-          !expanded && long && clampClass,
+          !expanded && `overflow-hidden ${collapsedMaxClass}`,
+          expanded && needsToggle && 'max-h-[min(100vh,2500px)]',
+          needsToggle && 'transition-[max-height] duration-300 ease-out motion-reduce:transition-none',
         )}
       >
         {renderInlineMarkdownBold(raw)}
       </div>
-      {long && (
+      {needsToggle && (
         <button
           type="button"
           onClick={() => setExpanded(e => !e)}
-          className="mt-2.5 text-xs font-semibold text-brand-primary hover:underline"
+          className="mt-2.5 text-xs font-semibold text-brand-primary transition-colors duration-200 hover:underline"
         >
           {expanded ? 'Show less' : 'Show more'}
         </button>
@@ -840,7 +866,18 @@ function ImplementationTimelinePhase({
         </div>
         <ul className="space-y-3">
           {visibleItems.map((item, j) => (
-            <li key={j} className="flex items-start gap-2.5 text-sm leading-relaxed text-gray-800">
+            <li
+              key={j}
+              className={cn(
+                'flex items-start gap-2.5 text-sm leading-relaxed text-gray-800',
+                expanded && j >= previewCount && 'animate-slide-up motion-reduce:animate-none',
+              )}
+              style={
+                expanded && j >= previewCount
+                  ? { animationDelay: `${(j - previewCount) * 45}ms`, animationFillMode: 'backwards' }
+                  : undefined
+              }
+            >
               <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary/70" aria-hidden />
               <span className="min-w-0 [&_strong]:font-semibold [&_strong]:text-gray-900">
                 {renderInlineMarkdownBold(item)}
@@ -852,7 +889,7 @@ function ImplementationTimelinePhase({
           <button
             type="button"
             onClick={() => setExpanded(e => !e)}
-            className="mt-4 text-sm font-semibold text-brand-primary hover:underline"
+            className="mt-4 text-sm font-semibold text-brand-primary transition-colors duration-200 hover:underline"
           >
             {expanded ? 'Show fewer' : `Show ${items.length - previewCount} more`}
           </button>
@@ -904,21 +941,23 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
         <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 px-4 pt-4 pb-2">Segmentation snapshot</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-            <div className="px-4 py-4 flex flex-col gap-2 min-h-[88px]">
+            <div className="flex min-h-[88px] flex-col items-start gap-2 px-4 py-4">
               <span className="text-xs text-gray-500 leading-snug">Full-list sends</span>
-              <RubricStatusChip tone={blastRisk ? 'warn' : 'good'}>{blastRisk ? 'Yes — risk' : 'No'}</RubricStatusChip>
+              <SnapshotStatusValue tone={blastRisk ? 'warn' : 'good'}>
+                {blastRisk ? 'Yes — risk' : 'No'}
+              </SnapshotStatusValue>
             </div>
-            <div className="px-4 py-4 flex flex-col gap-2 min-h-[88px]">
+            <div className="flex min-h-[88px] flex-col items-start gap-2 px-4 py-4">
               <span className="text-xs text-gray-500 leading-snug">Engaged / unengaged</span>
-              <RubricStatusChip tone={d.has_engaged_unengaged_segments ? 'good' : 'bad'}>
+              <SnapshotStatusValue tone={d.has_engaged_unengaged_segments ? 'good' : 'bad'}>
                 {d.has_engaged_unengaged_segments ? 'Defined' : 'Missing'}
-              </RubricStatusChip>
+              </SnapshotStatusValue>
             </div>
-            <div className="px-4 py-4 flex flex-col gap-2 min-h-[88px]">
+            <div className="flex min-h-[88px] flex-col items-start gap-2 px-4 py-4">
               <span className="text-xs text-gray-500 leading-snug">VIP / high-LTV</span>
-              <RubricStatusChip tone={d.has_vip_segments ? 'good' : 'warn'}>
+              <SnapshotStatusValue tone={d.has_vip_segments ? 'good' : 'warn'}>
                 {d.has_vip_segments ? 'Defined' : 'Missing'}
-              </RubricStatusChip>
+              </SnapshotStatusValue>
             </div>
           </div>
         </div>
@@ -958,13 +997,17 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
         <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 px-4 pt-4 pb-2">Form coverage</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-            <div className="px-4 py-4 flex flex-col gap-2">
+            <div className="flex flex-col items-start gap-2 px-4 py-4">
               <span className="text-xs text-gray-500">Popup</span>
-              <RubricStatusChip tone={d.has_popup ? 'good' : 'warn'}>{d.has_popup ? 'Present' : 'Missing'}</RubricStatusChip>
+              <SnapshotStatusValue tone={d.has_popup ? 'good' : 'warn'}>
+                {d.has_popup ? 'Present' : 'Missing'}
+              </SnapshotStatusValue>
             </div>
-            <div className="px-4 py-4 flex flex-col gap-2">
+            <div className="flex flex-col items-start gap-2 px-4 py-4">
               <span className="text-xs text-gray-500">Embedded form</span>
-              <RubricStatusChip tone={d.has_embedded_form ? 'good' : 'warn'}>{d.has_embedded_form ? 'Present' : 'Missing'}</RubricStatusChip>
+              <SnapshotStatusValue tone={d.has_embedded_form ? 'good' : 'warn'}>
+                {d.has_embedded_form ? 'Present' : 'Missing'}
+              </SnapshotStatusValue>
             </div>
           </div>
         </div>
