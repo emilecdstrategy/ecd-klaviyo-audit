@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
+import { SkeletonClientDetail } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
@@ -71,7 +72,7 @@ export default function ClientDetail() {
     return (
       <div>
         <TopBar title="Client" />
-        <div className="p-8 text-sm text-gray-500">Loading client...</div>
+        <SkeletonClientDetail />
       </div>
     );
   }
@@ -194,12 +195,8 @@ export default function ClientDetail() {
                 if (!deletingAudit) return;
                 try {
                   setDeleting(true);
-                  const { data: sessionData } = await supabase.auth.getSession();
-                  const token = sessionData.session?.access_token;
-                  if (!token) throw new Error('Your session expired. Please sign in again and retry.');
                   const { data, error: fnError } = await supabase.functions.invoke('admin_delete_audit', {
                     body: { audit_id: deletingAudit.id },
-                    headers: { Authorization: `Bearer ${token}` },
                   });
                   if (fnError) throw fnError;
                   if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to delete audit');

@@ -102,7 +102,11 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
               <button
                 key={item.to}
                 type="button"
-                onClick={() => navigate('/audits/new', { state: { backgroundLocation: location } })}
+                onClick={() => {
+                  const clientMatch = location.pathname.match(/^\/clients\/([^/]+)$/);
+                  const clientId = clientMatch?.[1];
+                  navigate('/audits/new', { state: { backgroundLocation: location, ...(clientId && { clientId }) } });
+                }}
                 className={`${linkClass({ isActive: false })} w-full`}
               >
                 <item.icon className="w-[18px] h-[18px] shrink-0" />

@@ -6,6 +6,7 @@ import AuditSectionEditor from '../components/audit/AuditSectionEditor';
 import RevenueOpportunityCard from '../components/ui/RevenueOpportunityCard';
 import ShareLinkPanel from '../components/ui/ShareLinkPanel';
 import StatusBadge from '../components/ui/StatusBadge';
+import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
 import {
   DEMO_AUDITS,
@@ -176,7 +177,7 @@ export default function AuditWorkspace() {
     return (
       <div>
         <TopBar title="Audit" />
-        <div className="p-8 text-sm text-gray-500">Loading audit...</div>
+        <SkeletonAuditWorkspace />
       </div>
     );
   }
@@ -282,13 +283,15 @@ export default function AuditWorkspace() {
         subtitle={client?.company_name}
         actions={
           audit.public_share_token ? (
-            <button
-              onClick={() => navigate(`/report/${audit.public_share_token}`)}
+            <a
+              href={`/report/${audit.public_share_token}`}
+              target="_blank"
+              rel="noopener noreferrer"
               className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
             >
               <ExternalLink className="w-4 h-4" />
               View Report
-            </button>
+            </a>
           ) : undefined
         }
       />

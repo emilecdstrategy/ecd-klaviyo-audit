@@ -1,0 +1,35 @@
+---
+description: How to deploy Supabase Edge Functions via the MCP tool
+globs: supabase/functions/**/*.ts
+alwaysApply: false
+---
+
+# Deploying Supabase Edge Functions via MCP
+
+Use the `deploy_edge_function` tool on the **user-ecd-klaviyo-audit** MCP server.
+
+## Steps
+
+1. Read the function source from `supabase/functions/<name>/index.ts`.
+2. Check the existing function with `get_edge_function` to match `verify_jwt`.
+3. Call `deploy_edge_function` directly with the content inline:
+
+```
+CallMcpTool(
+  server: "user-ecd-klaviyo-audit",
+  toolName: "deploy_edge_function",
+  arguments: {
+    name: "<function_name>",
+    entrypoint_path: "index.ts",
+    verify_jwt: false,          // match what's already deployed
+    files: [{ name: "index.ts", content: "<full file contents>" }]
+  }
+)
+```
+
+## Rules
+
+- Pass file content **directly** in the `files` array — do NOT write intermediate JSON files or use Node scripts.
+- Keep `verify_jwt` matching the existing deployment (most functions in this project use `false` because they handle auth internally via `requireAdmin` / `requireAuthenticatedUser`).
+- After deploy, confirm the response contains `status: "ACTIVE"` and note the new `version` number.
+- If the function has a `deno.json` or `deno.jsonc`, include it in the `files` array too.

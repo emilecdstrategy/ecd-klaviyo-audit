@@ -63,24 +63,7 @@ serve(async (req) => {
 
     const sb = serviceClient();
 
-    const { data: sectionRows, error: sectionErr } = await sb.from("audit_sections").select("id").eq("audit_id", auditId);
-    if (sectionErr) throw sectionErr;
-    const sectionIds = (sectionRows ?? []).map((s: any) => s.id).filter(Boolean);
-
-    if (sectionIds.length) {
-      await mustSucceed(sb.from("annotations").delete().in("audit_section_id", sectionIds), "Delete annotations");
-    }
-
-    await mustSucceed(sb.from("audit_assets").delete().eq("audit_id", auditId), "Delete audit_assets");
-    await mustSucceed(sb.from("audit_sections").delete().eq("audit_id", auditId), "Delete audit_sections");
-    await mustSucceed(sb.from("recommendations").delete().eq("audit_id", auditId), "Delete recommendations");
-    await mustSucceed(sb.from("flow_performance").delete().eq("audit_id", auditId), "Delete flow_performance");
-    await mustSucceed(sb.from("health_scores").delete().eq("audit_id", auditId), "Delete health_scores");
-    await mustSucceed(sb.from("klaviyo_flow_snapshots").delete().eq("audit_id", auditId), "Delete klaviyo_flow_snapshots");
-    await mustSucceed(sb.from("klaviyo_campaign_snapshots").delete().eq("audit_id", auditId), "Delete klaviyo_campaign_snapshots");
-    await mustSucceed(sb.from("klaviyo_form_snapshots").delete().eq("audit_id", auditId), "Delete klaviyo_form_snapshots");
-    await mustSucceed(sb.from("klaviyo_segment_snapshots").delete().eq("audit_id", auditId), "Delete klaviyo_segment_snapshots");
-    await mustSucceed(sb.from("klaviyo_reporting_rollups").delete().eq("audit_id", auditId), "Delete klaviyo_reporting_rollups");
+    // Single delete: child tables use ON DELETE CASCADE (or SET NULL for klaviyo_runs.audit_id).
     await mustSucceed(sb.from("audits").delete().eq("id", auditId), "Delete audit");
 
     return json({ ok: true, correlationId }, { status: 200 });

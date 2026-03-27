@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Users, Plus, Search, ArrowRight, Globe, Calendar } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import EmptyState from '../components/ui/EmptyState';
+import { SkeletonClientCards } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { listAudits, listClients } from '../lib/db';
@@ -153,7 +154,7 @@ export default function Clients() {
         )}
 
         {loading ? (
-          <div className="text-sm text-gray-500">Loading clients...</div>
+          <SkeletonClientCards />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={Users}

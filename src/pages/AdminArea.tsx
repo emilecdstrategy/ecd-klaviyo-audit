@@ -298,6 +298,7 @@ function UsersTab() {
 
 function SettingsTab() {
   const [status, setStatus] = useState<{ configured: boolean; updated_at: string | null } | null>(null);
+  const [statusLoading, setStatusLoading] = useState(true);
   const [apiKey, setApiKey] = useState('');
   const [editing, setEditing] = useState(false);
   const [saving, setSaving] = useState(false);
@@ -308,12 +309,10 @@ function SettingsTab() {
     let cancelled = false;
     (async () => {
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        if (!token) throw new Error('Your session expired. Please sign in again and retry.');
+        setStatusLoading(true);
+        // Supabase client attaches the session JWT automatically — skip extra getSession() round trip.
         const { data, error } = await supabase.functions.invoke('openai_key_admin', {
           body: { action: 'status' },
-          headers: { Authorization: `Bearer ${token}` },
         });
         if (cancelled) return;
         if (error) throw error;
@@ -321,6 +320,8 @@ function SettingsTab() {
         setStatus({ configured: Boolean(data.configured), updated_at: data.updated_at ?? null });
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load status');
+      } finally {
+        if (!cancelled) setStatusLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -331,20 +332,15 @@ function SettingsTab() {
     setSuccess('');
     try {
       setSaving(true);
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
       const { data, error } = await supabase.functions.invoke('openai_key_admin', {
         body: { action: 'set', openai_api_key: apiKey },
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to save key');
       setApiKey('');
       setEditing(false);
       setSuccess('Saved. Edge Functions will use this key for AI analysis.');
-      // refresh status
-      const st = await supabase.functions.invoke('openai_key_admin', { body: { action: 'status' }, headers: { Authorization: `Bearer ${token}` } });
+      const st = await supabase.functions.invoke('openai_key_admin', { body: { action: 'status' } });
       if (!st.error && st.data?.ok === true) {
         setStatus({ configured: Boolean(st.data.configured), updated_at: st.data.updated_at ?? null });
       }
@@ -366,7 +362,12 @@ function SettingsTab() {
           Configure your OpenAI API key to enable AI-powered audit analysis. This key is stored securely
           and used only for generating audit findings.
         </p>
-        {status?.configured && !editing ? (
+        {statusLoading ? (
+          <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-4" aria-busy="true">
+            <div className="h-4 bg-gray-200/80 rounded w-[40%] mb-2.5 animate-pulse" />
+            <div className="h-3 bg-gray-100 rounded w-[65%] animate-pulse" />
+          </div>
+        ) : status?.configured && !editing ? (
           <>
             <div className="flex items-center gap-3 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
               <div className="flex-1">

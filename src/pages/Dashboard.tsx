@@ -14,6 +14,7 @@ import {
 import TopBar from '../components/layout/TopBar';
 import KPICard from '../components/ui/KPICard';
 import StatusBadge from '../components/ui/StatusBadge';
+import { SkeletonKPICards, SkeletonListCard } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
@@ -27,6 +28,7 @@ export default function Dashboard() {
 
   const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
   const [audits, setAudits] = useState<Audit[]>(isDemo ? DEMO_AUDITS : []);
+  const [loading, setLoading] = useState(!isDemo);
 
   useEffect(() => {
     let cancelled = false;
@@ -39,6 +41,8 @@ export default function Dashboard() {
         setAudits(a);
       } catch {
         // dashboard should still render even if lists fail
+      } finally {
+        if (!cancelled) setLoading(false);
       }
     })();
     return () => { cancelled = true; };
@@ -54,12 +58,16 @@ export default function Dashboard() {
       <TopBar title="Dashboard" subtitle="Welcome back" />
 
       <div className="p-8 space-y-8 animate-fade-in">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-          <KPICard icon={ClipboardCheck} label="Total Audits" value={totalAudits} accent="primary" />
-          <KPICard icon={Clock} label="In Progress" value={inProgress} accent="warning" />
-          <KPICard icon={FileText} label="Completed" value={completed} accent="success" />
-          <KPICard icon={TrendingUp} label="Revenue Identified" value={formatCurrency(totalRevOpp)} accent="secondary" />
-        </div>
+        {loading ? (
+          <SkeletonKPICards />
+        ) : (
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <KPICard icon={ClipboardCheck} label="Total Audits" value={totalAudits} accent="primary" />
+            <KPICard icon={Clock} label="In Progress" value={inProgress} accent="warning" />
+            <KPICard icon={FileText} label="Completed" value={completed} accent="success" />
+            <KPICard icon={TrendingUp} label="Revenue Identified" value={formatCurrency(totalRevOpp)} accent="secondary" />
+          </div>
+        )}
 
         <div className="flex flex-wrap gap-3">
           <button
@@ -87,6 +95,12 @@ export default function Dashboard() {
           )}
         </div>
 
+        {loading ? (
+          <div className="space-y-6">
+            <SkeletonListCard />
+            <SkeletonListCard rows={4} />
+          </div>
+        ) : (
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
             <div className="bg-white rounded-xl card-shadow">
@@ -163,6 +177,7 @@ export default function Dashboard() {
             </div>
           </div>
         </div>
+        )}
       </div>
     </div>
   );

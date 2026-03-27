@@ -921,7 +921,11 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
                 <td className="py-2 pr-2 font-medium">{renderInlineMarkdownBold(r.flow_name || 'N/A')}</td>
                 <td className="py-2 pr-2"><YesNoPill value={Boolean(r.present)} /></td>
                 <td className="py-2 pr-2"><YesNoPill value={Boolean(r.live)} /></td>
-                <td className="py-2 pr-2">{typeof r.email_count === 'number' ? r.email_count : 'N/A'}</td>
+                <td className="py-2 pr-2">
+                  <span className="inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-[11px] font-semibold bg-gray-50 text-gray-700 border-gray-200 min-w-[28px]">
+                    {typeof r.email_count === 'number' ? r.email_count : 'N/A'}
+                  </span>
+                </td>
                 <td className="py-2 pr-2">{renderInlineMarkdownBold(r.current_structure_note || 'N/A')}</td>
                 <td className="py-2">{renderInlineMarkdownBold(r.recommended_structure || 'N/A')}</td>
               </tr>

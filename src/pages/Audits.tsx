@@ -11,6 +11,7 @@ import { useState } from 'react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
 import EmptyState from '../components/ui/EmptyState';
+import { SkeletonTable } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_AUDITS, DEMO_CLIENTS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
@@ -118,12 +119,8 @@ export default function Audits() {
                   if (!deletingAudit) return;
                   try {
                     setDeleting(true);
-                    const { data: sessionData } = await supabase.auth.getSession();
-                    const token = sessionData.session?.access_token;
-                    if (!token) throw new Error('Your session expired. Please sign in again and retry.');
                     const { data, error: fnError } = await supabase.functions.invoke('admin_delete_audit', {
                       body: { audit_id: deletingAudit.id },
-                      headers: { Authorization: `Bearer ${token}` },
                     });
                     if (fnError) throw fnError;
                     if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to delete audit');
@@ -182,7 +179,7 @@ export default function Audits() {
         )}
 
         {loading ? (
-          <div className="text-sm text-gray-500">Loading audits...</div>
+          <SkeletonTable rows={5} cols={7} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={ClipboardCheck}
@@ -246,13 +243,16 @@ export default function Audits() {
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-1">
                           {audit.public_share_token && (
-                            <button
-                              onClick={e => { e.stopPropagation(); navigate(`/report/${audit.public_share_token}`); }}
-                              className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-                              title="Open public report"
+                            <a
+                              href={`/report/${audit.public_share_token}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              onClick={e => e.stopPropagation()}
+                              className="p-1.5 rounded hover:bg-gray-100 transition-colors inline-flex"
+                              title="Open public report in new tab"
                             >
                               <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
-                            </button>
+                            </a>
                           )}
                           {hasRole('admin') && !isDemo && (
                             <button
