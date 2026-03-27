@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { Zap, TrendingUp, AlertTriangle, CheckCircle2, BarChart3, ChevronRight } from 'lucide-react';
+import { Zap, TrendingUp, AlertTriangle, CheckCircle2, ChevronRight } from 'lucide-react';
 import {
   DEMO_AUDITS,
   DEMO_CLIENTS,
@@ -28,6 +28,7 @@ import { RichAuditText } from '../components/ui/RichAuditText';
 import type { AuditSection } from '../lib/types';
 import { getPublicReportByToken } from '../lib/db';
 import { useAuth } from '../contexts/AuthContext';
+import { cn } from '../lib/utils';
 
 const NAV_ITEMS = [
   { id: 'summary', label: 'Summary' },
@@ -586,59 +587,73 @@ export default function PublicReport() {
           </div>
 
           <div className="bg-white rounded-xl p-6 border border-gray-100 mb-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-6">Implementation Timeline</h3>
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-4 relative">
-              <div className="hidden md:block absolute top-5 left-[12.5%] right-[12.5%] h-px bg-gray-100 z-0" />
-              {(aiTimeline.length >= 4 ? aiTimeline : []).map((p, i) => {
-                const colors = ['bg-emerald-500', 'bg-brand-primary', 'bg-amber-500', 'bg-gray-300'];
-                return (
-                  <div key={i} className="relative flex flex-col items-center text-center px-2">
-                    <div className={`w-10 h-10 rounded-full ${colors[i] ?? 'bg-gray-300'} flex items-center justify-center text-white text-xs font-bold mb-3 z-10 relative`}>
-                      {i + 1}
-                    </div>
-                    <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider">{p.phase}</p>
-                    <p className="text-xs text-gray-400 mb-1">{p.timeframe}</p>
-                    <p className="text-sm font-semibold text-gray-900 mb-3">{p.label}</p>
-                    <ul className="space-y-1 text-left w-full">
-                      {p.items.map((item, j) => (
-                        <li key={j} className="flex items-start gap-1.5 text-xs text-gray-500">
-                          <ChevronRight className="w-3 h-3 shrink-0 mt-0.5 text-gray-300" />
-                          {item}
-                        </li>
-                      ))}
-                    </ul>
-                  </div>
-                );
-              })}
-              {aiTimeline.length < 4 && (
-                <p className="text-sm text-gray-500 md:col-span-4 text-center py-6">
-                  AI timeline not available for this audit run.
-                </p>
-              )}
-            </div>
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Implementation Timeline</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Suggested rollout order — work through each phase before moving to the next.
+            </p>
+            {aiTimeline.length > 0 ? (
+              <div className="space-y-8">
+                {aiTimeline.slice(0, 4).map((p, i) => (
+                  <ImplementationTimelinePhase key={i} phase={p} index={i} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600 text-center py-8">AI timeline not available for this audit run.</p>
+            )}
           </div>
 
-          <div className="bg-gray-900 rounded-2xl p-8 text-center">
-            <BarChart3 className="w-8 h-8 text-white/20 mx-auto mb-4" />
-            <h2 className="text-2xl font-bold text-white mb-2">Total Identified Opportunity</h2>
-            <p className="text-5xl font-extrabold text-white mb-1">
-              {formatCurrency(totalRevenue)}
-              <span className="text-xl font-medium text-white/40">/month</span>
-            </p>
-            <p className="text-sm text-white/40 mb-7">in additional email-attributed revenue</p>
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-3 max-w-xl mx-auto mb-8">
-              {topOpportunities.map(s => (
-                <div key={s.id} className="bg-white/5 rounded-lg p-3 text-left border border-white/10">
-                  <p className="text-[11px] text-white/40 mb-0.5">{SECTION_LABELS[s.section_key]}</p>
-                  <p className="text-base font-bold text-white">{formatCurrency(s.revenue_opportunity)}</p>
-                </div>
-              ))}
-            </div>
-            <div className="bg-white/5 border border-white/10 rounded-lg p-4 max-w-2xl mx-auto">
-              <p className="text-xs text-white/30 leading-relaxed">
-                Revenue estimates are based on industry benchmarks and the account-specific metrics provided. Actual results depend on
-                execution quality, seasonality, offer strength, and list health. These figures represent potential opportunity, not guaranteed outcomes.
+          <div className="relative overflow-hidden rounded-3xl text-center shadow-xl shadow-brand-primary/20 ring-1 ring-white/20">
+            <div
+              className="absolute inset-0 bg-gradient-to-br from-brand-primary-dark via-brand-primary to-brand-primary-light"
+              aria-hidden
+            />
+            <div className="pointer-events-none absolute -right-20 -top-28 h-72 w-72 rounded-full bg-white/25 blur-3xl" aria-hidden />
+            <div className="pointer-events-none absolute -bottom-24 -left-16 h-56 w-56 rounded-full bg-brand-primary-dark/40 blur-3xl" aria-hidden />
+            <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_50%_at_50%_-20%,rgba(255,255,255,0.18),transparent)]" aria-hidden />
+
+            <div className="relative px-6 py-10 sm:px-10 sm:py-12 lg:px-14 lg:py-14">
+              <div className="mx-auto mb-6 flex h-14 w-14 items-center justify-center rounded-2xl bg-white/15 shadow-inner ring-1 ring-white/30 backdrop-blur-sm">
+                <TrendingUp className="h-7 w-7 text-white" strokeWidth={2.25} />
+              </div>
+              <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/70">Revenue opportunity</p>
+              <h2 className="mb-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
+                Total identified opportunity
+              </h2>
+              <div className="mb-2 flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0">
+                <span className="text-4xl font-extrabold tabular-nums tracking-tight text-white drop-shadow-sm sm:text-5xl lg:text-6xl">
+                  {formatCurrency(totalRevenue)}
+                </span>
+                <span className="text-lg font-semibold text-white/80 sm:text-xl">/month</span>
+              </div>
+              <p className="mb-10 text-sm font-medium text-white/75">
+                Additional email-attributed revenue identified in this audit
               </p>
+
+              {topOpportunities.length > 0 && (
+                <div className="mx-auto mb-10 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                  {topOpportunities.map(s => (
+                    <div
+                      key={s.id}
+                      className="group rounded-2xl border border-white/20 bg-white/10 p-4 text-left shadow-lg shadow-black/10 backdrop-blur-md transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/15"
+                    >
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                        {SECTION_LABELS[s.section_key]}
+                      </p>
+                      <p className="text-xl font-bold tabular-nums text-white sm:text-2xl">
+                        {formatCurrency(s.revenue_opportunity)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-white/50">per month</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              <div className="mx-auto max-w-2xl rounded-2xl border border-white/15 bg-black/10 px-5 py-4 backdrop-blur-sm">
+                <p className="text-sm leading-relaxed text-white/80">
+                  Revenue estimates use industry benchmarks and your account metrics. Actual results depend on execution, seasonality, offers,
+                  and list health. Figures represent opportunity, not guaranteed outcomes.
+                </p>
+              </div>
             </div>
           </div>
         </section>
@@ -733,6 +748,120 @@ function YesNoPill({ value }: { value: boolean }) {
   );
 }
 
+const rubricTone = {
+  good: 'bg-emerald-50 text-emerald-800 border-emerald-200/80',
+  warn: 'bg-amber-50 text-amber-900 border-amber-200/80',
+  bad: 'bg-rose-50 text-rose-800 border-rose-200/80',
+  neutral: 'bg-gray-50 text-gray-700 border-gray-200/80',
+} as const;
+
+function RubricStatusChip({ children, tone }: { children: ReactNode; tone: keyof typeof rubricTone }) {
+  return (
+    <span className={cn('inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold tracking-wide', rubricTone[tone])}>
+      {children}
+    </span>
+  );
+}
+
+function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; collapsedLines?: 3 | 4 | 5 }) {
+  const [expanded, setExpanded] = useState(false);
+  const raw = String(text ?? '').trim();
+  if (!raw || raw === 'N/A') {
+    return <p className="text-sm text-gray-400">N/A</p>;
+  }
+  const long = raw.length > 260;
+  const clampClass =
+    collapsedLines === 3 ? 'line-clamp-3' : collapsedLines === 5 ? 'line-clamp-5' : 'line-clamp-4';
+
+  return (
+    <div>
+      <div
+        className={cn(
+          'text-sm text-gray-700 leading-relaxed [&_strong]:text-gray-900 [&_strong]:font-semibold',
+          !expanded && long && clampClass,
+        )}
+      >
+        {renderInlineMarkdownBold(raw)}
+      </div>
+      {long && (
+        <button
+          type="button"
+          onClick={() => setExpanded(e => !e)}
+          className="mt-2.5 text-xs font-semibold text-brand-primary hover:underline"
+        >
+          {expanded ? 'Show less' : 'Show more'}
+        </button>
+      )}
+    </div>
+  );
+}
+
+function RubricInsightCard({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="rounded-xl border border-gray-100 bg-white p-4 card-shadow">
+      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">{label}</p>
+      {children}
+    </div>
+  );
+}
+
+const TIMELINE_ACCENT = ['bg-emerald-500', 'bg-brand-primary', 'bg-amber-500', 'bg-slate-400'] as const;
+
+function ImplementationTimelinePhase({
+  phase,
+  index,
+}: {
+  phase: { phase: string; timeframe: string; label: string; items: string[] };
+  index: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const items = Array.isArray(phase.items) ? phase.items : [];
+  const previewCount = 5;
+  const many = items.length > previewCount;
+  const visibleItems = !many || expanded ? items : items.slice(0, previewCount);
+  const accent = TIMELINE_ACCENT[index] ?? 'bg-slate-400';
+
+  return (
+    <div className="flex gap-4 sm:gap-5">
+      <div className="shrink-0">
+        <div
+          className={`flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm ${accent}`}
+        >
+          {index + 1}
+        </div>
+      </div>
+      <div className="min-w-0 flex-1 rounded-xl border border-gray-100 bg-white p-4 sm:p-5 card-shadow">
+        <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
+          <span className="text-xs font-bold uppercase tracking-wide text-brand-primary">{phase.phase}</span>
+          <span className="text-sm text-gray-600">{phase.timeframe}</span>
+        </div>
+        <div className="mb-4 text-base font-semibold leading-snug text-gray-900">
+          {renderInlineMarkdownBold(phase.label || '')}
+        </div>
+        <ul className="space-y-3">
+          {visibleItems.map((item, j) => (
+            <li key={j} className="flex items-start gap-2.5 text-sm leading-relaxed text-gray-800">
+              <ChevronRight className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary/70" aria-hidden />
+              <span className="min-w-0 [&_strong]:font-semibold [&_strong]:text-gray-900">
+                {renderInlineMarkdownBold(item)}
+              </span>
+            </li>
+          ))}
+        </ul>
+        {many && (
+          <button
+            type="button"
+            onClick={() => setExpanded(e => !e)}
+            className="mt-4 text-sm font-semibold text-brand-primary hover:underline"
+          >
+            {expanded ? 'Show fewer' : `Show ${items.length - previewCount} more`}
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
 function SectionRubricDetails({ section }: { section: AuditSection }) {
   const details = parseSectionDetails((section as any).section_details);
   if (!details) return null;
@@ -769,12 +898,34 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
   if (section.section_key === 'segmentation') {
     const d = details?.segmentation;
     if (!d) return null;
+    const blastRisk = Boolean(d.sends_to_full_list);
     return (
-      <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-700 space-y-1.5">
-        <p><strong>Full-list sends:</strong> {d.sends_to_full_list ? 'Yes' : 'No'}</p>
-        <p><strong>Engaged/unengaged segments:</strong> {d.has_engaged_unengaged_segments ? 'Defined' : 'Missing'}</p>
-        <p><strong>VIP/high-LTV segments:</strong> {d.has_vip_segments ? 'Defined' : 'Missing'}</p>
-        <p><strong>ECD benchmark:</strong> {renderInlineMarkdownBold(d.benchmark_architecture_note || 'N/A')}</p>
+      <div className="mb-4 space-y-3">
+        <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 px-4 pt-4 pb-2">Segmentation snapshot</p>
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+            <div className="px-4 py-4 flex flex-col gap-2 min-h-[88px]">
+              <span className="text-xs text-gray-500 leading-snug">Full-list sends</span>
+              <RubricStatusChip tone={blastRisk ? 'warn' : 'good'}>{blastRisk ? 'Yes — risk' : 'No'}</RubricStatusChip>
+            </div>
+            <div className="px-4 py-4 flex flex-col gap-2 min-h-[88px]">
+              <span className="text-xs text-gray-500 leading-snug">Engaged / unengaged</span>
+              <RubricStatusChip tone={d.has_engaged_unengaged_segments ? 'good' : 'bad'}>
+                {d.has_engaged_unengaged_segments ? 'Defined' : 'Missing'}
+              </RubricStatusChip>
+            </div>
+            <div className="px-4 py-4 flex flex-col gap-2 min-h-[88px]">
+              <span className="text-xs text-gray-500 leading-snug">VIP / high-LTV</span>
+              <RubricStatusChip tone={d.has_vip_segments ? 'good' : 'warn'}>
+                {d.has_vip_segments ? 'Defined' : 'Missing'}
+              </RubricStatusChip>
+            </div>
+          </div>
+        </div>
+        <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-4 card-shadow">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">ECD benchmark</p>
+          <RubricExpandableNote text={d.benchmark_architecture_note || 'N/A'} collapsedLines={4} />
+        </div>
       </div>
     );
   }
@@ -782,12 +933,19 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
   if (section.section_key === 'campaigns') {
     const d = details?.campaigns;
     if (!d) return null;
+    const items = [
+      { label: 'Cadence', value: d.send_frequency_consistency },
+      { label: 'Targeting quality', value: d.segmented_vs_blast_note },
+      { label: 'Subject / preview hygiene', value: d.subject_preview_hygiene_note },
+      { label: 'Campaign type mix', value: d.campaign_type_mix_note },
+    ];
     return (
-      <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-700 space-y-1.5">
-        <p><strong>Cadence:</strong> {renderInlineMarkdownBold(d.send_frequency_consistency || 'N/A')}</p>
-        <p><strong>Targeting quality:</strong> {renderInlineMarkdownBold(d.segmented_vs_blast_note || 'N/A')}</p>
-        <p><strong>Subject/preview hygiene:</strong> {renderInlineMarkdownBold(d.subject_preview_hygiene_note || 'N/A')}</p>
-        <p><strong>Type mix:</strong> {renderInlineMarkdownBold(d.campaign_type_mix_note || 'N/A')}</p>
+      <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
+        {items.map(({ label, value }) => (
+          <RubricInsightCard key={label} label={label}>
+            <RubricExpandableNote text={value || 'N/A'} collapsedLines={4} />
+          </RubricInsightCard>
+        ))}
       </div>
     );
   }
@@ -796,12 +954,31 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
     const d = details?.signup_forms;
     if (!d) return null;
     return (
-      <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4 text-sm text-gray-700 space-y-1.5">
-        <p><strong>Popup:</strong> {d.has_popup ? 'Present' : 'Missing'}</p>
-        <p><strong>Embedded form:</strong> {d.has_embedded_form ? 'Present' : 'Missing'}</p>
-        <p><strong>Offer quality:</strong> {renderInlineMarkdownBold(d.offer_note || 'N/A')}</p>
-        <p><strong>Mobile optimization:</strong> {renderInlineMarkdownBold(d.mobile_optimization_note || 'N/A')}</p>
-        <p><strong>Benchmark conversion:</strong> {renderInlineMarkdownBold(d.benchmark_conversion_note || 'N/A')}</p>
+      <div className="mb-4 space-y-3">
+        <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
+          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 px-4 pt-4 pb-2">Form coverage</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+            <div className="px-4 py-4 flex flex-col gap-2">
+              <span className="text-xs text-gray-500">Popup</span>
+              <RubricStatusChip tone={d.has_popup ? 'good' : 'warn'}>{d.has_popup ? 'Present' : 'Missing'}</RubricStatusChip>
+            </div>
+            <div className="px-4 py-4 flex flex-col gap-2">
+              <span className="text-xs text-gray-500">Embedded form</span>
+              <RubricStatusChip tone={d.has_embedded_form ? 'good' : 'warn'}>{d.has_embedded_form ? 'Present' : 'Missing'}</RubricStatusChip>
+            </div>
+          </div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <RubricInsightCard label="Offer quality">
+            <RubricExpandableNote text={d.offer_note || 'N/A'} collapsedLines={4} />
+          </RubricInsightCard>
+          <RubricInsightCard label="Mobile optimization">
+            <RubricExpandableNote text={d.mobile_optimization_note || 'N/A'} collapsedLines={4} />
+          </RubricInsightCard>
+          <RubricInsightCard label="Benchmark conversion">
+            <RubricExpandableNote text={d.benchmark_conversion_note || 'N/A'} collapsedLines={4} />
+          </RubricInsightCard>
+        </div>
       </div>
     );
   }
@@ -854,7 +1031,9 @@ function ReportSectionBlock({
           <div>
             <div className="flex items-center gap-2 mb-3">
               <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-              <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{section.current_state_title || 'Current State'}</h4>
+              <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide [&_strong]:font-semibold">
+                {renderInlineMarkdownBold(section.current_state_title || 'Current State')}
+              </h4>
             </div>
             <div className="bg-red-50/40 border border-red-100 rounded-xl p-4 mb-4">
               <RichAuditText text={section.current_state_notes || ''} className="text-sm text-gray-700 leading-relaxed" />
@@ -872,7 +1051,9 @@ function ReportSectionBlock({
           <div>
             <div className="flex items-center gap-2 mb-3">
               <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-              <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide">{section.optimized_state_title || 'Optimized State'}</h4>
+              <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide [&_strong]:font-semibold">
+                {renderInlineMarkdownBold(section.optimized_state_title || 'Optimized State')}
+              </h4>
             </div>
             <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-4 mb-4">
               <RichAuditText text={section.optimized_notes || ''} className="text-sm text-gray-700 leading-relaxed" />

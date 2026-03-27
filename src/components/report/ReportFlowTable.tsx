@@ -1,6 +1,7 @@
 import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
 import { formatCurrency } from '../../lib/revenue-calculator';
-import { useRef, type MouseEvent } from 'react';
+import { useRef, useState, useLayoutEffect, useCallback, type MouseEvent } from 'react';
+import { cn } from '../../lib/utils';
 
 type MetricStatus = 'good' | 'warning' | 'bad' | 'missing';
 
@@ -102,8 +103,32 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
     startX: 0,
     startScrollLeft: 0,
   });
+  const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState(false);
 
   const sorted = [...flows].sort((a, b) => b.monthly_revenue_current - a.monthly_revenue_current);
+
+  const updateOverflow = useCallback(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    setHasHorizontalOverflow(el.scrollWidth > el.clientWidth + 1);
+  }, []);
+
+  useLayoutEffect(() => {
+    updateOverflow();
+    const id = requestAnimationFrame(() => updateOverflow());
+    const el = scrollRef.current;
+    if (!el) {
+      return () => cancelAnimationFrame(id);
+    }
+    const ro = new ResizeObserver(() => updateOverflow());
+    ro.observe(el);
+    window.addEventListener('resize', updateOverflow);
+    return () => {
+      cancelAnimationFrame(id);
+      ro.disconnect();
+      window.removeEventListener('resize', updateOverflow);
+    };
+  }, [updateOverflow, sorted.length, flows.length]);
 
   const snapshotMap = new Map<string, KlaviyoFlowSnapshot>();
   if (snapshots) {
@@ -119,6 +144,7 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
   const subtitle = `${revenueGenerators.length} flows generating ${totalRevenue > 0 ? ((revenueGenerators.reduce((s, f) => s + f.monthly_revenue_current, 0) / totalRevenue) * 100).toFixed(1) : 0}% of total flow revenue.`;
 
   const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
+    if (!hasHorizontalOverflow) return;
     const el = scrollRef.current;
     if (!el) return;
     dragStateRef.current = {
@@ -129,6 +155,7 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
   };
 
   const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
+    if (!hasHorizontalOverflow) return;
     const el = scrollRef.current;
     const drag = dragStateRef.current;
     if (!el || !drag.isDown) return;
@@ -140,105 +167,113 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
     dragStateRef.current.isDown = false;
   };
 
+  const thClass = 'px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide first:pl-6 last:pr-6';
+
   return (
     <div>
       <p className="text-sm text-gray-500 mb-4">{subtitle}</p>
-      <div
-        ref={scrollRef}
-        className="overflow-x-auto -mx-6 px-6 cursor-grab active:cursor-grabbing select-none"
-        onMouseDown={handleMouseDown}
-        onMouseMove={handleMouseMove}
-        onMouseUp={stopDragging}
-        onMouseLeave={stopDragging}
-      >
-        <table className="w-full min-w-[1100px] text-sm border-collapse">
-          <thead>
-            <tr className="border-b border-gray-200 bg-gray-50">
-              <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Flow</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-16">Status</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-24">Recipients</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-16">Actions</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Open Rate</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Click Rate</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Conv Rate</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-20">Revenue</th>
-              <th className="px-3 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider w-16">RPR</th>
-              <th className="px-3 py-3 text-center text-xs font-semibold text-gray-500 uppercase tracking-wider w-14">Rating</th>
-              <th className="px-3 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider min-w-[200px]">Assessment</th>
-            </tr>
-          </thead>
-          <tbody>
-            {sorted.map((flow, i) => {
-              const snap = snapshotMap.get(flow.flow_name);
-              const actionCount = snap?.raw?.attributes?.action_count ?? snap?.raw?.relationships?.flow_actions?.data?.length ?? null;
-              const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
-              const rating = overallRating(flow);
-              const assessment = buildAssessment(flow);
+      <div className="rounded-xl card-shadow overflow-hidden border border-gray-100 bg-white">
+        <div
+          ref={scrollRef}
+          className={cn(
+            'overflow-x-auto',
+            hasHorizontalOverflow && 'cursor-grab active:cursor-grabbing select-none',
+          )}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={stopDragging}
+          onMouseLeave={stopDragging}
+        >
+          <table className="w-full min-w-[1100px] text-sm">
+            <thead>
+              <tr className="bg-gray-50">
+                <th className={`${thClass} text-left`}>Flow</th>
+                <th className={`${thClass} text-center w-16`}>Status</th>
+                <th className={`${thClass} text-right w-24`}>Recipients</th>
+                <th className={`${thClass} text-center w-16`}>Actions</th>
+                <th className={`${thClass} text-center w-20`}>Open Rate</th>
+                <th className={`${thClass} text-center w-20`}>Click Rate</th>
+                <th className={`${thClass} text-center w-20`}>Conv Rate</th>
+                <th className={`${thClass} text-right w-20`}>Revenue</th>
+                <th className={`${thClass} text-right w-16`}>RPR</th>
+                <th className={`${thClass} text-center w-14`}>Rating</th>
+                <th className={`${thClass} text-left min-w-[200px]`}>Assessment</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-50">
+              {sorted.map((flow) => {
+                const snap = snapshotMap.get(flow.flow_name);
+                const actionCount = snap?.raw?.attributes?.action_count ?? snap?.raw?.relationships?.flow_actions?.data?.length ?? null;
+                const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
+                const rating = overallRating(flow);
+                const assessment = buildAssessment(flow);
 
-              return (
-                <tr
-                  key={flow.id}
-                  className={`border-b border-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'} ${
-                    flow.flow_status === 'missing' ? 'opacity-75' : ''
-                  }`}
-                >
-                  <td className="px-3 py-3">
-                    <p className="text-sm font-semibold text-gray-900 leading-tight">{flow.flow_name}</p>
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <FlowStatusBadge status={flow.flow_status} />
-                  </td>
-                  <td className="px-3 py-3 text-right text-sm tabular-nums text-gray-700">
-                    {flow.recipients_per_month.toLocaleString()}
-                  </td>
-                  <td className="px-3 py-3 text-center text-sm tabular-nums text-gray-600">
-                    {actionCount ?? '—'}
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    {pctCell(flow.actual_open_rate, flow.benchmark_open_rate_low, flow.benchmark_open_rate_high)}
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    {pctCell(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high)}
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    {pctCell(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high)}
-                  </td>
-                  <td className="px-3 py-3 text-right text-sm font-semibold text-gray-900 tabular-nums">
-                    {formatCurrency(flow.monthly_revenue_current)}
-                  </td>
-                  <td className="px-3 py-3 text-right text-sm tabular-nums text-gray-600">
-                    ${rpr.toFixed(2)}
-                  </td>
-                  <td className="px-3 py-3 text-center">
-                    <RatingDot status={rating} />
-                  </td>
-                  <td className="px-3 py-3">
-                    <p className={`text-xs leading-relaxed ${rating === 'bad' ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
-                      {assessment}
-                    </p>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-          <tfoot>
-            <tr className="border-t-2 border-gray-200 bg-gray-50 font-semibold">
-              <td className="px-3 py-3 text-sm text-gray-700">Totals</td>
-              <td />
-              <td className="px-3 py-3 text-right text-sm tabular-nums text-gray-700">{totalRecipients.toLocaleString()}</td>
-              <td />
-              <td />
-              <td />
-              <td />
-              <td className="px-3 py-3 text-right text-sm font-bold text-gray-900 tabular-nums">{formatCurrency(totalRevenue)}</td>
-              <td className="px-3 py-3 text-right text-sm tabular-nums text-gray-600">
-                ${totalRecipients > 0 ? (totalRevenue / totalRecipients).toFixed(2) : '0.00'}
-              </td>
-              <td />
-              <td />
-            </tr>
-          </tfoot>
-        </table>
+                return (
+                  <tr
+                    key={flow.id}
+                    className={cn(
+                      'transition-colors hover:bg-gray-50/50',
+                      flow.flow_status === 'missing' && 'opacity-75',
+                    )}
+                  >
+                    <td className="py-4 pl-6 pr-4">
+                      <p className="text-sm font-medium text-gray-900 leading-tight">{flow.flow_name}</p>
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <FlowStatusBadge status={flow.flow_status} />
+                    </td>
+                    <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-700">
+                      {flow.recipients_per_month.toLocaleString()}
+                    </td>
+                    <td className="px-4 py-4 text-center text-sm tabular-nums text-gray-600">
+                      {actionCount ?? '—'}
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      {pctCell(flow.actual_open_rate, flow.benchmark_open_rate_low, flow.benchmark_open_rate_high)}
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      {pctCell(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high)}
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      {pctCell(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high)}
+                    </td>
+                    <td className="px-4 py-4 text-right text-sm font-semibold text-gray-900 tabular-nums">
+                      {formatCurrency(flow.monthly_revenue_current)}
+                    </td>
+                    <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-600">
+                      ${rpr.toFixed(2)}
+                    </td>
+                    <td className="px-4 py-4 text-center">
+                      <RatingDot status={rating} />
+                    </td>
+                    <td className="py-4 pl-4 pr-6">
+                      <p className={`text-xs leading-relaxed ${rating === 'bad' ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
+                        {assessment}
+                      </p>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+            <tfoot>
+              <tr className="border-t border-gray-100 bg-gray-50/80 font-semibold">
+                <td className="px-4 py-4 pl-6 text-sm text-gray-700">Totals</td>
+                <td />
+                <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-700">{totalRecipients.toLocaleString()}</td>
+                <td />
+                <td />
+                <td />
+                <td />
+                <td className="px-4 py-4 text-right text-sm font-bold text-gray-900 tabular-nums">{formatCurrency(totalRevenue)}</td>
+                <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-600">
+                  ${totalRecipients > 0 ? (totalRevenue / totalRecipients).toFixed(2) : '0.00'}
+                </td>
+                <td />
+                <td className="pr-6" />
+              </tr>
+            </tfoot>
+          </table>
+        </div>
       </div>
     </div>
   );

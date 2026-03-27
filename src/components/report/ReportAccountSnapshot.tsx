@@ -38,7 +38,7 @@ function calcWeeklySendFrequency(campaigns: KlaviyoCampaignSnapshot[]) {
 
 function Card({ label, value, sub }: { label: string; value: string; sub: string }) {
   return (
-    <div className="rounded-xl border border-gray-200/80 bg-gradient-to-b from-slate-50/60 to-white px-4 py-4 shadow-sm ring-1 ring-gray-100/60">
+    <div className="rounded-xl border border-gray-100 bg-white px-4 py-4">
       <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">{label}</p>
       <p className="text-2xl font-bold tabular-nums text-gray-900 tracking-tight">{value}</p>
       <p className="text-xs font-medium mt-1 leading-snug text-gray-500">{sub}</p>
@@ -138,7 +138,7 @@ export default function ReportAccountSnapshot({
         />
       </div>
 
-      <div className="mt-4 rounded-xl border border-gray-200/80 bg-gradient-to-b from-slate-50/40 to-white p-4 shadow-sm ring-1 ring-gray-100/60">
+      <div className="mt-4 rounded-xl border border-gray-100 bg-gray-50/80 p-4">
         <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">Benchmark: Healthy account hygiene</p>
         <p className="text-sm text-gray-700 leading-relaxed">
           A healthy account typically has consistent sending cadence, low complaint/bounce signals, a clear suppression strategy,
