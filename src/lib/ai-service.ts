@@ -120,14 +120,18 @@ export async function runAIAnalysis(
       }
     };
 
+    // Keep section requests small to reduce provider timeout risk on larger accounts.
     const sectionBatches: { keys: string[]; label: string }[] = [
-      { keys: ['account_health', 'flows'], label: 'sections batch 1/3' },
-      { keys: ['segmentation', 'campaigns'], label: 'sections batch 2/3' },
-      { keys: ['email_design', 'signup_forms'], label: 'sections batch 3/3' },
+      { keys: ['account_health'], label: 'section 1/6' },
+      { keys: ['flows'], label: 'section 2/6' },
+      { keys: ['segmentation'], label: 'section 3/6' },
+      { keys: ['campaigns'], label: 'section 4/6' },
+      { keys: ['email_design'], label: 'section 5/6' },
+      { keys: ['signup_forms'], label: 'section 6/6' },
     ];
 
     const totalSteps = 1 + sectionBatches.length;
-    onProgress?.({ current: 1, total: totalSteps, label: 'Generating executive summary (1/4)…' });
+    onProgress?.({ current: 1, total: totalSteps, label: `Generating executive summary (1/${totalSteps})…` });
     const top = await withRetryOnTimeout(
       () => call([], 'top_level_only', 'top-level summary'),
       'top-level summary',
