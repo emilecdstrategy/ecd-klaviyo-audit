@@ -187,16 +187,28 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       const { data: sessionData } = await supabase.auth.getSession();
       const token = sessionData.session?.access_token;
       if (!token) throw new Error('Your session expired. Please sign in again and retry.');
-      const { data, error: fnErr } = await supabase.functions.invoke<any>('klaviyo_fetch_snapshot', {
-        body: {
-          audit_id: audit.id,
-          client_id: clientId,
-          api_key: form.apiKey || undefined,
-        },
-        headers: {
-          Authorization: `Bearer ${token}`,
-        },
+      const snapshotPayload = {
+        audit_id: audit.id,
+        client_id: clientId,
+        api_key: form.apiKey || undefined,
+      };
+      const invokeSnapshot = () => supabase.functions.invoke<any>('klaviyo_fetch_snapshot', {
+        body: snapshotPayload,
+        headers: { Authorization: `Bearer ${token}` },
       });
+      let { data, error: fnErr } = await invokeSnapshot();
+      if (fnErr) {
+        const firstAnyErr = fnErr as any;
+        const firstStatus = firstAnyErr?.context?.status ?? firstAnyErr?.status ?? null;
+        const isRuntimeTimeout = Number(firstStatus) === 546 || String(fnErr.message || '').includes('status code (status 546');
+        if (isRuntimeTimeout) {
+          setAnalysisStage('Klaviyo snapshot timed out once, retrying…');
+          await new Promise((r) => setTimeout(r, 1800));
+          const retried = await invokeSnapshot();
+          data = retried.data;
+          fnErr = retried.error;
+        }
+      }
       if (fnErr) {
         const anyErr = fnErr as any;
         const status = anyErr?.context?.status ?? anyErr?.status ?? null;
