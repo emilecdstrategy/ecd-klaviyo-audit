@@ -36,7 +36,6 @@ const NAV_ITEMS = [
   { id: 'segments', label: 'Segments' },
   { id: 'forms', label: 'Signup Forms' },
   { id: 'campaigns', label: 'Campaigns' },
-  { id: 'findings', label: 'Findings' },
   { id: 'recommendations', label: 'Recommendations' },
   { id: 'opportunity', label: 'Revenue' },
 ];
@@ -361,6 +360,23 @@ export default function PublicReport() {
           <section id="flows" ref={setRef('flows')}>
             <SectionHeader number="03" label="Flows" />
 
+            {(() => {
+              const flowsSection = reportSections.find(s => s.section_key === 'flows');
+              const idx = flowsSection ? reportSections.findIndex(s => s.id === flowsSection.id) : -1;
+              if (!flowsSection) return null;
+              return (
+                <div className="mb-6">
+                  <ReportSectionBlock
+                    section={flowsSection}
+                    index={idx < 0 ? 0 : idx}
+                    assets={assets}
+                    annotations={annotations}
+                    hideHeader
+                  />
+                </div>
+              );
+            })()}
+
             {flowPerformance.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
                 <ReportFlowHealthScore
@@ -407,6 +423,24 @@ export default function PublicReport() {
         {segmentSnapshots.length > 0 && (
           <section id="segments" ref={setRef('segments')}>
             <SectionHeader number="04" label="Segments" />
+
+            {(() => {
+              const segSection = reportSections.find(s => s.section_key === 'segmentation');
+              const idx = segSection ? reportSections.findIndex(s => s.id === segSection.id) : -1;
+              if (!segSection) return null;
+              return (
+                <div className="mb-6">
+                  <ReportSectionBlock
+                    section={segSection}
+                    index={idx < 0 ? 0 : idx}
+                    assets={assets}
+                    annotations={annotations}
+                    hideHeader
+                  />
+                </div>
+              );
+            })()}
+
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-50">
                 <p className="text-sm text-gray-500">
@@ -423,6 +457,24 @@ export default function PublicReport() {
         {formSnapshots.length > 0 && (
           <section id="forms" ref={setRef('forms')}>
             <SectionHeader number="05" label="Signup Forms" />
+
+            {(() => {
+              const formsSection = reportSections.find(s => s.section_key === 'signup_forms');
+              const idx = formsSection ? reportSections.findIndex(s => s.id === formsSection.id) : -1;
+              if (!formsSection) return null;
+              return (
+                <div className="mb-6">
+                  <ReportSectionBlock
+                    section={formsSection}
+                    index={idx < 0 ? 0 : idx}
+                    assets={assets}
+                    annotations={annotations}
+                    hideHeader
+                  />
+                </div>
+              );
+            })()}
+
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-50">
                 <p className="text-sm text-gray-500">
@@ -439,6 +491,24 @@ export default function PublicReport() {
         {campaignSnapshots.length > 0 && (
           <section id="campaigns" ref={setRef('campaigns')}>
             <SectionHeader number="06" label="Campaigns" />
+
+            {(() => {
+              const campSection = reportSections.find(s => s.section_key === 'campaigns');
+              const idx = campSection ? reportSections.findIndex(s => s.id === campSection.id) : -1;
+              if (!campSection) return null;
+              return (
+                <div className="mb-6">
+                  <ReportSectionBlock
+                    section={campSection}
+                    index={idx < 0 ? 0 : idx}
+                    assets={assets}
+                    annotations={annotations}
+                    hideHeader
+                  />
+                </div>
+              );
+            })()}
+
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-50">
                 <p className="text-sm text-gray-500">
@@ -452,24 +522,9 @@ export default function PublicReport() {
           </section>
         )}
 
-        <section id="findings" ref={setRef('findings')}>
-          <SectionHeader number="07" label="Section-by-Section Findings" />
-          <div className="space-y-6">
-            {reportSections.map((section, index) => (
-              <ReportSectionBlock
-                key={section.id}
-                section={section}
-                index={index}
-                assets={assets}
-                annotations={annotations}
-              />
-            ))}
-          </div>
-        </section>
-
         {audit.show_recommendations && recommendations.length > 0 && (
           <section id="recommendations" ref={setRef('recommendations')}>
-            <SectionHeader number="08" label="Priority Action Plan" />
+            <SectionHeader number="07" label="Priority Action Plan" />
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-50">
                 <p className="text-sm text-gray-500">
@@ -484,7 +539,7 @@ export default function PublicReport() {
         )}
 
         <section id="opportunity" ref={setRef('opportunity')}>
-          <SectionHeader number="09" label="Revenue Opportunity" />
+          <SectionHeader number="08" label="Revenue Opportunity" />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
             <div className="bg-white rounded-xl p-6 border border-gray-100">
@@ -759,11 +814,13 @@ function ReportSectionBlock({
   index,
   assets,
   annotations,
+  hideHeader = false,
 }: {
   section: AuditSection;
   index: number;
   assets: typeof DEMO_ASSETS;
   annotations: typeof DEMO_ANNOTATIONS;
+  hideHeader?: boolean;
 }) {
   const currentAsset = assets.find(a => a.section_key === section.section_key && a.side === 'current');
   const optimizedAsset = assets.find(a => a.section_key === section.section_key && a.side === 'optimized');
@@ -771,24 +828,26 @@ function ReportSectionBlock({
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-      <div className="px-6 py-5 border-b border-gray-50 flex items-start justify-between gap-4">
-        <div className="flex items-center gap-3">
-          <span className="text-[11px] font-bold text-gray-300 tabular-nums">{String(index + 1).padStart(2, '0')}</span>
-          <h3 className="text-base font-bold text-gray-900">{SECTION_LABELS[section.section_key]}</h3>
-        </div>
-        {section.revenue_opportunity > 0 && (
-          <div className="flex items-center gap-2 shrink-0">
-            <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-            <span className="text-sm font-semibold text-emerald-700">{formatCurrency(section.revenue_opportunity)}/mo</span>
-            <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
-              section.confidence === 'high' ? 'bg-emerald-50 text-emerald-600' :
-              section.confidence === 'medium' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
-            }`}>
-              {section.confidence} confidence
-            </span>
+      {!hideHeader && (
+        <div className="px-6 py-5 border-b border-gray-50 flex items-start justify-between gap-4">
+          <div className="flex items-center gap-3">
+            <span className="text-[11px] font-bold text-gray-300 tabular-nums">{String(index + 1).padStart(2, '0')}</span>
+            <h3 className="text-base font-bold text-gray-900">{SECTION_LABELS[section.section_key]}</h3>
           </div>
-        )}
-      </div>
+          {section.revenue_opportunity > 0 && (
+            <div className="flex items-center gap-2 shrink-0">
+              <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="text-sm font-semibold text-emerald-700">{formatCurrency(section.revenue_opportunity)}/mo</span>
+              <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
+                section.confidence === 'high' ? 'bg-emerald-50 text-emerald-600' :
+                section.confidence === 'medium' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'
+              }`}>
+                {section.confidence} confidence
+              </span>
+            </div>
+          )}
+        </div>
+      )}
 
       <div className="p-6">
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
