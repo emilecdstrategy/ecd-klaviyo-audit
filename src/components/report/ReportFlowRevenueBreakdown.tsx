@@ -67,20 +67,31 @@ export default function ReportFlowRevenueBreakdown({ performance }: Props) {
         {top.map((flow, i) => {
           const pct = totalRevenue > 0 ? (flow.monthly_revenue_current / totalRevenue) * 100 : 0;
           const barWidth = maxRevenue > 0 ? (flow.monthly_revenue_current / maxRevenue) * 100 : 0;
+          const isShortBar = barWidth < 22;
           return (
             <div key={flow.id} className="flex items-center gap-3">
               <div className="w-44 text-right text-sm text-gray-700 font-medium shrink-0 truncate">
                 {flow.flow_name}
               </div>
-              <div className="flex-1 relative h-7">
+              <div className="flex-1 flex items-center gap-2 h-7">
                 <div
-                  className={`absolute inset-y-0 left-0 ${BAR_COLORS[i % BAR_COLORS.length]} rounded-r-md flex items-center`}
+                  className={`${BAR_COLORS[i % BAR_COLORS.length]} rounded-r-md h-full flex items-center`}
                   style={{ width: `${Math.max(barWidth, 3)}%` }}
                 >
-                  <span className="text-xs font-bold text-white px-2 whitespace-nowrap">
+                  {!isShortBar && (
+                    <span className="text-xs font-bold text-white px-2 whitespace-nowrap">
+                      {formatCurrency(flow.monthly_revenue_current)}
+                    </span>
+                  )}
+                </div>
+                {isShortBar && (
+                  <span className={`text-xs font-bold whitespace-nowrap ${TEXT_COLORS[i % TEXT_COLORS.length]}`}>
                     {formatCurrency(flow.monthly_revenue_current)}
                   </span>
-                </div>
+                )}
+              </div>
+              <div className={`w-20 text-right text-xs font-bold shrink-0 whitespace-nowrap ${TEXT_COLORS[i % TEXT_COLORS.length]}`}>
+                {formatCurrency(flow.monthly_revenue_current)}
               </div>
               <div className="w-14 text-right text-sm text-gray-500 shrink-0">
                 {pct.toFixed(1)}%
@@ -94,15 +105,33 @@ export default function ReportFlowRevenueBreakdown({ performance }: Props) {
             <div className="w-44 text-right text-sm text-gray-500 shrink-0">
               All Other Flows ({rest.length})
             </div>
-            <div className="flex-1 relative h-7">
+            <div className="flex-1 flex items-center gap-2 h-7">
+              {(() => {
+                const restBarWidth = (restRevenue / maxRevenue) * 100;
+                const isShortBar = restBarWidth < 22;
+                return (
+                  <>
               <div
-                className="absolute inset-y-0 left-0 bg-gray-300 rounded-r-md flex items-center"
-                style={{ width: `${Math.max((restRevenue / maxRevenue) * 100, 3)}%` }}
+                className="bg-gray-300 rounded-r-md h-full flex items-center"
+                style={{ width: `${Math.max(restBarWidth, 3)}%` }}
               >
-                <span className="text-xs font-bold text-gray-700 px-2 whitespace-nowrap">
-                  {formatCurrency(restRevenue)}
-                </span>
+                {!isShortBar && (
+                  <span className="text-xs font-bold text-gray-700 px-2 whitespace-nowrap">
+                    {formatCurrency(restRevenue)}
+                  </span>
+                )}
               </div>
+                  {isShortBar && (
+                    <span className="text-xs font-bold text-gray-600 whitespace-nowrap">
+                      {formatCurrency(restRevenue)}
+                    </span>
+                  )}
+                  </>
+                );
+              })()}
+            </div>
+            <div className="w-20 text-right text-xs font-bold text-gray-600 shrink-0 whitespace-nowrap">
+              {formatCurrency(restRevenue)}
             </div>
             <div className="w-14 text-right text-sm text-gray-500 shrink-0">
               {((restRevenue / totalRevenue) * 100).toFixed(1)}%

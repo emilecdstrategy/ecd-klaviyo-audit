@@ -200,7 +200,7 @@ export default function PublicReport() {
   return (
     <div className="min-h-screen bg-[#f9f9f9]">
       <header className="bg-white border-b border-gray-100 sticky top-0 z-50">
-        <div className="max-w-6xl mx-auto px-6 py-3.5 flex items-center justify-between">
+        <div className="max-w-[77rem] mx-auto px-6 py-3.5 flex items-center justify-between">
           <div className="flex items-center gap-3">
             <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center">
               <Zap className="w-4 h-4 text-white" />
@@ -218,7 +218,7 @@ export default function PublicReport() {
       </header>
 
       <div className="bg-white border-b border-gray-100 sticky top-[57px] z-40">
-        <div className="max-w-6xl mx-auto px-6">
+        <div className="max-w-[77rem] mx-auto px-6">
           <nav className="flex overflow-x-auto">
             {visibleNavItems.map(item => (
               <a
@@ -238,7 +238,7 @@ export default function PublicReport() {
         </div>
       </div>
 
-      <main className="max-w-6xl mx-auto px-6 py-10 space-y-16">
+      <main className="max-w-[77rem] mx-auto px-6 py-10 space-y-16">
         <section id="summary" ref={setRef('summary')}>
           <SectionHeader number="01" label="Executive Summary" />
 
@@ -591,7 +591,7 @@ export default function PublicReport() {
       </main>
 
       <footer className="bg-white border-t border-gray-100 py-8 mt-16">
-        <div className="max-w-6xl mx-auto px-6 flex items-center justify-between">
+        <div className="max-w-[77rem] mx-auto px-6 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <div className="w-7 h-7 rounded-lg bg-brand-primary flex items-center justify-center">
               <Zap className="w-3.5 h-3.5 text-white" />

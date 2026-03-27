@@ -5,6 +5,7 @@ import {
   ClipboardCheck,
   ExternalLink,
   Filter,
+  Trash2,
 } from 'lucide-react';
 import { useState } from 'react';
 import TopBar from '../components/layout/TopBar';
@@ -17,11 +18,13 @@ import { listAudits, listClients } from '../lib/db';
 import { useEffect } from 'react';
 import type { Audit, Client } from '../lib/types';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
+import Modal from '../components/ui/Modal';
+import { supabase } from '../lib/supabase';
 
 export default function Audits() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDemo } = useAuth();
+  const { isDemo, hasRole } = useAuth();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
 
@@ -29,6 +32,9 @@ export default function Audits() {
   const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
   const [loading, setLoading] = useState(!isDemo);
   const [error, setError] = useState('');
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingAudit, setDeletingAudit] = useState<Audit | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -77,6 +83,67 @@ export default function Audits() {
       />
 
       <div className="p-8 animate-fade-in">
+        <Modal
+          open={deleteConfirmOpen}
+          title="Delete audit?"
+          onClose={() => {
+            if (deleting) return;
+            setDeleteConfirmOpen(false);
+            setDeletingAudit(null);
+          }}
+          className="max-w-lg"
+        >
+          <div className="p-5">
+            <p className="text-sm text-gray-700">
+              {deletingAudit
+                ? `Delete “${deletingAudit.title}”? This action cannot be undone.`
+                : 'Delete this audit? This action cannot be undone.'}
+            </p>
+            <div className="mt-5 flex items-center justify-end gap-2">
+              <button
+                type="button"
+                disabled={deleting}
+                onClick={() => {
+                  setDeleteConfirmOpen(false);
+                  setDeletingAudit(null);
+                }}
+                className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                disabled={deleting || !deletingAudit}
+                onClick={async () => {
+                  if (!deletingAudit) return;
+                  try {
+                    setDeleting(true);
+                    const { data: sessionData } = await supabase.auth.getSession();
+                    const token = sessionData.session?.access_token;
+                    if (!token) throw new Error('Your session expired. Please sign in again and retry.');
+                    const { data, error: fnError } = await supabase.functions.invoke('admin_delete_audit', {
+                      body: { audit_id: deletingAudit.id },
+                      headers: { Authorization: `Bearer ${token}` },
+                    });
+                    if (fnError) throw fnError;
+                    if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to delete audit');
+                    setAudits(prev => prev.filter(a => a.id !== deletingAudit.id));
+                    setDeleteConfirmOpen(false);
+                    setDeletingAudit(null);
+                  } catch (err: unknown) {
+                    alert(err instanceof Error ? err.message : 'Failed to delete audit');
+                  } finally {
+                    setDeleting(false);
+                  }
+                }}
+                className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {deleting ? 'Deleting…' : 'Delete audit'}
+              </button>
+            </div>
+          </div>
+        </Modal>
+
         <div className="flex items-center gap-3 mb-6">
           <div className="relative flex-1 max-w-md">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
@@ -177,14 +244,31 @@ export default function Audits() {
                         {new Date(audit.updated_at).toLocaleDateString()}
                       </td>
                       <td className="px-6 py-4">
-                        {audit.public_share_token && (
-                          <button
-                            onClick={e => { e.stopPropagation(); navigate(`/report/${audit.public_share_token}`); }}
-                            className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-                          >
-                            <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
-                          </button>
-                        )}
+                        <div className="flex items-center justify-end gap-1">
+                          {audit.public_share_token && (
+                            <button
+                              onClick={e => { e.stopPropagation(); navigate(`/report/${audit.public_share_token}`); }}
+                              className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                              title="Open public report"
+                            >
+                              <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
+                            </button>
+                          )}
+                          {hasRole('admin') && !isDemo && (
+                            <button
+                              type="button"
+                              onClick={e => {
+                                e.stopPropagation();
+                                setDeletingAudit(audit);
+                                setDeleteConfirmOpen(true);
+                              }}
+                              className="p-1.5 rounded hover:bg-red-50 transition-colors"
+                              title="Delete audit"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-600" />
+                            </button>
+                          )}
+                        </div>
                       </td>
                     </tr>
                   );

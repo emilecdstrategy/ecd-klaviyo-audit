@@ -1,5 +1,6 @@
 import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
 import { formatCurrency } from '../../lib/revenue-calculator';
+import { useRef, type MouseEvent } from 'react';
 
 type MetricStatus = 'good' | 'warning' | 'bad' | 'missing';
 
@@ -95,6 +96,13 @@ interface ReportFlowTableProps {
 }
 
 export default function ReportFlowTable({ flows, snapshots }: ReportFlowTableProps) {
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const dragStateRef = useRef<{ isDown: boolean; startX: number; startScrollLeft: number }>({
+    isDown: false,
+    startX: 0,
+    startScrollLeft: 0,
+  });
+
   const sorted = [...flows].sort((a, b) => b.monthly_revenue_current - a.monthly_revenue_current);
 
   const snapshotMap = new Map<string, KlaviyoFlowSnapshot>();
@@ -110,10 +118,39 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
   const revenueGenerators = sorted.filter(f => f.monthly_revenue_current > 0);
   const subtitle = `${revenueGenerators.length} flows generating ${totalRevenue > 0 ? ((revenueGenerators.reduce((s, f) => s + f.monthly_revenue_current, 0) / totalRevenue) * 100).toFixed(1) : 0}% of total flow revenue.`;
 
+  const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    if (!el) return;
+    dragStateRef.current = {
+      isDown: true,
+      startX: e.clientX,
+      startScrollLeft: el.scrollLeft,
+    };
+  };
+
+  const handleMouseMove = (e: MouseEvent<HTMLDivElement>) => {
+    const el = scrollRef.current;
+    const drag = dragStateRef.current;
+    if (!el || !drag.isDown) return;
+    const deltaX = e.clientX - drag.startX;
+    el.scrollLeft = drag.startScrollLeft - deltaX;
+  };
+
+  const stopDragging = () => {
+    dragStateRef.current.isDown = false;
+  };
+
   return (
     <div>
       <p className="text-sm text-gray-500 mb-4">{subtitle}</p>
-      <div className="overflow-x-auto -mx-6 px-6">
+      <div
+        ref={scrollRef}
+        className="overflow-x-auto -mx-6 px-6 cursor-grab active:cursor-grabbing select-none"
+        onMouseDown={handleMouseDown}
+        onMouseMove={handleMouseMove}
+        onMouseUp={stopDragging}
+        onMouseLeave={stopDragging}
+      >
         <table className="w-full min-w-[1100px] text-sm border-collapse">
           <thead>
             <tr className="border-b border-gray-200 bg-gray-50">

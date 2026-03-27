@@ -10,6 +10,7 @@ import {
   XCircle,
   Loader2,
   KeyRound,
+  Trash2,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -20,12 +21,13 @@ import { useEffect, useState } from 'react';
 import type { Audit, Client } from '../lib/types';
 import { getClient, listAuditsByClient } from '../lib/db';
 import { supabase } from '../lib/supabase';
+import Modal from '../components/ui/Modal';
 
 export default function ClientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDemo } = useAuth();
+  const { isDemo, hasRole } = useAuth();
 
   const [client, setClient] = useState<Client | null>(
     isDemo ? (DEMO_CLIENTS.find(c => c.id === id) ?? null) : null,
@@ -39,6 +41,9 @@ export default function ClientDetail() {
   const [newApiKey, setNewApiKey] = useState('');
   const [keySaving, setKeySaving] = useState(false);
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
+  const [deletingAudit, setDeletingAudit] = useState<Audit | null>(null);
+  const [deleting, setDeleting] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -153,6 +158,66 @@ export default function ClientDetail() {
           </button>
         }
       />
+      <Modal
+        open={deleteConfirmOpen}
+        title="Delete audit?"
+        onClose={() => {
+          if (deleting) return;
+          setDeleteConfirmOpen(false);
+          setDeletingAudit(null);
+        }}
+        className="max-w-lg"
+      >
+        <div className="p-5">
+          <p className="text-sm text-gray-700">
+            {deletingAudit
+              ? `Delete “${deletingAudit.title}”? This action cannot be undone.`
+              : 'Delete this audit? This action cannot be undone.'}
+          </p>
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={deleting}
+              onClick={() => {
+                setDeleteConfirmOpen(false);
+                setDeletingAudit(null);
+              }}
+              className="px-4 py-2 rounded-lg border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deleting || !deletingAudit}
+              onClick={async () => {
+                if (!deletingAudit) return;
+                try {
+                  setDeleting(true);
+                  const { data: sessionData } = await supabase.auth.getSession();
+                  const token = sessionData.session?.access_token;
+                  if (!token) throw new Error('Your session expired. Please sign in again and retry.');
+                  const { data, error: fnError } = await supabase.functions.invoke('admin_delete_audit', {
+                    body: { audit_id: deletingAudit.id },
+                    headers: { Authorization: `Bearer ${token}` },
+                  });
+                  if (fnError) throw fnError;
+                  if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to delete audit');
+                  setClientAudits(prev => prev.filter(a => a.id !== deletingAudit.id));
+                  setDeleteConfirmOpen(false);
+                  setDeletingAudit(null);
+                } catch (err: unknown) {
+                  alert(err instanceof Error ? err.message : 'Failed to delete audit');
+                } finally {
+                  setDeleting(false);
+                }
+              }}
+              className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {deleting ? 'Deleting…' : 'Delete audit'}
+            </button>
+          </div>
+        </div>
+      </Modal>
 
       <div className="p-8 animate-fade-in">
         <button
@@ -219,10 +284,10 @@ export default function ClientDetail() {
               ) : (
                 <div className="divide-y divide-gray-50">
                   {clientAudits.map(audit => (
-                    <button
+                    <div
                       key={audit.id}
                       onClick={() => navigate(`/audits/${audit.id}`)}
-                      className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/50 transition-colors text-left"
+                      className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/50 transition-colors text-left cursor-pointer"
                     >
                       <div className="min-w-0">
                         <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
@@ -230,14 +295,28 @@ export default function ClientDetail() {
                           {new Date(audit.created_at).toLocaleDateString()} &middot; {audit.audit_method === 'api' ? 'API Connected' : 'Screenshot Based'}
                         </p>
                       </div>
-                      <div className="flex items-center gap-4 shrink-0 ml-4">
+                      <div className="flex items-center gap-3 shrink-0 ml-4">
                         <span className="text-sm font-semibold text-emerald-700">
                           {formatCurrency(audit.total_revenue_opportunity)}
                         </span>
                         <StatusBadge status={audit.status} />
+                        {hasRole('admin') && !isDemo && (
+                          <button
+                            type="button"
+                            onClick={e => {
+                              e.stopPropagation();
+                              setDeletingAudit(audit);
+                              setDeleteConfirmOpen(true);
+                            }}
+                            className="p-1.5 rounded hover:bg-red-50 transition-colors"
+                            title="Delete audit"
+                          >
+                            <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-600" />
+                          </button>
+                        )}
                         <ExternalLink className="w-3.5 h-3.5 text-gray-300" />
                       </div>
-                    </button>
+                    </div>
                   ))}
                 </div>
               )}
