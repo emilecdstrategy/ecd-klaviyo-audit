@@ -63,7 +63,7 @@ const SECTION_ITEM_SCHEMA = {
     current_state_notes: { type: "string", minLength: 40, maxLength: 3000 },
     optimized_notes: { type: "string", minLength: 40, maxLength: 3000 },
     ai_findings: { type: "string", minLength: 40, maxLength: 3000 },
-    summary_text: { type: "string", minLength: 40, maxLength: 1200 },
+    summary_text: { type: "string", minLength: 40, maxLength: 500 },
     revenue_opportunity: { type: "number", minimum: 0, maximum: 25000 },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
     section_details: {

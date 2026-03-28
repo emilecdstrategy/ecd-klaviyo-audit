@@ -1134,7 +1134,7 @@ function ReportSectionBlock({
         {(section.human_edited_findings || section.summary_text) && (
           <div className="rounded-xl p-4 border border-gray-100" style={{ backgroundColor: '#f9f9f9' }}>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Key Takeaway</p>
-            <RichAuditText text={section.human_edited_findings || section.summary_text || ''} className="text-sm text-gray-700 leading-relaxed" />
+            <RichAuditText text={section.human_edited_findings || section.summary_text || ''} className="text-sm text-gray-700 leading-relaxed" boldFlowNames />
           </div>
         )}
       </div>

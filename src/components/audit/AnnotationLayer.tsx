@@ -20,6 +20,14 @@ function injectBaseTarget(html: string): string {
   return inject + html;
 }
 
+/**
+ * Fixed internal rendering width for the iframe. By rendering at a constant
+ * width and CSS-scaling to fit the container, contentHeight is always the same
+ * regardless of the container size. This keeps annotation Y positions consistent
+ * between backend and frontend.
+ */
+const IFRAME_RENDER_WIDTH = 600;
+
 const SIZE_CONFIG: Record<AnnotationSize, { dot: string; dotText: string; listDot: string; listDotText: string; labelPx: string; labelPy: string; labelText: string }> = {
   sm: { dot: 'w-5 h-5', dotText: 'text-[8px]', listDot: 'w-3.5 h-3.5', listDotText: 'text-[7px]', labelPx: 'px-2', labelPy: 'py-1', labelText: 'text-[10px]' },
   md: { dot: 'w-6 h-6', dotText: 'text-[10px]', listDot: 'w-4 h-4', listDotText: 'text-[9px]', labelPx: 'px-2.5', labelPy: 'py-1.5', labelText: 'text-xs' },
@@ -34,11 +42,8 @@ interface AnnotationLayerProps {
   onRemoveAnnotation?: (id: string) => void;
   editable?: boolean;
   side: 'current' | 'optimized';
-  /** Max visible height for HTML emails before scrolling kicks in (default 900) */
   maxHeight?: number;
-  /** Marker dot size (default 'md') */
   markerSize?: AnnotationSize;
-  /** Always show labels instead of only on hover (default false) */
   alwaysShowLabels?: boolean;
 }
 
@@ -60,10 +65,26 @@ export default function AnnotationLayer({
   const [hoveredListId, setHoveredListId] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
+  const outerRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(800);
+  const [containerWidth, setContainerWidth] = useState(IFRAME_RENDER_WIDTH);
   const [scrollTop, setScrollTop] = useState(0);
 
   const safeSrcDoc = useMemo(() => htmlContent ? injectBaseTarget(htmlContent) : undefined, [htmlContent]);
+
+  const scale = containerWidth / IFRAME_RENDER_WIDTH;
+  const scaledHeight = contentHeight * scale;
+
+  useEffect(() => {
+    if (!htmlContent || !outerRef.current) return;
+    const el = outerRef.current;
+    const ro = new ResizeObserver(([entry]) => {
+      const w = entry.contentRect.width;
+      if (w > 0) setContainerWidth(w);
+    });
+    ro.observe(el);
+    return () => ro.disconnect();
+  }, [htmlContent]);
 
   useEffect(() => {
     if (!htmlContent || !iframeRef.current) return;
@@ -95,14 +116,16 @@ export default function AnnotationLayer({
     if (!editable || !adding) return;
     const refEl = wrapperRef.current ?? e.currentTarget;
     const rect = refEl.getBoundingClientRect();
-    const xPct = ((e.clientX - rect.left) / rect.width) * 100;
 
     if (htmlContent) {
       const scrollY = wrapperRef.current?.scrollTop ?? 0;
-      const clickY = e.clientY - rect.top + scrollY;
-      const yPct = (clickY / contentHeight) * 100;
+      const screenX = e.clientX - rect.left;
+      const screenY = e.clientY - rect.top + scrollY;
+      const xPct = (screenX / containerWidth) * 100;
+      const yPct = (screenY / scale / contentHeight) * 100;
       setPendingPos({ x: xPct, y: yPct });
     } else {
+      const xPct = ((e.clientX - rect.left) / rect.width) * 100;
       const yPct = ((e.clientY - rect.top) / rect.height) * 100;
       setPendingPos({ x: xPct, y: yPct });
     }
@@ -123,13 +146,14 @@ export default function AnnotationLayer({
   const markerBorder = side === 'current' ? 'border-red-500' : 'border-emerald-500';
 
   const hasContent = imageUrl || htmlContent;
-  const needsScroll = htmlContent && contentHeight > maxHeight;
-  const visibleHeight = needsScroll ? maxHeight : contentHeight;
+  const needsScroll = htmlContent && scaledHeight > maxHeight;
+  const visibleHeight = needsScroll ? maxHeight : scaledHeight;
 
   const renderMarker = (ann: { id: string; x_position: number; y_position: number; label: string }, i: number, isPending?: boolean) => {
     if (htmlContent) {
       const absPx = (ann.y_position / 100) * contentHeight;
-      const relPx = absPx - scrollTop;
+      const screenPx = absPx * scale;
+      const relPx = screenPx - scrollTop;
       if (relPx < -20 || relPx > visibleHeight + 20) return null;
 
       return (
@@ -183,8 +207,7 @@ export default function AnnotationLayer({
   };
 
   return (
-    <div className="relative group">
-      {/* Scrollable wrapper for HTML iframes; images don't need it */}
+    <div ref={outerRef} className="relative group">
       <div
         ref={wrapperRef}
         className={`relative rounded-lg ${adding ? 'cursor-crosshair' : 'cursor-default'}`}
@@ -202,14 +225,20 @@ export default function AnnotationLayer({
         )}
 
         {htmlContent && (
-          <div className="relative" style={{ height: contentHeight, pointerEvents: adding ? 'none' : undefined }}>
+          <div className="relative" style={{ height: scaledHeight, overflow: 'hidden', pointerEvents: adding ? 'none' : undefined }}>
             <iframe
               ref={iframeRef}
               srcDoc={safeSrcDoc}
               sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
               title={`${side} email preview`}
-              className="w-full border-0 rounded-lg"
-              style={{ height: contentHeight, pointerEvents: adding ? 'none' : undefined }}
+              className="border-0 rounded-lg"
+              style={{
+                width: IFRAME_RENDER_WIDTH,
+                height: contentHeight,
+                transform: `scale(${scale})`,
+                transformOrigin: 'top left',
+                pointerEvents: adding ? 'none' : undefined,
+              }}
             />
           </div>
         )}
@@ -220,7 +249,6 @@ export default function AnnotationLayer({
           </div>
         )}
 
-        {/* For images, annotations sit inside the normal flow (percentage-based) */}
         {!htmlContent && sideAnnotations.map((ann, i) => renderMarker(ann, i))}
         {!htmlContent && pendingPos && renderMarker(
           { id: 'pending', x_position: pendingPos.x, y_position: pendingPos.y, label: '' },
@@ -229,7 +257,6 @@ export default function AnnotationLayer({
         )}
       </div>
 
-      {/* For HTML emails, annotation overlay sits on top of the scrollable area, synced to scroll */}
       {htmlContent && (
         <div
           className="absolute top-0 left-0 right-0 pointer-events-none"
@@ -244,7 +271,6 @@ export default function AnnotationLayer({
         </div>
       )}
 
-      {/* Annotation click overlay for HTML in adding mode */}
       {htmlContent && adding && (
         <div
           className="absolute top-0 left-0 right-0 z-[5] cursor-crosshair"
@@ -260,11 +286,11 @@ export default function AnnotationLayer({
             {sideAnnotations.map((ann, i) => (
               <div
                 key={ann.id}
-                className={`flex items-start gap-2 text-xs px-2 py-1 rounded-md cursor-default transition-colors ${hoveredListId === ann.id ? 'bg-brand-primary/5' : 'hover:bg-gray-50'}`}
+                className={`flex items-center gap-2 text-xs px-2 py-1 rounded-md cursor-default transition-colors ${hoveredListId === ann.id ? 'bg-brand-primary/5' : 'hover:bg-gray-50'}`}
                 onMouseEnter={() => setHoveredListId(ann.id)}
                 onMouseLeave={() => setHoveredListId(null)}
               >
-                <span className={`${sz.listDot} rounded-full ${markerColor} text-white ${sz.listDotText} font-bold flex items-center justify-center shrink-0 mt-0.5`}>
+                <span className={`${sz.listDot} rounded-full ${markerColor} text-white ${sz.listDotText} font-bold flex items-center justify-center shrink-0`}>
                   {i + 1}
                 </span>
                 <span className="text-gray-600">{ann.label}</span>
