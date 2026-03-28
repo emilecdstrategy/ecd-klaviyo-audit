@@ -106,18 +106,25 @@ export async function runAIAnalysis(
       return data as AIAnalysisResult;
     };
 
+    /** OpenAI + reasoning can exceed one request window; retry a few times before failing the audit. */
     const withRetryOnTimeout = async (fn: () => Promise<AIAnalysisResult>, label: string) => {
-      try {
-        return await fn();
-      } catch (e) {
-        if (e instanceof AIAnalysisError && e.code === 'provider_timeout') {
-          const base = 600 + Math.floor(Math.random() * 500);
-          await new Promise(r => setTimeout(r, base));
-          onProgress?.({ current: 0, total: 0, label: `Retrying ${label}…` });
+      const maxAttempts = 3;
+      let last: unknown;
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        try {
           return await fn();
+        } catch (e) {
+          last = e;
+          if (e instanceof AIAnalysisError && e.code === 'provider_timeout' && attempt < maxAttempts) {
+            const base = 800 + Math.floor(Math.random() * 600) + attempt * 500;
+            await new Promise(r => setTimeout(r, base));
+            onProgress?.({ current: 0, total: 0, label: `Retrying ${label} (timeout)…` });
+            continue;
+          }
+          throw e;
         }
-        throw e;
       }
+      throw last instanceof Error ? last : new Error('AI analysis failed after retries');
     };
 
     // Keep section requests small to reduce provider timeout risk on larger accounts.

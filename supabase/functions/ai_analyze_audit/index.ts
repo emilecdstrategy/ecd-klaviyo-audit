@@ -22,9 +22,9 @@ const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const PRIMARY_MODEL = "gpt-5.4";
 const ESCALATION_MODEL = "gpt-5.4-pro";
-// Supabase Edge Functions support up to 150s. Give OpenAI plenty of headroom.
-const MAX_ATTEMPTS = 1;
-const REQUEST_TIMEOUT_MS = 120_000;
+// Supabase Edge Functions support up to 150s — stay under that including DB + JSON work.
+const MAX_ATTEMPTS = 3;
+const REQUEST_TIMEOUT_MS = 138_000;
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
@@ -62,8 +62,12 @@ async function requireAuthenticatedUser(req: Request) {
 
 function timeoutSignal(ms: number) {
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort("timeout"), ms);
-  return { signal: ctrl.signal, clear: () => clearTimeout(t) };
+  let timedOut = false;
+  const t = setTimeout(() => {
+    timedOut = true;
+    ctrl.abort();
+  }, ms);
+  return { signal: ctrl.signal, clear: () => clearTimeout(t), wasTimeout: () => timedOut };
 }
 
 function errToMessage(e: unknown) {
@@ -158,16 +162,28 @@ async function callOpenAI(params: {
   let lastErr: unknown;
   for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
     try {
-      const { signal, clear } = timeoutSignal(REQUEST_TIMEOUT_MS);
-      const res = await fetch(OPENAI_URL, {
-        method: "POST",
-        headers: {
-          "content-type": "application/json",
-          authorization: `Bearer ${OPENAI_API_KEY}`,
-        },
-        body: JSON.stringify(body),
-        signal,
-      });
+      const { signal, clear, wasTimeout } = timeoutSignal(REQUEST_TIMEOUT_MS);
+      let res: Response;
+      try {
+        res = await fetch(OPENAI_URL, {
+          method: "POST",
+          headers: {
+            "content-type": "application/json",
+            authorization: `Bearer ${OPENAI_API_KEY}`,
+          },
+          body: JSON.stringify(body),
+          signal,
+        });
+      } catch (fetchErr) {
+        clear();
+        if (wasTimeout()) {
+          lastErr = new Error("OpenAI request timed out");
+          if (attempt === MAX_ATTEMPTS) break;
+          await new Promise((r) => setTimeout(r, 700 * attempt));
+          continue;
+        }
+        throw fetchErr;
+      }
       clear();
 
       const textBody = await res.text();
@@ -193,8 +209,16 @@ async function callOpenAI(params: {
       return { output, usage: parsed?.usage ?? null };
     } catch (e) {
       const msg = errToMessage(e);
-      lastErr = msg === "timeout" ? new Error("OpenAI request timed out") : e;
-      if (attempt === MAX_ATTEMPTS) break;
+      const abortTimeout =
+        e instanceof Error &&
+        (e.name === "AbortError" || /aborted|AbortError|timeout/i.test(msg));
+      lastErr = abortTimeout ? new Error("OpenAI request timed out") : e;
+      const retryable =
+        abortTimeout ||
+        /OpenAI request timed out/i.test(msg) ||
+        /\b(429|502|503)\b/.test(msg) ||
+        /rate limit|overloaded|temporarily unavailable/i.test(msg);
+      if (!retryable || attempt === MAX_ATTEMPTS) break;
       await new Promise((r) => setTimeout(r, 600 * attempt));
     }
   }
