@@ -126,6 +126,16 @@ export default function PublicReport() {
     return () => observers.forEach(o => o.disconnect());
   }, [audit]);
 
+  const entityNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const f of flowSnapshots) if (f.name) names.add(f.name);
+    for (const f of flowPerformance) if (f.flow_name) names.add(f.flow_name);
+    for (const s of segmentSnapshots) if (s.name) names.add(s.name);
+    for (const f of formSnapshots) if (f.name) names.add(f.name);
+    for (const c of campaignSnapshots) if (c.name) names.add(c.name);
+    return Array.from(names);
+  }, [flowSnapshots, flowPerformance, segmentSnapshots, formSnapshots, campaignSnapshots]);
+
   if (loading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
@@ -166,16 +176,6 @@ export default function PublicReport() {
     .filter(s => s.revenue_opportunity > 0)
     .sort((a, b) => b.revenue_opportunity - a.revenue_opportunity);
   const reportSections = sections.filter(s => s.section_key !== 'revenue_summary' && s.status !== 'draft');
-
-  const entityNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const f of flowSnapshots) if (f.name) names.add(f.name);
-    for (const f of flowPerformance) if (f.flow_name) names.add(f.flow_name);
-    for (const s of segmentSnapshots) if (s.name) names.add(s.name);
-    for (const f of formSnapshots) if (f.name) names.add(f.name);
-    for (const c of campaignSnapshots) if (c.name) names.add(c.name);
-    return Array.from(names);
-  }, [flowSnapshots, flowPerformance, segmentSnapshots, formSnapshots, campaignSnapshots]);
 
   let execText = audit.executive_summary || '';
   let aiStrengths: string[] = [];
