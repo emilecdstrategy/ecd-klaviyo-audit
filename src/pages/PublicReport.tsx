@@ -825,7 +825,7 @@ function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; coll
 function RubricInsightCard({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="rounded-xl border border-gray-100 bg-white p-4 card-shadow">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">{label}</p>
+      <p className="text-xs font-semibold uppercase tracking-wide text-gray-700 mb-2">{label}</p>
       {children}
     </div>
   );
@@ -946,19 +946,19 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 px-4 pt-4 pb-2">Segmentation snapshot</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
             <div className="flex min-h-[88px] flex-col items-start gap-2 px-4 py-4">
-              <span className="text-xs text-gray-500 leading-snug">Full-list sends</span>
+              <span className="text-sm font-medium text-gray-700 leading-snug">Full-list sends</span>
               <SnapshotStatusValue tone={blastRisk ? 'warn' : 'good'}>
                 {blastRisk ? 'Yes — risk' : 'No'}
               </SnapshotStatusValue>
             </div>
             <div className="flex min-h-[88px] flex-col items-start gap-2 px-4 py-4">
-              <span className="text-xs text-gray-500 leading-snug">Engaged / unengaged</span>
+              <span className="text-sm font-medium text-gray-700 leading-snug">Engaged / unengaged</span>
               <SnapshotStatusValue tone={d.has_engaged_unengaged_segments ? 'good' : 'bad'}>
                 {d.has_engaged_unengaged_segments ? 'Defined' : 'Missing'}
               </SnapshotStatusValue>
             </div>
             <div className="flex min-h-[88px] flex-col items-start gap-2 px-4 py-4">
-              <span className="text-xs text-gray-500 leading-snug">VIP / high-LTV</span>
+              <span className="text-sm font-medium text-gray-700 leading-snug">VIP / high-LTV</span>
               <SnapshotStatusValue tone={d.has_vip_segments ? 'good' : 'warn'}>
                 {d.has_vip_segments ? 'Defined' : 'Missing'}
               </SnapshotStatusValue>
@@ -1002,13 +1002,13 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
           <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 px-4 pt-4 pb-2">Form coverage</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
             <div className="flex flex-col items-start gap-2 px-4 py-4">
-              <span className="text-xs text-gray-500">Popup</span>
+              <span className="text-sm font-medium text-gray-700">Popup</span>
               <SnapshotStatusValue tone={d.has_popup ? 'good' : 'warn'}>
                 {d.has_popup ? 'Present' : 'Missing'}
               </SnapshotStatusValue>
             </div>
             <div className="flex flex-col items-start gap-2 px-4 py-4">
-              <span className="text-xs text-gray-500">Embedded form</span>
+              <span className="text-sm font-medium text-gray-700">Embedded form</span>
               <SnapshotStatusValue tone={d.has_embedded_form ? 'good' : 'warn'}>
                 {d.has_embedded_form ? 'Present' : 'Missing'}
               </SnapshotStatusValue>
