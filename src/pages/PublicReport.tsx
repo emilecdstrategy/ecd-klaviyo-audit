@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { Zap, TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X } from 'lucide-react';
 import { SECTION_LABELS } from '../lib/constants';
@@ -166,6 +166,16 @@ export default function PublicReport() {
     .filter(s => s.revenue_opportunity > 0)
     .sort((a, b) => b.revenue_opportunity - a.revenue_opportunity);
   const reportSections = sections.filter(s => s.section_key !== 'revenue_summary' && s.status !== 'draft');
+
+  const entityNames = useMemo(() => {
+    const names = new Set<string>();
+    for (const f of flowSnapshots) if (f.name) names.add(f.name);
+    for (const f of flowPerformance) if (f.flow_name) names.add(f.flow_name);
+    for (const s of segmentSnapshots) if (s.name) names.add(s.name);
+    for (const f of formSnapshots) if (f.name) names.add(f.name);
+    for (const c of campaignSnapshots) if (c.name) names.add(c.name);
+    return Array.from(names);
+  }, [flowSnapshots, flowPerformance, segmentSnapshots, formSnapshots, campaignSnapshots]);
 
   let execText = audit.executive_summary || '';
   let aiStrengths: string[] = [];
@@ -382,6 +392,7 @@ export default function PublicReport() {
                     annotations={annotations}
                     hideHeader
                     hideCurrentOptimized
+                    entityNames={entityNames}
                   />
                 </div>
               );
@@ -447,6 +458,7 @@ export default function PublicReport() {
                     annotations={annotations}
                     hideHeader
                     hideCurrentOptimized
+                    entityNames={entityNames}
                   />
                 </div>
               );
@@ -482,6 +494,7 @@ export default function PublicReport() {
                     annotations={annotations}
                     hideHeader
                     hideCurrentOptimized
+                    entityNames={entityNames}
                   />
                 </div>
               );
@@ -517,6 +530,7 @@ export default function PublicReport() {
                     annotations={annotations}
                     hideHeader
                     hideCurrentOptimized
+                    entityNames={entityNames}
                   />
                 </div>
               );
@@ -1057,6 +1071,7 @@ function ReportSectionBlock({
   annotations,
   hideHeader = false,
   hideCurrentOptimized = false,
+  entityNames,
 }: {
   section: AuditSection;
   index: number;
@@ -1064,6 +1079,7 @@ function ReportSectionBlock({
   annotations: Annotation[];
   hideHeader?: boolean;
   hideCurrentOptimized?: boolean;
+  entityNames?: string[];
 }) {
   const currentAsset = assets.find(a => a.section_key === section.section_key && a.side === 'current');
   const optimizedAsset = assets.find(a => a.section_key === section.section_key && a.side === 'optimized');
@@ -1141,7 +1157,7 @@ function ReportSectionBlock({
         {(section.human_edited_findings || section.summary_text) && (
           <div className="rounded-xl p-4 border border-gray-100" style={{ backgroundColor: '#f9f9f9' }}>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Key Takeaway</p>
-            <RichAuditText text={section.human_edited_findings || section.summary_text || ''} className="text-sm text-gray-700 leading-relaxed" boldFlowNames />
+            <RichAuditText text={section.human_edited_findings || section.summary_text || ''} className="text-sm text-gray-700 leading-relaxed" boldFlowNames entityNames={entityNames} />
           </div>
         )}
       </div>

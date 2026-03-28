@@ -1,29 +1,24 @@
 import React from 'react';
 
-const ENTITY_NAME_PATTERNS = [
-  // Flow names
-  'Abandoned Cart', 'Abandoned Checkout', 'Browse Abandonment', 'Welcome Series',
-  'Welcome Flow', 'Post-Purchase', 'Post Purchase', 'Winback', 'Win-Back', 'Re-engagement',
-  'Back-in-Stock', 'Back in Stock', 'Price Drop', 'Sunset', 'List Cleaning',
-  'Review Request', 'Cross-Sell', 'Upsell', 'Up-Sell', 'Birthday', 'Anniversary',
-  'VIP', 'Loyalty', 'Replenishment', 'Thank You', 'Shipping', 'Delivery',
-  // Segment names
-  'Engaged Subscribers', 'Active Subscribers', 'Inactive Subscribers', 'Unengaged',
-  'New Subscribers', 'Repeat Buyers', 'First-Time Buyers', 'High-Value Customers',
-  'Lapsed Customers', 'At-Risk', 'Win-Back', 'Churned', 'Newsletter',
-  '30-Day Engaged', '60-Day Engaged', '90-Day Engaged', '120-Day Engaged',
-  '30-Day Active', '60-Day Active', '90-Day Active', '180-Day Active',
-  // Signup form terms
-  'Popup', 'Pop-Up', 'Flyout', 'Embedded Form', 'Signup Form', 'Sign-Up Form',
-  // Campaign terms
-  'A/B Test', 'Campaign', 'Campaigns',
-];
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
-function autoBoldEntities(text: string): string {
-  if (/\*\*/.test(text)) return text;
-  let result = text;
-  for (const name of ENTITY_NAME_PATTERNS) {
-    const regex = new RegExp(`\\b(${name})\\b`, 'gi');
+function autoBoldEntities(text: string, extraNames?: string[]): string {
+  let result = text.replace(/\*\*(.+?)\*\*/g, '$1');
+
+  const names: string[] = [];
+  if (extraNames?.length) {
+    for (const n of extraNames) {
+      const trimmed = n.trim();
+      if (trimmed.length >= 2) names.push(trimmed);
+    }
+  }
+
+  names.sort((a, b) => b.length - a.length);
+
+  for (const name of names) {
+    const regex = new RegExp(`(?<!\\*\\*)\\b(${escapeRegex(name)})\\b(?!\\*\\*)`, 'gi');
     result = result.replace(regex, '**$1**');
   }
   return result;
@@ -47,12 +42,14 @@ export function RichAuditText({
   text,
   className,
   boldFlowNames = false,
+  entityNames,
 }: {
   text: string;
   className?: string;
   boldFlowNames?: boolean;
+  entityNames?: string[];
 }) {
-  const processed = boldFlowNames ? autoBoldEntities(text || '') : (text || '');
+  const processed = boldFlowNames ? autoBoldEntities(text || '', entityNames) : (text || '');
   const paragraphs = processed
     .split('\n')
     .map((p) => p.trim())
