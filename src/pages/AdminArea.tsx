@@ -610,7 +610,7 @@ function EmailLibraryTab() {
             </div>
           )}
 
-          {(formImageUrl || formHtml) && (
+          {((formContentType === 'image' && formImageUrl) || (formContentType === 'html' && formHtml)) && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Annotations ({formAnnotations.length}) — click on the preview to place pins

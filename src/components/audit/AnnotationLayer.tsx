@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { Annotation } from '../../lib/types';
 
@@ -25,7 +25,9 @@ export default function AnnotationLayer({
   const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null);
   const [labelText, setLabelText] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [iframeHeight, setIframeHeight] = useState(600);
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const [contentHeight, setContentHeight] = useState(600);
+  const [scrollTop, setScrollTop] = useState(0);
 
   useEffect(() => {
     if (!htmlContent || !iframeRef.current) return;
@@ -34,7 +36,7 @@ export default function AnnotationLayer({
       try {
         const doc = iframe.contentDocument;
         if (doc?.body) {
-          setIframeHeight(Math.min(doc.body.scrollHeight + 20, 1200));
+          setContentHeight(doc.body.scrollHeight + 20);
         }
       } catch { /* cross-origin fallback */ }
     };
@@ -42,12 +44,47 @@ export default function AnnotationLayer({
     return () => iframe.removeEventListener('load', onLoad);
   }, [htmlContent]);
 
+  const syncScroll = useCallback(() => {
+    if (!iframeRef.current) return;
+    try {
+      const doc = iframeRef.current.contentDocument ?? iframeRef.current.contentWindow?.document;
+      const st = doc?.documentElement?.scrollTop ?? doc?.body?.scrollTop ?? 0;
+      setScrollTop(st);
+    } catch { /* cross-origin */ }
+  }, []);
+
+  useEffect(() => {
+    if (!htmlContent || !iframeRef.current) return;
+    const iframe = iframeRef.current;
+    let doc: Document | null = null;
+    const attach = () => {
+      try {
+        doc = iframe.contentDocument ?? iframe.contentWindow?.document ?? null;
+        doc?.addEventListener('scroll', syncScroll);
+      } catch { /* cross-origin */ }
+    };
+    iframe.addEventListener('load', attach);
+    attach();
+    return () => {
+      iframe.removeEventListener('load', attach);
+      try { doc?.removeEventListener('scroll', syncScroll); } catch { /* ignore */ }
+    };
+  }, [htmlContent, syncScroll]);
+
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!editable || !adding) return;
     const rect = e.currentTarget.getBoundingClientRect();
-    const x = ((e.clientX - rect.left) / rect.width) * 100;
-    const y = ((e.clientY - rect.top) / rect.height) * 100;
-    setPendingPos({ x, y });
+    const xPct = ((e.clientX - rect.left) / rect.width) * 100;
+
+    if (htmlContent) {
+      const visibleClickY = e.clientY - rect.top;
+      const absoluteY = visibleClickY + scrollTop;
+      const yPct = (absoluteY / contentHeight) * 100;
+      setPendingPos({ x: xPct, y: yPct });
+    } else {
+      const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+      setPendingPos({ x: xPct, y: yPct });
+    }
     setLabelText('');
   };
 
@@ -65,12 +102,58 @@ export default function AnnotationLayer({
   const markerBorder = side === 'current' ? 'border-red-500' : 'border-emerald-500';
 
   const hasContent = imageUrl || htmlContent;
+  const viewportHeight = Math.min(contentHeight, 800);
+
+  const renderMarker = (ann: Annotation, i: number, isPending?: boolean) => {
+    let topPx: number;
+    if (htmlContent) {
+      topPx = (ann.y_position / 100) * contentHeight - scrollTop;
+    } else {
+      topPx = (ann.y_position / 100) * (scrollRef.current?.scrollHeight ?? 600);
+    }
+
+    if (htmlContent && (topPx < -20 || topPx > viewportHeight + 20)) return null;
+
+    return (
+      <div
+        key={isPending ? 'pending' : ann.id}
+        className="absolute z-10 pointer-events-auto"
+        style={{
+          left: `${ann.x_position}%`,
+          top: htmlContent ? `${topPx}px` : `${ann.y_position}%`,
+          transform: 'translate(-50%, -50%)',
+        }}
+      >
+        <div className="relative group/marker">
+          <div className={`w-6 h-6 rounded-full ${isPending ? 'bg-brand-primary animate-pulse' : markerColor} text-white text-[10px] font-bold flex items-center justify-center shadow-lg border-2 border-white`}>
+            {isPending ? '?' : i + 1}
+          </div>
+          {!isPending && (
+            <div className={`absolute left-7 top-1/2 -translate-y-1/2 bg-white px-2.5 py-1.5 rounded-lg shadow-lg border ${markerBorder} text-xs font-medium text-gray-800 whitespace-nowrap opacity-0 group-hover/marker:opacity-100 transition-opacity pointer-events-none z-20`}>
+              {ann.label}
+              <div className={`absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 bg-white border-l border-b ${markerBorder} rotate-45`} />
+            </div>
+          )}
+          {!isPending && editable && onRemoveAnnotation && (
+            <button
+              onClick={(e) => { e.stopPropagation(); onRemoveAnnotation(ann.id); }}
+              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/marker:opacity-100 transition-opacity"
+            >
+              <X className="w-2.5 h-2.5" />
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="relative group">
       <div
-        className={`relative overflow-hidden rounded-lg ${adding ? 'cursor-crosshair' : 'cursor-default'}`}
+        ref={scrollRef}
+        className={`relative ${adding ? 'cursor-crosshair' : 'cursor-default'}`}
         onClick={handleClick}
+        style={htmlContent ? { height: viewportHeight, overflow: 'hidden' } : undefined}
       >
         {imageUrl && !htmlContent && (
           <img
@@ -82,19 +165,19 @@ export default function AnnotationLayer({
         )}
 
         {htmlContent && (
-          <div className="relative" style={{ height: iframeHeight }}>
+          <>
             <iframe
               ref={iframeRef}
               srcDoc={htmlContent}
               sandbox="allow-same-origin"
               title={`${side} email preview`}
-              className={`w-full h-full border-0 rounded-lg ${adding ? 'pointer-events-none' : ''}`}
-              style={{ height: iframeHeight }}
+              className={`w-full border-0 rounded-lg ${adding ? 'pointer-events-none' : ''}`}
+              style={{ height: contentHeight }}
             />
             {adding && (
               <div className="absolute inset-0 z-[5]" />
             )}
-          </div>
+          </>
         )}
 
         {!hasContent && (
@@ -103,41 +186,12 @@ export default function AnnotationLayer({
           </div>
         )}
 
-        {sideAnnotations.map((ann, i) => (
-          <div
-            key={ann.id}
-            className="absolute z-10"
-            style={{ left: `${ann.x_position}%`, top: `${ann.y_position}%`, transform: 'translate(-50%, -50%)' }}
-          >
-            <div className="relative group/marker">
-              <div className={`w-6 h-6 rounded-full ${markerColor} text-white text-[10px] font-bold flex items-center justify-center shadow-lg border-2 border-white`}>
-                {i + 1}
-              </div>
-              <div className={`absolute left-7 top-1/2 -translate-y-1/2 bg-white px-2.5 py-1.5 rounded-lg shadow-lg border ${markerBorder} text-xs font-medium text-gray-800 whitespace-nowrap opacity-0 group-hover/marker:opacity-100 transition-opacity pointer-events-none z-20`}>
-                {ann.label}
-                <div className={`absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 bg-white border-l border-b ${markerBorder} rotate-45`} />
-              </div>
-              {editable && onRemoveAnnotation && (
-                <button
-                  onClick={(e) => { e.stopPropagation(); onRemoveAnnotation(ann.id); }}
-                  className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/marker:opacity-100 transition-opacity"
-                >
-                  <X className="w-2.5 h-2.5" />
-                </button>
-              )}
-            </div>
-          </div>
-        ))}
+        {sideAnnotations.map((ann, i) => renderMarker(ann, i))}
 
-        {pendingPos && (
-          <div
-            className="absolute z-20"
-            style={{ left: `${pendingPos.x}%`, top: `${pendingPos.y}%`, transform: 'translate(-50%, -50%)' }}
-          >
-            <div className="w-6 h-6 rounded-full bg-brand-primary text-white text-[10px] font-bold flex items-center justify-center shadow-lg border-2 border-white animate-pulse">
-              ?
-            </div>
-          </div>
+        {pendingPos && renderMarker(
+          { id: 'pending', x_position: pendingPos.x, y_position: pendingPos.y, label: '', side, audit_section_id: '', asset_id: '', created_at: '' },
+          0,
+          true,
         )}
       </div>
 
