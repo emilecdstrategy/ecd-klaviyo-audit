@@ -86,7 +86,7 @@ const SECTION_ITEM_SCHEMA = {
                   flow_name: { type: "string" },
                   present: { type: "boolean" },
                   live: { type: "boolean" },
-                  email_count: { type: "number" },
+                  email_count: { type: "number", description: "Number of email messages/steps in the flow sequence, NOT recipient count" },
                   current_structure_note: { type: "string" },
                   recommended_structure: { type: "string" },
                 },

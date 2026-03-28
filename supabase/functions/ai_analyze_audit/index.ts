@@ -213,7 +213,7 @@ async function fetchKlaviyoContext(auditId: string, clientId: string): Promise<K
     sb.from("klaviyo_campaign_snapshots").select("name, status, send_channel, created_at_klaviyo, updated_at_klaviyo").eq("audit_id", auditId),
     sb.from("klaviyo_segment_snapshots").select("name, created_at_klaviyo, updated_at_klaviyo").eq("audit_id", auditId),
     sb.from("klaviyo_form_snapshots").select("name, status").eq("audit_id", auditId),
-    sb.from("flow_performance").select("flow_name, flow_status, recipients_per_month, actual_open_rate, actual_click_rate, actual_conv_rate, monthly_revenue_current").eq("audit_id", auditId),
+    sb.from("flow_performance").select("flow_name, flow_status, recipients_per_month, actual_open_rate, actual_click_rate, actual_conv_rate, monthly_revenue_current, email_message_count").eq("audit_id", auditId),
   ]);
 
   const hasData = (flowsRes.data?.length ?? 0) > 0 || (campaignsRes.data?.length ?? 0) > 0 ||
@@ -231,6 +231,7 @@ async function fetchKlaviyoContext(auditId: string, clientId: string): Promise<K
       recipients_per_month: fp.recipients_per_month, actual_open_rate: fp.actual_open_rate,
       actual_click_rate: fp.actual_click_rate, actual_conv_rate: fp.actual_conv_rate,
       monthly_revenue_current: fp.monthly_revenue_current,
+      email_message_count: fp.email_message_count ?? null,
     })),
   };
 }

@@ -1000,8 +1000,8 @@ serve(async (req) => {
         }
       }
 
-      // Compute flow_performance rows (aggregate by flow_id)
-      const flowAgg: Record<string, { recipients: number; open: number; click: number; conv: number; value: number; rpr: number }> = {};
+      // Compute flow_performance rows (aggregate by flow_id) + count distinct email messages per flow
+      const flowAgg: Record<string, { recipients: number; open: number; click: number; conv: number; value: number; rpr: number; messageIds: Set<string> }> = {};
       const last30 = flowReports.find((r) => r.timeframe === "last_30_days")?.results ?? [];
       for (const row of last30) {
         const gid = row?.groupings?.flow_id;
@@ -1013,13 +1013,15 @@ serve(async (req) => {
         const conv_rate = Number(stats.conversion_rate ?? 0) || 0;
         const value = Number(stats.conversion_value ?? 0) || 0;
         const rpr = Number(stats.revenue_per_recipient ?? 0) || 0;
-        if (!flowAgg[gid]) flowAgg[gid] = { recipients: 0, open: 0, click: 0, conv: 0, value: 0, rpr: 0 };
+        if (!flowAgg[gid]) flowAgg[gid] = { recipients: 0, open: 0, click: 0, conv: 0, value: 0, rpr: 0, messageIds: new Set() };
         flowAgg[gid].recipients += recipients;
         flowAgg[gid].open += open_rate * recipients;
         flowAgg[gid].click += click_rate * recipients;
         flowAgg[gid].conv += conv_rate * recipients;
         flowAgg[gid].value += value;
         flowAgg[gid].rpr += rpr * recipients;
+        const mid = row?.groupings?.flow_message_id;
+        if (mid) flowAgg[gid].messageIds.add(mid);
       }
 
       // Replace flow_performance rows for this audit_id
@@ -1053,6 +1055,7 @@ serve(async (req) => {
           benchmark_conv_rate_high: 0.02,
           monthly_revenue_current: a.value,
           monthly_revenue_opportunity: opportunity,
+          email_message_count: a.messageIds.size || null,
           notes: "Computed from Klaviyo Reporting API (last_30_days).",
         };
       });

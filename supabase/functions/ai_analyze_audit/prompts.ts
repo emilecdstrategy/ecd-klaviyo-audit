@@ -32,6 +32,7 @@ export type KlaviyoContext = {
     actual_click_rate?: number;
     actual_conv_rate?: number;
     monthly_revenue_current?: number;
+    email_message_count?: number | null;
   }>;
 };
 
@@ -68,7 +69,7 @@ export function buildAuditSystemPrompt() {
     "",
     "SECTION RUBRIC REQUIREMENTS:",
     "For FLOWS, explicitly cover: Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
-    "For each core flow include: present/not present, live/not live, approximate email count, current structure note, and ECD recommended structure note.",
+    "For each core flow include: present/not present, live/not live, email_count (the number of email messages/steps in the flow sequence — NOT the recipient count; use the emails_in_sequence value from flow performance data when available), current structure note, and ECD recommended structure note.",
     "For SEGMENTATION, explicitly assess: full-list vs segmented sends, engaged/unengaged audience definition, VIP/high-LTV segments, and benchmark against ECD architecture.",
     "For CAMPAIGNS, explicitly assess: send frequency consistency, segmented targeting vs blasting, subject/preview hygiene, and campaign type mix (promotional/educational/seasonal).",
     "For SIGNUP FORMS, explicitly assess: popup presence, embedded form presence, offer quality (discount/lead magnet), mobile optimization, and benchmark conversion framing.",
@@ -140,6 +141,7 @@ function summarizeFlowPerformance(perf: KlaviyoContext["flowPerformance"]): stri
   const lines = [`Flow performance data (last 30 days) for ${perf.length} flows:`];
   for (const fp of perf.slice(0, 20)) {
     const parts = [`${fp.flow_name} (${fp.flow_status})`];
+    if (fp.email_message_count != null) parts.push(`emails_in_sequence: ${fp.email_message_count}`);
     if (fp.recipients_per_month) parts.push(`recipients: ${fp.recipients_per_month}`);
     if (fp.actual_open_rate != null) parts.push(`open: ${(fp.actual_open_rate * 100).toFixed(1)}%`);
     if (fp.actual_click_rate != null) parts.push(`click: ${(fp.actual_click_rate * 100).toFixed(1)}%`);

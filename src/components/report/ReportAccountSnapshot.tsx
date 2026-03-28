@@ -112,8 +112,8 @@ export default function ReportAccountSnapshot({
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
         <Card label="Total Flows" value={String(totalFlows)} sub="in Klaviyo account" />
         <Card label="Live Flows" value={String(liveFlows)} sub="actively sending" />
-        <Card label="Total Campaigns" value={String(totalCampaigns)} sub="email campaigns in account" />
         <Card label="Manual Flows" value={String(manualFlows)} sub="require manual trigger" />
+        <Card label="Total Campaigns" value={String(totalCampaigns)} sub="email campaigns in account" />
 
         <Card
           label="List Size"
