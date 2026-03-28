@@ -17,11 +17,12 @@ import {
 } from '../lib/demo-data';
 import { SECTION_KEYS, SECTION_LABELS } from '../lib/constants';
 import { formatCurrency } from '../lib/revenue-calculator';
-import type { AuditSection, Annotation } from '../lib/types';
+import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, AuditAsset, Client } from '../lib/types';
-import { createAnnotation, deleteAnnotation, getAudit, getClient, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAuditSection } from '../lib/db';
+import { createAnnotation, deleteAnnotation, getAudit, getClient, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAuditSection, getAuditEmailDesign, upsertAuditEmailDesign, listIndustryEmailLibrary } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { RichAuditText } from '../components/ui/RichAuditText';
+import AnnotationLayer from '../components/audit/AnnotationLayer';
 
 const SECTION_ICONS: Record<string, React.ElementType> = {
   account_health: BarChart3,
@@ -53,6 +54,9 @@ export default function AuditWorkspace() {
     isDemo ? DEMO_ANNOTATIONS : [],
   );
   const [activeSection, setActiveSection] = useState<string>(SECTION_KEYS[0]);
+
+  const [emailDesign, setEmailDesign] = useState<AuditEmailDesign | null>(null);
+  const [emailLibrary, setEmailLibrary] = useState<IndustryEmailLibrary[]>([]);
 
   const saveTimers = useRef<Record<string, number>>({});
   const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
@@ -101,7 +105,12 @@ export default function AuditWorkspace() {
         const a = await getAudit(id);
         if (!a) throw new Error('Audit not found');
         const c = await getClient(a.client_id);
-        const [secs, as] = await Promise.all([listAuditSections(id), listAssets(id)]);
+        const [secs, as, ed, lib] = await Promise.all([
+          listAuditSections(id),
+          listAssets(id),
+          getAuditEmailDesign(id),
+          listIndustryEmailLibrary(),
+        ]);
         const anns = await listAnnotationsForAuditSections(secs.map(s => s.id));
         if (cancelled) return;
         setAudit(a);
@@ -109,6 +118,8 @@ export default function AuditWorkspace() {
         setSections(secs);
         setAssets(as);
         setAnnotations(anns);
+        setEmailDesign(ed);
+        setEmailLibrary(lib);
 
         // Check Klaviyo scope warnings for API audits
         if (a.audit_method === 'api') {
@@ -341,7 +352,17 @@ export default function AuditWorkspace() {
         </div>
 
         <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {activeSection === 'revenue_summary' ? (
+          {activeSection === 'email_design' ? (
+            <EmailDesignEditor
+              audit={audit}
+              emailDesign={emailDesign}
+              emailLibrary={emailLibrary}
+              annotations={annotations}
+              section={currentSection ?? null}
+              onAnnotationsChange={setAnnotations}
+              onEmailDesignChange={setEmailDesign}
+            />
+          ) : activeSection === 'revenue_summary' ? (
             <div className="space-y-6 animate-slide-up">
               <div className="bg-white rounded-xl p-6 card-shadow">
                 <h2 className="text-lg font-semibold text-gray-900 mb-4">Revenue Opportunity Summary</h2>
@@ -452,6 +473,151 @@ export default function AuditWorkspace() {
                 <span className="font-medium text-gray-800">{auditInfoMetrics.monthly_traffic.toLocaleString()}/mo</span>
               </div>
             </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function EmailDesignEditor({
+  audit,
+  emailDesign,
+  emailLibrary,
+  annotations,
+  section,
+  onAnnotationsChange,
+  onEmailDesignChange,
+}: {
+  audit: Audit;
+  emailDesign: AuditEmailDesign | null;
+  emailLibrary: IndustryEmailLibrary[];
+  annotations: Annotation[];
+  section: AuditSection | null;
+  onAnnotationsChange: (anns: Annotation[]) => void;
+  onEmailDesignChange: (ed: AuditEmailDesign | null) => void;
+}) {
+  const [selectedEcdId, setSelectedEcdId] = useState(emailDesign?.ecd_example_id || '');
+  const [saving, setSaving] = useState(false);
+
+  const ecdExample = emailDesign?.ecd_example || emailLibrary.find(e => e.id === selectedEcdId) || null;
+  const sectionAnns = section ? annotations.filter(a => a.audit_section_id === section.id) : [];
+  const clientAnns = sectionAnns.filter(a => a.side === 'current');
+  const ecdAnns = sectionAnns.filter(a => a.side === 'optimized');
+
+  const handleSelectEcd = async (newId: string) => {
+    setSelectedEcdId(newId);
+    try {
+      setSaving(true);
+      const updated = await upsertAuditEmailDesign(audit.id, { ecd_example_id: newId || null });
+      onEmailDesignChange(updated);
+    } catch { /* ignore */ } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleAddAnnotation = async (side: 'current' | 'optimized', x: number, y: number, label: string) => {
+    if (!section) return;
+    try {
+      const created = await createAnnotation({
+        audit_section_id: section.id,
+        asset_id: section.id,
+        x_position: x,
+        y_position: y,
+        label,
+        side,
+      });
+      onAnnotationsChange([...annotations, created]);
+    } catch { /* ignore */ }
+  };
+
+  const handleRemoveAnnotation = async (annId: string) => {
+    onAnnotationsChange(annotations.filter(a => a.id !== annId));
+    try {
+      await deleteAnnotation(annId);
+    } catch { /* ignore */ }
+  };
+
+  return (
+    <div className="space-y-6 animate-slide-up">
+      <div className="bg-white rounded-xl p-6 card-shadow">
+        <h2 className="text-lg font-semibold text-gray-900 mb-1">Email Design Comparison</h2>
+        <p className="text-sm text-gray-500 mb-4">
+          Side-by-side comparison of the client's email and an ECD benchmark. Click on each email to annotate strengths and weaknesses.
+        </p>
+
+        {emailLibrary.length > 0 && (
+          <div className="mb-6">
+            <label className="block text-sm font-medium text-gray-700 mb-1">ECD Benchmark Example</label>
+            <select
+              value={selectedEcdId}
+              onChange={e => handleSelectEcd(e.target.value)}
+              disabled={saving}
+              className="w-full max-w-sm px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 bg-white"
+            >
+              <option value="">Select an example...</option>
+              {emailLibrary.map(e => (
+                <option key={e.id} value={e.id}>{e.name} ({e.industry})</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-red-500" />
+              <h4 className="text-sm font-semibold text-gray-800">
+                Client's Email
+                {emailDesign?.client_campaign_name && (
+                  <span className="ml-1 text-xs font-normal text-gray-400">({emailDesign.client_campaign_name})</span>
+                )}
+              </h4>
+            </div>
+            {emailDesign?.client_email_html ? (
+              <AnnotationLayer
+                htmlContent={emailDesign.client_email_html}
+                annotations={sectionAnns}
+                onAddAnnotation={(x, y, label) => handleAddAnnotation('current', x, y, label)}
+                onRemoveAnnotation={handleRemoveAnnotation}
+                editable
+                side="current"
+              />
+            ) : (
+              <div className="aspect-[9/16] max-h-[600px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center">
+                <div className="text-center">
+                  <Mail className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                  <p className="text-sm text-gray-400">No client email fetched</p>
+                  <p className="text-xs text-gray-300 mt-1">The client's most recent campaign email will appear here after running the audit</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          <div className="space-y-3">
+            <div className="flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-emerald-500" />
+              <h4 className="text-sm font-semibold text-gray-800">ECD Benchmark</h4>
+            </div>
+            {ecdExample ? (
+              <AnnotationLayer
+                imageUrl={ecdExample.content_type === 'image' ? (ecdExample.image_url ?? undefined) : undefined}
+                htmlContent={ecdExample.content_type === 'html' ? (ecdExample.html_content ?? undefined) : undefined}
+                annotations={sectionAnns}
+                onAddAnnotation={(x, y, label) => handleAddAnnotation('optimized', x, y, label)}
+                onRemoveAnnotation={handleRemoveAnnotation}
+                editable
+                side="optimized"
+              />
+            ) : (
+              <div className="aspect-[9/16] max-h-[600px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center">
+                <div className="text-center">
+                  <Palette className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                  <p className="text-sm text-gray-400">No benchmark selected</p>
+                  <p className="text-xs text-gray-300 mt-1">Select an ECD example above or add one in Admin &gt; Email Library</p>
+                </div>
+              </div>
+            )}
           </div>
         </div>
       </div>

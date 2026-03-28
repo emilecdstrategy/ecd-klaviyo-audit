@@ -4,6 +4,8 @@ import type { Annotation, AuditAsset } from '../../lib/types';
 interface SideBySideComparisonProps {
   currentAsset?: AuditAsset;
   optimizedAsset?: AuditAsset;
+  currentHtmlContent?: string;
+  optimizedHtmlContent?: string;
   currentAnnotations: Annotation[];
   optimizedAnnotations: Annotation[];
   currentTitle?: string;
@@ -16,6 +18,8 @@ interface SideBySideComparisonProps {
 export default function SideBySideComparison({
   currentAsset,
   optimizedAsset,
+  currentHtmlContent,
+  optimizedHtmlContent,
   currentAnnotations,
   optimizedAnnotations,
   currentTitle = 'Current State',
@@ -24,6 +28,9 @@ export default function SideBySideComparison({
   onRemoveAnnotation,
   editable = false,
 }: SideBySideComparisonProps) {
+  const hasCurrentContent = currentAsset || currentHtmlContent;
+  const hasOptimizedContent = optimizedAsset || optimizedHtmlContent;
+
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       <div className="space-y-3">
@@ -31,9 +38,10 @@ export default function SideBySideComparison({
           <div className="w-2 h-2 rounded-full bg-red-500" />
           <h4 className="text-sm font-semibold text-gray-800">{currentTitle}</h4>
         </div>
-        {currentAsset ? (
+        {hasCurrentContent ? (
           <AnnotationLayer
-            imageUrl={currentAsset.file_url}
+            imageUrl={currentAsset?.file_url}
+            htmlContent={currentHtmlContent}
             annotations={currentAnnotations}
             onAddAnnotation={
               editable && onAddAnnotation
@@ -56,9 +64,10 @@ export default function SideBySideComparison({
           <div className="w-2 h-2 rounded-full bg-emerald-500" />
           <h4 className="text-sm font-semibold text-gray-800">{optimizedTitle}</h4>
         </div>
-        {optimizedAsset ? (
+        {hasOptimizedContent ? (
           <AnnotationLayer
-            imageUrl={optimizedAsset.file_url}
+            imageUrl={optimizedAsset?.file_url}
+            htmlContent={optimizedHtmlContent}
             annotations={optimizedAnnotations}
             onAddAnnotation={
               editable && onAddAnnotation

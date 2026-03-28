@@ -15,6 +15,7 @@ export default function NewClient({ asModal }: NewClientProps) {
   const [form, setForm] = useState({
     name: '',
     company_name: '',
+    industry: '',
     notes: '',
     api_key: '',
   });
@@ -42,7 +43,7 @@ export default function NewClient({ asModal }: NewClientProps) {
         name: form.name,
         company_name: form.company_name,
         website_url: '',
-        industry: '',
+        industry: form.industry,
         esp_platform: 'Klaviyo',
         api_key_placeholder: '',
         notes: form.notes,
@@ -93,16 +94,39 @@ export default function NewClient({ asModal }: NewClientProps) {
         <div className="bg-white rounded-xl p-6 card-shadow space-y-5">
           <h2 className="text-base font-semibold text-gray-900">Client Information</h2>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
-              <input
-                type="text"
-                value={form.company_name}
-                onChange={e => updateField('company_name', e.target.value)}
-                required
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                placeholder="Acme Co."
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Company Name</label>
+                <input
+                  type="text"
+                  value={form.company_name}
+                  onChange={e => updateField('company_name', e.target.value)}
+                  required
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  placeholder="Acme Co."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+                <select
+                  value={form.industry}
+                  onChange={e => updateField('industry', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 bg-white"
+                >
+                  <option value="">Select industry...</option>
+                  <option value="Fashion & Apparel">Fashion & Apparel</option>
+                  <option value="Beauty & Skincare">Beauty & Skincare</option>
+                  <option value="Food & Beverage">Food & Beverage</option>
+                  <option value="Health & Wellness">Health & Wellness</option>
+                  <option value="Home & Garden">Home & Garden</option>
+                  <option value="Electronics & Tech">Electronics & Tech</option>
+                  <option value="Sports & Outdoors">Sports & Outdoors</option>
+                  <option value="Jewelry & Accessories">Jewelry & Accessories</option>
+                  <option value="Pet Products">Pet Products</option>
+                  <option value="Kids & Baby">Kids & Baby</option>
+                  <option value="Other">Other</option>
+                </select>
+              </div>
             </div>
 
             <div>

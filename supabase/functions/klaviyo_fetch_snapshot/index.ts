@@ -788,6 +788,43 @@ serve(async (req) => {
         raw: c,
       }));
       if (rows.length) await mustSucceed("insert klaviyo_campaign_snapshots", sb.from("klaviyo_campaign_snapshots").insert(rows));
+
+      // Best-effort: fetch HTML of the most recent sent campaign for email design comparison
+      try {
+        const sentCampaigns = campaigns.items
+          .filter((c: any) => (c.attributes?.status ?? "").toLowerCase() === "sent")
+          .sort((a: any, b: any) => {
+            const da = a.attributes?.updated_at || a.attributes?.created_at || "";
+            const db = b.attributes?.updated_at || b.attributes?.created_at || "";
+            return db.localeCompare(da);
+          });
+        const recentCampaign = sentCampaigns[0];
+        if (recentCampaign) {
+          const msgRes = await klaviyoFetch(apiKey, revision, `/api/campaigns/${recentCampaign.id}/campaign-messages/`);
+          const messages = msgRes.ok ? (msgRes.body?.data ?? []) : [];
+          let emailHtml: string | null = null;
+          for (const msg of messages) {
+            const htmlBody = msg?.attributes?.content?.html;
+            if (htmlBody) { emailHtml = htmlBody; break; }
+            const templateId = msg?.relationships?.template?.data?.id;
+            if (templateId) {
+              const tplRes = await klaviyoFetch(apiKey, revision, `/api/templates/${templateId}/`);
+              if (tplRes.ok && tplRes.body?.data?.attributes?.html) {
+                emailHtml = tplRes.body.data.attributes.html;
+                break;
+              }
+            }
+          }
+          if (emailHtml) {
+            await sb.from("audit_email_design").upsert({
+              audit_id: auditId,
+              client_email_html: emailHtml,
+              client_campaign_name: recentCampaign.attributes?.name ?? null,
+              client_campaign_id: recentCampaign.id,
+            }, { onConflict: "audit_id" }).select();
+          }
+        }
+      } catch { /* non-critical */ }
     }
 
     if (forms.ok) {

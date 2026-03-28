@@ -13,6 +13,8 @@ import type {
   KlaviyoSegmentSnapshot,
   KlaviyoFormSnapshot,
   KlaviyoCampaignSnapshot,
+  IndustryEmailLibrary,
+  AuditEmailDesign,
 } from './types';
 
 function requireUserId(user: Profile | null): string {
@@ -229,6 +231,7 @@ export async function getPublicReportByToken(token: string): Promise<{
   campaignSnapshots: KlaviyoCampaignSnapshot[];
   healthScores: HealthScoreItem[];
   recommendations: Recommendation[];
+  emailDesign: AuditEmailDesign | null;
   reportingDiagnostic?: string | null;
   accountSnapshot?: {
     email_subscribed_profiles_count: number | null;
@@ -253,7 +256,7 @@ export async function getPublicReportByToken(token: string): Promise<{
   if (auditErr) throw auditErr;
   if (!audit) return null;
 
-  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, scores, recs, rollups] = await Promise.all([
+  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, scores, recs, rollups, emailDesignRes] = await Promise.all([
     supabase.from('clients').select('*').eq('id', (audit as any).client_id).maybeSingle(),
     supabase.from('audit_sections').select('*').eq('audit_id', (audit as any).id),
     supabase.from('audit_assets').select('*').eq('audit_id', (audit as any).id),
@@ -265,6 +268,7 @@ export async function getPublicReportByToken(token: string): Promise<{
     supabase.from('health_scores').select('*').eq('audit_id', (audit as any).id),
     supabase.from('recommendations').select('*').eq('audit_id', (audit as any).id).order('sort_order', { ascending: true }),
     supabase.from('klaviyo_reporting_rollups').select('timeframe_key, computed').eq('audit_id', (audit as any).id),
+    supabase.from('audit_email_design').select('*, ecd_example:industry_email_library(*)').eq('audit_id', (audit as any).id).maybeSingle(),
   ]);
 
   if (client.error) throw client.error;
@@ -278,6 +282,7 @@ export async function getPublicReportByToken(token: string): Promise<{
   if (scores.error) throw scores.error;
   if (recs.error) throw recs.error;
   if (rollups.error) throw rollups.error;
+  // emailDesignRes errors are non-critical
   if (!client.data) return null;
 
   const allSections = (sections.data ?? []) as AuditSection[];
@@ -308,9 +313,88 @@ export async function getPublicReportByToken(token: string): Promise<{
     campaignSnapshots: (campSnaps.data ?? []) as KlaviyoCampaignSnapshot[],
     healthScores: (scores.data ?? []) as HealthScoreItem[],
     recommendations: (recs.data ?? []) as Recommendation[],
+    emailDesign: (emailDesignRes.data ?? null) as AuditEmailDesign | null,
     reportingDiagnostic,
     accountSnapshot,
   };
+}
+
+// --- Industry Email Library ---
+
+export async function listIndustryEmailLibrary(): Promise<IndustryEmailLibrary[]> {
+  const { data, error } = await supabase.from('industry_email_library').select('*').order('industry');
+  if (error) throw error;
+  return (data ?? []) as IndustryEmailLibrary[];
+}
+
+export async function getIndustryEmailByIndustry(industry: string): Promise<IndustryEmailLibrary | null> {
+  const { data, error } = await supabase
+    .from('industry_email_library')
+    .select('*')
+    .eq('industry', industry)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as IndustryEmailLibrary | null;
+}
+
+export async function createIndustryEmail(input: Omit<IndustryEmailLibrary, 'id' | 'created_at' | 'updated_at'>): Promise<IndustryEmailLibrary> {
+  const { data, error } = await supabase.from('industry_email_library').insert(input).select('*').single();
+  if (error) throw error;
+  return data as IndustryEmailLibrary;
+}
+
+export async function updateIndustryEmail(id: string, updates: Partial<IndustryEmailLibrary>): Promise<IndustryEmailLibrary> {
+  const { data, error } = await supabase
+    .from('industry_email_library')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as IndustryEmailLibrary;
+}
+
+export async function deleteIndustryEmail(id: string): Promise<void> {
+  const { error } = await supabase.from('industry_email_library').delete().eq('id', id);
+  if (error) throw error;
+}
+
+// --- Audit Email Design ---
+
+export async function getAuditEmailDesign(auditId: string): Promise<AuditEmailDesign | null> {
+  const { data, error } = await supabase
+    .from('audit_email_design')
+    .select('*, ecd_example:industry_email_library(*)')
+    .eq('audit_id', auditId)
+    .maybeSingle();
+  if (error) throw error;
+  return (data ?? null) as AuditEmailDesign | null;
+}
+
+export async function upsertAuditEmailDesign(
+  auditId: string,
+  updates: Partial<Omit<AuditEmailDesign, 'id' | 'created_at' | 'ecd_example'>>,
+): Promise<AuditEmailDesign> {
+  const existing = await getAuditEmailDesign(auditId);
+  if (existing) {
+    const { data, error } = await supabase
+      .from('audit_email_design')
+      .update(updates)
+      .eq('id', existing.id)
+      .select('*, ecd_example:industry_email_library(*)')
+      .single();
+    if (error) throw error;
+    return data as AuditEmailDesign;
+  }
+  const { data, error } = await supabase
+    .from('audit_email_design')
+    .insert({ audit_id: auditId, ...updates })
+    .select('*, ecd_example:industry_email_library(*)')
+    .single();
+  if (error) throw error;
+  return data as AuditEmailDesign;
 }
 
 export async function ensureClientCreator(user: Profile | null, client: Partial<Client>): Promise<Partial<Client>> {

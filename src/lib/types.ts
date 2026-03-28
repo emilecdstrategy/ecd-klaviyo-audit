@@ -181,6 +181,29 @@ export interface IndustryExample {
   notes: string;
 }
 
+export interface IndustryEmailLibrary {
+  id: string;
+  industry: string;
+  name: string;
+  content_type: 'image' | 'html';
+  html_content: string | null;
+  image_url: string | null;
+  default_annotations: Array<{ x: number; y: number; label: string }>;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AuditEmailDesign {
+  id: string;
+  audit_id: string;
+  client_email_html: string | null;
+  client_campaign_name: string | null;
+  client_campaign_id: string | null;
+  ecd_example_id: string | null;
+  created_at: string;
+  ecd_example?: IndustryEmailLibrary | null;
+}
+
 export type UserRole = 'admin' | 'auditor' | 'viewer';
 
 export interface WizardData {

@@ -12,7 +12,7 @@ import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS } from '../lib/demo-data';
 import { formatClientListMeta } from '../lib/client-display';
-import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, updateClient } from '../lib/db';
+import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, updateClient, getIndustryEmailByIndustry, upsertAuditEmailDesign, createAnnotation } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -384,6 +384,31 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         monthly_traffic: snapshotEngagement,
         aov: snapshotRpr,
       } as any);
+
+      // Best-effort: match industry → ECD benchmark email + copy annotations
+      try {
+        const selectedClient = clients.find(c => c.id === clientId);
+        const industry = selectedClient?.industry || '';
+        if (industry) {
+          const ecdExample = await getIndustryEmailByIndustry(industry);
+          if (ecdExample) {
+            await upsertAuditEmailDesign(audit.id, { ecd_example_id: ecdExample.id });
+            const emailDesignSection = createdSections.find(s => s.section_key === 'email_design');
+            if (emailDesignSection && ecdExample.default_annotations?.length) {
+              for (const ann of ecdExample.default_annotations) {
+                await createAnnotation({
+                  audit_section_id: emailDesignSection.id,
+                  asset_id: emailDesignSection.id,
+                  x_position: ann.x,
+                  y_position: ann.y,
+                  label: ann.label,
+                  side: 'optimized',
+                });
+              }
+            }
+          }
+        }
+      } catch { /* non-critical */ }
 
       setAnalysisProgress(100);
       setAnalysisStage('Done');

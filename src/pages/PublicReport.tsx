@@ -23,9 +23,8 @@ import ReportAccountSnapshot from '../components/report/ReportAccountSnapshot';
 import ReportSegmentTable from '../components/report/ReportSegmentTable';
 import ReportFormTable from '../components/report/ReportFormTable';
 import ReportCampaignTable from '../components/report/ReportCampaignTable';
-import ReportRecommendations from '../components/report/ReportRecommendations';
 import { RichAuditText } from '../components/ui/RichAuditText';
-import type { AuditSection } from '../lib/types';
+import type { AuditSection, AuditEmailDesign } from '../lib/types';
 import { getPublicReportByToken } from '../lib/db';
 import { useAuth } from '../contexts/AuthContext';
 import { cn } from '../lib/utils';
@@ -37,7 +36,7 @@ const NAV_ITEMS = [
   { id: 'segments', label: 'Segments' },
   { id: 'forms', label: 'Signup Forms' },
   { id: 'campaigns', label: 'Campaigns' },
-  { id: 'recommendations', label: 'Recommendations' },
+  { id: 'email_design', label: 'Email Design' },
   { id: 'opportunity', label: 'Revenue' },
 ];
 
@@ -62,6 +61,7 @@ export default function PublicReport() {
   const [campaignSnapshots, setCampaignSnapshots] = useState<any[]>([]);
   const [healthScores, setHealthScores] = useState(() => DEMO_HEALTH_SCORES);
   const [recommendations, setRecommendations] = useState(() => (audit ? DEMO_RECOMMENDATIONS.filter(r => r.audit_id === audit.id) : []));
+  const [emailDesign, setEmailDesign] = useState<AuditEmailDesign | null>(null);
   const [reportingDiagnostic, setReportingDiagnostic] = useState<string | null>(null);
   const [accountSnapshot, setAccountSnapshot] = useState<any | null>(null);
 
@@ -88,6 +88,7 @@ export default function PublicReport() {
           setCampaignSnapshots([]);
           setHealthScores([]);
           setRecommendations([]);
+          setEmailDesign(null);
           setReportingDiagnostic(null);
           return;
         }
@@ -103,6 +104,7 @@ export default function PublicReport() {
         setCampaignSnapshots(report.campaignSnapshots ?? []);
         setHealthScores(report.healthScores);
         setRecommendations(report.recommendations);
+        setEmailDesign(report.emailDesign ?? null);
         setReportingDiagnostic(report.reportingDiagnostic ?? null);
         setAccountSnapshot((report as any).accountSnapshot ?? null);
       } catch (e: unknown) {
@@ -188,7 +190,7 @@ export default function PublicReport() {
   const stripInlineBoldMarkers = (s: string) => s.replace(/\*\*(.+?)\*\*/g, '$1');
 
   const visibleNavItems = NAV_ITEMS.filter(n => {
-    if (n.id === 'recommendations' && !audit.show_recommendations) return false;
+    if (n.id === 'email_design' && !emailDesign?.client_email_html && !emailDesign?.ecd_example) return false;
     if (n.id === 'flows' && flowSnapshots.length === 0 && flowPerformance.length === 0) return false;
     if (n.id === 'segments' && segmentSnapshots.length === 0) return false;
     if (n.id === 'forms' && formSnapshots.length === 0) return false;
@@ -519,17 +521,17 @@ export default function PublicReport() {
           </section>
         )}
 
-        {audit.show_recommendations && recommendations.length > 0 && (
-          <section id="recommendations" ref={setRef('recommendations')}>
-            <SectionHeader number="07" label="Priority Action Plan" />
+        {(emailDesign?.client_email_html || emailDesign?.ecd_example) && (
+          <section id="email_design" ref={setRef('email_design')}>
+            <SectionHeader number="07" label="Email Design" />
             <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-50">
                 <p className="text-sm text-gray-500">
-                  Organized by implementation effort and expected impact. Start with Quick Wins for immediate results.
+                  Side-by-side comparison of a recent campaign email and an ECD-designed benchmark for your industry.
                 </p>
               </div>
               <div className="p-6">
-                <ReportRecommendations recommendations={recommendations} />
+                <EmailDesignComparison emailDesign={emailDesign} annotations={annotations} sections={sections} />
               </div>
             </div>
           </section>
@@ -1122,6 +1124,60 @@ function ReportSectionBlock({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function EmailDesignComparison({
+  emailDesign,
+  annotations,
+  sections,
+}: {
+  emailDesign: AuditEmailDesign;
+  annotations: import('../lib/types').Annotation[];
+  sections: AuditSection[];
+}) {
+  const edSection = sections.find(s => s.section_key === 'email_design');
+  const sectionAnns = edSection ? annotations.filter(a => a.audit_section_id === edSection.id) : [];
+  const ecdExample = emailDesign.ecd_example;
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      {emailDesign.client_email_html && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-red-500" />
+            <h4 className="text-sm font-semibold text-gray-800">
+              Client's Email
+              {emailDesign.client_campaign_name && (
+                <span className="ml-1 text-xs font-normal text-gray-400">({emailDesign.client_campaign_name})</span>
+              )}
+            </h4>
+          </div>
+          <AnnotationLayer
+            htmlContent={emailDesign.client_email_html}
+            annotations={sectionAnns}
+            editable={false}
+            side="current"
+          />
+        </div>
+      )}
+
+      {ecdExample && (
+        <div className="space-y-3">
+          <div className="flex items-center gap-2">
+            <div className="w-2 h-2 rounded-full bg-emerald-500" />
+            <h4 className="text-sm font-semibold text-gray-800">ECD Benchmark</h4>
+          </div>
+          <AnnotationLayer
+            imageUrl={ecdExample.content_type === 'image' ? (ecdExample.image_url ?? undefined) : undefined}
+            htmlContent={ecdExample.content_type === 'html' ? (ecdExample.html_content ?? undefined) : undefined}
+            annotations={sectionAnns}
+            editable={false}
+            side="optimized"
+          />
+        </div>
+      )}
     </div>
   );
 }

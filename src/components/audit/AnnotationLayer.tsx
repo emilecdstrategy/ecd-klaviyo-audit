@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { Annotation } from '../../lib/types';
 
 interface AnnotationLayerProps {
-  imageUrl: string;
+  imageUrl?: string;
+  htmlContent?: string;
   annotations: Annotation[];
   onAddAnnotation?: (x: number, y: number, label: string) => void;
   onRemoveAnnotation?: (id: string) => void;
@@ -13,6 +14,7 @@ interface AnnotationLayerProps {
 
 export default function AnnotationLayer({
   imageUrl,
+  htmlContent,
   annotations,
   onAddAnnotation,
   onRemoveAnnotation,
@@ -22,8 +24,25 @@ export default function AnnotationLayer({
   const [adding, setAdding] = useState(false);
   const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null);
   const [labelText, setLabelText] = useState('');
+  const iframeRef = useRef<HTMLIFrameElement>(null);
+  const [iframeHeight, setIframeHeight] = useState(600);
 
-  const handleImageClick = (e: React.MouseEvent<HTMLDivElement>) => {
+  useEffect(() => {
+    if (!htmlContent || !iframeRef.current) return;
+    const iframe = iframeRef.current;
+    const onLoad = () => {
+      try {
+        const doc = iframe.contentDocument;
+        if (doc?.body) {
+          setIframeHeight(Math.min(doc.body.scrollHeight + 20, 1200));
+        }
+      } catch { /* cross-origin fallback */ }
+    };
+    iframe.addEventListener('load', onLoad);
+    return () => iframe.removeEventListener('load', onLoad);
+  }, [htmlContent]);
+
+  const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!editable || !adding) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const x = ((e.clientX - rect.left) / rect.width) * 100;
@@ -45,18 +64,44 @@ export default function AnnotationLayer({
   const markerColor = side === 'current' ? 'bg-red-500' : 'bg-emerald-500';
   const markerBorder = side === 'current' ? 'border-red-500' : 'border-emerald-500';
 
+  const hasContent = imageUrl || htmlContent;
+
   return (
     <div className="relative group">
       <div
         className={`relative overflow-hidden rounded-lg ${adding ? 'cursor-crosshair' : 'cursor-default'}`}
-        onClick={handleImageClick}
+        onClick={handleClick}
       >
-        <img
-          src={imageUrl}
-          alt={`${side} state`}
-          className="w-full h-auto object-cover rounded-lg"
-          draggable={false}
-        />
+        {imageUrl && !htmlContent && (
+          <img
+            src={imageUrl}
+            alt={`${side} state`}
+            className="w-full h-auto object-cover rounded-lg"
+            draggable={false}
+          />
+        )}
+
+        {htmlContent && (
+          <div className="relative" style={{ height: iframeHeight }}>
+            <iframe
+              ref={iframeRef}
+              srcDoc={htmlContent}
+              sandbox="allow-same-origin"
+              title={`${side} email preview`}
+              className="w-full h-full border-0 rounded-lg pointer-events-none"
+              style={{ height: iframeHeight }}
+            />
+            {adding && (
+              <div className="absolute inset-0 z-[5]" />
+            )}
+          </div>
+        )}
+
+        {!hasContent && (
+          <div className="aspect-[9/16] max-h-[600px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center">
+            <p className="text-sm text-gray-400">No email content available</p>
+          </div>
+        )}
 
         {sideAnnotations.map((ann, i) => (
           <div
@@ -146,7 +191,7 @@ export default function AnnotationLayer({
                   </button>
                 </div>
               ) : (
-                <p className="text-xs text-brand-primary font-medium">Click on the image to place an annotation marker</p>
+                <p className="text-xs text-brand-primary font-medium">Click on the {htmlContent ? 'email' : 'image'} to place an annotation marker</p>
               )}
             </div>
           )}
