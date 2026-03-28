@@ -1214,7 +1214,7 @@ function EmailDesignComparison({
   const comparisonGrid = (maxH?: number) => (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_1px_1fr] gap-0">
       {emailDesign.client_email_html && (
-        <div className="space-y-3 px-4">
+        <div className="min-w-0 space-y-3 px-4">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-red-500" />
             <h4 className="text-sm font-semibold text-gray-800">
@@ -1239,7 +1239,7 @@ function EmailDesignComparison({
       <div className="hidden lg:block bg-gray-200 w-px" />
 
       {ecdExample && (
-        <div className="space-y-3 px-4">
+        <div className="min-w-0 space-y-3 px-4">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
             <h4 className="text-sm font-semibold text-gray-800">ECD Benchmark</h4>
