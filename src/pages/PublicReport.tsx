@@ -770,8 +770,7 @@ function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; coll
   const [needsToggle, setNeedsToggle] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
   const raw = String(text ?? '').trim();
-  const collapsedMaxClass =
-    collapsedLines === 3 ? 'max-h-[4.5rem]' : collapsedLines === 5 ? 'max-h-[7.5rem]' : 'max-h-[6rem]';
+  const collapsedPx = collapsedLines === 3 ? 72 : collapsedLines === 5 ? 120 : 96;
 
   useLayoutEffect(() => {
     const el = contentRef.current;
@@ -779,9 +778,7 @@ function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; coll
       setNeedsToggle(false);
       return;
     }
-    if (expanded) {
-      return;
-    }
+    if (expanded) return;
     const measure = () => {
       if (!contentRef.current) return;
       setNeedsToggle(contentRef.current.scrollHeight > contentRef.current.clientHeight + 1);
@@ -792,6 +789,8 @@ function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; coll
     return () => ro.disconnect();
   }, [raw, expanded, collapsedLines]);
 
+  const expandedHeight = contentRef.current?.scrollHeight ?? collapsedPx;
+
   if (!raw || raw === 'N/A') {
     return <p className="text-sm text-gray-400">N/A</p>;
   }
@@ -800,11 +799,10 @@ function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; coll
     <div>
       <div
         ref={contentRef}
+        style={{ maxHeight: expanded ? expandedHeight : collapsedPx }}
         className={cn(
-          'text-sm text-gray-700 leading-relaxed [&_strong]:text-gray-900 [&_strong]:font-semibold',
-          !expanded && `overflow-hidden ${collapsedMaxClass}`,
-          expanded && needsToggle && 'max-h-[min(100vh,2500px)]',
-          needsToggle && 'transition-[max-height] duration-300 ease-out motion-reduce:transition-none',
+          'text-sm text-gray-700 leading-relaxed [&_strong]:text-gray-900 [&_strong]:font-semibold overflow-hidden',
+          needsToggle && 'transition-[max-height] duration-300 ease-in-out motion-reduce:transition-none',
         )}
       >
         {renderInlineMarkdownBold(raw)}
