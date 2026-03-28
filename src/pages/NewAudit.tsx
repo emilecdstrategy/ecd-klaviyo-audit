@@ -16,7 +16,7 @@ import { createAudit, createAuditSections, createClient, ensureClientCreator, li
 import type { Audit, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
-import { INDUSTRIES } from '../lib/constants';
+import { IndustrySelectItems, IndustrySelectTriggerContent } from '../components/ui/IndustrySelect';
 import { supabase } from '../lib/supabase';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 
@@ -507,12 +507,10 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
               <Select value={form.industry || undefined} onValueChange={v => updateField('industry', v)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select industry..." />
+                  <IndustrySelectTriggerContent value={form.industry || undefined} placeholder="Select industry..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {INDUSTRIES.map(o => (
-                    <SelectItem key={o} value={o}><SelectItemText>{o}</SelectItemText></SelectItem>
-                  ))}
+                  <IndustrySelectItems />
                 </SelectContent>
               </Select>
             </div>

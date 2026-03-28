@@ -15,11 +15,11 @@ import {
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
 import { SkeletonClientDetail } from '../components/ui/Skeleton';
-import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Select, SelectContent, SelectTrigger } from '../components/ui/select';
+import { IndustrySelectItems, IndustrySelectTriggerContent } from '../components/ui/IndustrySelect';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
-import { INDUSTRIES } from '../lib/constants';
 import { useEffect, useState } from 'react';
 import type { Audit, Client } from '../lib/types';
 import { getClient, listAuditsByClient, updateClient } from '../lib/db';
@@ -255,12 +255,14 @@ export default function ClientDetail() {
                     }}
                   >
                     <SelectTrigger className="h-8 text-sm w-full max-w-[200px]">
-                      <SelectValue placeholder="Select industry..." />
+                      <IndustrySelectTriggerContent
+                        value={client.industry || undefined}
+                        placeholder="Select industry..."
+                        iconSize="sm"
+                      />
                     </SelectTrigger>
                     <SelectContent>
-                      {INDUSTRIES.map(o => (
-                        <SelectItem key={o} value={o}><SelectItemText>{o}</SelectItemText></SelectItem>
-                      ))}
+                      <IndustrySelectItems />
                     </SelectContent>
                   </Select>
                 </div>

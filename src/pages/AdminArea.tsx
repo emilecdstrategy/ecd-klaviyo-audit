@@ -18,6 +18,7 @@ import Modal from '../components/ui/Modal';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
 import { useAuth } from '../contexts/AuthContext';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
+import { IndustrySelectItems, IndustrySelectTriggerContent } from '../components/ui/IndustrySelect';
 import { supabase } from '../lib/supabase';
 import {
   listIndustryEmailLibrary,
@@ -26,7 +27,6 @@ import {
   deleteIndustryEmail,
   uploadAuditAssetFile,
 } from '../lib/db';
-import { INDUSTRIES } from '../lib/constants';
 import type { IndustryEmailLibrary } from '../lib/types';
 
 const TABS = [
@@ -514,12 +514,10 @@ function EmailLibraryTab() {
               <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
               <Select value={formIndustry || undefined} onValueChange={v => setFormIndustry(v)}>
                 <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Select industry..." />
+                  <IndustrySelectTriggerContent value={formIndustry || undefined} placeholder="Select industry..." />
                 </SelectTrigger>
                 <SelectContent>
-                  {INDUSTRIES.map(o => (
-                    <SelectItem key={o} value={o}><SelectItemText>{o}</SelectItemText></SelectItem>
-                  ))}
+                  <IndustrySelectItems />
                 </SelectContent>
               </Select>
             </div>

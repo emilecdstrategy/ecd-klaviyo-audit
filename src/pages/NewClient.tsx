@@ -3,10 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
-import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
+import { Select, SelectContent, SelectTrigger } from '../components/ui/select';
+import { IndustrySelectItems, IndustrySelectTriggerContent } from '../components/ui/IndustrySelect';
 import { useAuth } from '../contexts/AuthContext';
 import { createClient, ensureClientCreator } from '../lib/db';
-import { INDUSTRIES } from '../lib/constants';
 import { supabase } from '../lib/supabase';
 
 type NewClientProps = { asModal?: boolean };
@@ -112,12 +112,10 @@ export default function NewClient({ asModal }: NewClientProps) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
                 <Select value={form.industry || undefined} onValueChange={v => updateField('industry', v)}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select industry..." />
+                    <IndustrySelectTriggerContent value={form.industry || undefined} placeholder="Select industry..." />
                   </SelectTrigger>
                   <SelectContent>
-                    {INDUSTRIES.map(o => (
-                      <SelectItem key={o} value={o}><SelectItemText>{o}</SelectItemText></SelectItem>
-                    ))}
+                    <IndustrySelectItems />
                   </SelectContent>
                 </Select>
               </div>
