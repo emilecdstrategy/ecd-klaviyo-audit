@@ -10,6 +10,8 @@ interface AnnotationLayerProps {
   onRemoveAnnotation?: (id: string) => void;
   editable?: boolean;
   side: 'current' | 'optimized';
+  /** Max visible height for HTML emails before scrolling kicks in (default 900) */
+  maxHeight?: number;
 }
 
 export default function AnnotationLayer({
@@ -20,13 +22,14 @@ export default function AnnotationLayer({
   onRemoveAnnotation,
   editable = false,
   side,
+  maxHeight = 900,
 }: AnnotationLayerProps) {
   const [adding, setAdding] = useState(false);
   const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null);
   const [labelText, setLabelText] = useState('');
   const iframeRef = useRef<HTMLIFrameElement>(null);
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const [contentHeight, setContentHeight] = useState(600);
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [contentHeight, setContentHeight] = useState(800);
   const [scrollTop, setScrollTop] = useState(0);
 
   useEffect(() => {
@@ -44,42 +47,21 @@ export default function AnnotationLayer({
     return () => iframe.removeEventListener('load', onLoad);
   }, [htmlContent]);
 
-  const syncScroll = useCallback(() => {
-    if (!iframeRef.current) return;
-    try {
-      const doc = iframeRef.current.contentDocument ?? iframeRef.current.contentWindow?.document;
-      const st = doc?.documentElement?.scrollTop ?? doc?.body?.scrollTop ?? 0;
-      setScrollTop(st);
-    } catch { /* cross-origin */ }
+  const handleWrapperScroll = useCallback(() => {
+    if (wrapperRef.current) {
+      setScrollTop(wrapperRef.current.scrollTop);
+    }
   }, []);
-
-  useEffect(() => {
-    if (!htmlContent || !iframeRef.current) return;
-    const iframe = iframeRef.current;
-    let doc: Document | null = null;
-    const attach = () => {
-      try {
-        doc = iframe.contentDocument ?? iframe.contentWindow?.document ?? null;
-        doc?.addEventListener('scroll', syncScroll);
-      } catch { /* cross-origin */ }
-    };
-    iframe.addEventListener('load', attach);
-    attach();
-    return () => {
-      iframe.removeEventListener('load', attach);
-      try { doc?.removeEventListener('scroll', syncScroll); } catch { /* ignore */ }
-    };
-  }, [htmlContent, syncScroll]);
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!editable || !adding) return;
-    const rect = e.currentTarget.getBoundingClientRect();
+    const target = e.currentTarget;
+    const rect = target.getBoundingClientRect();
     const xPct = ((e.clientX - rect.left) / rect.width) * 100;
 
     if (htmlContent) {
-      const visibleClickY = e.clientY - rect.top;
-      const absoluteY = visibleClickY + scrollTop;
-      const yPct = (absoluteY / contentHeight) * 100;
+      const clickY = e.clientY - rect.top + (wrapperRef.current?.scrollTop ?? 0);
+      const yPct = (clickY / contentHeight) * 100;
       setPendingPos({ x: xPct, y: yPct });
     } else {
       const yPct = ((e.clientY - rect.top) / rect.height) * 100;
@@ -102,58 +84,68 @@ export default function AnnotationLayer({
   const markerBorder = side === 'current' ? 'border-red-500' : 'border-emerald-500';
 
   const hasContent = imageUrl || htmlContent;
-  const viewportHeight = Math.min(contentHeight, 800);
+  const needsScroll = htmlContent && contentHeight > maxHeight;
+  const visibleHeight = needsScroll ? maxHeight : contentHeight;
 
-  const renderMarker = (ann: Annotation, i: number, isPending?: boolean) => {
-    let topPx: number;
+  const renderMarker = (ann: { id: string; x_position: number; y_position: number; label: string }, i: number, isPending?: boolean) => {
     if (htmlContent) {
-      topPx = (ann.y_position / 100) * contentHeight - scrollTop;
-    } else {
-      topPx = (ann.y_position / 100) * (scrollRef.current?.scrollHeight ?? 600);
-    }
+      const absPx = (ann.y_position / 100) * contentHeight;
+      const relPx = absPx - scrollTop;
+      if (relPx < -20 || relPx > visibleHeight + 20) return null;
 
-    if (htmlContent && (topPx < -20 || topPx > viewportHeight + 20)) return null;
+      return (
+        <div
+          key={isPending ? 'pending' : ann.id}
+          className="absolute z-10 pointer-events-auto"
+          style={{ left: `${ann.x_position}%`, top: `${relPx}px`, transform: 'translate(-50%, -50%)' }}
+        >
+          {renderMarkerInner(ann, i, isPending)}
+        </div>
+      );
+    }
 
     return (
       <div
         key={isPending ? 'pending' : ann.id}
         className="absolute z-10 pointer-events-auto"
-        style={{
-          left: `${ann.x_position}%`,
-          top: htmlContent ? `${topPx}px` : `${ann.y_position}%`,
-          transform: 'translate(-50%, -50%)',
-        }}
+        style={{ left: `${ann.x_position}%`, top: `${ann.y_position}%`, transform: 'translate(-50%, -50%)' }}
       >
-        <div className="relative group/marker">
-          <div className={`w-6 h-6 rounded-full ${isPending ? 'bg-brand-primary animate-pulse' : markerColor} text-white text-[10px] font-bold flex items-center justify-center shadow-lg border-2 border-white`}>
-            {isPending ? '?' : i + 1}
-          </div>
-          {!isPending && (
-            <div className={`absolute left-7 top-1/2 -translate-y-1/2 bg-white px-2.5 py-1.5 rounded-lg shadow-lg border ${markerBorder} text-xs font-medium text-gray-800 whitespace-nowrap opacity-0 group-hover/marker:opacity-100 transition-opacity pointer-events-none z-20`}>
-              {ann.label}
-              <div className={`absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 bg-white border-l border-b ${markerBorder} rotate-45`} />
-            </div>
-          )}
-          {!isPending && editable && onRemoveAnnotation && (
-            <button
-              onClick={(e) => { e.stopPropagation(); onRemoveAnnotation(ann.id); }}
-              className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/marker:opacity-100 transition-opacity"
-            >
-              <X className="w-2.5 h-2.5" />
-            </button>
-          )}
-        </div>
+        {renderMarkerInner(ann, i, isPending)}
       </div>
     );
   };
 
+  const renderMarkerInner = (ann: { id: string; label: string }, i: number, isPending?: boolean) => (
+    <div className="relative group/marker">
+      <div className={`w-6 h-6 rounded-full ${isPending ? 'bg-brand-primary animate-pulse' : markerColor} text-white text-[10px] font-bold flex items-center justify-center shadow-lg border-2 border-white`}>
+        {isPending ? '?' : i + 1}
+      </div>
+      {!isPending && (
+        <div className={`absolute left-7 top-1/2 -translate-y-1/2 bg-white px-2.5 py-1.5 rounded-lg shadow-lg border ${markerBorder} text-xs font-medium text-gray-800 whitespace-nowrap opacity-0 group-hover/marker:opacity-100 transition-opacity pointer-events-none z-20`}>
+          {ann.label}
+          <div className={`absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 bg-white border-l border-b ${markerBorder} rotate-45`} />
+        </div>
+      )}
+      {!isPending && editable && onRemoveAnnotation && (
+        <button
+          onClick={(e) => { e.stopPropagation(); onRemoveAnnotation(ann.id); }}
+          className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/marker:opacity-100 transition-opacity"
+        >
+          <X className="w-2.5 h-2.5" />
+        </button>
+      )}
+    </div>
+  );
+
   return (
     <div className="relative group">
+      {/* Scrollable wrapper for HTML iframes; images don't need it */}
       <div
-        ref={scrollRef}
-        className={`relative ${adding ? 'cursor-crosshair' : 'cursor-default'}`}
+        ref={wrapperRef}
+        className={`relative rounded-lg ${adding ? 'cursor-crosshair' : 'cursor-default'}`}
         onClick={handleClick}
-        style={htmlContent ? { height: viewportHeight, overflow: 'hidden' } : undefined}
+        onScroll={handleWrapperScroll}
+        style={htmlContent ? { maxHeight: maxHeight, overflowY: 'auto', overflowX: 'hidden' } : undefined}
       >
         {imageUrl && !htmlContent && (
           <img
@@ -165,19 +157,16 @@ export default function AnnotationLayer({
         )}
 
         {htmlContent && (
-          <>
+          <div className="relative" style={{ height: contentHeight, pointerEvents: adding ? 'none' : undefined }}>
             <iframe
               ref={iframeRef}
               srcDoc={htmlContent}
               sandbox="allow-same-origin"
               title={`${side} email preview`}
-              className={`w-full border-0 rounded-lg ${adding ? 'pointer-events-none' : ''}`}
-              style={{ height: contentHeight }}
+              className="w-full border-0 rounded-lg"
+              style={{ height: contentHeight, pointerEvents: adding ? 'none' : undefined }}
             />
-            {adding && (
-              <div className="absolute inset-0 z-[5]" />
-            )}
-          </>
+          </div>
         )}
 
         {!hasContent && (
@@ -186,14 +175,38 @@ export default function AnnotationLayer({
           </div>
         )}
 
-        {sideAnnotations.map((ann, i) => renderMarker(ann, i))}
-
-        {pendingPos && renderMarker(
-          { id: 'pending', x_position: pendingPos.x, y_position: pendingPos.y, label: '', side, audit_section_id: '', asset_id: '', created_at: '' },
+        {/* For images, annotations sit inside the normal flow (percentage-based) */}
+        {!htmlContent && sideAnnotations.map((ann, i) => renderMarker(ann, i))}
+        {!htmlContent && pendingPos && renderMarker(
+          { id: 'pending', x_position: pendingPos.x, y_position: pendingPos.y, label: '' },
           0,
           true,
         )}
       </div>
+
+      {/* For HTML emails, annotation overlay sits on top of the scrollable area, synced to scroll */}
+      {htmlContent && (
+        <div
+          className="absolute top-0 left-0 right-0 pointer-events-none"
+          style={{ height: visibleHeight }}
+        >
+          {sideAnnotations.map((ann, i) => renderMarker(ann, i))}
+          {pendingPos && renderMarker(
+            { id: 'pending', x_position: pendingPos.x, y_position: pendingPos.y, label: '' },
+            0,
+            true,
+          )}
+        </div>
+      )}
+
+      {/* Annotation click overlay for HTML in adding mode */}
+      {htmlContent && adding && (
+        <div
+          className="absolute top-0 left-0 right-0 z-[5] cursor-crosshair"
+          style={{ height: visibleHeight }}
+          onClick={handleClick}
+        />
+      )}
 
       {sideAnnotations.length > 0 && (
         <div className="mt-3 space-y-1.5">

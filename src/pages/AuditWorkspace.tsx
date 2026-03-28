@@ -521,14 +521,16 @@ function EmailDesignEditor({
     try {
       const created = await createAnnotation({
         audit_section_id: section.id,
-        asset_id: section.id,
+        asset_id: null,
         x_position: x,
         y_position: y,
         label,
         side,
       });
       onAnnotationsChange([...annotations, created]);
-    } catch { /* ignore */ }
+    } catch (e) {
+      console.error('Failed to save annotation:', e);
+    }
   };
 
   const handleRemoveAnnotation = async (annId: string) => {

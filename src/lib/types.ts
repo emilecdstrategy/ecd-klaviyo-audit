@@ -163,7 +163,7 @@ export interface AuditAsset {
 export interface Annotation {
   id: string;
   audit_section_id: string;
-  asset_id: string;
+  asset_id: string | null;
   x_position: number;
   y_position: number;
   label: string;

@@ -208,7 +208,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         }) as any);
         clientId = created.id;
       } else {
-        const updated = await updateClient(clientId, { notes: form.notes });
+        const patch: Record<string, string> = { notes: form.notes };
+        if (form.industry) patch.industry = form.industry;
+        const updated = await updateClient(clientId, patch);
         setClients(prev => prev.map(c => (c.id === updated.id ? updated : c)));
       }
 
@@ -390,8 +392,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
       // Best-effort: match industry → ECD benchmark email + copy annotations
       try {
-        const selectedClient = clients.find(c => c.id === clientId);
-        const industry = selectedClient?.industry || '';
+        const industry = form.industry || clients.find(c => c.id === clientId)?.industry || '';
         if (industry) {
           const ecdExample = await getIndustryEmailByIndustry(industry);
           if (ecdExample) {
@@ -401,7 +402,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               for (const ann of ecdExample.default_annotations) {
                 await createAnnotation({
                   audit_section_id: emailDesignSection.id,
-                  asset_id: emailDesignSection.id,
+                  asset_id: null,
                   x_position: ann.x,
                   y_position: ann.y,
                   label: ann.label,
