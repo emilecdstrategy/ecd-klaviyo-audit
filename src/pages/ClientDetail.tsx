@@ -15,12 +15,14 @@ import {
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
 import { SkeletonClientDetail } from '../components/ui/Skeleton';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
+import { INDUSTRIES } from '../lib/constants';
 import { useEffect, useState } from 'react';
 import type { Audit, Client } from '../lib/types';
-import { getClient, listAuditsByClient } from '../lib/db';
+import { getClient, listAuditsByClient, updateClient } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/ui/Modal';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
@@ -241,6 +243,26 @@ export default function ClientDetail() {
                     <Mail className="w-3.5 h-3.5 text-gray-400" />
                     <p className="text-sm text-gray-900">{client.esp_platform}</p>
                   </div>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Industry</p>
+                  <Select
+                    value={client.industry || undefined}
+                    onValueChange={async (v) => {
+                      if (isDemo) return;
+                      setClient(prev => prev ? { ...prev, industry: v } : prev);
+                      try { await updateClient(client.id, { industry: v }); } catch { /* ignore */ }
+                    }}
+                  >
+                    <SelectTrigger className="h-8 text-sm w-full max-w-[200px]">
+                      <SelectValue placeholder="Select industry..." />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {INDUSTRIES.map(o => (
+                        <SelectItem key={o} value={o}><SelectItemText>{o}</SelectItemText></SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Website</p>

@@ -26,6 +26,7 @@ import {
   deleteIndustryEmail,
   uploadAuditAssetFile,
 } from '../lib/db';
+import { INDUSTRIES } from '../lib/constants';
 import type { IndustryEmailLibrary } from '../lib/types';
 
 const TABS = [
@@ -351,20 +352,6 @@ function UsersTab() {
   );
 }
 
-const INDUSTRY_OPTIONS = [
-  'Fashion & Apparel',
-  'Beauty & Skincare',
-  'Food & Beverage',
-  'Health & Wellness',
-  'Home & Garden',
-  'Electronics & Tech',
-  'Sports & Outdoors',
-  'Jewelry & Accessories',
-  'Pet Products',
-  'Kids & Baby',
-  'Other',
-];
-
 function EmailLibraryTab() {
   const [entries, setEntries] = useState<IndustryEmailLibrary[]>([]);
   const [loading, setLoading] = useState(true);
@@ -525,14 +512,16 @@ function EmailLibraryTab() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-              <select
-                value={formIndustry}
-                onChange={e => setFormIndustry(e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 bg-white"
-              >
-                <option value="">Select industry...</option>
-                {INDUSTRY_OPTIONS.map(o => <option key={o} value={o}>{o}</option>)}
-              </select>
+              <Select value={formIndustry || undefined} onValueChange={v => setFormIndustry(v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select industry..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {INDUSTRIES.map(o => (
+                    <SelectItem key={o} value={o}><SelectItemText>{o}</SelectItemText></SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
@@ -564,6 +553,29 @@ function EmailLibraryTab() {
                 <Code className="w-4 h-4" /> HTML Paste
               </button>
             </div>
+          </div>
+
+          <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs text-gray-500 leading-relaxed">
+            {formContentType === 'image' ? (
+              <>
+                <p className="font-medium text-gray-700 mb-1">How to get an email screenshot:</p>
+                <ol className="list-decimal ml-4 space-y-0.5">
+                  <li>Open the ECD email you want to use in your browser or email client</li>
+                  <li>Use a full-page screenshot tool (e.g. GoFullPage Chrome extension, or Cmd+Shift+4 / Win+Shift+S)</li>
+                  <li>Crop to just the email content and upload the image below</li>
+                </ol>
+              </>
+            ) : (
+              <>
+                <p className="font-medium text-gray-700 mb-1">How to get email HTML code:</p>
+                <ol className="list-decimal ml-4 space-y-0.5">
+                  <li>Open the email in Klaviyo (or your ESP) and go to the email editor</li>
+                  <li>Look for "Export HTML" or "View Source" option — in Klaviyo, click the <strong>{"<>"}</strong> icon in the template editor</li>
+                  <li>Copy the full HTML code and paste it below</li>
+                  <li>Alternatively, use "Inspect Element" in your browser on a web-hosted version of the email</li>
+                </ol>
+              </>
+            )}
           </div>
 
           {formContentType === 'image' ? (

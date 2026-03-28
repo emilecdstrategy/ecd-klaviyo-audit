@@ -3,8 +3,10 @@ import { useNavigate } from 'react-router-dom';
 import { ArrowLeft, Save } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useAuth } from '../contexts/AuthContext';
 import { createClient, ensureClientCreator } from '../lib/db';
+import { INDUSTRIES } from '../lib/constants';
 import { supabase } from '../lib/supabase';
 
 type NewClientProps = { asModal?: boolean };
@@ -108,24 +110,16 @@ export default function NewClient({ asModal }: NewClientProps) {
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-                <select
-                  value={form.industry}
-                  onChange={e => updateField('industry', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 bg-white"
-                >
-                  <option value="">Select industry...</option>
-                  <option value="Fashion & Apparel">Fashion & Apparel</option>
-                  <option value="Beauty & Skincare">Beauty & Skincare</option>
-                  <option value="Food & Beverage">Food & Beverage</option>
-                  <option value="Health & Wellness">Health & Wellness</option>
-                  <option value="Home & Garden">Home & Garden</option>
-                  <option value="Electronics & Tech">Electronics & Tech</option>
-                  <option value="Sports & Outdoors">Sports & Outdoors</option>
-                  <option value="Jewelry & Accessories">Jewelry & Accessories</option>
-                  <option value="Pet Products">Pet Products</option>
-                  <option value="Kids & Baby">Kids & Baby</option>
-                  <option value="Other">Other</option>
-                </select>
+                <Select value={form.industry || undefined} onValueChange={v => updateField('industry', v)}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select industry..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {INDUSTRIES.map(o => (
+                      <SelectItem key={o} value={o}><SelectItemText>{o}</SelectItemText></SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
             </div>
 

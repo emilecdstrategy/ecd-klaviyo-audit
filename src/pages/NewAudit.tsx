@@ -16,6 +16,7 @@ import { createAudit, createAuditSections, createClient, ensureClientCreator, li
 import type { Audit, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
+import { INDUSTRIES } from '../lib/constants';
 import { supabase } from '../lib/supabase';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 
@@ -111,6 +112,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     clientId: '',
     clientName: '',
     companyName: '',
+    industry: '',
     notes: '',
     apiKey: '',
   });
@@ -156,6 +158,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         clientId,
         clientName: client.name,
         companyName: client.company_name,
+        industry: client.industry ?? '',
         notes: client.notes ?? '',
         apiKey: '',
       }));
@@ -198,7 +201,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           name: form.clientName || form.companyName,
           company_name: form.companyName,
           website_url: '',
-          industry: '',
+          industry: form.industry,
           esp_platform: 'Klaviyo',
           api_key_placeholder: '',
           notes: form.notes,
@@ -488,6 +491,30 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                   placeholder="Acme Co."
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Name</label>
+                <input
+                  type="text"
+                  value={form.clientName}
+                  onChange={e => updateField('clientName', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  placeholder="John Doe"
+                />
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
+              <Select value={form.industry || undefined} onValueChange={v => updateField('industry', v)}>
+                <SelectTrigger className="w-full">
+                  <SelectValue placeholder="Select industry..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {INDUSTRIES.map(o => (
+                    <SelectItem key={o} value={o}><SelectItemText>{o}</SelectItemText></SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
 
             <div>

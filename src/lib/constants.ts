@@ -29,14 +29,16 @@ export const FLOW_TYPES = [
 ];
 
 export const INDUSTRIES = [
-  'Beauty / Cosmetics',
-  'Horticulture / Plants',
-  'Clothing & Apparel',
-  'Manufacturing / B2B',
-  'Health & Wellness',
-  'Food & Beverage',
   'Home & Garden',
-  'Technology',
+  'Fashion & Apparel',
+  'Beauty & Skincare',
+  'Food & Beverage',
+  'Health & Wellness',
+  'Electronics & Tech',
+  'Sports & Outdoors',
+  'Jewelry & Accessories',
+  'Pet Products',
+  'Kids & Baby',
   'Other',
 ];
 

@@ -88,7 +88,7 @@ export default function AnnotationLayer({
               srcDoc={htmlContent}
               sandbox="allow-same-origin"
               title={`${side} email preview`}
-              className="w-full h-full border-0 rounded-lg pointer-events-none"
+              className={`w-full h-full border-0 rounded-lg ${adding ? 'pointer-events-none' : ''}`}
               style={{ height: iframeHeight }}
             />
             {adding && (
