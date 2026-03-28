@@ -132,6 +132,12 @@ export async function publishAudit(auditId: string): Promise<Audit> {
 
 export async function updateAuditStatus(auditId: string, status: Audit['status']): Promise<Audit> {
   if (status === 'published') return publishAudit(auditId);
+  if (status === 'viewer_only') {
+    const audit = await getAudit(auditId);
+    if (!audit) throw new Error('Audit not found');
+    const token = audit.public_share_token || crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+    return updateAudit(auditId, { status: 'viewer_only', public_share_token: token });
+  }
   return updateAudit(auditId, { status });
 }
 
@@ -252,9 +258,19 @@ export async function getPublicReportByToken(token: string): Promise<{
 } | null> {
   const { data: sessionData } = await supabase.auth.getSession();
   const isAuthenticated = !!sessionData.session;
+  let userRole: string | null = null;
+  if (isAuthenticated && sessionData.session) {
+    const { data: profile } = await supabase.from('profiles').select('role').eq('id', sessionData.session.user.id).maybeSingle();
+    userRole = profile?.role ?? null;
+  }
+  const isAdmin = userRole === 'admin';
 
   let query = supabase.from('audits').select('*').eq('public_share_token', token);
-  if (!isAuthenticated) query = query.eq('status', 'published');
+  if (!isAuthenticated) {
+    query = query.eq('status', 'published');
+  } else if (!isAdmin) {
+    query = query.in('status', ['published', 'viewer_only']);
+  }
   const { data: audit, error: auditErr } = await query.maybeSingle();
   if (auditErr) throw auditErr;
   if (!audit) return null;

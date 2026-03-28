@@ -1,4 +1,5 @@
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
+import { Zap } from 'lucide-react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import AppShell from './components/layout/AppShell';
 import Login from './pages/Login';
@@ -12,17 +13,41 @@ import AuditWorkspace from './pages/AuditWorkspace';
 import PublicReport from './pages/PublicReport';
 import AdminArea from './pages/AdminArea';
 import Modal from './components/ui/Modal';
+import { ToastProvider } from './components/ui/Toast';
+
+function ViewerLanding() {
+  const { user, signOut } = useAuth();
+  return (
+    <div className="min-h-screen bg-[#f9f9f9] flex items-center justify-center p-6">
+      <div className="max-w-md w-full bg-white rounded-2xl shadow-sm border border-gray-100 p-8 text-center">
+        <div className="w-14 h-14 rounded-xl gradient-bg flex items-center justify-center mx-auto mb-5">
+          <Zap className="w-7 h-7 text-white" />
+        </div>
+        <h1 className="text-xl font-bold text-gray-900 mb-2">Welcome to ECD Audit</h1>
+        <p className="text-sm text-gray-500 mb-1">Signed in as <span className="font-medium text-gray-700">{user?.email}</span></p>
+        <p className="text-sm text-gray-500 mt-4 leading-relaxed">
+          Your custom audit report is ready for you. Please open it using the link that was shared with you by the ECD team.
+        </p>
+        <div className="mt-6 pt-5 border-t border-gray-100">
+          <button
+            onClick={signOut}
+            className="text-sm text-gray-400 hover:text-gray-600 transition-colors"
+          >
+            Sign out
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
 
 function AppRoutes() {
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, hasRole } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const state = location.state as any;
   const backgroundLocation = state?.backgroundLocation as ReturnType<typeof useLocation> | undefined;
 
-  // Important: during a magic-link redirect, Supabase needs a moment to hydrate
-  // the session from the URL/storage. If we redirect to /login while loading,
-  // we can get stuck in an auth bounce.
   if (isLoading) {
     return (
       <div className="min-h-screen bg-white flex items-center justify-center">
@@ -30,6 +55,8 @@ function AppRoutes() {
       </div>
     );
   }
+
+  const isViewer = user && !hasRole('admin');
 
   return (
     <>
@@ -40,6 +67,11 @@ function AppRoutes() {
         <>
           <Route path="/login" element={<Login />} />
           <Route path="*" element={<Navigate to="/login" replace />} />
+        </>
+      ) : isViewer ? (
+        <>
+          <Route path="/" element={<ViewerLanding />} />
+          <Route path="*" element={<Navigate to="/" replace />} />
         </>
       ) : (
         <Route element={<AppShell />}>
@@ -56,7 +88,7 @@ function AppRoutes() {
       )}
     </Routes>
 
-    {backgroundLocation && user && (
+    {backgroundLocation && user && hasRole('admin') && (
       <Routes>
         <Route
           path="/clients/new"
@@ -84,7 +116,9 @@ export default function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
-        <AppRoutes />
+        <ToastProvider>
+          <AppRoutes />
+        </ToastProvider>
       </AuthProvider>
     </BrowserRouter>
   );

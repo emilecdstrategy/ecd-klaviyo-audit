@@ -2,7 +2,7 @@ export interface Profile {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'auditor' | 'viewer';
+  role: 'admin' | 'viewer';
   created_at: string;
 }
 
@@ -24,7 +24,7 @@ export interface Audit {
   id: string;
   client_id: string;
   title: string;
-  status: 'draft' | 'in_review' | 'published';
+  status: 'draft' | 'in_review' | 'viewer_only' | 'published';
   audit_method: 'api' | 'screenshot';
   list_size: number;
   aov: number;
@@ -208,7 +208,7 @@ export interface AuditEmailDesign {
   ecd_example?: IndustryEmailLibrary | null;
 }
 
-export type UserRole = 'admin' | 'auditor' | 'viewer';
+export type UserRole = 'admin' | 'viewer';
 
 export interface WizardData {
   auditId?: string;

@@ -43,7 +43,7 @@ async function requireAdmin(req: Request) {
   return { uid };
 }
 
-type Role = "admin" | "auditor" | "viewer";
+type Role = "admin" | "viewer";
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
@@ -89,7 +89,7 @@ serve(async (req) => {
 
     if (body.action === "update_role") {
       const role = body.role;
-      if (!["admin", "auditor", "viewer"].includes(role)) {
+      if (!["admin", "viewer"].includes(role)) {
         return json({ ok: false, error: { code: "bad_request", message: "Invalid role" } }, { status: 200 });
       }
       const { error } = await sb.from("profiles").update({ role }).eq("id", body.user_id);

@@ -161,6 +161,7 @@ export default function Audits() {
                   <SelectItem value="__all__"><SelectItemText>All Status</SelectItemText></SelectItem>
                   <SelectItem value="draft"><SelectItemText>Draft</SelectItemText></SelectItem>
                   <SelectItem value="in_review"><SelectItemText>In Review</SelectItemText></SelectItem>
+                  <SelectItem value="viewer_only"><SelectItemText>Viewer Only</SelectItemText></SelectItem>
                   <SelectItem value="published"><SelectItemText>Published</SelectItemText></SelectItem>
                 </SelectContent>
               </Select>

@@ -151,7 +151,7 @@ export default function PublicReport() {
     );
   }
 
-  const isPreview = audit.status !== 'published';
+  const isPreview = audit.status === 'draft' || audit.status === 'in_review';
 
   const totalRevenue = sections.reduce((s, sec) => s + sec.revenue_opportunity, 0);
   const currentFlowMonthlyRevenue = flowPerformance.reduce((s, f) => s + (f.monthly_revenue_current ?? 0), 0);
@@ -374,6 +374,7 @@ export default function PublicReport() {
                     assets={assets}
                     annotations={annotations}
                     hideHeader
+                    hideCurrentOptimized
                   />
                 </div>
               );
@@ -438,6 +439,7 @@ export default function PublicReport() {
                     assets={assets}
                     annotations={annotations}
                     hideHeader
+                    hideCurrentOptimized
                   />
                 </div>
               );
@@ -472,6 +474,7 @@ export default function PublicReport() {
                     assets={assets}
                     annotations={annotations}
                     hideHeader
+                    hideCurrentOptimized
                   />
                 </div>
               );
@@ -506,6 +509,7 @@ export default function PublicReport() {
                     assets={assets}
                     annotations={annotations}
                     hideHeader
+                    hideCurrentOptimized
                   />
                 </div>
               );
@@ -1045,12 +1049,14 @@ function ReportSectionBlock({
   assets,
   annotations,
   hideHeader = false,
+  hideCurrentOptimized = false,
 }: {
   section: AuditSection;
   index: number;
   assets: AuditAsset[];
   annotations: Annotation[];
   hideHeader?: boolean;
+  hideCurrentOptimized?: boolean;
 }) {
   const currentAsset = assets.find(a => a.section_key === section.section_key && a.side === 'current');
   const optimizedAsset = assets.find(a => a.section_key === section.section_key && a.side === 'optimized');
@@ -1080,47 +1086,49 @@ function ReportSectionBlock({
       )}
 
       <div className="p-6">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
-              <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide [&_strong]:font-semibold">
-                {renderInlineMarkdownBold(section.current_state_title || 'Current State')}
-              </h4>
+        {!hideCurrentOptimized && (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-6">
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle className="w-3.5 h-3.5 text-red-400" />
+                <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide [&_strong]:font-semibold">
+                  {renderInlineMarkdownBold(section.current_state_title || 'Current State')}
+                </h4>
+              </div>
+              <div className="bg-red-50/40 border border-red-100 rounded-xl p-4 mb-4">
+                <RichAuditText text={section.current_state_notes || ''} className="text-sm text-gray-700 leading-relaxed" />
+              </div>
+              {currentAsset && (
+                <AnnotationLayer
+                  imageUrl={currentAsset.file_url}
+                  annotations={sectionAnnotations}
+                  editable={false}
+                  side="current"
+                />
+              )}
             </div>
-            <div className="bg-red-50/40 border border-red-100 rounded-xl p-4 mb-4">
-              <RichAuditText text={section.current_state_notes || ''} className="text-sm text-gray-700 leading-relaxed" />
-            </div>
-            {currentAsset && (
-              <AnnotationLayer
-                imageUrl={currentAsset.file_url}
-                annotations={sectionAnnotations}
-                editable={false}
-                side="current"
-              />
-            )}
-          </div>
 
-          <div>
-            <div className="flex items-center gap-2 mb-3">
-              <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
-              <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide [&_strong]:font-semibold">
-                {renderInlineMarkdownBold(section.optimized_state_title || 'Optimized State')}
-              </h4>
+            <div>
+              <div className="flex items-center gap-2 mb-3">
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-500" />
+                <h4 className="text-xs font-semibold text-gray-600 uppercase tracking-wide [&_strong]:font-semibold">
+                  {renderInlineMarkdownBold(section.optimized_state_title || 'Optimized State')}
+                </h4>
+              </div>
+              <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-4 mb-4">
+                <RichAuditText text={section.optimized_notes || ''} className="text-sm text-gray-700 leading-relaxed" />
+              </div>
+              {optimizedAsset && (
+                <AnnotationLayer
+                  imageUrl={optimizedAsset.file_url}
+                  annotations={sectionAnnotations}
+                  editable={false}
+                  side="optimized"
+                />
+              )}
             </div>
-            <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-4 mb-4">
-              <RichAuditText text={section.optimized_notes || ''} className="text-sm text-gray-700 leading-relaxed" />
-            </div>
-            {optimizedAsset && (
-              <AnnotationLayer
-                imageUrl={optimizedAsset.file_url}
-                annotations={sectionAnnotations}
-                editable={false}
-                side="optimized"
-              />
-            )}
           </div>
-        </div>
+        )}
         <SectionRubricDetails section={section} />
 
         {(section.human_edited_findings || section.summary_text) && (

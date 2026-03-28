@@ -63,7 +63,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: sessionUser.id,
           name: defaultName,
           email,
-          role: 'auditor',
+          role: 'viewer',
         })
         .select('*')
         .single();

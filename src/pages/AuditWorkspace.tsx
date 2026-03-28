@@ -16,6 +16,7 @@ import { supabase } from '../lib/supabase';
 import SimpleRichEditor from '../components/ui/SimpleRichEditor';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
+import { useToast } from '../components/ui/Toast';
 
 const SECTION_ICONS: Record<string, React.ElementType> = {
   account_health: BarChart3,
@@ -30,6 +31,7 @@ const SECTION_ICONS: Record<string, React.ElementType> = {
 export default function AuditWorkspace() {
   const { id } = useParams();
   const navigate = useNavigate();
+  const toast = useToast();
 
   const [audit, setAudit] = useState<Audit | null>(null);
   const [client, setClient] = useState<Client | null>(null);
@@ -214,6 +216,7 @@ export default function AuditWorkspace() {
     saveTimers.current[sectionId] = window.setTimeout(async () => {
       try {
         await updateAuditSection(sectionId, updates);
+        toast('Changes saved');
       } catch {
         // keep UI responsive; errors surface on next reload
       }
@@ -323,6 +326,7 @@ export default function AuditWorkspace() {
                   try {
                     const updated = await updateAuditStatus(audit.id, newStatus);
                     setAudit(updated);
+                    toast('Status updated');
                   } catch (e) {
                     console.error('Failed to update status:', e);
                   }
@@ -334,6 +338,7 @@ export default function AuditWorkspace() {
                 <SelectContent>
                   <SelectItem value="draft"><SelectItemText>Draft</SelectItemText></SelectItem>
                   <SelectItem value="in_review"><SelectItemText>In Review</SelectItemText></SelectItem>
+                  <SelectItem value="viewer_only"><SelectItemText>Viewer Only</SelectItemText></SelectItem>
                   <SelectItem value="published"><SelectItemText>Published</SelectItemText></SelectItem>
                 </SelectContent>
               </Select>
@@ -397,12 +402,26 @@ export default function AuditWorkspace() {
               <div className="bg-white rounded-xl p-6 card-shadow">
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Executive Summary</h3>
                 <SimpleRichEditor
-                  value={(audit.executive_summary || '').replace(/\*\*(.+?)\*\*/g, '$1')}
+                  value={(() => {
+                    const raw = audit.executive_summary || '';
+                    try {
+                      const parsed = JSON.parse(raw);
+                      if (parsed && typeof parsed.text === 'string') return parsed.text.replace(/\*\*(.+?)\*\*/g, '$1');
+                    } catch { /* not JSON, use as-is */ }
+                    return raw.replace(/\*\*(.+?)\*\*/g, '$1');
+                  })()}
                   onChange={(val) => {
-                    setAudit(prev => prev ? { ...prev, executive_summary: val } : prev);
+                    let payload = val;
+                    try {
+                      const parsed = JSON.parse(audit.executive_summary || '');
+                      if (parsed && typeof parsed.text === 'string') {
+                        payload = JSON.stringify({ ...parsed, text: val });
+                      }
+                    } catch { /* not JSON, save as plain text */ }
+                    setAudit(prev => prev ? { ...prev, executive_summary: payload } : prev);
                     if (execSaveTimer.current) window.clearTimeout(execSaveTimer.current);
                     execSaveTimer.current = window.setTimeout(async () => {
-                      try { await updateAudit(audit.id, { executive_summary: val }); } catch { /* silent */ }
+                      try { await updateAudit(audit.id, { executive_summary: payload }); toast('Summary saved'); } catch { /* silent */ }
                     }, 800);
                   }}
                   rows={5}

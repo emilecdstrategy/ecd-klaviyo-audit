@@ -3,13 +3,21 @@ import { Plus, X } from 'lucide-react';
 import type { Annotation, AnnotationSize } from '../../lib/types';
 
 function injectBaseTarget(html: string): string {
-  if (/<base\s/i.test(html)) return html;
+  const inject = '<base target="_blank"><style>html,body{margin:0;padding:0;overflow:hidden}</style>';
+  if (/<base\s/i.test(html)) {
+    const headIdx = html.search(/<head[^>]*>/i);
+    if (headIdx !== -1) {
+      const closeTag = html.indexOf('>', headIdx) + 1;
+      return html.slice(0, closeTag) + '<style>html,body{margin:0;padding:0;overflow:hidden}</style>' + html.slice(closeTag);
+    }
+    return html;
+  }
   const headIdx = html.search(/<head[^>]*>/i);
   if (headIdx !== -1) {
     const closeTag = html.indexOf('>', headIdx) + 1;
-    return html.slice(0, closeTag) + '<base target="_blank">' + html.slice(closeTag);
+    return html.slice(0, closeTag) + inject + html.slice(closeTag);
   }
-  return '<base target="_blank">' + html;
+  return inject + html;
 }
 
 const SIZE_CONFIG: Record<AnnotationSize, { dot: string; dotText: string; listDot: string; listDotText: string; labelPx: string; labelPy: string; labelText: string }> = {
@@ -63,9 +71,9 @@ export default function AnnotationLayer({
     const measure = () => {
       try {
         const doc = iframe.contentDocument;
-        if (doc?.body) {
-          const h = doc.body.scrollHeight + 20;
-          setContentHeight(prev => prev !== h ? h : prev);
+        if (doc?.documentElement) {
+          const h = Math.max(doc.documentElement.scrollHeight, doc.body?.scrollHeight ?? 0);
+          if (h > 0) setContentHeight(prev => prev !== h ? h : prev);
         }
       } catch { /* cross-origin fallback */ }
     };
@@ -85,12 +93,13 @@ export default function AnnotationLayer({
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     if (!editable || !adding) return;
-    const target = e.currentTarget;
-    const rect = target.getBoundingClientRect();
+    const refEl = wrapperRef.current ?? e.currentTarget;
+    const rect = refEl.getBoundingClientRect();
     const xPct = ((e.clientX - rect.left) / rect.width) * 100;
 
     if (htmlContent) {
-      const clickY = e.clientY - rect.top + (wrapperRef.current?.scrollTop ?? 0);
+      const scrollY = wrapperRef.current?.scrollTop ?? 0;
+      const clickY = e.clientY - rect.top + scrollY;
       const yPct = (clickY / contentHeight) * 100;
       setPendingPos({ x: xPct, y: yPct });
     } else {
@@ -155,19 +164,19 @@ export default function AnnotationLayer({
         <div className={`${sz.dot} rounded-full ${isPending ? 'bg-brand-primary animate-pulse' : markerColor} text-white ${sz.dotText} font-bold flex items-center justify-center shadow-lg border-2 ${isHighlighted ? 'border-brand-primary ring-2 ring-brand-primary/40 scale-125' : 'border-white'} transition-transform`}>
           {isPending ? '?' : i + 1}
         </div>
+        {!isPending && editable && onRemoveAnnotation && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemoveAnnotation(ann.id); }}
+            className="absolute -top-1.5 -right-1.5 w-5 h-5 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center opacity-0 group-hover/marker:opacity-100 transition-opacity z-[100] pointer-events-auto cursor-pointer shadow-md"
+          >
+            <X className="w-3 h-3" />
+          </button>
+        )}
         {!isPending && (
           <div className={`absolute left-7 top-1/2 -translate-y-1/2 bg-white ${sz.labelPx} ${sz.labelPy} rounded-lg shadow-lg border ${markerBorder} ${sz.labelText} font-medium text-gray-800 whitespace-nowrap ${showLabel ? 'opacity-100' : 'opacity-0 group-hover/marker:opacity-100'} transition-opacity pointer-events-none z-20`}>
             {ann.label}
             <div className={`absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 bg-white border-l border-b ${markerBorder} rotate-45`} />
           </div>
-        )}
-        {!isPending && editable && onRemoveAnnotation && (
-          <button
-            onClick={(e) => { e.stopPropagation(); onRemoveAnnotation(ann.id); }}
-            className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/marker:opacity-100 transition-opacity z-30"
-          >
-            <X className="w-2.5 h-2.5" />
-          </button>
         )}
       </div>
     );

@@ -19,6 +19,7 @@ import AnnotationLayer from '../components/audit/AnnotationLayer';
 import { useAuth } from '../contexts/AuthContext';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
+import { useToast } from '../components/ui/Toast';
 import { supabase } from '../lib/supabase';
 import {
   listIndustryEmailLibrary,
@@ -44,7 +45,7 @@ type AdminUserRow = {
   id: string;
   email: string | null;
   name: string | null;
-  role: 'admin' | 'auditor' | 'viewer';
+  role: 'admin' | 'viewer';
   created_at?: string | null;
 };
 
@@ -158,7 +159,7 @@ function UsersTab() {
   }, []);
 
   const roleBadgeStatus = (role: AdminUserRow['role']) =>
-    role === 'admin' ? 'published' : role === 'auditor' ? 'in_review' : 'draft';
+    role === 'admin' ? 'published' : 'draft';
 
   const onInvite = async () => {
     setError('');
@@ -324,7 +325,6 @@ function UsersTab() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="admin"><SelectItemText>Admin</SelectItemText></SelectItem>
-                    <SelectItem value="auditor"><SelectItemText>Auditor</SelectItemText></SelectItem>
                     <SelectItem value="viewer"><SelectItemText>Viewer</SelectItemText></SelectItem>
                   </SelectContent>
                 </Select>
@@ -355,6 +355,7 @@ function UsersTab() {
 }
 
 function EmailLibraryTab() {
+  const toast = useToast();
   const [entries, setEntries] = useState<IndustryEmailLibrary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -394,12 +395,12 @@ function EmailLibraryTab() {
 
   const saveGlobalAnnotationSize = async (v: 'sm' | 'md' | 'lg') => {
     setGlobalAnnotationSize(v);
-    try { await updatePlatformSettings({ annotation_size: v }); } catch { /* ignore */ }
+    try { await updatePlatformSettings({ annotation_size: v }); toast('Annotation size saved'); } catch { /* ignore */ }
   };
 
   const saveGlobalAnnotationsExpanded = async (v: boolean) => {
     setGlobalAnnotationsExpanded(v);
-    try { await updatePlatformSettings({ annotations_expanded: v }); } catch { /* ignore */ }
+    try { await updatePlatformSettings({ annotations_expanded: v }); toast(v ? 'Labels always visible' : 'Labels show on hover'); } catch { /* ignore */ }
   };
 
   const resetForm = () => {
