@@ -105,6 +105,13 @@ export default function PublicReport() {
   }, [token]);
 
   useEffect(() => {
+    if (client?.company_name) {
+      document.title = `Klaviyo Email Audit — ${client.company_name}`;
+    }
+    return () => { document.title = 'ECD Audit Dashboard'; };
+  }, [client?.company_name]);
+
+  useEffect(() => {
     const observers: IntersectionObserver[] = [];
     NAV_ITEMS.forEach(({ id }) => {
       const el = sectionRefs.current[id];
@@ -1268,9 +1275,9 @@ function EmailDesignComparison({
               Close
             </button>
           </div>
-          <div className="p-6 pb-24 max-w-screen-2xl mx-auto">
+          <div className="p-6 pb-8 max-w-screen-2xl mx-auto">
             <div className="bg-white rounded-xl card-shadow p-6">
-              {comparisonGrid(window.innerHeight - 120)}
+              {comparisonGrid(Math.floor(window.innerHeight * 0.9 - 56))}
             </div>
           </div>
         </div>

@@ -207,7 +207,7 @@ export default function AnnotationLayer({
   };
 
   return (
-    <div ref={outerRef} className="relative group">
+    <div ref={outerRef} className="relative group overflow-hidden">
       <div
         ref={wrapperRef}
         className={`relative rounded-lg ${adding ? 'cursor-crosshair' : 'cursor-default'}`}
@@ -225,7 +225,7 @@ export default function AnnotationLayer({
         )}
 
         {htmlContent && (
-          <div className="relative" style={{ height: scaledHeight, overflow: 'hidden', pointerEvents: adding ? 'none' : undefined }}>
+          <div className="relative" style={{ width: '100%', height: scaledHeight, overflow: 'hidden', pointerEvents: adding ? 'none' : undefined }}>
             <iframe
               ref={iframeRef}
               srcDoc={safeSrcDoc}
