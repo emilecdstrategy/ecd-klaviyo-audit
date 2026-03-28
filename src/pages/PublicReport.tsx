@@ -586,22 +586,6 @@ export default function PublicReport() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-6 border border-gray-100 mb-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-1">Implementation Timeline</h3>
-            <p className="text-sm text-gray-600 mb-6">
-              Suggested rollout order — work through each phase before moving to the next.
-            </p>
-            {aiTimeline.length > 0 ? (
-              <div className="space-y-8">
-                {aiTimeline.slice(0, 4).map((p, i) => (
-                  <ImplementationTimelinePhase key={i} phase={p} index={i} />
-                ))}
-              </div>
-            ) : (
-              <p className="text-sm text-gray-600 text-center py-8">AI timeline not available for this audit run.</p>
-            )}
-          </div>
-
           <div className="relative overflow-hidden rounded-3xl text-center shadow-xl shadow-brand-primary/20 ring-1 ring-white/20">
             <div
               className="absolute inset-0 bg-gradient-to-br from-brand-primary-dark via-brand-primary to-brand-primary-light"
@@ -655,6 +639,22 @@ export default function PublicReport() {
                 </p>
               </div>
             </div>
+          </div>
+
+          <div className="bg-white rounded-xl p-6 border border-gray-100 mt-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">Implementation Timeline</h3>
+            <p className="text-sm text-gray-600 mb-6">
+              Suggested rollout order — work through each phase before moving to the next.
+            </p>
+            {aiTimeline.length > 0 ? (
+              <div className="space-y-8">
+                {aiTimeline.slice(0, 4).map((p, i) => (
+                  <ImplementationTimelinePhase key={i} phase={p} index={i} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-600 text-center py-8">AI timeline not available for this audit run.</p>
+            )}
           </div>
         </section>
       </main>
