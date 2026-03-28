@@ -1064,11 +1064,10 @@ serve(async (req) => {
       // Replace flow_performance rows for this audit_id
       const NON_REVENUE_PATTERNS = [
         /review\s*request/i, /review\s*follow/i, /feedback/i, /survey/i, /nps/i,
-        /sunset/i, /list\s*clean/i, /unengaged/i, /re-?engage/i, /winback/i, /win-?back/i,
-        /birthday/i, /anniversary/i, /thank\s*you/i, /order\s*confirm/i,
+        /sunset/i, /list\s*clean/i,
+        /order\s*confirm/i, /order\s*notif/i,
         /shipping/i, /delivery/i, /fulfillment/i, /transactional/i,
         /password\s*reset/i, /account\s*confirm/i, /double\s*opt/i,
-        /referral/i, /loyalty/i, /reward/i, /points/i,
       ];
       const isNonRevenueFlow = (name: string) => NON_REVENUE_PATTERNS.some(p => p.test(name));
 

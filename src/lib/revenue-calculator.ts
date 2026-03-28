@@ -20,14 +20,8 @@ const NON_REVENUE_FLOW_PATTERNS = [
   /nps/i,
   /sunset/i,
   /list\s*clean/i,
-  /unengaged/i,
-  /re-?engage/i,
-  /winback/i,
-  /win-?back/i,
-  /birthday/i,
-  /anniversary/i,
-  /thank\s*you/i,
   /order\s*confirm/i,
+  /order\s*notif/i,
   /shipping/i,
   /delivery/i,
   /fulfillment/i,
@@ -35,10 +29,6 @@ const NON_REVENUE_FLOW_PATTERNS = [
   /password\s*reset/i,
   /account\s*confirm/i,
   /double\s*opt/i,
-  /referral/i,
-  /loyalty/i,
-  /reward/i,
-  /points/i,
 ];
 
 export function isNonRevenueFlow(flowName: string): boolean {
