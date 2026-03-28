@@ -95,6 +95,14 @@ export function buildAuditSystemPrompt() {
     "Phase 4 (Month 3+, 'Long-Term'): advanced personalization, data programs, sophisticated automations.",
     "Each phase should have 2-4 specific items referencing actual findings from this account.",
     "",
+    "FLOW CATEGORY AWARENESS — CRITICAL:",
+    "Not all flows are designed to generate revenue. You MUST distinguish between REVENUE flows and NON-REVENUE (engagement-only) flows.",
+    "REVENUE flows: Abandoned Cart, Browse Abandonment, Welcome Series (with product recommendations), Post-Purchase Cross-Sell/Upsell, Price Drop, Back-in-Stock.",
+    "NON-REVENUE flows: Review Request, Feedback/Survey/NPS, Sunset/List Cleaning, Winback/Re-engagement, Birthday/Anniversary, Order Confirmation, Shipping/Delivery/Fulfillment, Transactional, Referral/Loyalty/Rewards, Double Opt-in.",
+    "Do NOT flag non-revenue flows for low conversion rates or $0 revenue. A Review Request flow with 0% conversion is EXPECTED and correct.",
+    "For non-revenue flows, evaluate engagement metrics only (open rate, click rate). Their purpose is customer relationships, not direct sales.",
+    "When discussing strengths/concerns about flows, clearly distinguish between revenue performance and engagement performance.",
+    "",
     "SECTION RUBRIC REQUIREMENTS:",
     "For FLOWS, explicitly cover: Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
     "For each core flow include: present/not present, live/not live, email_count (the number of email messages/steps in the flow sequence — NOT the recipient count; use the emails_in_sequence value from flow performance data when available), current structure note, and ECD recommended structure note.",
@@ -164,17 +172,31 @@ function summarizeLists(lists: KlaviyoContext["lists"]): string {
   return `Total lists: ${lists.length}\nList names: ${lists.map(l => l.name).join(", ")}`;
 }
 
+const NON_REVENUE_PATTERNS = [
+  /review\s*request/i, /review\s*follow/i, /feedback/i, /survey/i, /nps/i,
+  /sunset/i, /list\s*clean/i, /unengaged/i, /re-?engage/i, /winback/i, /win-?back/i,
+  /birthday/i, /anniversary/i, /thank\s*you/i, /order\s*confirm/i,
+  /shipping/i, /delivery/i, /fulfillment/i, /transactional/i,
+  /password\s*reset/i, /account\s*confirm/i, /double\s*opt/i,
+  /referral/i, /loyalty/i, /reward/i, /points/i,
+];
+function isNonRevenueFlow(name: string): boolean {
+  return NON_REVENUE_PATTERNS.some(p => p.test(name));
+}
+
 function summarizeFlowPerformance(perf: KlaviyoContext["flowPerformance"]): string {
   if (!perf?.length) return "No flow performance data available (metrics scope may be missing).";
   const lines = [`Flow performance data (last 30 days) for ${perf.length} flows:`];
   for (const fp of perf.slice(0, 20)) {
-    const parts = [`${fp.flow_name} (${fp.flow_status})`];
+    const nonRev = isNonRevenueFlow(fp.flow_name);
+    const tag = nonRev ? "[NON-REVENUE/engagement-only]" : "[REVENUE]";
+    const parts = [`${fp.flow_name} ${tag} (${fp.flow_status})`];
     if (fp.email_message_count != null) parts.push(`emails_in_sequence: ${fp.email_message_count}`);
     if (fp.recipients_per_month) parts.push(`recipients: ${fp.recipients_per_month}`);
     if (fp.actual_open_rate != null) parts.push(`open: ${(fp.actual_open_rate * 100).toFixed(1)}%`);
     if (fp.actual_click_rate != null) parts.push(`click: ${(fp.actual_click_rate * 100).toFixed(1)}%`);
-    if (fp.actual_conv_rate != null) parts.push(`conv: ${(fp.actual_conv_rate * 100).toFixed(1)}%`);
-    if (fp.monthly_revenue_current) parts.push(`revenue: $${fp.monthly_revenue_current.toFixed(0)}`);
+    if (!nonRev && fp.actual_conv_rate != null) parts.push(`conv: ${(fp.actual_conv_rate * 100).toFixed(1)}%`);
+    if (!nonRev && fp.monthly_revenue_current) parts.push(`revenue: $${fp.monthly_revenue_current.toFixed(0)}`);
     lines.push(`  - ${parts.join(", ")}`);
   }
   return lines.join("\n");

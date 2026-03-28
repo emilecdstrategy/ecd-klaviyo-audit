@@ -1,5 +1,5 @@
 import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
-import { formatCurrency } from '../../lib/revenue-calculator';
+import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
 import { useRef, useState, useLayoutEffect, useCallback, type MouseEvent } from 'react';
 import { cn } from '../../lib/utils';
 
@@ -13,23 +13,25 @@ function metricStatus(actual: number | null, low: number, _high: number): Metric
 }
 
 function overallRating(flow: FlowPerformance): MetricStatus {
+  const nonRevenue = isNonRevenueFlow(flow.flow_name);
   const scores = [
     metricStatus(flow.actual_open_rate, flow.benchmark_open_rate_low, flow.benchmark_open_rate_high),
     metricStatus(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high),
-    metricStatus(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high),
+    ...(nonRevenue ? [] : [metricStatus(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high)]),
   ];
   const bad = scores.filter(s => s === 'bad').length;
   const good = scores.filter(s => s === 'good').length;
   if (bad >= 2) return 'bad';
   if (good >= 2) return 'good';
+  if (nonRevenue && good >= 1) return 'good';
   return 'warning';
 }
 
 function buildAssessment(flow: FlowPerformance): string {
+  const nonRevenue = isNonRevenueFlow(flow.flow_name);
   const parts: string[] = [];
   const openStatus = metricStatus(flow.actual_open_rate, flow.benchmark_open_rate_low, flow.benchmark_open_rate_high);
   const clickStatus = metricStatus(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high);
-  const convStatus = metricStatus(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high);
 
   if (openStatus === 'bad' && flow.actual_open_rate !== null) {
     parts.push(`Open rate ${(flow.actual_open_rate * 100).toFixed(1)}% below ${(flow.benchmark_open_rate_low * 100).toFixed(0)}-${(flow.benchmark_open_rate_high * 100).toFixed(0)}% benchmark`);
@@ -37,16 +39,21 @@ function buildAssessment(flow: FlowPerformance): string {
   if (clickStatus === 'bad' && flow.actual_click_rate !== null) {
     parts.push(`Click ${(flow.actual_click_rate * 100).toFixed(1)}% vs. ${(flow.benchmark_click_rate_low * 100).toFixed(0)}-${(flow.benchmark_click_rate_high * 100).toFixed(0)}% benchmark`);
   }
-  if (convStatus === 'bad' && flow.actual_conv_rate !== null) {
-    parts.push(`Conv ${(flow.actual_conv_rate * 100).toFixed(2)}% vs. ${(flow.benchmark_conv_rate_low * 100).toFixed(1)}-${(flow.benchmark_conv_rate_high * 100).toFixed(0)}% benchmark`);
-  }
 
-  const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
-  if (flow.recipients_per_month > 50_000 && rpr < 0.02) {
-    parts.push(`Massive volume, tiny conversion. ${flow.recipients_per_month.toLocaleString()} recipients for ${formatCurrency(flow.monthly_revenue_current)}`);
+  if (!nonRevenue) {
+    const convStatus = metricStatus(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high);
+    if (convStatus === 'bad' && flow.actual_conv_rate !== null) {
+      parts.push(`Conv ${(flow.actual_conv_rate * 100).toFixed(2)}% vs. ${(flow.benchmark_conv_rate_low * 100).toFixed(1)}-${(flow.benchmark_conv_rate_high * 100).toFixed(0)}% benchmark`);
+    }
+
+    const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
+    if (flow.recipients_per_month > 50_000 && rpr < 0.02) {
+      parts.push(`Massive volume, tiny conversion. ${flow.recipients_per_month.toLocaleString()} recipients for ${formatCurrency(flow.monthly_revenue_current)}`);
+    }
   }
 
   if (parts.length === 0) {
+    if (nonRevenue) return 'Non-revenue flow. Engagement metrics look healthy.';
     const rating = overallRating(flow);
     if (rating === 'good') return 'Performing well relative to benchmarks.';
     return 'Moderate performance, room for improvement.';
@@ -207,6 +214,7 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
                 const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
                 const rating = overallRating(flow);
                 const assessment = buildAssessment(flow);
+                const nonRevenue = isNonRevenueFlow(flow.flow_name);
 
                 return (
                   <tr
@@ -218,6 +226,11 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
                   >
                     <td className="py-4 pl-6 pr-4">
                       <p className="text-sm font-medium text-gray-900 leading-tight">{flow.flow_name}</p>
+                      {nonRevenue && (
+                        <span className="inline-block mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
+                          Engagement only
+                        </span>
+                      )}
                     </td>
                     <td className="px-4 py-4 text-center">
                       <FlowStatusBadge status={flow.flow_status} />
@@ -235,13 +248,17 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
                       {pctCell(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high)}
                     </td>
                     <td className="px-4 py-4 text-center">
-                      {pctCell(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high)}
+                      {nonRevenue
+                        ? <span className="text-sm text-gray-300">N/A</span>
+                        : pctCell(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high)}
                     </td>
-                    <td className="px-4 py-4 text-right text-sm font-semibold text-gray-900 tabular-nums">
-                      {formatCurrency(flow.monthly_revenue_current)}
+                    <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-900">
+                      {nonRevenue
+                        ? <span className="text-gray-300">—</span>
+                        : <span className="font-semibold">{formatCurrency(flow.monthly_revenue_current)}</span>}
                     </td>
                     <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-600">
-                      ${rpr.toFixed(2)}
+                      {nonRevenue ? <span className="text-gray-300">—</span> : `$${rpr.toFixed(2)}`}
                     </td>
                     <td className="px-4 py-4 text-center">
                       <RatingDot status={rating} />

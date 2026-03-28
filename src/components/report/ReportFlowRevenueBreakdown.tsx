@@ -1,5 +1,5 @@
 import type { FlowPerformance } from '../../lib/types';
-import { formatCurrency } from '../../lib/revenue-calculator';
+import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
 
 interface Props {
   performance: FlowPerformance[];
@@ -49,6 +49,7 @@ export default function ReportFlowRevenueBreakdown({ performance }: Props) {
   const concentrationRisk = top2Pct > 50;
 
   const highVolumeFlows = performance.filter(f =>
+    !isNonRevenueFlow(f.flow_name) &&
     f.recipients_per_month > 100_000 && f.monthly_revenue_current > 0 &&
     (f.monthly_revenue_current / f.recipients_per_month) < 0.02
   );

@@ -1062,6 +1062,16 @@ serve(async (req) => {
       }
 
       // Replace flow_performance rows for this audit_id
+      const NON_REVENUE_PATTERNS = [
+        /review\s*request/i, /review\s*follow/i, /feedback/i, /survey/i, /nps/i,
+        /sunset/i, /list\s*clean/i, /unengaged/i, /re-?engage/i, /winback/i, /win-?back/i,
+        /birthday/i, /anniversary/i, /thank\s*you/i, /order\s*confirm/i,
+        /shipping/i, /delivery/i, /fulfillment/i, /transactional/i,
+        /password\s*reset/i, /account\s*confirm/i, /double\s*opt/i,
+        /referral/i, /loyalty/i, /reward/i, /points/i,
+      ];
+      const isNonRevenueFlow = (name: string) => NON_REVENUE_PATTERNS.some(p => p.test(name));
+
       const flowPerfRows = Object.entries(flowAgg).map(([flowId, a]) => {
         const denom = Math.max(1, a.recipients);
         const actual_open = a.open / denom;
@@ -1073,8 +1083,9 @@ serve(async (req) => {
         const flowStatus = (flowMeta?.attributes?.status ?? "live").toLowerCase();
         const mappedStatus =
           flowStatus.includes("draft") ? "draft" : flowStatus.includes("paused") ? "paused" : "live";
+        const nonRevenue = isNonRevenueFlow(flowName);
         const targetRpr = actual_rpr * 1.15;
-        const opportunity = Math.max(0, (targetRpr - actual_rpr) * a.recipients);
+        const opportunity = nonRevenue ? 0 : Math.max(0, (targetRpr - actual_rpr) * a.recipients);
         return {
           audit_id: auditId,
           flow_name: flowName,
@@ -1088,12 +1099,14 @@ serve(async (req) => {
           benchmark_click_rate_low: 0.01,
           benchmark_click_rate_high: 0.05,
           actual_conv_rate: actual_conv,
-          benchmark_conv_rate_low: 0.001,
-          benchmark_conv_rate_high: 0.02,
+          benchmark_conv_rate_low: nonRevenue ? 0 : 0.001,
+          benchmark_conv_rate_high: nonRevenue ? 0 : 0.02,
           monthly_revenue_current: a.value,
           monthly_revenue_opportunity: opportunity,
           email_message_count: a.messageIds.size || null,
-          notes: "Computed from Klaviyo Reporting API (last_30_days).",
+          notes: nonRevenue
+            ? "Non-revenue flow (engagement-only). Conv/revenue benchmarks not applicable."
+            : "Computed from Klaviyo Reporting API (last_30_days).",
         };
       });
       if (flowPerfRows.length) {

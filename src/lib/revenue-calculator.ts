@@ -12,6 +12,39 @@ interface FlowBenchmark {
   key: string;
 }
 
+const NON_REVENUE_FLOW_PATTERNS = [
+  /review\s*request/i,
+  /review\s*follow/i,
+  /feedback/i,
+  /survey/i,
+  /nps/i,
+  /sunset/i,
+  /list\s*clean/i,
+  /unengaged/i,
+  /re-?engage/i,
+  /winback/i,
+  /win-?back/i,
+  /birthday/i,
+  /anniversary/i,
+  /thank\s*you/i,
+  /order\s*confirm/i,
+  /shipping/i,
+  /delivery/i,
+  /fulfillment/i,
+  /transactional/i,
+  /password\s*reset/i,
+  /account\s*confirm/i,
+  /double\s*opt/i,
+  /referral/i,
+  /loyalty/i,
+  /reward/i,
+  /points/i,
+];
+
+export function isNonRevenueFlow(flowName: string): boolean {
+  return NON_REVENUE_FLOW_PATTERNS.some(p => p.test(flowName));
+}
+
 const FLOW_BENCHMARKS: FlowBenchmark[] = [
   { name: 'Abandoned Cart', low: 150, high: 300, key: 'abandoned_cart' },
   { name: 'Browse Abandonment', low: 80, high: 150, key: 'browse_abandonment' },

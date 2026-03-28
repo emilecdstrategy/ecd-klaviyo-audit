@@ -1,4 +1,5 @@
 import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
+import { isNonRevenueFlow } from '../../lib/revenue-calculator';
 
 interface Props {
   snapshots: KlaviyoFlowSnapshot[];
@@ -27,16 +28,18 @@ function flowNameMatchesAny(name: string, patterns: string[]): boolean {
 }
 
 function computeCategories(snapshots: KlaviyoFlowSnapshot[], performance: FlowPerformance[], segmentCount: number): Category[] {
+  const revenueFlows = performance.filter(f => !isNonRevenueFlow(f.flow_name));
   const totalRecipients = performance.reduce((s, f) => s + f.recipients_per_month, 0);
-  const totalRevenue = performance.reduce((s, f) => s + f.monthly_revenue_current, 0);
+  const totalRevenue = revenueFlows.reduce((s, f) => s + f.monthly_revenue_current, 0);
   const annualRevenue = totalRevenue * 12;
 
   const weightedOpen = totalRecipients > 0
     ? performance.reduce((s, f) => s + (f.actual_open_rate ?? 0) * f.recipients_per_month, 0) / totalRecipients : 0;
   const weightedClick = totalRecipients > 0
     ? performance.reduce((s, f) => s + (f.actual_click_rate ?? 0) * f.recipients_per_month, 0) / totalRecipients : 0;
-  const weightedConv = totalRecipients > 0
-    ? performance.reduce((s, f) => s + (f.actual_conv_rate ?? 0) * f.recipients_per_month, 0) / totalRecipients : 0;
+  const revFlowRecipients = revenueFlows.reduce((s, f) => s + f.recipients_per_month, 0);
+  const weightedConv = revFlowRecipients > 0
+    ? revenueFlows.reduce((s, f) => s + (f.actual_conv_rate ?? 0) * f.recipients_per_month, 0) / revFlowRecipients : 0;
 
   const allNames = snapshots.map(f => f.name);
   const essentialPresent = ESSENTIAL_FLOW_PATTERNS.filter(e =>
