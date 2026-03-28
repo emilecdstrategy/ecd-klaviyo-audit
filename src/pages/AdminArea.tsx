@@ -274,7 +274,7 @@ function UsersTab() {
               type="email"
               value={inviteEmail}
               onChange={e => setInviteEmail(e.target.value)}
-              placeholder="name@ecdigitalstrategy.com"
+              placeholder="name@example.com"
               className="w-[260px] px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>

@@ -39,7 +39,7 @@ export default function Login() {
 
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Sign in</h2>
           <p className="text-sm text-gray-500 mb-8">
-            We'll email you a magic link. Only <span className="font-medium">@ecdigitalstrategy.com</span> accounts are allowed.
+            We'll email you a magic link to sign in.
           </p>
 
           {sent ? (
@@ -72,7 +72,7 @@ export default function Login() {
                   onChange={e => setEmail(e.target.value)}
                   required
                   className="w-full px-4 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20"
-                  placeholder="you@ecdigitalstrategy.com"
+                  placeholder="you@example.com"
                 />
               </div>
 

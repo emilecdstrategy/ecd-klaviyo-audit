@@ -70,8 +70,8 @@ serve(async (req) => {
 
     if (body.action === "invite") {
       const email = body.email.trim().toLowerCase();
-      if (!email.endsWith("@ecdigitalstrategy.com")) {
-        return json({ ok: false, error: { code: "bad_request", message: "Email must be @ecdigitalstrategy.com" } }, { status: 200 });
+      if (!email || !email.includes("@")) {
+        return json({ ok: false, error: { code: "bad_request", message: "Please enter a valid email address" } }, { status: 200 });
       }
       const { data, error } = await sb.auth.admin.inviteUserByEmail(email);
       if (error) throw error;

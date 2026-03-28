@@ -18,25 +18,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState('');
 
-  const allowedDomain = 'ecdigitalstrategy.com';
-  const isAllowedEmail = (email?: string | null) => {
-    if (!email) return false;
-    const lower = email.toLowerCase().trim();
-    return lower.endsWith(`@${allowedDomain}`);
-  };
+  const ADMIN_DOMAIN = 'ecdigitalstrategy.com';
 
   useEffect(() => {
     let isMounted = true;
 
     const handleSessionUser = async (sessionUser: { id: string; email?: string | null }) => {
-      const email = sessionUser.email ?? '';
-      if (!isAllowedEmail(email)) {
-        setAuthError(`Only @${allowedDomain} accounts are allowed.`);
-        await supabase.auth.signOut();
-        if (!isMounted) return;
-        setUser(null);
-        return;
-      }
+      const email = (sessionUser.email ?? '').toLowerCase().trim();
 
       const { data: existing, error: profileErr } = await supabase
         .from('profiles')
@@ -56,6 +44,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         return;
       }
 
+      const isEcdEmail = email.endsWith(`@${ADMIN_DOMAIN}`);
+      if (!isEcdEmail) {
+        setAuthError('Your account has not been set up yet. Please contact the ECD team.');
+        await supabase.auth.signOut();
+        if (!isMounted) return;
+        setUser(null);
+        return;
+      }
+
       const defaultName = (email.split('@')[0] || '').replace(/\./g, ' ').trim();
       const { data: created, error: insertErr } = await supabase
         .from('profiles')
@@ -63,7 +60,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: sessionUser.id,
           name: defaultName,
           email,
-          role: 'viewer',
+          role: 'admin',
         })
         .select('*')
         .single();
@@ -113,9 +110,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const sendMagicLink = async (email: string) => {
     const trimmed = email.trim().toLowerCase();
     setAuthError('');
-    if (!isAllowedEmail(trimmed)) {
-      throw new Error(`Only @${allowedDomain} accounts are allowed.`);
-    }
 
     const { error } = await supabase.auth.signInWithOtp({
       email: trimmed,
