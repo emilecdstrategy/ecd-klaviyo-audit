@@ -386,7 +386,7 @@ function EmailLibraryTab() {
   const resetForm = () => {
     setFormIndustry('');
     setFormName('');
-    setFormContentType('image');
+    setFormContentType('html');
     setFormHtml('');
     setFormImageUrl('');
     setFormAnnotations([]);
@@ -538,39 +538,42 @@ function EmailLibraryTab() {
             <div className="flex gap-2">
               <button
                 type="button"
-                onClick={() => setFormContentType('image')}
-                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${formContentType === 'image' ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
-              >
-                <ImageIcon className="w-4 h-4" /> Image Upload
-              </button>
-              <button
-                type="button"
                 onClick={() => setFormContentType('html')}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${formContentType === 'html' ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
               >
                 <Code className="w-4 h-4" /> HTML Paste
               </button>
+              <button
+                type="button"
+                onClick={() => setFormContentType('image')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium border transition-colors ${formContentType === 'image' ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30' : 'border-gray-200 text-gray-500 hover:bg-gray-50'}`}
+              >
+                <ImageIcon className="w-4 h-4" /> Image Upload
+              </button>
             </div>
           </div>
 
           <div className="bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs text-gray-500 leading-relaxed">
-            {formContentType === 'image' ? (
+            {formContentType === 'html' ? (
               <>
-                <p className="font-medium text-gray-700 mb-1">How to get an email screenshot:</p>
+                <p className="font-medium text-gray-700 mb-1">How to get the email HTML:</p>
                 <ol className="list-decimal ml-4 space-y-0.5">
-                  <li>Open the ECD email you want to use in your browser or email client</li>
-                  <li>Use a full-page screenshot tool (e.g. GoFullPage Chrome extension, or Cmd+Shift+4 / Win+Shift+S)</li>
-                  <li>Crop to just the email content and upload the image below</li>
+                  <li>Install the <a href="https://chromewebstore.google.com/detail/save-email-template-by-se/abokklkondgpdlcajcjiobegghjfccih" target="_blank" rel="noreferrer" className="text-brand-primary underline">Save Email Template</a> Chrome extension</li>
+                  <li>Send a test email to yourself and open it in Gmail</li>
+                  <li>In Gmail, click the three dots (<strong>⋮</strong>) and select <strong>Show original</strong></li>
+                  <li>Click the extension icon, then <strong>Capture from Gmail</strong>, then <strong>Download HTML</strong></li>
+                  <li>Open the downloaded HTML file in a text editor, select all the code, and paste it below</li>
                 </ol>
               </>
             ) : (
               <>
-                <p className="font-medium text-gray-700 mb-1">How to get email HTML code:</p>
+                <p className="font-medium text-gray-700 mb-1">How to get the email screenshot:</p>
                 <ol className="list-decimal ml-4 space-y-0.5">
-                  <li>Open the email in Klaviyo (or your ESP) and go to the email editor</li>
-                  <li>Look for "Export HTML" or "View Source" option — in Klaviyo, click the <strong>{"<>"}</strong> icon in the template editor</li>
-                  <li>Copy the full HTML code and paste it below</li>
-                  <li>Alternatively, use "Inspect Element" in your browser on a web-hosted version of the email</li>
+                  <li>Install the <a href="https://chromewebstore.google.com/detail/save-email-template-by-se/abokklkondgpdlcajcjiobegghjfccih" target="_blank" rel="noreferrer" className="text-brand-primary underline">Save Email Template</a> Chrome extension</li>
+                  <li>Send a test email to yourself and open it in Gmail</li>
+                  <li>In Gmail, click the three dots (<strong>⋮</strong>) and select <strong>Show original</strong></li>
+                  <li>Click the extension icon, then <strong>Capture from Gmail</strong>, then <strong>Download Image</strong></li>
+                  <li>Upload the downloaded image below</li>
                 </ol>
               </>
             )}
@@ -615,7 +618,7 @@ function EmailLibraryTab() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Annotations ({formAnnotations.length}) — click on the preview to place pins
               </label>
-              <div className="max-w-md">
+              <div className="max-w-md mx-auto">
                 <AnnotationLayer
                   imageUrl={formContentType === 'image' ? formImageUrl : undefined}
                   htmlContent={formContentType === 'html' ? formHtml : undefined}
