@@ -80,8 +80,9 @@ function serviceClient(authHeader?: string | null) {
 async function requireAdmin(req: Request) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader) throw new Error("Missing Authorization header");
-  const sb = serviceClient(authHeader);
-  const { data, error } = await sb.auth.getUser();
+  const jwt = authHeader.replace(/^Bearer\s+/i, "");
+  const sb = serviceClient();
+  const { data, error } = await sb.auth.getUser(jwt);
   if (error || !data?.user) throw new Error("Unauthorized");
   const uid = data.user.id;
   const { data: profile, error: pErr } = await sb.from("profiles").select("role").eq("id", uid).maybeSingle();

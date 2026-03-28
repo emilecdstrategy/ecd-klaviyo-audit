@@ -51,11 +51,11 @@ async function requireAuthenticatedUser(req: Request) {
   const authHeader = req.headers.get("authorization");
   if (!authHeader) throw new Error("Missing Authorization header");
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
+  const jwt = authHeader.replace(/^Bearer\s+/i, "");
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: authHeader } },
   });
-  const { data, error } = await sb.auth.getUser();
+  const { data, error } = await sb.auth.getUser(jwt);
   if (error || !data?.user) throw new Error("Invalid session");
   return data.user;
 }
