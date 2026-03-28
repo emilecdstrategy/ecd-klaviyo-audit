@@ -105,12 +105,8 @@ export default function Clients() {
                   if (!deletingClient) return;
                   try {
                     setDeleting(true);
-                    const { data: sessionData } = await supabase.auth.getSession();
-                    const token = sessionData.session?.access_token;
-                    if (!token) throw new Error('Your session expired. Please sign in again and retry.');
                     const { data, error } = await supabase.functions.invoke('admin_delete_client', {
                       body: { client_id: deletingClient.id },
-                      headers: { Authorization: `Bearer ${token}` },
                     });
                     if (error) throw error;
                     if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to delete client');

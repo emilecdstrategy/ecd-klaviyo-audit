@@ -114,12 +114,8 @@ export default function ClientDetail() {
     setKeySaving(true);
     setKeyMsg(null);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error('Session expired. Please sign in again.');
       const { data, error: fnErr } = await supabase.functions.invoke('klaviyo_connect_client', {
         body: { client_id: client.id, api_key: newApiKey.trim() },
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (fnErr) throw fnErr;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to connect Klaviyo');

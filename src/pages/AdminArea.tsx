@@ -120,23 +120,12 @@ function UsersTab() {
     setError('');
     try {
       setRefreshing(true);
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
-      const resp = await supabase.functions.invoke('admin_users', {
+      const { data, error } = await supabase.functions.invoke('admin_users', {
         body: { action: 'list' },
-        headers: { Authorization: `Bearer ${token}` },
       });
-      if (resp.error) {
-        const ctx = (resp.error as any).context;
-        let detail = resp.error.message;
-        if (ctx instanceof Response) {
-          try { detail += ' | ' + ctx.status + ' | ' + (await ctx.text()); } catch { /* */ }
-        }
-        throw new Error(detail);
-      }
-      if (resp.data?.ok !== true) throw new Error(resp.data?.error?.message ?? 'Failed to load users');
-      setUsers((resp.data.users ?? []) as AdminUserRow[]);
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to load users');
+      setUsers((data.users ?? []) as AdminUserRow[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load users');
     } finally {
@@ -173,12 +162,8 @@ function UsersTab() {
     try {
       setInviting(true);
       const email = inviteEmail.trim();
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
       const { data, error } = await supabase.functions.invoke('admin_users', {
         body: { action: 'invite', email },
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Invite failed');
@@ -197,12 +182,8 @@ function UsersTab() {
     setUsers(u => u.map(x => x.id === userId ? { ...x, role } : x));
     try {
       setSavingRoleFor(userId);
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
       const { data, error } = await supabase.functions.invoke('admin_users', {
         body: { action: 'update_role', user_id: userId, role },
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to save role');
@@ -220,12 +201,8 @@ function UsersTab() {
     setError('');
     try {
       setRemovingFor(userId);
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
       const { data, error } = await supabase.functions.invoke('admin_users', {
         body: { action: 'remove', user_id: userId },
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to remove user');

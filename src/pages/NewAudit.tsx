@@ -225,9 +225,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       // 4) Fetch Klaviyo snapshot (API only)
       setAnalysisProgress(35);
       setAnalysisStage('Fetching Klaviyo account data…');
-      const { data: sessionData } = await supabase.auth.getSession();
-      const token = sessionData.session?.access_token;
-      if (!token) throw new Error('Your session expired. Please sign in again and retry.');
       const snapshotPayload = {
         audit_id: audit.id,
         client_id: clientId,
@@ -235,7 +232,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       };
       const invokeSnapshot = () => supabase.functions.invoke<any>('klaviyo_fetch_snapshot', {
         body: snapshotPayload,
-        headers: { Authorization: `Bearer ${token}` },
       });
       let { data, error: fnErr } = await invokeSnapshot();
       if (fnErr) {

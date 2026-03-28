@@ -49,12 +49,8 @@ export default function NewClient({ asModal }: NewClientProps) {
       const created = await createClient(payload as any);
 
       try {
-        const { data: sessionData } = await supabase.auth.getSession();
-        const token = sessionData.session?.access_token;
-        if (!token) throw new Error('Your session expired. Please sign in again and retry.');
         const { data, error: fnErr } = await supabase.functions.invoke('klaviyo_connect_client', {
           body: { client_id: created.id, api_key: apiKey },
-          headers: { Authorization: `Bearer ${token}` },
         });
         if (fnErr) throw fnErr;
         if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to connect Klaviyo');

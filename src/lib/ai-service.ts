@@ -64,14 +64,9 @@ export async function runAIAnalysis(
   const allowFallback = import.meta.env.DEV && import.meta.env.VITE_ALLOW_AI_FALLBACK === 'true';
 
   try {
-    const { data: sessionData } = await supabase.auth.getSession();
-    const token = sessionData.session?.access_token;
-    if (!token) throw new AIAnalysisError('Your session expired. Please sign in again and retry.', 'provider_error');
-
     const call = async (requestedSectionKeys: string[], aiMode: AIRequestMode, label: string) => {
       const { data, error } = await supabase.functions.invoke<any>('ai_analyze_audit', {
         body: { ...wizardData, requestedSectionKeys, aiMode },
-        headers: { Authorization: `Bearer ${token}` },
       });
       if (error) {
         const anyErr = error as any;
