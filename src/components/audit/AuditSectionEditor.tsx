@@ -1,29 +1,20 @@
 import { useState, useEffect, useRef } from 'react';
 import { ChevronDown, ChevronUp, Check } from 'lucide-react';
-import type { AuditSection, AuditAsset, Annotation } from '../../lib/types';
+import type { AuditSection } from '../../lib/types';
 import { SECTION_LABELS, CONFIDENCE_LABELS } from '../../lib/constants';
 import RevenueOpportunityCard from '../ui/RevenueOpportunityCard';
 import StatusBadge from '../ui/StatusBadge';
-import SideBySideComparison from './SideBySideComparison';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 
 interface AuditSectionEditorProps {
   section: AuditSection;
-  assets: AuditAsset[];
-  annotations: Annotation[];
   onUpdate: (updates: Partial<AuditSection>) => void;
-  onAddAnnotation?: (side: 'current' | 'optimized', x: number, y: number, label: string) => void;
-  onRemoveAnnotation?: (id: string) => void;
 }
 
 export default function AuditSectionEditor({
   section,
-  assets,
-  annotations,
   onUpdate,
-  onAddAnnotation,
-  onRemoveAnnotation,
 }: AuditSectionEditorProps) {
   const [expanded, setExpanded] = useState(true);
   const didSeedRef = useRef<string | null>(null);
@@ -39,10 +30,6 @@ export default function AuditSectionEditor({
       onUpdate({ human_edited_findings: stripped });
     }
   }, [section.id, section.ai_findings, section.human_edited_findings]);
-
-  const currentAsset = assets.find(a => a.section_key === section.section_key && a.side === 'current');
-  const optimizedAsset = assets.find(a => a.section_key === section.section_key && a.side === 'optimized');
-  const sectionAnnotations = annotations.filter(a => a.audit_section_id === section.id);
 
   return (
     <div className="bg-white rounded-xl card-shadow animate-slide-up">
@@ -66,93 +53,27 @@ export default function AuditSectionEditor({
 
       {expanded && (
         <div className="px-6 pb-6 space-y-6 border-t border-gray-50 pt-4">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-                  Current State Title
-                </label>
-                <input
-                  type="text"
-                  value={section.current_state_title}
-                  onChange={e => onUpdate({ current_state_title: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-                  Current State Notes
-                </label>
-                <SimpleRichEditor
-                  value={section.current_state_notes}
-                  onChange={v => onUpdate({ current_state_notes: v })}
-                  rows={4}
-                  placeholder="Describe the current state..."
-                />
-              </div>
-            </div>
-
-            <div className="space-y-4">
-              <div>
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-                  Optimized State Title
-                </label>
-                <input
-                  type="text"
-                  value={section.optimized_state_title}
-                  onChange={e => onUpdate({ optimized_state_title: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-                  Optimized Benchmark Notes
-                </label>
-                <SimpleRichEditor
-                  value={section.optimized_notes}
-                  onChange={v => onUpdate({ optimized_notes: v })}
-                  rows={4}
-                  placeholder="Describe the optimized state..."
-                />
-              </div>
-            </div>
-          </div>
-
-          {(currentAsset || optimizedAsset) && (
-            <SideBySideComparison
-              currentAsset={currentAsset}
-              optimizedAsset={optimizedAsset}
-              currentAnnotations={sectionAnnotations.filter(a => a.side === 'current')}
-              optimizedAnnotations={sectionAnnotations.filter(a => a.side === 'optimized')}
-              currentTitle={section.current_state_title || 'Current State'}
-              optimizedTitle={section.optimized_state_title || 'Optimized State'}
-              onAddAnnotation={onAddAnnotation}
-              onRemoveAnnotation={onRemoveAnnotation}
-              editable
-            />
-          )}
-
           <div>
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-              Edited Findings
+              Key Takeaway
             </label>
             <SimpleRichEditor
               value={section.human_edited_findings}
               onChange={v => onUpdate({ human_edited_findings: v })}
               rows={3}
-              placeholder="Edit or refine the AI findings..."
+              placeholder="Edit or refine the AI-generated key takeaway..."
             />
           </div>
 
           <div>
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-              Summary (2-3 sentences, client-facing)
+              Opportunity Summary (shown in Top 3 cards)
             </label>
             <SimpleRichEditor
               value={section.summary_text}
               onChange={v => onUpdate({ summary_text: v })}
               rows={2}
-              placeholder="Write a brief client-facing summary..."
+              placeholder="Brief summary shown in the Top 3 Opportunities cards..."
             />
           </div>
 

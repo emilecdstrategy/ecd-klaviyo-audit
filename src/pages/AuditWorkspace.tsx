@@ -223,33 +223,6 @@ export default function AuditWorkspace() {
     }, 400);
   };
 
-  const handleAddAnnotation = async (side: 'current' | 'optimized', x: number, y: number, label: string) => {
-    if (!currentSection) return;
-    const asset = assets.find(a => a.section_key === currentSection.section_key && a.side === side);
-    try {
-      const created = await createAnnotation({
-        audit_section_id: currentSection.id,
-        asset_id: asset?.id || '',
-        x_position: x,
-        y_position: y,
-        label,
-        side,
-      });
-      setAnnotations(prev => [...prev, created]);
-    } catch {
-      // ignore for now
-    }
-  };
-
-  const handleRemoveAnnotation = async (annId: string) => {
-    setAnnotations(prev => prev.filter(a => a.id !== annId));
-    try {
-      await deleteAnnotation(annId);
-    } catch {
-      // ignore for now
-    }
-  };
-
   const handlePublish = async () => {
     if (!audit) return;
     try {
@@ -432,11 +405,7 @@ export default function AuditWorkspace() {
           ) : currentSection ? (
             <AuditSectionEditor
               section={currentSection}
-              assets={assets}
-              annotations={annotations}
               onUpdate={updates => handleSectionUpdate(currentSection.id, updates)}
-              onAddAnnotation={handleAddAnnotation}
-              onRemoveAnnotation={handleRemoveAnnotation}
             />
           ) : (
             <div className="bg-white rounded-xl p-8 card-shadow text-center">
