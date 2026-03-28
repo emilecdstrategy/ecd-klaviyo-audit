@@ -30,7 +30,7 @@ type NewAuditProps = { asModal?: boolean };
 /** Poll until Edge function finishes full Klaviyo profile pagination (multi-invocation). */
 async function waitForProfileJobComplete(
   auditId: string,
-  onProgress?: (subscribed: number, active90d: number, suppressed: number) => void,
+  onProgress?: (totalProfiles: number) => void,
 ) {
   const maxMs = 45 * 60 * 1000;
   const t0 = Date.now();
@@ -39,19 +39,19 @@ async function waitForProfileJobComplete(
   while (Date.now() - t0 < maxMs) {
     const { data, error } = await supabase
       .from('klaviyo_profile_scan_jobs')
-      .select('status, error_message, subscribed, active90d, suppressed, updated_at')
+      .select('status, error_message, total_profiles, updated_at')
       .eq('audit_id', auditId)
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error('Profile scan job not found');
     if (data.status === 'complete') {
-      onProgress?.(data.subscribed ?? 0, data.active90d ?? 0, data.suppressed ?? 0);
+      onProgress?.(data.total_profiles ?? 0);
       return;
     }
     if (data.status === 'failed') {
       throw new Error(data.error_message || 'Audience metrics scan failed');
     }
-    onProgress?.(data.subscribed ?? 0, data.active90d ?? 0, data.suppressed ?? 0);
+    onProgress?.(data.total_profiles ?? 0);
 
     // Detect stalled scan and re-trigger the resume chain
     if (data.updated_at === lastUpdated) {
@@ -293,11 +293,10 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       const profilePending = (data as { profile_metrics_status?: string })?.profile_metrics_status === 'pending';
       if (profilePending) {
         setAnalysisStage('Finishing audience metrics (full Klaviyo profile scan)…');
-        await waitForProfileJobComplete(audit.id, (subscribed, _active90d, suppressed) => {
-          const total = subscribed + suppressed;
+        await waitForProfileJobComplete(audit.id, (totalProfiles) => {
           setAnalysisStage(
-            total > 0
-              ? `Scanning profiles… ${total.toLocaleString()} scanned so far`
+            totalProfiles > 0
+              ? `Scanning profiles… ${totalProfiles.toLocaleString()} scanned so far`
               : 'Finishing audience metrics (full Klaviyo profile scan)…',
           );
         });

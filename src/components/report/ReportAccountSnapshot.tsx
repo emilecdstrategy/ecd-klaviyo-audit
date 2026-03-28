@@ -74,6 +74,7 @@ export default function ReportAccountSnapshot({
   campaignSnapshots: KlaviyoCampaignSnapshot[];
   reportingDiagnostic?: string | null;
   accountSnapshot?: {
+    total_profiles_count?: number | null;
     email_subscribed_profiles_count: number | null;
     active_profiles_90d_count: number | null;
     suppressed_profiles_count: number | null;
@@ -117,6 +118,20 @@ export default function ReportAccountSnapshot({
         <Card
           label="List Size"
           value={formatIntWithTruncFlag(
+            accountSnapshot?.total_profiles_count ?? accountSnapshot?.email_subscribed_profiles_count ?? null,
+            accountSnapshot?.email_subscribed_profiles_truncated,
+          )}
+          sub={
+            accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.total_profiles_count == null && accountSnapshot?.email_subscribed_profiles_count == null
+              ? 'full profile scan in progress'
+              : (accountSnapshot?.total_profiles_count ?? accountSnapshot?.email_subscribed_profiles_count) == null
+                ? 'requires profiles:read scope'
+                : 'all profiles in Klaviyo account'
+          }
+        />
+        <Card
+          label="Active Profiles"
+          value={formatIntWithTruncFlag(
             accountSnapshot?.email_subscribed_profiles_count ?? null,
             accountSnapshot?.email_subscribed_profiles_truncated,
           )}
@@ -125,27 +140,7 @@ export default function ReportAccountSnapshot({
               ? 'full profile scan in progress'
               : accountSnapshot?.email_subscribed_profiles_count == null
                 ? 'requires profiles:read scope'
-                : [
-                    'email-subscribed profiles',
-                    accountSnapshot?.email_subscribed_profiles_truncated ? 'partial scan (time budget) — count may be incomplete' : null,
-                  ].filter(Boolean).join(' · ')
-          }
-        />
-        <Card
-          label="Active Profiles"
-          value={formatIntWithTruncFlag(
-            accountSnapshot?.active_profiles_90d_count ?? null,
-            accountSnapshot?.active_profiles_90d_truncated,
-          )}
-          sub={
-            accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.active_profiles_90d_count == null
-              ? 'full profile scan in progress'
-              : accountSnapshot?.active_profiles_90d_count == null
-                ? 'requires profiles:read scope'
-                : [
-                    accountSnapshot?.active_profiles_definition ?? 'engaged last 90 days',
-                    accountSnapshot?.active_profiles_90d_truncated ? 'partial scan — proxy may be low' : null,
-                  ].filter(Boolean).join(' · ')
+                : 'email-subscribed profiles'
           }
         />
         <Card

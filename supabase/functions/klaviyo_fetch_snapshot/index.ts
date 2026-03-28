@@ -207,6 +207,7 @@ async function klaviyoCountProfiles(params: {
 
 type ProfileChunkOk = {
   ok: true;
+  totalProfiles: number;
   subscribed: number;
   active90d: number;
   suppressed: number;
@@ -218,14 +219,15 @@ async function computeProfileSnapshotChunk(params: {
   apiKey: string;
   revision: string;
   since90Iso: string;
-  /** Continue from this path; null starts at PROFILE_FIRST_PATH */
   startPath: string | null;
+  totalProfiles: number;
   subscribed: number;
   active90d: number;
   suppressed: number;
   deadlineAtMs: number;
 }): Promise<ProfileChunkOk | { ok: false; status: number; body: any }> {
   const since90Ms = Date.parse(params.since90Iso);
+  let totalProfiles = params.totalProfiles;
   let subscribed = params.subscribed;
   let active90d = params.active90d;
   let suppressed = params.suppressed;
@@ -235,6 +237,7 @@ async function computeProfileSnapshotChunk(params: {
     if (Date.now() >= params.deadlineAtMs) {
       return {
         ok: true,
+        totalProfiles,
         subscribed,
         active90d,
         suppressed,
@@ -248,6 +251,8 @@ async function computeProfileSnapshotChunk(params: {
     }
     const items = res.body?.data ?? [];
     for (const p of items) {
+      totalProfiles += 1;
+
       const consent = String(p?.attributes?.subscriptions?.email?.marketing?.consent ?? "").toUpperCase();
       const isSubscribed = consent === "SUBSCRIBED";
       if (isSubscribed) subscribed += 1;
@@ -269,6 +274,7 @@ async function computeProfileSnapshotChunk(params: {
     if (!nextUrl) {
       return {
         ok: true,
+        totalProfiles,
         subscribed,
         active90d,
         suppressed,
@@ -307,6 +313,7 @@ async function chainProfileResume(auditId: string) {
 async function finalizeProfileScan(
   sb: ReturnType<typeof assertServiceClient>,
   auditId: string,
+  totalProfiles: number,
   subscribed: number,
   active90d: number,
   suppressed: number,
@@ -316,6 +323,7 @@ async function finalizeProfileScan(
   if (!rollups?.length) return;
 
   const accountSnapshotPatch = {
+    total_profiles_count: totalProfiles,
     email_subscribed_profiles_count: subscribed,
     active_profiles_90d_count: active90d,
     suppressed_profiles_count: suppressed,
@@ -338,8 +346,8 @@ async function finalizeProfileScan(
     if (finalRprForAudit == null && rprMerged != null) finalRprForAudit = rprMerged;
     const derived_metrics = {
       ...prevDm,
-      list_size: subscribed,
-      monthly_engagement: active90d,
+      list_size: totalProfiles,
+      monthly_engagement: subscribed,
       revenue_per_recipient: rprMerged,
     };
     const account_snapshot = { ...existing, ...accountSnapshotPatch };
@@ -348,14 +356,15 @@ async function finalizeProfileScan(
   }
 
   await mustSucceed("update audits profile metrics", sb.from("audits").update({
-    list_size: subscribed,
-    monthly_traffic: active90d,
+    list_size: totalProfiles,
+    monthly_traffic: subscribed,
     aov: finalRprForAudit ?? 0,
   }).eq("id", auditId));
 
   await mustSucceed("complete profile scan job", sb.from("klaviyo_profile_scan_jobs").update({
     status: "complete",
     next_path: null,
+    total_profiles: totalProfiles,
     subscribed,
     active90d,
     suppressed,
@@ -403,6 +412,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
     revision: String(claimed.revision),
     since90Iso: String(claimed.since90_iso),
     startPath,
+    totalProfiles: Number(claimed.total_profiles ?? 0),
     subscribed: Number(claimed.subscribed ?? 0),
     active90d: Number(claimed.active90d ?? 0),
     suppressed: Number(claimed.suppressed ?? 0),
@@ -422,6 +432,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
     await mustSucceed("profile job progress", sb.from("klaviyo_profile_scan_jobs").update({
       status: "pending",
       next_path: chunk.nextPath,
+      total_profiles: chunk.totalProfiles,
       subscribed: chunk.subscribed,
       active90d: chunk.active90d,
       suppressed: chunk.suppressed,
@@ -433,7 +444,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
 
   const staged = claimed.staged_revenue_per_recipient;
   const stagedRpr = staged != null && Number.isFinite(Number(staged)) ? Number(staged) : null;
-  await finalizeProfileScan(sb, auditId, chunk.subscribed, chunk.active90d, chunk.suppressed, stagedRpr);
+  await finalizeProfileScan(sb, auditId, chunk.totalProfiles, chunk.subscribed, chunk.active90d, chunk.suppressed, stagedRpr);
   return json({ ok: true, correlationId, profile_metrics_status: "complete" });
 }
 
