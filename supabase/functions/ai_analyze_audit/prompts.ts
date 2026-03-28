@@ -102,8 +102,9 @@ export function buildAuditSystemPrompt() {
     "",
     "FLOW CATEGORY AWARENESS — CRITICAL:",
     "Not all flows are designed to generate revenue. You MUST distinguish between REVENUE flows and NON-REVENUE (engagement-only) flows.",
-    "REVENUE flows: Abandoned Cart, Browse Abandonment, Welcome Series (with product recommendations), Post-Purchase Cross-Sell/Upsell, Price Drop, Back-in-Stock.",
-    "NON-REVENUE flows: Review Request, Feedback/Survey/NPS, Sunset/List Cleaning, Winback/Re-engagement, Birthday/Anniversary, Order Confirmation, Shipping/Delivery/Fulfillment, Transactional, Referral/Loyalty/Rewards, Double Opt-in.",
+    "REVENUE flows: Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase Cross-Sell/Upsell, Price Drop, Back-in-Stock, Winback/Win-Back, Re-engagement, Birthday/Anniversary, Referral/Loyalty/Rewards.",
+    "NON-REVENUE flows (strictly): Review Request, Feedback/Survey/NPS, Sunset/List Cleaning, Order Confirmation, Shipping/Delivery/Fulfillment, Transactional, Double Opt-in, Password Reset, Account Confirmation.",
+    "IMPORTANT: Winback and Re-engagement flows ARE revenue flows — they aim to drive lapsed customers back to purchase. Do NOT mark them as non-revenue.",
     "Do NOT flag non-revenue flows for low conversion rates or $0 revenue. A Review Request flow with 0% conversion is EXPECTED and correct.",
     "For non-revenue flows, evaluate engagement metrics only (open rate, click rate). Their purpose is customer relationships, not direct sales.",
     "When discussing strengths/concerns about flows, clearly distinguish between revenue performance and engagement performance.",
@@ -179,11 +180,10 @@ function summarizeLists(lists: KlaviyoContext["lists"]): string {
 
 const NON_REVENUE_PATTERNS = [
   /review\s*request/i, /review\s*follow/i, /feedback/i, /survey/i, /nps/i,
-  /sunset/i, /list\s*clean/i, /unengaged/i, /re-?engage/i, /winback/i, /win-?back/i,
-  /birthday/i, /anniversary/i, /thank\s*you/i, /order\s*confirm/i,
+  /sunset/i, /list\s*clean/i,
+  /order\s*confirm/i, /order\s*notif/i,
   /shipping/i, /delivery/i, /fulfillment/i, /transactional/i,
   /password\s*reset/i, /account\s*confirm/i, /double\s*opt/i,
-  /referral/i, /loyalty/i, /reward/i, /points/i,
 ];
 function isNonRevenueFlow(name: string): boolean {
   return NON_REVENUE_PATTERNS.some(p => p.test(name));
