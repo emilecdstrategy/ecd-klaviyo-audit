@@ -26,6 +26,8 @@ import {
   updateIndustryEmail,
   deleteIndustryEmail,
   uploadAuditAssetFile,
+  getPlatformSettings,
+  updatePlatformSettings,
 } from '../lib/db';
 import type { IndustryEmailLibrary } from '../lib/types';
 
@@ -156,7 +158,7 @@ function UsersTab() {
   }, []);
 
   const roleBadgeStatus = (role: AdminUserRow['role']) =>
-    role === 'admin' ? 'published' : role === 'auditor' ? 'in_progress' : 'draft';
+    role === 'admin' ? 'published' : role === 'auditor' ? 'in_review' : 'draft';
 
   const onInvite = async () => {
     setError('');
@@ -365,17 +367,22 @@ function EmailLibraryTab() {
   const [formHtml, setFormHtml] = useState('');
   const [formImageUrl, setFormImageUrl] = useState('');
   const [formAnnotations, setFormAnnotations] = useState<Array<{ x: number; y: number; label: string }>>([]);
-  const [formAnnotationSize, setFormAnnotationSize] = useState<'sm' | 'md' | 'lg'>('md');
-  const [formAnnotationsExpanded, setFormAnnotationsExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [globalAnnotationSize, setGlobalAnnotationSize] = useState<'sm' | 'md' | 'lg'>('md');
+  const [globalAnnotationsExpanded, setGlobalAnnotationsExpanded] = useState(false);
+  const [globalSettingsLoaded, setGlobalSettingsLoaded] = useState(false);
+
   const reload = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await listIndustryEmailLibrary();
+      const [data, settings] = await Promise.all([listIndustryEmailLibrary(), getPlatformSettings()]);
       setEntries(data);
+      setGlobalAnnotationSize(settings.annotation_size);
+      setGlobalAnnotationsExpanded(settings.annotations_expanded);
+      setGlobalSettingsLoaded(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
     } finally {
@@ -385,6 +392,16 @@ function EmailLibraryTab() {
 
   useEffect(() => { reload(); }, [reload]);
 
+  const saveGlobalAnnotationSize = async (v: 'sm' | 'md' | 'lg') => {
+    setGlobalAnnotationSize(v);
+    try { await updatePlatformSettings({ annotation_size: v }); } catch { /* ignore */ }
+  };
+
+  const saveGlobalAnnotationsExpanded = async (v: boolean) => {
+    setGlobalAnnotationsExpanded(v);
+    try { await updatePlatformSettings({ annotations_expanded: v }); } catch { /* ignore */ }
+  };
+
   const resetForm = () => {
     setFormIndustry('');
     setFormName('');
@@ -392,8 +409,6 @@ function EmailLibraryTab() {
     setFormHtml('');
     setFormImageUrl('');
     setFormAnnotations([]);
-    setFormAnnotationSize('md');
-    setFormAnnotationsExpanded(false);
     setEditingEntry(null);
     setShowForm(false);
   };
@@ -406,8 +421,6 @@ function EmailLibraryTab() {
     setFormHtml(entry.html_content || '');
     setFormImageUrl(entry.image_url || '');
     setFormAnnotations(entry.default_annotations || []);
-    setFormAnnotationSize(entry.annotation_size || 'md');
-    setFormAnnotationsExpanded(entry.annotations_expanded ?? false);
     setShowForm(true);
   };
 
@@ -444,8 +457,6 @@ function EmailLibraryTab() {
         html_content: formContentType === 'html' ? formHtml : null,
         image_url: formContentType === 'image' ? formImageUrl : null,
         default_annotations: formAnnotations,
-        annotation_size: formAnnotationSize,
-        annotations_expanded: formAnnotationsExpanded,
       };
       if (editingEntry) {
         await updateIndustryEmail(editingEntry.id, payload);
@@ -507,6 +518,37 @@ function EmailLibraryTab() {
           </button>
         )}
       </div>
+
+      {globalSettingsLoaded && (
+        <div className="bg-white rounded-xl px-5 py-4 card-shadow flex items-center gap-6">
+          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide shrink-0">Annotation Settings</span>
+          <div className="flex items-center gap-2">
+            <label className="text-xs font-medium text-gray-600 shrink-0">Size</label>
+            <Select value={globalAnnotationSize} onValueChange={v => saveGlobalAnnotationSize(v as 'sm' | 'md' | 'lg')}>
+              <SelectTrigger className="h-8 w-[140px] text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sm"><SelectItemText>Small</SelectItemText></SelectItem>
+                <SelectItem value="md"><SelectItemText>Medium</SelectItemText></SelectItem>
+                <SelectItem value="lg"><SelectItemText>Large</SelectItemText></SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <label className="flex items-center gap-2 cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={globalAnnotationsExpanded}
+              onClick={() => saveGlobalAnnotationsExpanded(!globalAnnotationsExpanded)}
+              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${globalAnnotationsExpanded ? 'bg-brand-primary' : 'bg-gray-200'}`}
+            >
+              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${globalAnnotationsExpanded ? 'translate-x-4' : 'translate-x-0'}`} />
+            </button>
+            <span className="text-xs font-medium text-gray-600">Always show labels</span>
+          </label>
+        </div>
+      )}
 
       {error && <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>}
 
@@ -620,36 +662,6 @@ function EmailLibraryTab() {
                 Annotations ({formAnnotations.length}) — click on the preview to place pins
               </label>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
-                <div>
-                  <label className="block text-xs font-medium text-gray-600 mb-1">Annotation Size</label>
-                  <Select value={formAnnotationSize} onValueChange={v => setFormAnnotationSize(v as 'sm' | 'md' | 'lg')}>
-                    <SelectTrigger className="w-full">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="sm"><SelectItemText>Small</SelectItemText></SelectItem>
-                      <SelectItem value="md"><SelectItemText>Medium (default)</SelectItemText></SelectItem>
-                      <SelectItem value="lg"><SelectItemText>Large</SelectItemText></SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-end pb-1">
-                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={formAnnotationsExpanded}
-                      onClick={() => setFormAnnotationsExpanded(e => !e)}
-                      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${formAnnotationsExpanded ? 'bg-brand-primary' : 'bg-gray-200'}`}
-                    >
-                      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${formAnnotationsExpanded ? 'translate-x-4' : 'translate-x-0'}`} />
-                    </button>
-                    <span className="text-xs font-medium text-gray-600">Always show labels</span>
-                  </label>
-                </div>
-              </div>
-
               <div className="max-w-md mx-auto">
                 <AnnotationLayer
                   imageUrl={formContentType === 'image' ? formImageUrl : undefined}
@@ -659,8 +671,8 @@ function EmailLibraryTab() {
                   onRemoveAnnotation={handleRemoveAnnotation}
                   editable
                   side="optimized"
-                  markerSize={formAnnotationSize}
-                  alwaysShowLabels={formAnnotationsExpanded}
+                  markerSize={globalAnnotationSize}
+                  alwaysShowLabels={globalAnnotationsExpanded}
                 />
               </div>
             </div>
@@ -697,7 +709,7 @@ function EmailLibraryTab() {
                 {entry.content_type === 'image' && entry.image_url ? (
                   <img src={entry.image_url} alt={entry.name} className="w-full object-cover object-top" />
                 ) : entry.content_type === 'html' && entry.html_content ? (
-                  <iframe srcDoc={entry.html_content} sandbox="allow-same-origin" className="w-full border-0 pointer-events-none" style={{ height: 1200 }} title={entry.name} />
+                  <iframe srcDoc={entry.html_content} sandbox="allow-same-origin" className="w-full border-0 pointer-events-none" scrolling="no" style={{ height: 1200, overflow: 'hidden' }} title={entry.name} />
                 ) : (
                   <div className="flex items-center justify-center h-full text-sm text-gray-300">No preview</div>
                 )}

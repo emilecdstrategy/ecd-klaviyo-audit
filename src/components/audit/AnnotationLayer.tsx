@@ -49,6 +49,7 @@ export default function AnnotationLayer({
   const [adding, setAdding] = useState(false);
   const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null);
   const [labelText, setLabelText] = useState('');
+  const [hoveredListId, setHoveredListId] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(800);
@@ -141,27 +142,31 @@ export default function AnnotationLayer({
 
   const sz = SIZE_CONFIG[markerSize];
 
-  const renderMarkerInner = (ann: { id: string; label: string }, i: number, isPending?: boolean) => (
-    <div className="relative group/marker">
-      <div className={`${sz.dot} rounded-full ${isPending ? 'bg-brand-primary animate-pulse' : markerColor} text-white ${sz.dotText} font-bold flex items-center justify-center shadow-lg border-2 border-white`}>
-        {isPending ? '?' : i + 1}
-      </div>
-      {!isPending && (
-        <div className={`absolute left-7 top-1/2 -translate-y-1/2 bg-white ${sz.labelPx} ${sz.labelPy} rounded-lg shadow-lg border ${markerBorder} ${sz.labelText} font-medium text-gray-800 whitespace-nowrap ${alwaysShowLabels ? 'opacity-100' : 'opacity-0 group-hover/marker:opacity-100'} transition-opacity pointer-events-none z-20`}>
-          {ann.label}
-          <div className={`absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 bg-white border-l border-b ${markerBorder} rotate-45`} />
+  const renderMarkerInner = (ann: { id: string; label: string }, i: number, isPending?: boolean) => {
+    const isHighlighted = hoveredListId === ann.id;
+    const showLabel = alwaysShowLabels || isHighlighted;
+    return (
+      <div className="relative group/marker">
+        <div className={`${sz.dot} rounded-full ${isPending ? 'bg-brand-primary animate-pulse' : markerColor} text-white ${sz.dotText} font-bold flex items-center justify-center shadow-lg border-2 ${isHighlighted ? 'border-brand-primary ring-2 ring-brand-primary/40 scale-125' : 'border-white'} transition-transform`}>
+          {isPending ? '?' : i + 1}
         </div>
-      )}
-      {!isPending && editable && onRemoveAnnotation && (
-        <button
-          onClick={(e) => { e.stopPropagation(); onRemoveAnnotation(ann.id); }}
-          className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/marker:opacity-100 transition-opacity"
-        >
-          <X className="w-2.5 h-2.5" />
-        </button>
-      )}
-    </div>
-  );
+        {!isPending && (
+          <div className={`absolute left-7 top-1/2 -translate-y-1/2 bg-white ${sz.labelPx} ${sz.labelPy} rounded-lg shadow-lg border ${markerBorder} ${sz.labelText} font-medium text-gray-800 whitespace-nowrap ${showLabel ? 'opacity-100' : 'opacity-0 group-hover/marker:opacity-100'} transition-opacity pointer-events-none z-20`}>
+            {ann.label}
+            <div className={`absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 bg-white border-l border-b ${markerBorder} rotate-45`} />
+          </div>
+        )}
+        {!isPending && editable && onRemoveAnnotation && (
+          <button
+            onClick={(e) => { e.stopPropagation(); onRemoveAnnotation(ann.id); }}
+            className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/marker:opacity-100 transition-opacity"
+          >
+            <X className="w-2.5 h-2.5" />
+          </button>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="relative group">
@@ -235,15 +240,23 @@ export default function AnnotationLayer({
       )}
 
       {sideAnnotations.length > 0 && (
-        <div className="mt-3 space-y-1.5">
-          {sideAnnotations.map((ann, i) => (
-            <div key={ann.id} className="flex items-start gap-2 text-xs">
-              <span className={`${sz.listDot} rounded-full ${markerColor} text-white ${sz.listDotText} font-bold flex items-center justify-center shrink-0 mt-0.5`}>
-                {i + 1}
-              </span>
-              <span className="text-gray-600">{ann.label}</span>
-            </div>
-          ))}
+        <div className="mt-4 pt-3 border-t border-gray-100">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Annotations</p>
+          <div className="space-y-1">
+            {sideAnnotations.map((ann, i) => (
+              <div
+                key={ann.id}
+                className={`flex items-start gap-2 text-xs px-2 py-1 rounded-md cursor-default transition-colors ${hoveredListId === ann.id ? 'bg-brand-primary/5' : 'hover:bg-gray-50'}`}
+                onMouseEnter={() => setHoveredListId(ann.id)}
+                onMouseLeave={() => setHoveredListId(null)}
+              >
+                <span className={`${sz.listDot} rounded-full ${markerColor} text-white ${sz.listDotText} font-bold flex items-center justify-center shrink-0 mt-0.5`}>
+                  {i + 1}
+                </span>
+                <span className="text-gray-600">{ann.label}</span>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

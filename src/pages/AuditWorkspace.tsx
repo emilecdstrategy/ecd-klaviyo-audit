@@ -1,27 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FileText, BarChart3, LayoutGrid as Layout, Target, Mail, Palette, FormInput, DollarSign, ExternalLink, Maximize2, X as XIcon } from 'lucide-react';
+import { FileText, BarChart3, LayoutGrid as Layout, Target, Mail, Palette, FormInput, DollarSign, ExternalLink, Maximize2, X as XIcon, Check } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import AuditSectionEditor from '../components/audit/AuditSectionEditor';
 import RevenueOpportunityCard from '../components/ui/RevenueOpportunityCard';
 import ShareLinkPanel from '../components/ui/ShareLinkPanel';
 import StatusBadge from '../components/ui/StatusBadge';
 import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
-import { useAuth } from '../contexts/AuthContext';
-import {
-  DEMO_AUDITS,
-  DEMO_CLIENTS,
-  DEMO_AUDIT_SECTIONS,
-  DEMO_ASSETS,
-  DEMO_ANNOTATIONS,
-} from '../lib/demo-data';
-import { SECTION_KEYS, SECTION_LABELS } from '../lib/constants';
+import { SECTION_KEYS, SECTION_LABELS, CONFIDENCE_LABELS } from '../lib/constants';
 import { formatCurrency } from '../lib/revenue-calculator';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, AuditAsset, Client } from '../lib/types';
-import { createAnnotation, deleteAnnotation, getAudit, getClient, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAuditSection, getAuditEmailDesign, upsertAuditEmailDesign, listIndustryEmailLibrary } from '../lib/db';
+import { createAnnotation, deleteAnnotation, getAudit, getClient, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAudit, updateAuditStatus, updateAuditSection, getAuditEmailDesign, upsertAuditEmailDesign, listIndustryEmailLibrary, getPlatformSettings } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { RichAuditText } from '../components/ui/RichAuditText';
+import SimpleRichEditor from '../components/ui/SimpleRichEditor';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
 
@@ -38,28 +30,22 @@ const SECTION_ICONS: Record<string, React.ElementType> = {
 export default function AuditWorkspace() {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { isDemo } = useAuth();
 
-  const [audit, setAudit] = useState<Audit | null>(isDemo ? (DEMO_AUDITS.find(a => a.id === id) ?? null) : null);
-  const [client, setClient] = useState<Client | null>(
-    isDemo && audit ? (DEMO_CLIENTS.find(c => c.id === audit.client_id) ?? null) : null,
-  );
-  const [assets, setAssets] = useState<AuditAsset[]>(isDemo ? DEMO_ASSETS.filter(a => a.audit_id === id) : []);
-  const [loading, setLoading] = useState(!isDemo);
+  const [audit, setAudit] = useState<Audit | null>(null);
+  const [client, setClient] = useState<Client | null>(null);
+  const [assets, setAssets] = useState<AuditAsset[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
-  const [sections, setSections] = useState<AuditSection[]>(
-    isDemo ? DEMO_AUDIT_SECTIONS.filter(s => s.audit_id === id) : [],
-  );
-  const [annotations, setAnnotations] = useState<Annotation[]>(
-    isDemo ? DEMO_ANNOTATIONS : [],
-  );
+  const [sections, setSections] = useState<AuditSection[]>([]);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
   const [activeSection, setActiveSection] = useState<string>(SECTION_KEYS[0]);
 
   const [emailDesign, setEmailDesign] = useState<AuditEmailDesign | null>(null);
   const [emailLibrary, setEmailLibrary] = useState<IndustryEmailLibrary[]>([]);
 
   const saveTimers = useRef<Record<string, number>>({});
+  const execSaveTimer = useRef<number>(0);
   const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
   const [scopeWarnings, setScopeWarnings] = useState<string[]>([]);
   /** Rollup-derived KPIs when audit row still has zeros (older API audits). */
@@ -98,7 +84,7 @@ export default function AuditWorkspace() {
 
   useEffect(() => {
     let cancelled = false;
-    if (isDemo || !id) return;
+    if (!id) return;
     (async () => {
       try {
         setLoading(true);
@@ -148,10 +134,10 @@ export default function AuditWorkspace() {
       }
     })();
     return () => { cancelled = true; };
-  }, [id, isDemo]);
+  }, [id]);
 
   useEffect(() => {
-    if (isDemo || !audit || audit.audit_method !== 'api') {
+    if (!audit || audit.audit_method !== 'api') {
       setKpiFromSnapshot(null);
       return;
     }
@@ -183,7 +169,7 @@ export default function AuditWorkspace() {
       });
     })();
     return () => { cancelled = true; };
-  }, [isDemo, audit?.id, audit?.audit_method]);
+  }, [audit?.id, audit?.audit_method]);
 
   if (loading) {
     return (
@@ -224,7 +210,6 @@ export default function AuditWorkspace() {
 
   const handleSectionUpdate = (sectionId: string, updates: Partial<AuditSection>) => {
     setSections(prev => prev.map(s => (s.id === sectionId ? { ...s, ...updates } : s)));
-    if (isDemo) return;
     if (saveTimers.current[sectionId]) window.clearTimeout(saveTimers.current[sectionId]);
     saveTimers.current[sectionId] = window.setTimeout(async () => {
       try {
@@ -238,20 +223,6 @@ export default function AuditWorkspace() {
   const handleAddAnnotation = async (side: 'current' | 'optimized', x: number, y: number, label: string) => {
     if (!currentSection) return;
     const asset = assets.find(a => a.section_key === currentSection.section_key && a.side === side);
-    if (isDemo) {
-      const newAnnotation: Annotation = {
-        id: `ann-${Date.now()}`,
-        audit_section_id: currentSection.id,
-        asset_id: asset?.id || '',
-        x_position: x,
-        y_position: y,
-        label,
-        side,
-        created_at: new Date().toISOString(),
-      };
-      setAnnotations(prev => [...prev, newAnnotation]);
-      return;
-    }
     try {
       const created = await createAnnotation({
         audit_section_id: currentSection.id,
@@ -269,7 +240,6 @@ export default function AuditWorkspace() {
 
   const handleRemoveAnnotation = async (annId: string) => {
     setAnnotations(prev => prev.filter(a => a.id !== annId));
-    if (isDemo) return;
     try {
       await deleteAnnotation(annId);
     } catch {
@@ -278,7 +248,7 @@ export default function AuditWorkspace() {
   };
 
   const handlePublish = async () => {
-    if (isDemo || !audit) return;
+    if (!audit) return;
     try {
       const updated = await publishAudit(audit.id);
       setAudit(updated);
@@ -346,7 +316,27 @@ export default function AuditWorkspace() {
           <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
             <div className="px-3">
               <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Status</p>
-              <StatusBadge status={audit.status} size="md" />
+              <Select
+                value={audit.status}
+                onValueChange={async (v) => {
+                  const newStatus = v as Audit['status'];
+                  try {
+                    const updated = await updateAuditStatus(audit.id, newStatus);
+                    setAudit(updated);
+                  } catch (e) {
+                    console.error('Failed to update status:', e);
+                  }
+                }}
+              >
+                <SelectTrigger className="h-8 text-xs w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="draft"><SelectItemText>Draft</SelectItemText></SelectItem>
+                  <SelectItem value="in_review"><SelectItemText>In Review</SelectItemText></SelectItem>
+                  <SelectItem value="published"><SelectItemText>Published</SelectItemText></SelectItem>
+                </SelectContent>
+              </Select>
             </div>
             <RevenueOpportunityCard amount={totalRevenue} compact />
           </div>
@@ -362,6 +352,7 @@ export default function AuditWorkspace() {
               section={currentSection ?? null}
               onAnnotationsChange={setAnnotations}
               onEmailDesignChange={setEmailDesign}
+              onSectionUpdate={currentSection ? (updates) => handleSectionUpdate(currentSection.id, updates) : undefined}
             />
           ) : activeSection === 'revenue_summary' ? (
             <div className="space-y-6 animate-slide-up">
@@ -403,15 +394,21 @@ export default function AuditWorkspace() {
                 </div>
               </div>
 
-              {audit.executive_summary && (
-                <div className="bg-white rounded-xl p-6 card-shadow">
-                  <h3 className="text-sm font-semibold text-gray-900 mb-3">Executive Summary</h3>
-                  <RichAuditText
-                    text={(audit.executive_summary || '').replace(/\s+/g, ' ').split(/(?<=[.!?])\s+/).slice(0, 2).join(' ')}
-                    className="text-sm text-gray-700 leading-relaxed"
-                  />
-                </div>
-              )}
+              <div className="bg-white rounded-xl p-6 card-shadow">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Executive Summary</h3>
+                <SimpleRichEditor
+                  value={(audit.executive_summary || '').replace(/\*\*(.+?)\*\*/g, '$1')}
+                  onChange={(val) => {
+                    setAudit(prev => prev ? { ...prev, executive_summary: val } : prev);
+                    if (execSaveTimer.current) window.clearTimeout(execSaveTimer.current);
+                    execSaveTimer.current = window.setTimeout(async () => {
+                      try { await updateAudit(audit.id, { executive_summary: val }); } catch { /* silent */ }
+                    }, 800);
+                  }}
+                  rows={5}
+                  placeholder="Enter the executive summary..."
+                />
+              </div>
             </div>
           ) : currentSection ? (
             <AuditSectionEditor
@@ -489,6 +486,7 @@ function EmailDesignEditor({
   section,
   onAnnotationsChange,
   onEmailDesignChange,
+  onSectionUpdate,
 }: {
   audit: Audit;
   emailDesign: AuditEmailDesign | null;
@@ -497,10 +495,20 @@ function EmailDesignEditor({
   section: AuditSection | null;
   onAnnotationsChange: (anns: Annotation[]) => void;
   onEmailDesignChange: (ed: AuditEmailDesign | null) => void;
+  onSectionUpdate?: (updates: Partial<AuditSection>) => void;
 }) {
   const [selectedEcdId, setSelectedEcdId] = useState(emailDesign?.ecd_example_id || '');
   const [saving, setSaving] = useState(false);
   const [fullscreen, setFullscreen] = useState(false);
+  const [globalAnnotationSize, setGlobalAnnotationSize] = useState<'sm' | 'md' | 'lg'>('md');
+  const [globalAnnotationsExpanded, setGlobalAnnotationsExpanded] = useState(false);
+
+  useEffect(() => {
+    getPlatformSettings().then(s => {
+      setGlobalAnnotationSize(s.annotation_size);
+      setGlobalAnnotationsExpanded(s.annotations_expanded);
+    }).catch(() => {});
+  }, []);
 
   const ecdExample = emailDesign?.ecd_example || emailLibrary.find(e => e.id === selectedEcdId) || null;
   const sectionAnns = section ? annotations.filter(a => a.audit_section_id === section.id) : [];
@@ -611,11 +619,70 @@ function EmailDesignEditor({
           sectionAnns={sectionAnns}
           handleAddAnnotation={handleAddAnnotation}
           handleRemoveAnnotation={handleRemoveAnnotation}
+          markerSize={globalAnnotationSize}
+          alwaysShowLabels={globalAnnotationsExpanded}
         />
       </div>
 
+      {section && onSectionUpdate && (
+        <div className="bg-white rounded-xl p-6 card-shadow">
+          <h3 className="text-sm font-semibold text-gray-900 mb-4">Section Settings</h3>
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
+                Revenue Opportunity ($/mo)
+              </label>
+              <input
+                type="number"
+                value={section.revenue_opportunity}
+                onChange={e => onSectionUpdate({ revenue_opportunity: Number(e.target.value) })}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
+                Confidence
+              </label>
+              <Select value={section.confidence} onValueChange={v => onSectionUpdate({ confidence: v as AuditSection['confidence'] })}>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {Object.entries(CONFIDENCE_LABELS).map(([key, label]) => (
+                    <SelectItem key={key} value={key}><SelectItemText>{label}</SelectItemText></SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
+                Status
+              </label>
+              <div className="flex items-center gap-2">
+                {(['draft', 'approved'] as const).map(s => (
+                  <button
+                    key={s}
+                    onClick={() => onSectionUpdate({ status: s })}
+                    className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
+                      section.status === s
+                        ? s === 'approved'
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-gray-600 text-white'
+                        : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
+                    }`}
+                  >
+                    {section.status === s && <Check className="w-3 h-3" />}
+                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {fullscreen && (
-        <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-[#f7f7f8] overflow-y-auto">
           <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-white/95 backdrop-blur border-b border-gray-100">
             <h3 className="text-sm font-semibold text-gray-900">Email Design Comparison</h3>
             <button
@@ -626,7 +693,7 @@ function EmailDesignEditor({
               Close
             </button>
           </div>
-          <div className="p-6 max-w-screen-2xl mx-auto">
+          <div className="p-6 max-w-screen-2xl mx-auto bg-white rounded-xl mt-4 card-shadow">
             <EmailDesignGrid
               emailDesign={emailDesign}
               ecdExample={ecdExample}
@@ -634,6 +701,8 @@ function EmailDesignEditor({
               handleAddAnnotation={handleAddAnnotation}
               handleRemoveAnnotation={handleRemoveAnnotation}
               maxHeight={typeof window !== 'undefined' ? window.innerHeight - 120 : 900}
+              markerSize={globalAnnotationSize}
+              alwaysShowLabels={globalAnnotationsExpanded}
             />
           </div>
         </div>
@@ -649,6 +718,8 @@ function EmailDesignGrid({
   handleAddAnnotation,
   handleRemoveAnnotation,
   maxHeight,
+  markerSize = 'md',
+  alwaysShowLabels = false,
 }: {
   emailDesign: AuditEmailDesign | null;
   ecdExample: IndustryEmailLibrary | null;
@@ -656,10 +727,12 @@ function EmailDesignGrid({
   handleAddAnnotation: (side: 'current' | 'optimized', x: number, y: number, label: string) => void;
   handleRemoveAnnotation: (id: string) => void;
   maxHeight?: number;
+  markerSize?: 'sm' | 'md' | 'lg';
+  alwaysShowLabels?: boolean;
 }) {
   return (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-      <div className="space-y-3">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_1px_1fr] gap-0">
+      <div className="space-y-3 px-4">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-red-500" />
           <h4 className="text-sm font-semibold text-gray-800">
@@ -677,6 +750,8 @@ function EmailDesignGrid({
             onRemoveAnnotation={handleRemoveAnnotation}
             editable
             side="current"
+            markerSize={markerSize}
+            alwaysShowLabels={alwaysShowLabels}
             {...(maxHeight ? { maxHeight } : {})}
           />
         ) : (
@@ -690,7 +765,9 @@ function EmailDesignGrid({
         )}
       </div>
 
-      <div className="space-y-3">
+      <div className="hidden lg:block bg-gray-200 w-px" />
+
+      <div className="space-y-3 px-4">
         <div className="flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-emerald-500" />
           <h4 className="text-sm font-semibold text-gray-800">ECD Benchmark</h4>
@@ -704,12 +781,12 @@ function EmailDesignGrid({
             onRemoveAnnotation={handleRemoveAnnotation}
             editable
             side="optimized"
-            markerSize={ecdExample.annotation_size || 'md'}
-            alwaysShowLabels={ecdExample.annotations_expanded ?? false}
+            markerSize={markerSize}
+            alwaysShowLabels={alwaysShowLabels}
             {...(maxHeight ? { maxHeight } : {})}
           />
         ) : (
-          <div className="aspect-[9/16] max-h-[600px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center">
+          <div className="aspect-[9/16] max-h-[600px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center px-6">
             <div className="text-center">
               <Palette className="w-8 h-8 text-gray-200 mx-auto mb-2" />
               <p className="text-sm text-gray-400">No benchmark selected</p>

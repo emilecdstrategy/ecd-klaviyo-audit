@@ -1,16 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
 import { Zap, TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X } from 'lucide-react';
-import {
-  DEMO_AUDITS,
-  DEMO_CLIENTS,
-  DEMO_AUDIT_SECTIONS,
-  DEMO_ASSETS,
-  DEMO_ANNOTATIONS,
-  DEMO_FLOW_PERFORMANCE,
-  DEMO_HEALTH_SCORES,
-  DEMO_RECOMMENDATIONS,
-} from '../lib/demo-data';
 import { SECTION_LABELS } from '../lib/constants';
 import { formatCurrency } from '../lib/revenue-calculator';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
@@ -24,9 +14,8 @@ import ReportSegmentTable from '../components/report/ReportSegmentTable';
 import ReportFormTable from '../components/report/ReportFormTable';
 import ReportCampaignTable from '../components/report/ReportCampaignTable';
 import { RichAuditText } from '../components/ui/RichAuditText';
-import type { AuditSection, AuditEmailDesign } from '../lib/types';
-import { getPublicReportByToken } from '../lib/db';
-import { useAuth } from '../contexts/AuthContext';
+import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign } from '../lib/types';
+import { getPublicReportByToken, getPlatformSettings } from '../lib/db';
 import { cn } from '../lib/utils';
 
 const NAV_ITEMS = [
@@ -42,32 +31,30 @@ const NAV_ITEMS = [
 
 export default function PublicReport() {
   const { token } = useParams();
-  const { isDemo } = useAuth();
   const [activeSection, setActiveSection] = useState('summary');
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
-  const [loading, setLoading] = useState(!isDemo);
+  const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
 
-  const [audit, setAudit] = useState(() => DEMO_AUDITS.find(a => a.public_share_token === token) ?? null);
-  const [client, setClient] = useState(() => (audit ? (DEMO_CLIENTS.find(c => c.id === audit.client_id) ?? null) : null));
-  const [sections, setSections] = useState(() => (audit ? DEMO_AUDIT_SECTIONS.filter(s => s.audit_id === audit.id) : []));
-  const [assets, setAssets] = useState(() => (audit ? DEMO_ASSETS.filter(a => a.audit_id === audit.id) : []));
-  const [annotations, setAnnotations] = useState(() => DEMO_ANNOTATIONS);
-  const [flowPerformance, setFlowPerformance] = useState(() => (audit ? DEMO_FLOW_PERFORMANCE.filter(f => f.audit_id === audit.id) : []));
+  const [audit, setAudit] = useState<any | null>(null);
+  const [client, setClient] = useState<any | null>(null);
+  const [sections, setSections] = useState<AuditSection[]>([]);
+  const [assets, setAssets] = useState<AuditAsset[]>([]);
+  const [annotations, setAnnotations] = useState<Annotation[]>([]);
+  const [flowPerformance, setFlowPerformance] = useState<any[]>([]);
   const [flowSnapshots, setFlowSnapshots] = useState<any[]>([]);
   const [segmentSnapshots, setSegmentSnapshots] = useState<any[]>([]);
   const [formSnapshots, setFormSnapshots] = useState<any[]>([]);
   const [campaignSnapshots, setCampaignSnapshots] = useState<any[]>([]);
-  const [healthScores, setHealthScores] = useState(() => DEMO_HEALTH_SCORES);
-  const [recommendations, setRecommendations] = useState(() => (audit ? DEMO_RECOMMENDATIONS.filter(r => r.audit_id === audit.id) : []));
+  const [healthScores, setHealthScores] = useState<any[]>([]);
+  const [recommendations, setRecommendations] = useState<any[]>([]);
   const [emailDesign, setEmailDesign] = useState<AuditEmailDesign | null>(null);
   const [reportingDiagnostic, setReportingDiagnostic] = useState<string | null>(null);
   const [accountSnapshot, setAccountSnapshot] = useState<any | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    if (isDemo) return;
     if (!token) return;
     (async () => {
       try {
@@ -115,7 +102,7 @@ export default function PublicReport() {
       }
     })();
     return () => { cancelled = true; };
-  }, [isDemo, token]);
+  }, [token]);
 
   useEffect(() => {
     const observers: IntersectionObserver[] = [];
@@ -163,6 +150,8 @@ export default function PublicReport() {
       </div>
     );
   }
+
+  const isPreview = audit.status !== 'published';
 
   const totalRevenue = sections.reduce((s, sec) => s + sec.revenue_opportunity, 0);
   const currentFlowMonthlyRevenue = flowPerformance.reduce((s, f) => s + (f.monthly_revenue_current ?? 0), 0);
@@ -223,14 +212,28 @@ export default function PublicReport() {
         </div>
       </header>
 
-      <div className="bg-white border-b border-gray-100 sticky top-[57px] z-40">
+      {isPreview && (
+        <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 text-center">
+          <span className="text-sm font-medium text-amber-800">Preview Mode — This report is not published yet and is only visible to team members.</span>
+        </div>
+      )}
+
+      <div className={`bg-white border-b border-gray-100 sticky ${isPreview ? 'top-[97px]' : 'top-[57px]'} z-40`}>
         <div className="max-w-[90rem] mx-auto px-6">
           <nav className="flex overflow-x-auto">
             {visibleNavItems.map(item => (
               <a
                 key={item.id}
                 href={`#${item.id}`}
-                onClick={() => setActiveSection(item.id)}
+                onClick={(e) => {
+                  e.preventDefault();
+                  setActiveSection(item.id);
+                  const el = sectionRefs.current[item.id] ?? document.getElementById(item.id);
+                  if (!el) return;
+                  const headerOffset = isPreview ? 145 : 105;
+                  const top = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+                  window.scrollTo({ top, behavior: 'smooth' });
+                }}
                 className={`px-4 py-3.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
                   activeSection === item.id
                     ? 'border-brand-primary text-brand-primary'
@@ -825,9 +828,10 @@ function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; coll
 function RubricInsightCard({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
-      <div className="h-1 w-full bg-brand-primary" />
+      <div className="gradient-bg px-5 py-2.5">
+        <p className="text-[13px] font-bold uppercase tracking-wider text-white text-center">{label}</p>
+      </div>
       <div className="px-5 pt-4 pb-5">
-        <p className="text-[13px] font-bold uppercase tracking-wider text-brand-primary mb-3">{label}</p>
         {children}
       </div>
     </div>
@@ -946,8 +950,9 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
     return (
       <div className="mb-4 space-y-3">
         <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
-          <div className="h-1 w-full bg-brand-primary" />
-          <p className="text-[13px] font-bold uppercase tracking-wider text-brand-primary px-5 pt-4 pb-2">Segmentation snapshot</p>
+          <div className="gradient-bg px-5 py-2.5">
+            <p className="text-[13px] font-bold uppercase tracking-wider text-white text-center">Segmentation snapshot</p>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
             <div className="flex min-h-[88px] flex-col items-start gap-2 px-5 py-4">
               <span className="text-sm font-medium text-gray-700 leading-snug">Full-list sends</span>
@@ -970,9 +975,10 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
           </div>
         </div>
         <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
-          <div className="h-1 w-full bg-brand-primary" />
+          <div className="gradient-bg px-5 py-2.5">
+            <p className="text-[13px] font-bold uppercase tracking-wider text-white text-center">ECD benchmark</p>
+          </div>
           <div className="px-5 pt-4 pb-5">
-            <p className="text-[13px] font-bold uppercase tracking-wider text-brand-primary mb-3">ECD benchmark</p>
             <RubricExpandableNote text={d.benchmark_architecture_note || 'N/A'} collapsedLines={4} />
           </div>
         </div>
@@ -1006,8 +1012,9 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
     return (
       <div className="mb-4 space-y-3">
         <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
-          <div className="h-1 w-full bg-brand-primary" />
-          <p className="text-[13px] font-bold uppercase tracking-wider text-brand-primary px-5 pt-4 pb-2">Form coverage</p>
+          <div className="gradient-bg px-5 py-2.5">
+            <p className="text-[13px] font-bold uppercase tracking-wider text-white text-center">Form coverage</p>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
             <div className="flex flex-col items-start gap-2 px-5 py-4">
               <span className="text-sm font-medium text-gray-700">Popup</span>
@@ -1050,8 +1057,8 @@ function ReportSectionBlock({
 }: {
   section: AuditSection;
   index: number;
-  assets: typeof DEMO_ASSETS;
-  annotations: typeof DEMO_ANNOTATIONS;
+  assets: AuditAsset[];
+  annotations: Annotation[];
   hideHeader?: boolean;
 }) {
   const currentAsset = assets.find(a => a.section_key === section.section_key && a.side === 'current');
@@ -1146,14 +1153,24 @@ function EmailDesignComparison({
   sections: AuditSection[];
 }) {
   const [fullscreen, setFullscreen] = useState(false);
+  const [globalAnnotationSize, setGlobalAnnotationSize] = useState<'sm' | 'md' | 'lg'>('md');
+  const [globalAnnotationsExpanded, setGlobalAnnotationsExpanded] = useState(false);
+
+  useEffect(() => {
+    getPlatformSettings().then(s => {
+      setGlobalAnnotationSize(s.annotation_size);
+      setGlobalAnnotationsExpanded(s.annotations_expanded);
+    }).catch(() => {});
+  }, []);
+
   const edSection = sections.find(s => s.section_key === 'email_design');
   const sectionAnns = edSection ? annotations.filter(a => a.audit_section_id === edSection.id) : [];
   const ecdExample = emailDesign.ecd_example;
 
   const comparisonGrid = (maxH?: number) => (
-    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+    <div className="grid grid-cols-1 lg:grid-cols-[1fr_1px_1fr] gap-0">
       {emailDesign.client_email_html && (
-        <div className="space-y-3">
+        <div className="space-y-3 px-4">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-red-500" />
             <h4 className="text-sm font-semibold text-gray-800">
@@ -1168,13 +1185,17 @@ function EmailDesignComparison({
             annotations={sectionAnns}
             editable={false}
             side="current"
+            markerSize={globalAnnotationSize}
+            alwaysShowLabels={globalAnnotationsExpanded}
             {...(maxH ? { maxHeight: maxH } : {})}
           />
         </div>
       )}
 
+      <div className="hidden lg:block bg-gray-200 w-px" />
+
       {ecdExample && (
-        <div className="space-y-3">
+        <div className="space-y-3 px-4">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
             <h4 className="text-sm font-semibold text-gray-800">ECD Benchmark</h4>
@@ -1185,8 +1206,8 @@ function EmailDesignComparison({
             annotations={sectionAnns}
             editable={false}
             side="optimized"
-            markerSize={ecdExample.annotation_size || 'md'}
-            alwaysShowLabels={ecdExample.annotations_expanded ?? false}
+            markerSize={globalAnnotationSize}
+            alwaysShowLabels={globalAnnotationsExpanded}
             {...(maxH ? { maxHeight: maxH } : {})}
           />
         </div>
@@ -1208,7 +1229,7 @@ function EmailDesignComparison({
       </div>
 
       {fullscreen && (
-        <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+        <div className="fixed inset-0 z-50 bg-[#f7f7f8] overflow-y-auto">
           <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-white/95 backdrop-blur border-b border-gray-100">
             <h3 className="text-sm font-semibold text-gray-900">Email Design Comparison</h3>
             <button
@@ -1219,7 +1240,7 @@ function EmailDesignComparison({
               Close
             </button>
           </div>
-          <div className="p-6 max-w-screen-2xl mx-auto">
+          <div className="p-6 max-w-screen-2xl mx-auto bg-white rounded-xl mt-4 card-shadow">
             {comparisonGrid(window.innerHeight - 120)}
           </div>
         </div>

@@ -24,7 +24,7 @@ export interface Audit {
   id: string;
   client_id: string;
   title: string;
-  status: 'draft' | 'in_progress' | 'review' | 'completed' | 'published';
+  status: 'draft' | 'in_review' | 'published';
   audit_method: 'api' | 'screenshot';
   list_size: number;
   aov: number;

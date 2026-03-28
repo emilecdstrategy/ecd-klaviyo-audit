@@ -7,7 +7,6 @@ import {
   FileText,
   Plus,
   UserPlus,
-  Sparkles,
   ArrowRight,
   Clock,
 } from 'lucide-react';
@@ -15,8 +14,6 @@ import TopBar from '../components/layout/TopBar';
 import KPICard from '../components/ui/KPICard';
 import StatusBadge from '../components/ui/StatusBadge';
 import { SkeletonKPICards, SkeletonListCard } from '../components/ui/Skeleton';
-import { useAuth } from '../contexts/AuthContext';
-import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
 import { listAudits, listClients } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
@@ -24,15 +21,13 @@ import type { Audit, Client } from '../lib/types';
 export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDemo } = useAuth();
 
-  const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
-  const [audits, setAudits] = useState<Audit[]>(isDemo ? DEMO_AUDITS : []);
-  const [loading, setLoading] = useState(!isDemo);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [audits, setAudits] = useState<Audit[]>([]);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
-    if (isDemo) return;
     (async () => {
       try {
         const [c, a] = await Promise.all([listClients(), listAudits()]);
@@ -46,11 +41,11 @@ export default function Dashboard() {
       }
     })();
     return () => { cancelled = true; };
-  }, [isDemo]);
+  }, []);
 
   const totalAudits = audits.length;
-  const inProgress = audits.filter(a => a.status === 'in_progress').length;
-  const completed = audits.filter(a => ['completed', 'published'].includes(a.status)).length;
+  const inReview = audits.filter(a => a.status === 'in_review').length;
+  const published = audits.filter(a => a.status === 'published').length;
   const totalRevOpp = audits.reduce((s, a) => s + a.total_revenue_opportunity, 0);
 
   return (
@@ -63,8 +58,8 @@ export default function Dashboard() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <KPICard icon={ClipboardCheck} label="Total Audits" value={totalAudits} accent="primary" />
-            <KPICard icon={Clock} label="In Progress" value={inProgress} accent="warning" />
-            <KPICard icon={FileText} label="Completed" value={completed} accent="success" />
+            <KPICard icon={Clock} label="In Review" value={inReview} accent="warning" />
+            <KPICard icon={FileText} label="Published" value={published} accent="success" />
             <KPICard icon={TrendingUp} label="Revenue Identified" value={formatCurrency(totalRevOpp)} accent="secondary" />
           </div>
         )}
@@ -84,15 +79,6 @@ export default function Dashboard() {
             <UserPlus className="w-4 h-4" />
             Add Client
           </button>
-          {isDemo && (
-            <button
-              onClick={() => navigate('/audits/demo-audit-1')}
-              className="flex items-center gap-2 px-5 py-2.5 bg-brand-primary/5 border border-brand-primary/20 text-sm font-medium text-brand-primary rounded-lg hover:bg-brand-primary/10 transition-colors"
-            >
-              <Sparkles className="w-4 h-4" />
-              Open Demo Audit
-            </button>
-          )}
         </div>
 
         {loading ? (

@@ -1,17 +1,13 @@
 import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
-import { DEMO_USER } from '../lib/demo-data';
 import type { Profile, UserRole } from '../lib/types';
 
 interface AuthState {
   user: Profile | null;
-  isDemo: boolean;
   isLoading: boolean;
   authError: string;
   sendMagicLink: (email: string) => Promise<void>;
   signOut: () => Promise<void>;
-  enterDemo: () => void;
-  exitDemo: () => void;
   hasRole: (role: UserRole | UserRole[]) => boolean;
 }
 
@@ -19,7 +15,6 @@ const AuthContext = createContext<AuthState | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Profile | null>(null);
-  const [isDemo, setIsDemo] = useState(true);
   const [isLoading, setIsLoading] = useState(true);
   const [authError, setAuthError] = useState('');
 
@@ -40,8 +35,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         await supabase.auth.signOut();
         if (!isMounted) return;
         setUser(null);
-        setIsDemo(false);
-        localStorage.setItem('ecd-demo-mode', 'false');
         return;
       }
 
@@ -59,8 +52,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (existing) {
         setUser(existing);
-        setIsDemo(false);
-        localStorage.setItem('ecd-demo-mode', 'false');
         setAuthError('');
         return;
       }
@@ -84,13 +75,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
 
       setUser(created);
-      setIsDemo(false);
-      localStorage.setItem('ecd-demo-mode', 'false');
       setAuthError('');
     };
 
     const init = async () => {
-      // First, attempt to hydrate any session from the URL or storage.
       const { data, error } = await supabase.auth.getSession();
       if (!isMounted) return;
 
@@ -102,21 +90,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
       if (sessionUser) {
         await handleSessionUser(sessionUser);
-        if (!isMounted) return;
-        setIsLoading(false);
-        return;
       }
-
-      // No session: fall back to demo mode unless user explicitly disabled it.
-      const stored = localStorage.getItem('ecd-demo-mode');
-      if (stored === 'false') {
-        setIsDemo(false);
-        setUser(null);
-      } else {
-        setUser(DEMO_USER);
-        setIsDemo(true);
-      }
-      setIsLoading(false);
+      if (isMounted) setIsLoading(false);
     };
 
     void init();
@@ -125,10 +100,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (session?.user) {
         void handleSessionUser({ id: session.user.id, email: session.user.email });
       } else {
-        // Logged out: keep demo off unless user explicitly re-enters it.
         setUser(null);
-        setIsDemo(false);
-        localStorage.setItem('ecd-demo-mode', 'false');
       }
     });
 
@@ -158,20 +130,6 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
-    setIsDemo(false);
-    localStorage.setItem('ecd-demo-mode', 'false');
-  };
-
-  const enterDemo = () => {
-    setUser(DEMO_USER);
-    setIsDemo(true);
-    localStorage.setItem('ecd-demo-mode', 'true');
-  };
-
-  const exitDemo = () => {
-    setUser(null);
-    setIsDemo(false);
-    localStorage.setItem('ecd-demo-mode', 'false');
   };
 
   const hasRole = (role: UserRole | UserRole[]) => {
@@ -181,7 +139,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isDemo, isLoading, authError, sendMagicLink, signOut, enterDemo, exitDemo, hasRole }}>
+    <AuthContext.Provider value={{ user, isLoading, authError, sendMagicLink, signOut, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

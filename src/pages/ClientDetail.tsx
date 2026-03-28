@@ -17,7 +17,6 @@ import StatusBadge from '../components/ui/StatusBadge';
 import { SkeletonClientDetail } from '../components/ui/Skeleton';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { useAuth } from '../contexts/AuthContext';
-import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
 import { useEffect, useState } from 'react';
 import type { Audit, Client } from '../lib/types';
@@ -30,15 +29,11 @@ export default function ClientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDemo, hasRole } = useAuth();
+  const { hasRole } = useAuth();
 
-  const [client, setClient] = useState<Client | null>(
-    isDemo ? (DEMO_CLIENTS.find(c => c.id === id) ?? null) : null,
-  );
-  const [clientAudits, setClientAudits] = useState<Audit[]>(
-    isDemo ? DEMO_AUDITS.filter(a => a.client_id === id) : [],
-  );
-  const [loading, setLoading] = useState(!isDemo);
+  const [client, setClient] = useState<Client | null>(null);
+  const [clientAudits, setClientAudits] = useState<Audit[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editingKey, setEditingKey] = useState(false);
   const [newApiKey, setNewApiKey] = useState('');
@@ -50,7 +45,7 @@ export default function ClientDetail() {
 
   useEffect(() => {
     let cancelled = false;
-    if (isDemo || !id) return;
+    if (!id) return;
     (async () => {
       try {
         setLoading(true);
@@ -67,7 +62,7 @@ export default function ClientDetail() {
       }
     })();
     return () => { cancelled = true; };
-  }, [id, isDemo]);
+  }, [id]);
 
   if (loading) {
     return (
@@ -248,7 +243,6 @@ export default function ClientDetail() {
                   <IndustrySelectWithCustom
                     value={client.industry || ''}
                     onValueChange={async (v) => {
-                      if (isDemo) return;
                       setClient(prev => prev ? { ...prev, industry: v } : prev);
                       try { await updateClient(client.id, { industry: v }); } catch { /* ignore */ }
                     }}
@@ -312,7 +306,7 @@ export default function ClientDetail() {
                           {formatCurrency(audit.total_revenue_opportunity)}
                         </span>
                         <StatusBadge status={audit.status} />
-                        {hasRole('admin') && !isDemo && (
+                        {hasRole('admin') && (
                           <button
                             type="button"
                             onClick={e => {

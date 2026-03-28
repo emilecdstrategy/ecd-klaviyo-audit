@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { ChevronDown, ChevronUp, Sparkles, Check } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { ChevronDown, ChevronUp, Check } from 'lucide-react';
 import type { AuditSection, AuditAsset, Annotation } from '../../lib/types';
 import { SECTION_LABELS, CONFIDENCE_LABELS } from '../../lib/constants';
 import RevenueOpportunityCard from '../ui/RevenueOpportunityCard';
@@ -26,6 +26,19 @@ export default function AuditSectionEditor({
   onRemoveAnnotation,
 }: AuditSectionEditorProps) {
   const [expanded, setExpanded] = useState(true);
+  const didSeedRef = useRef<string | null>(null);
+
+  useEffect(() => {
+    if (
+      section.ai_findings &&
+      !section.human_edited_findings &&
+      didSeedRef.current !== section.id
+    ) {
+      didSeedRef.current = section.id;
+      const stripped = section.ai_findings.replace(/\*\*(.+?)\*\*/g, '$1');
+      onUpdate({ human_edited_findings: stripped });
+    }
+  }, [section.id, section.ai_findings, section.human_edited_findings]);
 
   const currentAsset = assets.find(a => a.section_key === section.section_key && a.side === 'current');
   const optimizedAsset = assets.find(a => a.section_key === section.section_key && a.side === 'optimized');
@@ -53,16 +66,6 @@ export default function AuditSectionEditor({
 
       {expanded && (
         <div className="px-6 pb-6 space-y-6 border-t border-gray-50 pt-4">
-          {section.ai_findings && (
-            <div className="bg-brand-primary/5 border border-brand-primary/10 rounded-lg p-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Sparkles className="w-4 h-4 text-brand-primary" />
-                <span className="text-sm font-medium text-brand-primary">AI Findings</span>
-              </div>
-              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{section.ai_findings}</p>
-            </div>
-          )}
-
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
             <div className="space-y-4">
               <div>

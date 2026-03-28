@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Zap, ArrowRight, Sparkles, Mail } from 'lucide-react';
+import { Zap, ArrowRight, Mail } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 
 export default function Login() {
-  const { sendMagicLink, enterDemo, authError } = useAuth();
+  const { sendMagicLink, authError } = useAuth();
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -39,7 +39,7 @@ export default function Login() {
 
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Sign in</h2>
           <p className="text-sm text-gray-500 mb-8">
-            We’ll email you a magic link. Only <span className="font-medium">@ecdigitalstrategy.com</span> accounts are allowed.
+            We'll email you a magic link. Only <span className="font-medium">@ecdigitalstrategy.com</span> accounts are allowed.
           </p>
 
           {sent ? (
@@ -92,17 +92,6 @@ export default function Login() {
               </button>
             </form>
           )}
-
-          <div className="mt-8 pt-8 border-t border-gray-100">
-            <button
-              onClick={enterDemo}
-              className="w-full flex items-center justify-center gap-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
-            >
-              <Sparkles className="w-4 h-4 text-brand-primary" />
-              Explore Demo Mode
-              <span className="text-xs text-gray-400 ml-1">No login required</span>
-            </button>
-          </div>
         </div>
       </div>
 

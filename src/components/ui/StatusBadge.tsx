@@ -7,9 +7,7 @@ interface StatusBadgeProps {
 
 const labels: Record<string, string> = {
   draft: 'Draft',
-  in_progress: 'In Progress',
-  review: 'In Review',
-  completed: 'Completed',
+  in_review: 'In Review',
   published: 'Published',
   approved: 'Approved',
 };

@@ -10,7 +10,6 @@ import {
 import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import { useAuth } from '../contexts/AuthContext';
-import { DEMO_CLIENTS } from '../lib/demo-data';
 import { formatClientListMeta } from '../lib/client-display';
 import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, updateClient, getIndustryEmailByIndustry, upsertAuditEmailDesign, createAnnotation } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
@@ -90,7 +89,7 @@ function normalizeReportingDiagnostic(raw?: string | null, status?: number | nul
 export default function NewAudit({ asModal }: NewAuditProps) {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDemo, user } = useAuth();
+  const { user } = useAuth();
   const [step, setStep] = useState(0);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
@@ -117,13 +116,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     apiKey: '',
   });
 
-  const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
+  const [clients, setClients] = useState<Client[]>([]);
   const selectedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
   const hasSavedKlaviyoConnection = Boolean((selectedClient as any)?.klaviyo_connected);
 
   useEffect(() => {
     let cancelled = false;
-    if (isDemo) return;
     (async () => {
       try {
         const c = await listClients();
@@ -133,7 +131,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, [isDemo]);
+  }, []);
 
   // If opened from a client detail, preselect that client.
   useEffect(() => {
@@ -180,18 +178,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     setAnalysisStage('Starting…');
     setSnapshotMeta(null);
 
-    if (isDemo) {
-      const labels = ['Account Health', 'Flows', 'Segmentation', 'Campaigns', 'Email Design', 'Signup Forms'];
-      for (let i = 0; i < labels.length; i++) {
-        await new Promise(r => setTimeout(r, 800));
-        setAnalysisProgress(Math.round(((i + 1) / labels.length) * 100));
-        setAnalysisStage(`Analyzing ${labels[i]}…`);
-      }
-      setAnalyzing(false);
-      navigate('/audits/demo-audit-1');
-      return;
-    }
-
     try {
       // 1) Ensure client exists
       setAnalysisStage('Preparing client…');
@@ -220,7 +206,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       const audit = await createAudit({
         client_id: clientId,
         title,
-        status: 'in_progress',
+        status: 'draft',
         audit_method: 'api' as Audit['audit_method'],
         list_size: 0,
         aov: 0,

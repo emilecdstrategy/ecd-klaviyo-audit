@@ -1,10 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Search, FileText, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import { useAuth } from '../../contexts/AuthContext';
 import { formatClientListMeta } from '../../lib/client-display';
 import { searchAudits, searchClients } from '../../lib/db';
-import { DEMO_AUDITS, DEMO_CLIENTS } from '../../lib/demo-data';
 import type { Audit, Client } from '../../lib/types';
 
 type Result =
@@ -22,7 +20,6 @@ function useDebouncedValue<T>(value: T, delayMs: number) {
 
 export default function GlobalSearch() {
   const navigate = useNavigate();
-  const { isDemo } = useAuth();
   const [q, setQ] = useState('');
   const debounced = useDebouncedValue(q, 200);
   const [clients, setClients] = useState<Client[]>([]);
@@ -56,23 +53,6 @@ export default function GlobalSearch() {
       try {
         setLoading(true);
         setError('');
-        if (isDemo) {
-          const qc = query.toLowerCase();
-          const c = DEMO_CLIENTS.filter(
-            x =>
-              x.company_name.toLowerCase().includes(qc) ||
-              x.name.toLowerCase().includes(qc) ||
-              x.industry.toLowerCase().includes(qc),
-          ).slice(0, 5);
-          const a = DEMO_AUDITS.filter(x => x.title.toLowerCase().includes(qc)).slice(0, 5);
-          if (cancelled) return;
-          setClients(c);
-          setAudits(a);
-          setActiveIndex(0);
-          setOpen(true);
-          return;
-        }
-
         const [c, a] = await Promise.all([searchClients(query, 5), searchAudits(query, 5)]);
         if (cancelled) return;
         setClients(c);
@@ -89,7 +69,7 @@ export default function GlobalSearch() {
     return () => {
       cancelled = true;
     };
-  }, [debounced, isDemo]);
+  }, [debounced]);
 
   useEffect(() => {
     const onDocMouseDown = (e: MouseEvent) => {
@@ -252,4 +232,3 @@ function Row({
     </button>
   );
 }
-

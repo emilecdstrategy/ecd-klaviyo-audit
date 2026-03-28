@@ -38,7 +38,7 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
     onCollapsedChange?.(next);
     if (collapsedProp === undefined) setCollapsedState(next);
   };
-  const { user, isDemo, hasRole, signOut, exitDemo } = useAuth();
+  const { user, hasRole, signOut } = useAuth();
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileAreaRef = useRef<HTMLDivElement>(null);
   const initials = (user?.name || user?.email || 'U')
@@ -157,11 +157,6 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-gray-900 truncate">{user.name}</p>
                   <p className="text-xs text-gray-400 truncate">{user.email}</p>
-                  {isDemo && (
-                    <span className="inline-flex items-center mt-1 px-1.5 py-0.5 rounded text-[10px] font-medium bg-brand-primary/10 text-brand-primary">
-                      Demo Mode
-                    </span>
-                  )}
                 </div>
               )}
             </button>
@@ -177,12 +172,11 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
                   className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50 text-left rounded-md mx-0.5"
                   onClick={() => {
                     setProfileMenuOpen(false);
-                    if (isDemo) exitDemo();
-                    else signOut();
+                    signOut();
                   }}
                 >
                   <LogOut className="w-4 h-4 shrink-0 text-gray-400" />
-                  <span>{isDemo ? 'Exit demo' : 'Sign out'}</span>
+                  <span>Sign out</span>
                 </button>
               </div>
             )}

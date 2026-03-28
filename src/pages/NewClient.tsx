@@ -6,13 +6,14 @@ import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHel
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { useAuth } from '../contexts/AuthContext';
 import { createClient, ensureClientCreator } from '../lib/db';
+
 import { supabase } from '../lib/supabase';
 
 type NewClientProps = { asModal?: boolean };
 
 export default function NewClient({ asModal }: NewClientProps) {
   const navigate = useNavigate();
-  const { user, isDemo } = useAuth();
+  const { user } = useAuth();
   const [form, setForm] = useState({
     name: '',
     company_name: '',
@@ -30,10 +31,6 @@ export default function NewClient({ asModal }: NewClientProps) {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError('');
-    if (isDemo) {
-      navigate('/clients');
-      return;
-    }
     try {
       setSaving(true);
       const apiKey = form.api_key.trim();

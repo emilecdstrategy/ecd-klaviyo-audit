@@ -75,9 +75,7 @@ export const CONFIDENCE_LABELS: Record<string, string> = {
 
 export const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   draft: { bg: 'bg-gray-100', text: 'text-gray-600' },
-  in_progress: { bg: 'bg-blue-50', text: 'text-blue-700' },
-  review: { bg: 'bg-amber-50', text: 'text-amber-700' },
-  completed: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
+  in_review: { bg: 'bg-amber-50', text: 'text-amber-700' },
   published: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
   approved: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
 };

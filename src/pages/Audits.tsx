@@ -13,7 +13,6 @@ import StatusBadge from '../components/ui/StatusBadge';
 import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
-import { DEMO_AUDITS, DEMO_CLIENTS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
 import { listAudits, listClients } from '../lib/db';
 import { useEffect } from 'react';
@@ -25,13 +24,13 @@ import { supabase } from '../lib/supabase';
 export default function Audits() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDemo, hasRole } = useAuth();
+  const { hasRole } = useAuth();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<string>('');
 
-  const [audits, setAudits] = useState<Audit[]>(isDemo ? DEMO_AUDITS : []);
-  const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
-  const [loading, setLoading] = useState(!isDemo);
+  const [audits, setAudits] = useState<Audit[]>([]);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletingAudit, setDeletingAudit] = useState<Audit | null>(null);
@@ -39,7 +38,6 @@ export default function Audits() {
 
   useEffect(() => {
     let cancelled = false;
-    if (isDemo) return;
     (async () => {
       try {
         setLoading(true);
@@ -56,7 +54,7 @@ export default function Audits() {
       }
     })();
     return () => { cancelled = true; };
-  }, [isDemo]);
+  }, []);
 
   const filtered = audits.filter(a => {
     const client = clients.find(c => c.id === a.client_id);
@@ -162,9 +160,7 @@ export default function Audits() {
                 <SelectContent>
                   <SelectItem value="__all__"><SelectItemText>All Status</SelectItemText></SelectItem>
                   <SelectItem value="draft"><SelectItemText>Draft</SelectItemText></SelectItem>
-                  <SelectItem value="in_progress"><SelectItemText>In Progress</SelectItemText></SelectItem>
-                  <SelectItem value="review"><SelectItemText>In Review</SelectItemText></SelectItem>
-                  <SelectItem value="completed"><SelectItemText>Completed</SelectItemText></SelectItem>
+                  <SelectItem value="in_review"><SelectItemText>In Review</SelectItemText></SelectItem>
                   <SelectItem value="published"><SelectItemText>Published</SelectItemText></SelectItem>
                 </SelectContent>
               </Select>
@@ -254,7 +250,7 @@ export default function Audits() {
                               <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
                             </a>
                           )}
-                          {hasRole('admin') && !isDemo && (
+                          {hasRole('admin') && (
                             <button
                               type="button"
                               onClick={e => {

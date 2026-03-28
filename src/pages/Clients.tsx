@@ -5,7 +5,6 @@ import TopBar from '../components/layout/TopBar';
 import EmptyState from '../components/ui/EmptyState';
 import { SkeletonClientCards } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
-import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { listAudits, listClients } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
 import { supabase } from '../lib/supabase';
@@ -14,12 +13,12 @@ import Modal from '../components/ui/Modal';
 export default function Clients() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { isDemo, hasRole } = useAuth();
+  const { hasRole } = useAuth();
   const [search, setSearch] = useState('');
 
-  const [clients, setClients] = useState<Client[]>(isDemo ? DEMO_CLIENTS : []);
-  const [audits, setAudits] = useState<Audit[]>(isDemo ? DEMO_AUDITS : []);
-  const [loading, setLoading] = useState(!isDemo);
+  const [clients, setClients] = useState<Client[]>([]);
+  const [audits, setAudits] = useState<Audit[]>([]);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletingClient, setDeletingClient] = useState<Client | null>(null);
@@ -27,7 +26,6 @@ export default function Clients() {
 
   useEffect(() => {
     let cancelled = false;
-    if (isDemo) return;
     (async () => {
       try {
         setLoading(true);
@@ -44,7 +42,7 @@ export default function Clients() {
       }
     })();
     return () => { cancelled = true; };
-  }, [isDemo, location.key]);
+  }, [location.key]);
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -189,7 +187,7 @@ export default function Clients() {
                       <p className="text-xs text-gray-500 mt-0.5">{client.industry}</p>
                     </div>
                     <div className="flex items-center gap-2">
-                      {hasRole('admin') && !isDemo && (
+                      {hasRole('admin') && (
                         <button
                           type="button"
                           onClick={async e => {

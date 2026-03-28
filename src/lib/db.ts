@@ -118,7 +118,6 @@ export async function publishAudit(auditId: string): Promise<Audit> {
   const audit = await getAudit(auditId);
   if (!audit) throw new Error('Audit not found');
 
-  // Require at least one AI-generated section before allowing publishing.
   const { data: sectionRows, error: secErr } = await supabase
     .from('audit_sections').select('id').eq('audit_id', auditId).limit(1);
   if (secErr) throw secErr;
@@ -126,10 +125,14 @@ export async function publishAudit(auditId: string): Promise<Audit> {
     throw new Error("Can't publish yet: no audit sections found. Run the AI analysis first.");
   }
 
-  // Generate a token in-app to avoid needing DB extensions.
-  const token = crypto.randomUUID().replace(/-/g, '').slice(0, 24);
+  const token = audit.public_share_token || crypto.randomUUID().replace(/-/g, '').slice(0, 24);
   const now = new Date().toISOString();
   return updateAudit(auditId, { status: 'published', public_share_token: token, published_at: now });
+}
+
+export async function updateAuditStatus(auditId: string, status: Audit['status']): Promise<Audit> {
+  if (status === 'published') return publishAudit(auditId);
+  return updateAudit(auditId, { status });
 }
 
 export async function listAuditSections(auditId: string): Promise<AuditSection[]> {
@@ -247,12 +250,12 @@ export async function getPublicReportByToken(token: string): Promise<{
     deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
   } | null;
 } | null> {
-  const { data: audit, error: auditErr } = await supabase
-    .from('audits')
-    .select('*')
-    .eq('public_share_token', token)
-    .eq('status', 'published')
-    .maybeSingle();
+  const { data: sessionData } = await supabase.auth.getSession();
+  const isAuthenticated = !!sessionData.session;
+
+  let query = supabase.from('audits').select('*').eq('public_share_token', token);
+  if (!isAuthenticated) query = query.eq('status', 'published');
+  const { data: audit, error: auditErr } = await query.maybeSingle();
   if (auditErr) throw auditErr;
   if (!audit) return null;
 
@@ -413,5 +416,23 @@ export async function upsertAuditEmailDesign(
 
 export async function ensureClientCreator(user: Profile | null, client: Partial<Client>): Promise<Partial<Client>> {
   return { ...client, created_by: requireUserId(user) };
+}
+
+export async function getPlatformSettings(): Promise<{ annotation_size: 'sm' | 'md' | 'lg'; annotations_expanded: boolean }> {
+  const { data, error } = await supabase
+    .from('platform_settings')
+    .select('annotation_size, annotations_expanded')
+    .eq('id', 'default')
+    .single();
+  if (error || !data) return { annotation_size: 'md', annotations_expanded: false };
+  return { annotation_size: data.annotation_size || 'md', annotations_expanded: data.annotations_expanded ?? false };
+}
+
+export async function updatePlatformSettings(updates: { annotation_size?: string; annotations_expanded?: boolean }): Promise<void> {
+  const { error } = await supabase
+    .from('platform_settings')
+    .update({ ...updates, updated_at: new Date().toISOString() })
+    .eq('id', 'default');
+  if (error) throw error;
 }
 
