@@ -693,17 +693,19 @@ function EmailDesignEditor({
               Close
             </button>
           </div>
-          <div className="p-6 max-w-screen-2xl mx-auto bg-white rounded-xl mt-4 card-shadow">
-            <EmailDesignGrid
-              emailDesign={emailDesign}
-              ecdExample={ecdExample}
-              sectionAnns={sectionAnns}
-              handleAddAnnotation={handleAddAnnotation}
-              handleRemoveAnnotation={handleRemoveAnnotation}
-              maxHeight={typeof window !== 'undefined' ? window.innerHeight - 120 : 900}
-              markerSize={globalAnnotationSize}
-              alwaysShowLabels={globalAnnotationsExpanded}
-            />
+          <div className="p-6 pb-24 max-w-screen-2xl mx-auto">
+            <div className="bg-white rounded-xl card-shadow p-6">
+              <EmailDesignGrid
+                emailDesign={emailDesign}
+                ecdExample={ecdExample}
+                sectionAnns={sectionAnns}
+                handleAddAnnotation={handleAddAnnotation}
+                handleRemoveAnnotation={handleRemoveAnnotation}
+                maxHeight={typeof window !== 'undefined' ? window.innerHeight - 120 : 900}
+                markerSize={globalAnnotationSize}
+                alwaysShowLabels={globalAnnotationsExpanded}
+              />
+            </div>
           </div>
         </div>
       )}

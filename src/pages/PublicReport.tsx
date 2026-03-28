@@ -527,16 +527,7 @@ export default function PublicReport() {
         {(emailDesign?.client_email_html || emailDesign?.ecd_example) && (
           <section id="email_design" ref={setRef('email_design')}>
             <SectionHeader number="07" label="Email Design" />
-            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-50">
-                <p className="text-sm text-gray-500">
-                  Side-by-side comparison of a recent campaign email and an ECD-designed benchmark for your industry.
-                </p>
-              </div>
-              <div className="p-6">
-                <EmailDesignComparison emailDesign={emailDesign} annotations={annotations} sections={sections} />
-              </div>
-            </div>
+            <EmailDesignSection emailDesign={emailDesign} annotations={annotations} sections={reportSections} />
           </section>
         )}
 
@@ -974,7 +965,7 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
             </div>
           </div>
         </div>
-        <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
+        <div className="rounded-xl border border-gray-100 overflow-hidden card-shadow" style={{ backgroundColor: '#f9f9f9' }}>
           <div className="gradient-bg px-5 py-2.5">
             <p className="text-[13px] font-bold uppercase tracking-wider text-white text-center">ECD benchmark</p>
           </div>
@@ -1133,7 +1124,7 @@ function ReportSectionBlock({
         <SectionRubricDetails section={section} />
 
         {(section.human_edited_findings || section.summary_text) && (
-          <div className="bg-gray-50 rounded-xl p-4 border border-gray-100">
+          <div className="rounded-xl p-4 border border-gray-100" style={{ backgroundColor: '#f9f9f9' }}>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Key Takeaway</p>
             <RichAuditText text={section.human_edited_findings || section.summary_text || ''} className="text-sm text-gray-700 leading-relaxed" />
           </div>
@@ -1143,16 +1134,54 @@ function ReportSectionBlock({
   );
 }
 
+function EmailDesignSection({ emailDesign, annotations, sections }: { emailDesign: AuditEmailDesign; annotations: import('../lib/types').Annotation[]; sections: AuditSection[] }) {
+  const [fullscreen, setFullscreen] = useState(false);
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between gap-4">
+        <p className="text-sm text-gray-500">
+          Side-by-side comparison of a recent campaign email and an ECD-designed benchmark for your industry.
+        </p>
+        <EmailDesignFullscreenBtn onClick={() => setFullscreen(true)} />
+      </div>
+      <div className="p-6">
+        <EmailDesignComparison
+          emailDesign={emailDesign}
+          annotations={annotations}
+          sections={sections}
+          fullscreen={fullscreen}
+          onFullscreenChange={setFullscreen}
+        />
+      </div>
+    </div>
+  );
+}
+
+function EmailDesignFullscreenBtn({ onClick }: { onClick: () => void }) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-2 px-4 py-2 text-sm font-medium text-brand-primary bg-brand-primary/5 rounded-lg hover:bg-brand-primary/10 transition-colors shrink-0"
+    >
+      <Maximize2 className="w-4 h-4" />
+      Full-screen compare
+    </button>
+  );
+}
+
 function EmailDesignComparison({
   emailDesign,
   annotations,
   sections,
+  fullscreen,
+  onFullscreenChange,
 }: {
   emailDesign: AuditEmailDesign;
   annotations: import('../lib/types').Annotation[];
   sections: AuditSection[];
+  fullscreen: boolean;
+  onFullscreenChange: (open: boolean) => void;
 }) {
-  const [fullscreen, setFullscreen] = useState(false);
   const [globalAnnotationSize, setGlobalAnnotationSize] = useState<'sm' | 'md' | 'lg'>('md');
   const [globalAnnotationsExpanded, setGlobalAnnotationsExpanded] = useState(false);
 
@@ -1217,31 +1246,24 @@ function EmailDesignComparison({
 
   return (
     <>
-      <div className="relative">
-        <button
-          onClick={() => setFullscreen(true)}
-          className="absolute top-0 right-0 z-10 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-primary bg-brand-primary/5 rounded-lg hover:bg-brand-primary/10 transition-colors"
-        >
-          <Maximize2 className="w-3.5 h-3.5" />
-          Full-screen compare
-        </button>
-        {comparisonGrid()}
-      </div>
+      {comparisonGrid()}
 
       {fullscreen && (
         <div className="fixed inset-0 z-50 bg-[#f7f7f8] overflow-y-auto">
           <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-white/95 backdrop-blur border-b border-gray-100">
             <h3 className="text-sm font-semibold text-gray-900">Email Design Comparison</h3>
             <button
-              onClick={() => setFullscreen(false)}
+              onClick={() => onFullscreenChange(false)}
               className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
             >
               <X className="w-3.5 h-3.5" />
               Close
             </button>
           </div>
-          <div className="p-6 max-w-screen-2xl mx-auto bg-white rounded-xl mt-4 card-shadow">
-            {comparisonGrid(window.innerHeight - 120)}
+          <div className="p-6 pb-24 max-w-screen-2xl mx-auto">
+            <div className="bg-white rounded-xl card-shadow p-6">
+              {comparisonGrid(window.innerHeight - 120)}
+            </div>
           </div>
         </div>
       )}

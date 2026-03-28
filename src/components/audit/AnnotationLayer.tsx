@@ -60,16 +60,21 @@ export default function AnnotationLayer({
   useEffect(() => {
     if (!htmlContent || !iframeRef.current) return;
     const iframe = iframeRef.current;
-    const onLoad = () => {
+    const measure = () => {
       try {
         const doc = iframe.contentDocument;
         if (doc?.body) {
-          setContentHeight(doc.body.scrollHeight + 20);
+          const h = doc.body.scrollHeight + 20;
+          setContentHeight(prev => prev !== h ? h : prev);
         }
       } catch { /* cross-origin fallback */ }
     };
-    iframe.addEventListener('load', onLoad);
-    return () => iframe.removeEventListener('load', onLoad);
+    iframe.addEventListener('load', measure);
+    const ro = new ResizeObserver(() => { requestAnimationFrame(measure); });
+    ro.observe(iframe);
+    const retryId = setInterval(measure, 500);
+    const stopRetry = setTimeout(() => clearInterval(retryId), 5000);
+    return () => { iframe.removeEventListener('load', measure); ro.disconnect(); clearInterval(retryId); clearTimeout(stopRetry); };
   }, [htmlContent]);
 
   const handleWrapperScroll = useCallback(() => {
@@ -159,7 +164,7 @@ export default function AnnotationLayer({
         {!isPending && editable && onRemoveAnnotation && (
           <button
             onClick={(e) => { e.stopPropagation(); onRemoveAnnotation(ann.id); }}
-            className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/marker:opacity-100 transition-opacity"
+            className="absolute -top-1 -right-1 w-4 h-4 bg-red-500 text-white rounded-full flex items-center justify-center opacity-0 group-hover/marker:opacity-100 transition-opacity z-30"
           >
             <X className="w-2.5 h-2.5" />
           </button>
