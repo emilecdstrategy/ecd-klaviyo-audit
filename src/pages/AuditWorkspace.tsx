@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FileText, BarChart3, LayoutGrid as Layout, Target, Mail, Palette, FormInput, DollarSign, ExternalLink } from 'lucide-react';
+import { FileText, BarChart3, LayoutGrid as Layout, Target, Mail, Palette, FormInput, DollarSign, ExternalLink, Maximize2, X as XIcon } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import AuditSectionEditor from '../components/audit/AuditSectionEditor';
 import RevenueOpportunityCard from '../components/ui/RevenueOpportunityCard';
@@ -22,6 +22,7 @@ import type { Audit, AuditAsset, Client } from '../lib/types';
 import { createAnnotation, deleteAnnotation, getAudit, getClient, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAuditSection, getAuditEmailDesign, upsertAuditEmailDesign, listIndustryEmailLibrary } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { RichAuditText } from '../components/ui/RichAuditText';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
 
 const SECTION_ICONS: Record<string, React.ElementType> = {
@@ -499,6 +500,7 @@ function EmailDesignEditor({
 }) {
   const [selectedEcdId, setSelectedEcdId] = useState(emailDesign?.ecd_example_id || '');
   const [saving, setSaving] = useState(false);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const ecdExample = emailDesign?.ecd_example || emailLibrary.find(e => e.id === selectedEcdId) || null;
   const sectionAnns = section ? annotations.filter(a => a.audit_section_id === section.id) : [];
@@ -507,10 +509,38 @@ function EmailDesignEditor({
 
   const handleSelectEcd = async (newId: string) => {
     setSelectedEcdId(newId);
+    if (!section) return;
     try {
       setSaving(true);
       const updated = await upsertAuditEmailDesign(audit.id, { ecd_example_id: newId || null });
       onEmailDesignChange(updated);
+
+      // Remove old optimized-side annotations for this section, then copy library defaults
+      const oldOptimized = annotations.filter(a => a.audit_section_id === section.id && a.side === 'optimized');
+      for (const old of oldOptimized) {
+        try { await deleteAnnotation(old.id); } catch { /* ignore */ }
+      }
+      let updatedAnns = annotations.filter(a => !(a.audit_section_id === section.id && a.side === 'optimized'));
+
+      const libEntry = emailLibrary.find(e => e.id === newId);
+      if (libEntry?.default_annotations?.length) {
+        for (const ann of libEntry.default_annotations) {
+          try {
+            const created = await createAnnotation({
+              audit_section_id: section.id,
+              asset_id: null,
+              x_position: ann.x,
+              y_position: ann.y,
+              label: ann.label,
+              side: 'optimized',
+            });
+            updatedAnns = [...updatedAnns, created];
+          } catch (e) {
+            console.error('Failed to copy library annotation:', e);
+          }
+        }
+      }
+      onAnnotationsChange(updatedAnns);
     } catch { /* ignore */ } finally {
       setSaving(false);
     }
@@ -551,77 +581,142 @@ function EmailDesignEditor({
         {emailLibrary.length > 0 && (
           <div className="mb-6">
             <label className="block text-sm font-medium text-gray-700 mb-1">ECD Benchmark Example</label>
-            <select
-              value={selectedEcdId}
-              onChange={e => handleSelectEcd(e.target.value)}
-              disabled={saving}
-              className="w-full max-w-sm px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 bg-white"
-            >
-              <option value="">Select an example...</option>
-              {emailLibrary.map(e => (
-                <option key={e.id} value={e.id}>{e.name} ({e.industry})</option>
-              ))}
-            </select>
+            <Select value={selectedEcdId || '__none__'} onValueChange={v => handleSelectEcd(v === '__none__' ? '' : v)} disabled={saving}>
+              <SelectTrigger className="w-full max-w-sm">
+                <SelectValue placeholder="Select an example..." />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__none__"><SelectItemText>Select an example...</SelectItemText></SelectItem>
+                {emailLibrary.map(e => (
+                  <SelectItem key={e.id} value={e.id}><SelectItemText>{e.name} ({e.industry})</SelectItemText></SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
         )}
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-red-500" />
-              <h4 className="text-sm font-semibold text-gray-800">
-                Client's Email
-                {emailDesign?.client_campaign_name && (
-                  <span className="ml-1 text-xs font-normal text-gray-400">({emailDesign.client_campaign_name})</span>
-                )}
-              </h4>
-            </div>
-            {emailDesign?.client_email_html ? (
-              <AnnotationLayer
-                htmlContent={emailDesign.client_email_html}
-                annotations={sectionAnns}
-                onAddAnnotation={(x, y, label) => handleAddAnnotation('current', x, y, label)}
-                onRemoveAnnotation={handleRemoveAnnotation}
-                editable
-                side="current"
-              />
-            ) : (
-              <div className="aspect-[9/16] max-h-[600px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center">
-                <div className="text-center">
-                  <Mail className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                  <p className="text-sm text-gray-400">No client email fetched</p>
-                  <p className="text-xs text-gray-300 mt-1">The client's most recent campaign email will appear here after running the audit</p>
-                </div>
-              </div>
-            )}
-          </div>
+        <div className="flex justify-end mb-3">
+          <button
+            onClick={() => setFullscreen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-primary bg-brand-primary/5 rounded-lg hover:bg-brand-primary/10 transition-colors"
+          >
+            <Maximize2 className="w-3.5 h-3.5" />
+            Full-screen compare
+          </button>
+        </div>
 
-          <div className="space-y-3">
-            <div className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-emerald-500" />
-              <h4 className="text-sm font-semibold text-gray-800">ECD Benchmark</h4>
-            </div>
-            {ecdExample ? (
-              <AnnotationLayer
-                imageUrl={ecdExample.content_type === 'image' ? (ecdExample.image_url ?? undefined) : undefined}
-                htmlContent={ecdExample.content_type === 'html' ? (ecdExample.html_content ?? undefined) : undefined}
-                annotations={sectionAnns}
-                onAddAnnotation={(x, y, label) => handleAddAnnotation('optimized', x, y, label)}
-                onRemoveAnnotation={handleRemoveAnnotation}
-                editable
-                side="optimized"
-              />
-            ) : (
-              <div className="aspect-[9/16] max-h-[600px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center">
-                <div className="text-center">
-                  <Palette className="w-8 h-8 text-gray-200 mx-auto mb-2" />
-                  <p className="text-sm text-gray-400">No benchmark selected</p>
-                  <p className="text-xs text-gray-300 mt-1">Select an ECD example above or add one in Admin &gt; Email Library</p>
-                </div>
-              </div>
-            )}
+        <EmailDesignGrid
+          emailDesign={emailDesign}
+          ecdExample={ecdExample}
+          sectionAnns={sectionAnns}
+          handleAddAnnotation={handleAddAnnotation}
+          handleRemoveAnnotation={handleRemoveAnnotation}
+        />
+      </div>
+
+      {fullscreen && (
+        <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+          <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-white/95 backdrop-blur border-b border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-900">Email Design Comparison</h3>
+            <button
+              onClick={() => setFullscreen(false)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              <XIcon className="w-3.5 h-3.5" />
+              Close
+            </button>
+          </div>
+          <div className="p-6 max-w-screen-2xl mx-auto">
+            <EmailDesignGrid
+              emailDesign={emailDesign}
+              ecdExample={ecdExample}
+              sectionAnns={sectionAnns}
+              handleAddAnnotation={handleAddAnnotation}
+              handleRemoveAnnotation={handleRemoveAnnotation}
+              maxHeight={typeof window !== 'undefined' ? window.innerHeight - 120 : 900}
+            />
           </div>
         </div>
+      )}
+    </div>
+  );
+}
+
+function EmailDesignGrid({
+  emailDesign,
+  ecdExample,
+  sectionAnns,
+  handleAddAnnotation,
+  handleRemoveAnnotation,
+  maxHeight,
+}: {
+  emailDesign: AuditEmailDesign | null;
+  ecdExample: IndustryEmailLibrary | null;
+  sectionAnns: Annotation[];
+  handleAddAnnotation: (side: 'current' | 'optimized', x: number, y: number, label: string) => void;
+  handleRemoveAnnotation: (id: string) => void;
+  maxHeight?: number;
+}) {
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-red-500" />
+          <h4 className="text-sm font-semibold text-gray-800">
+            Client's Email
+            {emailDesign?.client_campaign_name && (
+              <span className="ml-1 text-xs font-normal text-gray-400">({emailDesign.client_campaign_name})</span>
+            )}
+          </h4>
+        </div>
+        {emailDesign?.client_email_html ? (
+          <AnnotationLayer
+            htmlContent={emailDesign.client_email_html}
+            annotations={sectionAnns}
+            onAddAnnotation={(x, y, label) => handleAddAnnotation('current', x, y, label)}
+            onRemoveAnnotation={handleRemoveAnnotation}
+            editable
+            side="current"
+            {...(maxHeight ? { maxHeight } : {})}
+          />
+        ) : (
+          <div className="aspect-[9/16] max-h-[600px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center">
+            <div className="text-center">
+              <Mail className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">No client email fetched</p>
+              <p className="text-xs text-gray-300 mt-1">The client's most recent campaign email will appear here after running the audit</p>
+            </div>
+          </div>
+        )}
+      </div>
+
+      <div className="space-y-3">
+        <div className="flex items-center gap-2">
+          <div className="w-2 h-2 rounded-full bg-emerald-500" />
+          <h4 className="text-sm font-semibold text-gray-800">ECD Benchmark</h4>
+        </div>
+        {ecdExample ? (
+          <AnnotationLayer
+            imageUrl={ecdExample.content_type === 'image' ? (ecdExample.image_url ?? undefined) : undefined}
+            htmlContent={ecdExample.content_type === 'html' ? (ecdExample.html_content ?? undefined) : undefined}
+            annotations={sectionAnns}
+            onAddAnnotation={(x, y, label) => handleAddAnnotation('optimized', x, y, label)}
+            onRemoveAnnotation={handleRemoveAnnotation}
+            editable
+            side="optimized"
+            markerSize={ecdExample.annotation_size || 'md'}
+            alwaysShowLabels={ecdExample.annotations_expanded ?? false}
+            {...(maxHeight ? { maxHeight } : {})}
+          />
+        ) : (
+          <div className="aspect-[9/16] max-h-[600px] bg-gray-50 rounded-lg border-2 border-dashed border-gray-200 flex items-center justify-center">
+            <div className="text-center">
+              <Palette className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+              <p className="text-sm text-gray-400">No benchmark selected</p>
+              <p className="text-xs text-gray-300 mt-1">Select an ECD example above or add one in Admin &gt; Email Library</p>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

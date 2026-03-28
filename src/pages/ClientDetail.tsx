@@ -15,8 +15,7 @@ import {
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
 import { SkeletonClientDetail } from '../components/ui/Skeleton';
-import { Select, SelectContent, SelectTrigger } from '../components/ui/select';
-import { IndustrySelectItems, IndustrySelectTriggerContent } from '../components/ui/IndustrySelect';
+import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { useAuth } from '../contexts/AuthContext';
 import { DEMO_CLIENTS, DEMO_AUDITS } from '../lib/demo-data';
 import { formatCurrency } from '../lib/revenue-calculator';
@@ -246,25 +245,16 @@ export default function ClientDetail() {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Industry</p>
-                  <Select
-                    value={client.industry || undefined}
+                  <IndustrySelectWithCustom
+                    value={client.industry || ''}
                     onValueChange={async (v) => {
                       if (isDemo) return;
                       setClient(prev => prev ? { ...prev, industry: v } : prev);
                       try { await updateClient(client.id, { industry: v }); } catch { /* ignore */ }
                     }}
-                  >
-                    <SelectTrigger className="h-8 text-sm w-full max-w-[200px]">
-                      <IndustrySelectTriggerContent
-                        value={client.industry || undefined}
-                        placeholder="Select industry..."
-                        iconSize="sm"
-                      />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <IndustrySelectItems />
-                    </SelectContent>
-                  </Select>
+                    iconSize="sm"
+                    triggerClassName="h-8 text-sm w-full max-w-[200px]"
+                  />
                 </div>
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Website</p>

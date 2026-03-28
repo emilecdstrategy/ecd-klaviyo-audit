@@ -5,6 +5,7 @@ import { SECTION_LABELS, CONFIDENCE_LABELS } from '../../lib/constants';
 import RevenueOpportunityCard from '../ui/RevenueOpportunityCard';
 import StatusBadge from '../ui/StatusBadge';
 import SideBySideComparison from './SideBySideComparison';
+import SimpleRichEditor from '../ui/SimpleRichEditor';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 
 interface AuditSectionEditorProps {
@@ -58,7 +59,7 @@ export default function AuditSectionEditor({
                 <Sparkles className="w-4 h-4 text-brand-primary" />
                 <span className="text-sm font-medium text-brand-primary">AI Findings</span>
               </div>
-              <p className="text-sm text-gray-700">{section.ai_findings}</p>
+              <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-line">{section.ai_findings}</p>
             </div>
           )}
 
@@ -79,11 +80,11 @@ export default function AuditSectionEditor({
                 <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
                   Current State Notes
                 </label>
-                <textarea
+                <SimpleRichEditor
                   value={section.current_state_notes}
-                  onChange={e => onUpdate({ current_state_notes: e.target.value })}
+                  onChange={v => onUpdate({ current_state_notes: v })}
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-none"
+                  placeholder="Describe the current state..."
                 />
               </div>
             </div>
@@ -104,11 +105,11 @@ export default function AuditSectionEditor({
                 <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
                   Optimized Benchmark Notes
                 </label>
-                <textarea
+                <SimpleRichEditor
                   value={section.optimized_notes}
-                  onChange={e => onUpdate({ optimized_notes: e.target.value })}
+                  onChange={v => onUpdate({ optimized_notes: v })}
                   rows={4}
-                  className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-none"
+                  placeholder="Describe the optimized state..."
                 />
               </div>
             </div>
@@ -132,11 +133,11 @@ export default function AuditSectionEditor({
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
               Edited Findings
             </label>
-            <textarea
+            <SimpleRichEditor
               value={section.human_edited_findings}
-              onChange={e => onUpdate({ human_edited_findings: e.target.value })}
+              onChange={v => onUpdate({ human_edited_findings: v })}
               rows={3}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-none"
+              placeholder="Edit or refine the AI findings..."
             />
           </div>
 
@@ -144,11 +145,11 @@ export default function AuditSectionEditor({
             <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
               Summary (2-3 sentences, client-facing)
             </label>
-            <textarea
+            <SimpleRichEditor
               value={section.summary_text}
-              onChange={e => onUpdate({ summary_text: e.target.value })}
+              onChange={v => onUpdate({ summary_text: v })}
               rows={2}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-none"
+              placeholder="Write a brief client-facing summary..."
             />
           </div>
 
@@ -184,13 +185,15 @@ export default function AuditSectionEditor({
                 Status
               </label>
               <div className="flex items-center gap-2">
-                {(['draft', 'reviewed', 'approved'] as const).map(s => (
+                {(['draft', 'approved'] as const).map(s => (
                   <button
                     key={s}
                     onClick={() => onUpdate({ status: s })}
                     className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-medium transition-colors ${
                       section.status === s
-                        ? 'bg-brand-primary text-white'
+                        ? s === 'approved'
+                          ? 'bg-emerald-500 text-white'
+                          : 'bg-gray-600 text-white'
                         : 'bg-gray-50 text-gray-600 hover:bg-gray-100'
                     }`}
                   >

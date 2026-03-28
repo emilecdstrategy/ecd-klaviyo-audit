@@ -18,7 +18,7 @@ import Modal from '../components/ui/Modal';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
 import { useAuth } from '../contexts/AuthContext';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
-import { IndustrySelectItems, IndustrySelectTriggerContent } from '../components/ui/IndustrySelect';
+import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { supabase } from '../lib/supabase';
 import {
   listIndustryEmailLibrary,
@@ -365,6 +365,8 @@ function EmailLibraryTab() {
   const [formHtml, setFormHtml] = useState('');
   const [formImageUrl, setFormImageUrl] = useState('');
   const [formAnnotations, setFormAnnotations] = useState<Array<{ x: number; y: number; label: string }>>([]);
+  const [formAnnotationSize, setFormAnnotationSize] = useState<'sm' | 'md' | 'lg'>('md');
+  const [formAnnotationsExpanded, setFormAnnotationsExpanded] = useState(false);
   const [saving, setSaving] = useState(false);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -390,6 +392,8 @@ function EmailLibraryTab() {
     setFormHtml('');
     setFormImageUrl('');
     setFormAnnotations([]);
+    setFormAnnotationSize('md');
+    setFormAnnotationsExpanded(false);
     setEditingEntry(null);
     setShowForm(false);
   };
@@ -402,6 +406,8 @@ function EmailLibraryTab() {
     setFormHtml(entry.html_content || '');
     setFormImageUrl(entry.image_url || '');
     setFormAnnotations(entry.default_annotations || []);
+    setFormAnnotationSize(entry.annotation_size || 'md');
+    setFormAnnotationsExpanded(entry.annotations_expanded ?? false);
     setShowForm(true);
   };
 
@@ -438,6 +444,8 @@ function EmailLibraryTab() {
         html_content: formContentType === 'html' ? formHtml : null,
         image_url: formContentType === 'image' ? formImageUrl : null,
         default_annotations: formAnnotations,
+        annotation_size: formAnnotationSize,
+        annotations_expanded: formAnnotationsExpanded,
       };
       if (editingEntry) {
         await updateIndustryEmail(editingEntry.id, payload);
@@ -512,14 +520,7 @@ function EmailLibraryTab() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-              <Select value={formIndustry || undefined} onValueChange={v => setFormIndustry(v)}>
-                <SelectTrigger className="w-full">
-                  <IndustrySelectTriggerContent value={formIndustry || undefined} placeholder="Select industry..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <IndustrySelectItems />
-                </SelectContent>
-              </Select>
+              <IndustrySelectWithCustom value={formIndustry} onValueChange={setFormIndustry} />
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Display Name</label>
@@ -618,6 +619,37 @@ function EmailLibraryTab() {
               <label className="block text-sm font-medium text-gray-700 mb-2">
                 Annotations ({formAnnotations.length}) — click on the preview to place pins
               </label>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-4">
+                <div>
+                  <label className="block text-xs font-medium text-gray-600 mb-1">Annotation Size</label>
+                  <Select value={formAnnotationSize} onValueChange={v => setFormAnnotationSize(v as 'sm' | 'md' | 'lg')}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="sm"><SelectItemText>Small</SelectItemText></SelectItem>
+                      <SelectItem value="md"><SelectItemText>Medium (default)</SelectItemText></SelectItem>
+                      <SelectItem value="lg"><SelectItemText>Large</SelectItemText></SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end pb-1">
+                  <label className="flex items-center gap-2.5 cursor-pointer select-none">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={formAnnotationsExpanded}
+                      onClick={() => setFormAnnotationsExpanded(e => !e)}
+                      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${formAnnotationsExpanded ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${formAnnotationsExpanded ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
+                    <span className="text-xs font-medium text-gray-600">Always show labels</span>
+                  </label>
+                </div>
+              </div>
+
               <div className="max-w-md mx-auto">
                 <AnnotationLayer
                   imageUrl={formContentType === 'image' ? formImageUrl : undefined}
@@ -627,6 +659,8 @@ function EmailLibraryTab() {
                   onRemoveAnnotation={handleRemoveAnnotation}
                   editable
                   side="optimized"
+                  markerSize={formAnnotationSize}
+                  alwaysShowLabels={formAnnotationsExpanded}
                 />
               </div>
             </div>
@@ -656,11 +690,14 @@ function EmailLibraryTab() {
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
           {entries.map(entry => (
             <div key={entry.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden card-shadow group">
-              <div className="h-48 bg-gray-50 overflow-hidden relative">
+              <div
+                className="h-48 bg-gray-50 overflow-y-auto relative cursor-pointer hover:ring-2 hover:ring-brand-primary/30 transition-shadow"
+                onClick={() => openEditForm(entry)}
+              >
                 {entry.content_type === 'image' && entry.image_url ? (
-                  <img src={entry.image_url} alt={entry.name} className="w-full h-full object-cover object-top" />
+                  <img src={entry.image_url} alt={entry.name} className="w-full object-cover object-top" />
                 ) : entry.content_type === 'html' && entry.html_content ? (
-                  <iframe srcDoc={entry.html_content} sandbox="allow-same-origin" className="w-full h-full border-0 pointer-events-none" title={entry.name} />
+                  <iframe srcDoc={entry.html_content} sandbox="allow-same-origin" className="w-full border-0 pointer-events-none" style={{ height: 1200 }} title={entry.name} />
                 ) : (
                   <div className="flex items-center justify-center h-full text-sm text-gray-300">No preview</div>
                 )}

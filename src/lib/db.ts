@@ -160,7 +160,7 @@ export async function createAuditSections(
     summary_text: '',
     revenue_opportunity: 0,
     confidence: 'medium',
-    status: 'draft',
+    status: 'approved',
     section_details: null,
   }));
   const { data, error } = await supabase.from('audit_sections').insert(rows).select('*');
@@ -359,6 +359,20 @@ export async function updateIndustryEmail(id: string, updates: Partial<IndustryE
 export async function deleteIndustryEmail(id: string): Promise<void> {
   const { error } = await supabase.from('industry_email_library').delete().eq('id', id);
   if (error) throw error;
+}
+
+// --- Custom Industries ---
+
+export async function listCustomIndustries(): Promise<string[]> {
+  const { data, error } = await supabase.from('custom_industries').select('name').order('name');
+  if (error) throw error;
+  return (data ?? []).map(r => r.name);
+}
+
+export async function createCustomIndustry(name: string): Promise<string> {
+  const { data, error } = await supabase.from('custom_industries').insert({ name }).select('name').single();
+  if (error) throw error;
+  return data.name;
 }
 
 // --- Audit Email Design ---

@@ -1,3 +1,18 @@
+import type { LucideIcon } from 'lucide-react';
+import {
+  Workflow,
+  Zap,
+  MousePointerClick,
+  Send,
+  Users,
+  UserCheck,
+  UserX,
+  Clock,
+  MailX,
+  ShieldAlert,
+  TrendingUp,
+  DollarSign,
+} from 'lucide-react';
 import type { FlowPerformance, KlaviyoCampaignSnapshot, KlaviyoFlowSnapshot } from '../../lib/types';
 
 function normalizeReportingDiagnostic(raw?: string | null) {
@@ -52,10 +67,13 @@ function calcWeeklySendFrequency(campaigns: KlaviyoCampaignSnapshot[]) {
   return { recentSent, perWeek };
 }
 
-function Card({ label, value, sub }: { label: string; value: string; sub: string }) {
+function Card({ label, value, sub, icon: Icon }: { label: string; value: string; sub: string; icon?: LucideIcon }) {
   return (
     <div className="rounded-xl border border-gray-100/90 bg-[#f9f9f9] px-4 py-4">
-      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">{label}</p>
+      <div className="flex items-center gap-1.5 mb-1.5">
+        {Icon && <Icon className="w-3.5 h-3.5 text-gray-400" strokeWidth={1.75} />}
+        <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">{label}</p>
+      </div>
       <p className="text-2xl font-bold tabular-nums text-gray-900 tracking-tight">{value}</p>
       <p className="text-xs font-medium mt-1 leading-snug text-gray-500">{sub}</p>
     </div>
@@ -110,12 +128,13 @@ export default function ReportAccountSnapshot({
   return (
     <div>
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
-        <Card label="Total Flows" value={String(totalFlows)} sub="in Klaviyo account" />
-        <Card label="Live Flows" value={String(liveFlows)} sub="actively sending" />
-        <Card label="Manual Flows" value={String(manualFlows)} sub="require manual trigger" />
-        <Card label="Total Campaigns" value={String(totalCampaigns)} sub="email campaigns in account" />
+        <Card icon={Workflow} label="Total Flows" value={String(totalFlows)} sub="in Klaviyo account" />
+        <Card icon={Zap} label="Live Flows" value={String(liveFlows)} sub="actively sending" />
+        <Card icon={MousePointerClick} label="Manual Flows" value={String(manualFlows)} sub="require manual trigger" />
+        <Card icon={Send} label="Total Campaigns" value={String(totalCampaigns)} sub="email campaigns in account" />
 
         <Card
+          icon={Users}
           label="List Size"
           value={formatIntWithTruncFlag(
             accountSnapshot?.total_profiles_count ?? accountSnapshot?.email_subscribed_profiles_count ?? null,
@@ -130,6 +149,7 @@ export default function ReportAccountSnapshot({
           }
         />
         <Card
+          icon={UserCheck}
           label="Active Profiles"
           value={formatIntWithTruncFlag(
             accountSnapshot?.email_subscribed_profiles_count ?? null,
@@ -144,6 +164,7 @@ export default function ReportAccountSnapshot({
           }
         />
         <Card
+          icon={UserX}
           label="Suppressions"
           value={formatIntWithTruncFlag(
             accountSnapshot?.suppressed_profiles_count ?? null,
@@ -163,12 +184,14 @@ export default function ReportAccountSnapshot({
           }
         />
         <Card
+          icon={Clock}
           label="Send Frequency"
           value={recentSent > 0 ? `${perWeek.toFixed(perWeek < 1 ? 1 : 0)}/wk` : '—'}
           sub={recentSent > 0 ? `${recentSent} campaigns sent (last 30 days)` : 'based on recent sent campaigns'}
         />
 
         <Card
+          icon={MailX}
           label="Bounce Rate"
           value={accountSnapshot?.bounce_rate_90d != null ? formatRatePct(accountSnapshot.bounce_rate_90d) : 'N/A'}
           sub={
@@ -178,6 +201,7 @@ export default function ReportAccountSnapshot({
           }
         />
         <Card
+          icon={ShieldAlert}
           label="Spam Rate"
           value={accountSnapshot?.spam_rate_90d != null ? formatRatePct(accountSnapshot.spam_rate_90d) : 'N/A'}
           sub={
@@ -187,11 +211,13 @@ export default function ReportAccountSnapshot({
           }
         />
         <Card
+          icon={TrendingUp}
           label="Flow Conv. Rate"
           value={hasPerf && weightedConv != null ? formatPct(weightedConv) : 'N/A'}
           sub={hasPerf ? 'weighted average (flows)' : perfUnavailableReason}
         />
         <Card
+          icon={DollarSign}
           label="Revenue / Recipient"
           value={hasPerf && revenuePerRecipient != null ? `$${revenuePerRecipient.toFixed(2)}` : 'N/A'}
           sub={hasPerf ? 'across all flows' : perfUnavailableReason}

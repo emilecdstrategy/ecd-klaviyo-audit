@@ -144,7 +144,7 @@ export interface AuditSection {
   summary_text: string;
   revenue_opportunity: number;
   confidence: 'low' | 'medium' | 'high';
-  status: 'draft' | 'reviewed' | 'approved';
+  status: 'draft' | 'approved';
   section_details?: Record<string, unknown> | null;
 }
 
@@ -181,6 +181,8 @@ export interface IndustryExample {
   notes: string;
 }
 
+export type AnnotationSize = 'sm' | 'md' | 'lg';
+
 export interface IndustryEmailLibrary {
   id: string;
   industry: string;
@@ -189,6 +191,8 @@ export interface IndustryEmailLibrary {
   html_content: string | null;
   image_url: string | null;
   default_annotations: Array<{ x: number; y: number; label: string }>;
+  annotation_size: AnnotationSize;
+  annotations_expanded: boolean;
   created_at: string;
   updated_at: string;
 }

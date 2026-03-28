@@ -16,7 +16,7 @@ import { createAudit, createAuditSections, createClient, ensureClientCreator, li
 import type { Audit, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
-import { IndustrySelectItems, IndustrySelectTriggerContent } from '../components/ui/IndustrySelect';
+import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { supabase } from '../lib/supabase';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 
@@ -506,14 +506,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
-              <Select value={form.industry || undefined} onValueChange={v => updateField('industry', v)}>
-                <SelectTrigger className="w-full">
-                  <IndustrySelectTriggerContent value={form.industry || undefined} placeholder="Select industry..." />
-                </SelectTrigger>
-                <SelectContent>
-                  <IndustrySelectItems />
-                </SelectContent>
-              </Select>
+              <IndustrySelectWithCustom value={form.industry} onValueChange={v => updateField('industry', v)} />
             </div>
 
             <div>

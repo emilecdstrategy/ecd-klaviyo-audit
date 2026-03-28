@@ -1,6 +1,22 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Plus, X } from 'lucide-react';
-import type { Annotation } from '../../lib/types';
+import type { Annotation, AnnotationSize } from '../../lib/types';
+
+function injectBaseTarget(html: string): string {
+  if (/<base\s/i.test(html)) return html;
+  const headIdx = html.search(/<head[^>]*>/i);
+  if (headIdx !== -1) {
+    const closeTag = html.indexOf('>', headIdx) + 1;
+    return html.slice(0, closeTag) + '<base target="_blank">' + html.slice(closeTag);
+  }
+  return '<base target="_blank">' + html;
+}
+
+const SIZE_CONFIG: Record<AnnotationSize, { dot: string; dotText: string; listDot: string; listDotText: string; labelPx: string; labelPy: string; labelText: string }> = {
+  sm: { dot: 'w-5 h-5', dotText: 'text-[8px]', listDot: 'w-3.5 h-3.5', listDotText: 'text-[7px]', labelPx: 'px-2', labelPy: 'py-1', labelText: 'text-[10px]' },
+  md: { dot: 'w-6 h-6', dotText: 'text-[10px]', listDot: 'w-4 h-4', listDotText: 'text-[9px]', labelPx: 'px-2.5', labelPy: 'py-1.5', labelText: 'text-xs' },
+  lg: { dot: 'w-8 h-8', dotText: 'text-xs', listDot: 'w-5 h-5', listDotText: 'text-[10px]', labelPx: 'px-3', labelPy: 'py-2', labelText: 'text-sm' },
+};
 
 interface AnnotationLayerProps {
   imageUrl?: string;
@@ -12,6 +28,10 @@ interface AnnotationLayerProps {
   side: 'current' | 'optimized';
   /** Max visible height for HTML emails before scrolling kicks in (default 900) */
   maxHeight?: number;
+  /** Marker dot size (default 'md') */
+  markerSize?: AnnotationSize;
+  /** Always show labels instead of only on hover (default false) */
+  alwaysShowLabels?: boolean;
 }
 
 export default function AnnotationLayer({
@@ -23,6 +43,8 @@ export default function AnnotationLayer({
   editable = false,
   side,
   maxHeight = 900,
+  markerSize = 'md',
+  alwaysShowLabels = false,
 }: AnnotationLayerProps) {
   const [adding, setAdding] = useState(false);
   const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null);
@@ -31,6 +53,8 @@ export default function AnnotationLayer({
   const wrapperRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(800);
   const [scrollTop, setScrollTop] = useState(0);
+
+  const safeSrcDoc = useMemo(() => htmlContent ? injectBaseTarget(htmlContent) : undefined, [htmlContent]);
 
   useEffect(() => {
     if (!htmlContent || !iframeRef.current) return;
@@ -115,13 +139,15 @@ export default function AnnotationLayer({
     );
   };
 
+  const sz = SIZE_CONFIG[markerSize];
+
   const renderMarkerInner = (ann: { id: string; label: string }, i: number, isPending?: boolean) => (
     <div className="relative group/marker">
-      <div className={`w-6 h-6 rounded-full ${isPending ? 'bg-brand-primary animate-pulse' : markerColor} text-white text-[10px] font-bold flex items-center justify-center shadow-lg border-2 border-white`}>
+      <div className={`${sz.dot} rounded-full ${isPending ? 'bg-brand-primary animate-pulse' : markerColor} text-white ${sz.dotText} font-bold flex items-center justify-center shadow-lg border-2 border-white`}>
         {isPending ? '?' : i + 1}
       </div>
       {!isPending && (
-        <div className={`absolute left-7 top-1/2 -translate-y-1/2 bg-white px-2.5 py-1.5 rounded-lg shadow-lg border ${markerBorder} text-xs font-medium text-gray-800 whitespace-nowrap opacity-0 group-hover/marker:opacity-100 transition-opacity pointer-events-none z-20`}>
+        <div className={`absolute left-7 top-1/2 -translate-y-1/2 bg-white ${sz.labelPx} ${sz.labelPy} rounded-lg shadow-lg border ${markerBorder} ${sz.labelText} font-medium text-gray-800 whitespace-nowrap ${alwaysShowLabels ? 'opacity-100' : 'opacity-0 group-hover/marker:opacity-100'} transition-opacity pointer-events-none z-20`}>
           {ann.label}
           <div className={`absolute left-0 top-1/2 -translate-x-1 -translate-y-1/2 w-2 h-2 bg-white border-l border-b ${markerBorder} rotate-45`} />
         </div>
@@ -160,8 +186,8 @@ export default function AnnotationLayer({
           <div className="relative" style={{ height: contentHeight, pointerEvents: adding ? 'none' : undefined }}>
             <iframe
               ref={iframeRef}
-              srcDoc={htmlContent}
-              sandbox="allow-same-origin"
+              srcDoc={safeSrcDoc}
+              sandbox="allow-same-origin allow-popups allow-popups-to-escape-sandbox"
               title={`${side} email preview`}
               className="w-full border-0 rounded-lg"
               style={{ height: contentHeight, pointerEvents: adding ? 'none' : undefined }}
@@ -212,7 +238,7 @@ export default function AnnotationLayer({
         <div className="mt-3 space-y-1.5">
           {sideAnnotations.map((ann, i) => (
             <div key={ann.id} className="flex items-start gap-2 text-xs">
-              <span className={`w-4 h-4 rounded-full ${markerColor} text-white text-[9px] font-bold flex items-center justify-center shrink-0 mt-0.5`}>
+              <span className={`${sz.listDot} rounded-full ${markerColor} text-white ${sz.listDotText} font-bold flex items-center justify-center shrink-0 mt-0.5`}>
                 {i + 1}
               </span>
               <span className="text-gray-600">{ann.label}</span>

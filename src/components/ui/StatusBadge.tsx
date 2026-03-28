@@ -11,7 +11,6 @@ const labels: Record<string, string> = {
   review: 'In Review',
   completed: 'Completed',
   published: 'Published',
-  reviewed: 'Reviewed',
   approved: 'Approved',
 };
 

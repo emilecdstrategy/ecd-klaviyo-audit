@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { Zap, TrendingUp, AlertTriangle, CheckCircle2, ChevronRight } from 'lucide-react';
+import { Zap, TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X } from 'lucide-react';
 import {
   DEMO_AUDITS,
   DEMO_CLIENTS,
@@ -169,7 +169,7 @@ export default function PublicReport() {
   const topOpportunities = [...sections]
     .filter(s => s.revenue_opportunity > 0)
     .sort((a, b) => b.revenue_opportunity - a.revenue_opportunity);
-  const reportSections = sections.filter(s => s.section_key !== 'revenue_summary');
+  const reportSections = sections.filter(s => s.section_key !== 'revenue_summary' && s.status !== 'draft');
 
   let execText = audit.executive_summary || '';
   let aiStrengths: string[] = [];
@@ -824,9 +824,12 @@ function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; coll
 
 function RubricInsightCard({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <div className="rounded-xl border border-gray-100 bg-white p-4 card-shadow">
-      <p className="text-xs font-semibold uppercase tracking-wide text-gray-700 mb-2">{label}</p>
-      {children}
+    <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
+      <div className="h-1 w-full bg-brand-primary" />
+      <div className="px-5 pt-4 pb-5">
+        <p className="text-[13px] font-bold uppercase tracking-wider text-brand-primary mb-3">{label}</p>
+        {children}
+      </div>
     </div>
   );
 }
@@ -943,21 +946,22 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
     return (
       <div className="mb-4 space-y-3">
         <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 px-4 pt-4 pb-2">Segmentation snapshot</p>
+          <div className="h-1 w-full bg-brand-primary" />
+          <p className="text-[13px] font-bold uppercase tracking-wider text-brand-primary px-5 pt-4 pb-2">Segmentation snapshot</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-            <div className="flex min-h-[88px] flex-col items-start gap-2 px-4 py-4">
+            <div className="flex min-h-[88px] flex-col items-start gap-2 px-5 py-4">
               <span className="text-sm font-medium text-gray-700 leading-snug">Full-list sends</span>
               <SnapshotStatusValue tone={blastRisk ? 'warn' : 'good'}>
                 {blastRisk ? 'Yes — risk' : 'No'}
               </SnapshotStatusValue>
             </div>
-            <div className="flex min-h-[88px] flex-col items-start gap-2 px-4 py-4">
+            <div className="flex min-h-[88px] flex-col items-start gap-2 px-5 py-4">
               <span className="text-sm font-medium text-gray-700 leading-snug">Engaged / unengaged</span>
               <SnapshotStatusValue tone={d.has_engaged_unengaged_segments ? 'good' : 'bad'}>
                 {d.has_engaged_unengaged_segments ? 'Defined' : 'Missing'}
               </SnapshotStatusValue>
             </div>
-            <div className="flex min-h-[88px] flex-col items-start gap-2 px-4 py-4">
+            <div className="flex min-h-[88px] flex-col items-start gap-2 px-5 py-4">
               <span className="text-sm font-medium text-gray-700 leading-snug">VIP / high-LTV</span>
               <SnapshotStatusValue tone={d.has_vip_segments ? 'good' : 'warn'}>
                 {d.has_vip_segments ? 'Defined' : 'Missing'}
@@ -965,9 +969,12 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
             </div>
           </div>
         </div>
-        <div className="rounded-xl border border-gray-100 bg-gray-50/70 p-4 card-shadow">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-2">ECD benchmark</p>
-          <RubricExpandableNote text={d.benchmark_architecture_note || 'N/A'} collapsedLines={4} />
+        <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
+          <div className="h-1 w-full bg-brand-primary" />
+          <div className="px-5 pt-4 pb-5">
+            <p className="text-[13px] font-bold uppercase tracking-wider text-brand-primary mb-3">ECD benchmark</p>
+            <RubricExpandableNote text={d.benchmark_architecture_note || 'N/A'} collapsedLines={4} />
+          </div>
         </div>
       </div>
     );
@@ -999,15 +1006,16 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
     return (
       <div className="mb-4 space-y-3">
         <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 px-4 pt-4 pb-2">Form coverage</p>
+          <div className="h-1 w-full bg-brand-primary" />
+          <p className="text-[13px] font-bold uppercase tracking-wider text-brand-primary px-5 pt-4 pb-2">Form coverage</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-            <div className="flex flex-col items-start gap-2 px-4 py-4">
+            <div className="flex flex-col items-start gap-2 px-5 py-4">
               <span className="text-sm font-medium text-gray-700">Popup</span>
               <SnapshotStatusValue tone={d.has_popup ? 'good' : 'warn'}>
                 {d.has_popup ? 'Present' : 'Missing'}
               </SnapshotStatusValue>
             </div>
-            <div className="flex flex-col items-start gap-2 px-4 py-4">
+            <div className="flex flex-col items-start gap-2 px-5 py-4">
               <span className="text-sm font-medium text-gray-700">Embedded form</span>
               <SnapshotStatusValue tone={d.has_embedded_form ? 'good' : 'warn'}>
                 {d.has_embedded_form ? 'Present' : 'Missing'}
@@ -1137,11 +1145,12 @@ function EmailDesignComparison({
   annotations: import('../lib/types').Annotation[];
   sections: AuditSection[];
 }) {
+  const [fullscreen, setFullscreen] = useState(false);
   const edSection = sections.find(s => s.section_key === 'email_design');
   const sectionAnns = edSection ? annotations.filter(a => a.audit_section_id === edSection.id) : [];
   const ecdExample = emailDesign.ecd_example;
 
-  return (
+  const comparisonGrid = (maxH?: number) => (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
       {emailDesign.client_email_html && (
         <div className="space-y-3">
@@ -1159,6 +1168,7 @@ function EmailDesignComparison({
             annotations={sectionAnns}
             editable={false}
             side="current"
+            {...(maxH ? { maxHeight: maxH } : {})}
           />
         </div>
       )}
@@ -1175,9 +1185,45 @@ function EmailDesignComparison({
             annotations={sectionAnns}
             editable={false}
             side="optimized"
+            markerSize={ecdExample.annotation_size || 'md'}
+            alwaysShowLabels={ecdExample.annotations_expanded ?? false}
+            {...(maxH ? { maxHeight: maxH } : {})}
           />
         </div>
       )}
     </div>
+  );
+
+  return (
+    <>
+      <div className="relative">
+        <button
+          onClick={() => setFullscreen(true)}
+          className="absolute top-0 right-0 z-10 flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-brand-primary bg-brand-primary/5 rounded-lg hover:bg-brand-primary/10 transition-colors"
+        >
+          <Maximize2 className="w-3.5 h-3.5" />
+          Full-screen compare
+        </button>
+        {comparisonGrid()}
+      </div>
+
+      {fullscreen && (
+        <div className="fixed inset-0 z-50 bg-white overflow-y-auto">
+          <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-white/95 backdrop-blur border-b border-gray-100">
+            <h3 className="text-sm font-semibold text-gray-900">Email Design Comparison</h3>
+            <button
+              onClick={() => setFullscreen(false)}
+              className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-gray-100 rounded-lg hover:bg-gray-200 transition-colors"
+            >
+              <X className="w-3.5 h-3.5" />
+              Close
+            </button>
+          </div>
+          <div className="p-6 max-w-screen-2xl mx-auto">
+            {comparisonGrid(window.innerHeight - 120)}
+          </div>
+        </div>
+      )}
+    </>
   );
 }
