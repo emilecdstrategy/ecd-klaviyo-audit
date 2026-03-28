@@ -44,6 +44,7 @@ export function buildAuditSystemPrompt() {
     "Return only valid JSON matching the provided schema.",
     `Set schemaVersion to '${AI_SCHEMA_VERSION}'.`,
     "Use crisp, client-facing writing with concrete findings and CONSERVATIVE, realistic revenue opportunities.",
+    "CRITICAL: This report is presented directly to clients. NEVER use internal or technical language such as 'API', 'extract', 'data pull', 'snapshot', 'endpoint', 'database', 'schema', 'payload', 'backend', 'frontend', or any reference to how the data was obtained. Write as if you personally reviewed their Klaviyo account. Say 'your account shows…', 'we found…', 'based on your Klaviyo data…' — never 'the API extract shows…'.",
     "Revenue opportunities MUST be grounded in the actual data. A section's revenue_opportunity should not exceed 2-3x the current monthly flow revenue annualized unless there is a clearly evidenced gap like a completely missing core flow.",
     "For accounts with under $10,000/month in flow revenue, total combined opportunity across all 6 sections should rarely exceed $50,000-$100,000 annually.",
     "Reference specific flow names, campaign names, segment names, and form names from the data.",
