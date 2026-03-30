@@ -579,33 +579,7 @@ export default function PublicReport() {
             </div>
           </div>
 
-          <div className="bg-white rounded-xl p-6 border border-gray-100 mb-6">
-            <h3 className="text-sm font-semibold text-gray-900 mb-5">Breakdown by Area</h3>
-            <div className="space-y-4">
-              {topOpportunities.map(s => {
-                const pct = totalRevenue > 0 ? (s.revenue_opportunity / totalRevenue) * 100 : 0;
-                return (
-                  <div key={s.id}>
-                    <div className="flex items-center justify-between mb-1.5">
-                      <span className="text-sm text-gray-700">{SECTION_LABELS[s.section_key]}</span>
-                      <div className="flex items-center gap-3">
-                        <span className="text-xs text-gray-400">{Math.round(pct)}%</span>
-                        <span className="text-sm font-semibold text-gray-900 w-20 text-right">
-                          {formatCurrency(s.revenue_opportunity)}/mo
-                        </span>
-                      </div>
-                    </div>
-                    <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-brand-primary rounded-full"
-                        style={{ width: `${pct}%` }}
-                      />
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
+          {/* Breakdown by Area hidden */}
 
           <div className="relative overflow-hidden rounded-3xl text-center shadow-xl shadow-brand-primary/20 ring-1 ring-white/20">
             <div
