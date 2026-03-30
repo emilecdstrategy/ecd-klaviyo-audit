@@ -554,19 +554,22 @@ async function pickBestConversionMetricId(params: {
   revision: string;
   candidateMetricIds: string[];
   flowIds: string[];
+  deadlineAtMs?: number;
 }) {
   const candidates = Array.from(new Set(params.candidateMetricIds.filter(Boolean)));
-  const maxProbes = Math.min(candidates.length, 15);
+  const maxProbes = Math.min(candidates.length, 6);
+  const timeBudgetMs = params.deadlineAtMs ? params.deadlineAtMs - Date.now() : 30_000;
+  const probeDeadline = Date.now() + Math.min(timeBudgetMs * 0.25, 25_000);
 
-  // First pass: probe with a flow_id filter (faster, but can miss if sample flows have no conversions)
-  const sampleFlowIds = params.flowIds.slice(0, 20);
+  const sampleFlowIds = params.flowIds.slice(0, 15);
   const flowFilter = sampleFlowIds.length
     ? `contains-any(flow_id,[${sampleFlowIds.map((id) => JSON.stringify(id)).join(",")}])`
     : undefined;
 
   for (let i = 0; i < maxProbes; i++) {
+    if (Date.now() >= probeDeadline) break;
     const metricId = candidates[i];
-    if (i > 0) await sleep(800);
+    if (i > 0) await sleep(600);
     const probe = await fetchWithRetry(
       () =>
         queryValuesReportWithBackoff({
@@ -578,6 +581,7 @@ async function pickBestConversionMetricId(params: {
           filter: flowFilter,
           statistics: ["recipients", "conversion_rate", "conversion_value", "revenue_per_recipient"],
           groupBy: ["flow_id", "send_channel"],
+          deadlineAtMs: probeDeadline,
         }),
       2,
     );
@@ -592,12 +596,11 @@ async function pickBestConversionMetricId(params: {
     }
   }
 
-  // Second pass: try top 5 candidates WITHOUT flow filter (catches accounts where
-  // the sample flows happen to have zero conversions but other flows do convert)
-  const retryCount = Math.min(candidates.length, 5);
-  for (let i = 0; i < retryCount; i++) {
+  // Quick second pass without flow filter for top 2 candidates only
+  for (let i = 0; i < Math.min(candidates.length, 2); i++) {
+    if (Date.now() >= probeDeadline) break;
     const metricId = candidates[i];
-    await sleep(800);
+    await sleep(600);
     const probe = await fetchWithRetry(
       () =>
         queryValuesReportWithBackoff({
@@ -608,6 +611,7 @@ async function pickBestConversionMetricId(params: {
           conversionMetricId: metricId,
           statistics: ["recipients", "conversion_rate", "conversion_value", "revenue_per_recipient"],
           groupBy: ["flow_id", "send_channel"],
+          deadlineAtMs: probeDeadline,
         }),
       2,
     );
@@ -985,6 +989,7 @@ serve(async (req) => {
           revision,
           candidateMetricIds: metricCandidates,
           flowIds: flowIdsForMetricProbe,
+          deadlineAtMs,
         })
       : { metricId: null, reason: "metrics_fetch_failed" as const };
     const conversionMetricId = pickedMetric.metricId;
