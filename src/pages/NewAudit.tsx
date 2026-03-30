@@ -486,7 +486,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               </div>
             </div>
 
-            <div>
+              <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
               <IndustrySelectWithCustom value={form.industry} onValueChange={v => updateField('industry', v)} />
             </div>
@@ -512,19 +512,19 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 This client is already connected to Klaviyo. We’ll use the saved connection automatically.
               </div>
             ) : (
-              <div>
+            <div>
                 <div className="mb-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                   <label className="block text-sm font-medium text-gray-700">Klaviyo Private API Key</label>
                   <KlaviyoApiKeyHelpTrigger className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-brand-primary transition-colors hover:text-brand-primary-dark hover:underline" />
                 </div>
-                <input
-                  type="password"
-                  value={form.apiKey}
-                  onChange={e => updateField('apiKey', e.target.value)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  placeholder="pk_xxxxxxxxxxxxxxxxxxxx"
-                />
-              </div>
+              <input
+                type="password"
+                value={form.apiKey}
+                onChange={e => updateField('apiKey', e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                placeholder="pk_xxxxxxxxxxxxxxxxxxxx"
+              />
+            </div>
             )}
             <div className="bg-blue-50 border border-blue-100 rounded-lg p-4 text-sm text-blue-800">
               <p className="font-medium mb-1">What we'll fetch:</p>
@@ -695,7 +695,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             </button>
           </div>
         )}
-    </div>
+      </div>
   );
 
   if (asModal) return body;

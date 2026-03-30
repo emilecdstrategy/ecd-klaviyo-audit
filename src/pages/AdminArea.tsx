@@ -269,7 +269,7 @@ function UsersTab() {
           >
             <UserPlus className="w-4 h-4" />
             {inviting ? 'Inviting...' : 'Invite User'}
-          </button>
+        </button>
         </div>
       </div>
 
@@ -499,8 +499,8 @@ function EmailLibraryTab() {
             className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
           >
             <Plus className="w-4 h-4" />
-            Add Example
-          </button>
+          Add Example
+        </button>
         )}
       </div>
 
@@ -705,11 +705,11 @@ function EmailLibraryTab() {
                 <div className="mt-2 flex gap-2">
                   <button onClick={() => openEditForm(entry)} className="text-xs text-brand-primary font-medium hover:underline inline-flex items-center gap-1"><Pencil className="w-3 h-3" /> Edit</button>
                   <button onClick={() => handleDelete(entry.id)} className="text-xs text-red-500 font-medium hover:underline inline-flex items-center gap-1"><Trash2 className="w-3 h-3" /> Delete</button>
-                </div>
-              </div>
-            </div>
+      </div>
+    </div>
+      </div>
           ))}
-        </div>
+      </div>
       )}
     </div>
   );
@@ -811,22 +811,22 @@ function SettingsTab() {
             {status && !status.configured && (
               <div className="mb-4 text-xs text-gray-500">Status: Not configured</div>
             )}
-            <div>
+        <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 {status?.configured ? 'New API Key' : 'API Key'}
               </label>
-              <input
-                type="password"
-                placeholder="sk-..."
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+          <input
+            type="password"
+            placeholder="sk-..."
+            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                 value={apiKey}
                 onChange={e => setApiKey(e.target.value)}
                 autoFocus={editing}
-              />
-              <p className="text-xs text-gray-400 mt-1">
+          />
+          <p className="text-xs text-gray-400 mt-1">
                 Stored encrypted in Supabase and used server-side only.
-              </p>
-            </div>
+          </p>
+        </div>
             {error && <div className="mt-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>}
             {success && <div className="mt-3 text-sm text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg">{success}</div>}
             <div className="mt-4 flex items-center gap-2">
@@ -854,26 +854,26 @@ function SettingsTab() {
 
       {SHOW_ADMIN_SETTINGS_PLACEHOLDERS && (
         <>
-          <div className="bg-white rounded-xl p-6 card-shadow">
-            <h3 className="text-base font-semibold text-gray-900 mb-4">Audit Templates</h3>
-            <p className="text-sm text-gray-500 mb-3">
-              Manage audit section templates and default content. Templates define the structure of each audit report.
-            </p>
-            <div className="bg-gray-50 rounded-lg p-4 text-center">
-              <p className="text-sm text-gray-400">Template management coming in a future release.</p>
-            </div>
-          </div>
+      <div className="bg-white rounded-xl p-6 card-shadow">
+        <h3 className="text-base font-semibold text-gray-900 mb-4">Audit Templates</h3>
+        <p className="text-sm text-gray-500 mb-3">
+          Manage audit section templates and default content. Templates define the structure of each audit report.
+        </p>
+        <div className="bg-gray-50 rounded-lg p-4 text-center">
+          <p className="text-sm text-gray-400">Template management coming in a future release.</p>
+        </div>
+      </div>
 
-          <div className="bg-white rounded-xl p-6 card-shadow">
-            <h3 className="text-base font-semibold text-gray-900 mb-4">Export Options</h3>
-            <p className="text-sm text-gray-500 mb-3">
-              Future integrations for exporting audit reports to external formats.
-            </p>
-            <div className="bg-gray-50 rounded-lg p-4 text-center">
-              {/* Future: Google Slides export integration */}
-              <p className="text-sm text-gray-400">Google Slides and PDF export coming soon.</p>
-            </div>
-          </div>
+      <div className="bg-white rounded-xl p-6 card-shadow">
+        <h3 className="text-base font-semibold text-gray-900 mb-4">Export Options</h3>
+        <p className="text-sm text-gray-500 mb-3">
+          Future integrations for exporting audit reports to external formats.
+        </p>
+        <div className="bg-gray-50 rounded-lg p-4 text-center">
+          {/* Future: Google Slides export integration */}
+          <p className="text-sm text-gray-400">Google Slides and PDF export coming soon.</p>
+        </div>
+      </div>
         </>
       )}
     </div>

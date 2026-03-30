@@ -150,8 +150,8 @@ function summarizeCampaigns(campaigns: KlaviyoContext["campaigns"]): string {
   for (const [status, count] of Object.entries(byStatus)) {
     lines.push(`  ${status}: ${count}`);
   }
-  const recent = campaigns.slice(0, 15).map(c => `${c.name} (${c.status})`);
-  lines.push(`Recent campaigns: ${recent.join(", ")}`);
+  const recent = campaigns.slice(0, 20).map(c => `${c.name} (${c.status})`);
+  lines.push(`Recent campaigns (showing up to 20): ${recent.join(", ")}`);
   return lines.join("\n");
 }
 
@@ -209,38 +209,57 @@ function summarizeFlowPerformance(perf: KlaviyoContext["flowPerformance"]): stri
   return lines.join("\n");
 }
 
+function buildScopedKlaviyoData(klaviyo: KlaviyoContext, requestedKeys: readonly string[]): Record<string, unknown> {
+  const scoped: Record<string, unknown> = { account: klaviyo.account ?? null };
+  const needs = new Set(requestedKeys);
+  const needsAll = needs.size === 0 || needs.size >= 4;
+
+  if (needsAll || needs.has("flows") || needs.has("account_health")) {
+    scoped.flows_summary = summarizeFlows(klaviyo.flows);
+    scoped.flow_performance = summarizeFlowPerformance(klaviyo.flowPerformance);
+  }
+  if (needsAll || needs.has("campaigns") || needs.has("account_health")) {
+    scoped.campaigns_summary = summarizeCampaigns(klaviyo.campaigns?.slice(0, 30));
+  }
+  if (needsAll || needs.has("segmentation") || needs.has("account_health")) {
+    scoped.segments_summary = summarizeSegments(klaviyo.segments);
+  }
+  if (needsAll || needs.has("signup_forms")) {
+    scoped.forms_summary = summarizeForms(klaviyo.forms);
+  }
+  if (needsAll) {
+    scoped.lists_summary = summarizeLists(klaviyo.lists);
+  }
+  return scoped;
+}
+
 export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext, mode: PromptMode = "full") {
   const requested = Array.isArray(data.requestedSectionKeys) && data.requestedSectionKeys.length > 0
     ? data.requestedSectionKeys
     : AUDIT_SECTION_KEYS;
 
-  const klaviyoSection = klaviyo
-    ? mode === "top_level_only"
-      ? {
-          account: klaviyo.account ?? null,
-          flow_count: klaviyo.flows?.length ?? 0,
-          campaign_count: klaviyo.campaigns?.length ?? 0,
-          segment_count: klaviyo.segments?.length ?? 0,
-          form_count: klaviyo.forms?.length ?? 0,
-          top_flows: (klaviyo.flowPerformance ?? [])
-            .slice(0, 8)
-            .map((f) => ({
-              name: f.flow_name,
-              revenue: f.monthly_revenue_current ?? 0,
-              recipients: f.recipients_per_month ?? 0,
-              conv: f.actual_conv_rate ?? 0,
-            })),
-        }
-      : {
-          account: klaviyo.account ?? null,
-          flows_summary: summarizeFlows(klaviyo.flows),
-          campaigns_summary: summarizeCampaigns(klaviyo.campaigns),
-          segments_summary: summarizeSegments(klaviyo.segments),
-          forms_summary: summarizeForms(klaviyo.forms),
-          lists_summary: summarizeLists(klaviyo.lists),
-          flow_performance: summarizeFlowPerformance(klaviyo.flowPerformance),
-        }
-    : null;
+  let klaviyoSection: Record<string, unknown> | null = null;
+  if (klaviyo) {
+    if (mode === "top_level_only") {
+      klaviyoSection = {
+        account: klaviyo.account ?? null,
+        flow_count: klaviyo.flows?.length ?? 0,
+        campaign_count: klaviyo.campaigns?.length ?? 0,
+        segment_count: klaviyo.segments?.length ?? 0,
+        form_count: klaviyo.forms?.length ?? 0,
+        top_flows: (klaviyo.flowPerformance ?? [])
+          .slice(0, 8)
+          .map((f) => ({
+            name: f.flow_name,
+            revenue: f.monthly_revenue_current ?? 0,
+            recipients: f.recipients_per_month ?? 0,
+            conv: f.actual_conv_rate ?? 0,
+          })),
+      };
+    } else {
+      klaviyoSection = buildScopedKlaviyoData(klaviyo, requested);
+    }
+  }
 
   const payload: Record<string, unknown> = {
     task:

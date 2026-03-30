@@ -23,8 +23,9 @@ const OPENAI_URL = "https://api.openai.com/v1/responses";
 const PRIMARY_MODEL = "gpt-5.4";
 const ESCALATION_MODEL = "gpt-5.4-pro";
 // Supabase Edge Functions support up to 150s — stay under that including DB + JSON work.
-const MAX_ATTEMPTS = 3;
-const REQUEST_TIMEOUT_MS = 138_000;
+// With scoped prompts the payload is much smaller per call, so 120s is generous.
+const MAX_ATTEMPTS = 2;
+const REQUEST_TIMEOUT_MS = 120_000;
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
@@ -134,12 +135,13 @@ async function callOpenAI(params: {
   systemPrompt: string;
   userPrompt: string;
   jsonSchema?: unknown;
+  reasoningEffort?: "low" | "medium" | "high";
 }): Promise<{ output: unknown; usage: any }> {
   const OPENAI_API_KEY = await getOpenAiKey();
 
   const body = {
     model: params.model,
-    reasoning: { effort: "medium" },
+    reasoning: { effort: params.reasoningEffort ?? "medium" },
     input: [
       {
         role: "system",
@@ -321,11 +323,15 @@ serve(async (req) => {
       }
     }
 
+    const LIGHT_SECTIONS: readonly string[] = ["email_design", "signup_forms"];
+    const isLightSection = mode === "sections_only" && requiredKeys.length === 1 && LIGHT_SECTIONS.includes(requiredKeys[0]);
+
     const first = await callOpenAI({
       model: PRIMARY_MODEL,
       systemPrompt,
       userPrompt: buildAuditUserPrompt(body, klaviyoCtx ?? undefined, mode),
       jsonSchema: selectedSchema,
+      reasoningEffort: isLightSection ? "low" : "medium",
     });
 
     let output = first.output;

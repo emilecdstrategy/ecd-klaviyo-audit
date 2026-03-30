@@ -101,7 +101,7 @@ export async function runAIAnalysis(
       return data as AIAnalysisResult;
     };
 
-    /** OpenAI + reasoning can exceed one request window; retry a few times before failing the audit. */
+    /** Retry on provider timeouts AND transport errors (e.g. 504 from Supabase gateway). */
     const withRetryOnTimeout = async (fn: () => Promise<AIAnalysisResult>, label: string) => {
       const maxAttempts = 3;
       let last: unknown;
@@ -110,10 +110,13 @@ export async function runAIAnalysis(
           return await fn();
         } catch (e) {
           last = e;
-          if (e instanceof AIAnalysisError && e.code === 'provider_timeout' && attempt < maxAttempts) {
-            const base = 800 + Math.floor(Math.random() * 600) + attempt * 500;
+          const isRetryable = e instanceof AIAnalysisError
+            ? (e.code === 'provider_timeout' || e.code === 'provider_error')
+            : (e instanceof Error && /timeout|504|546|502|503|Failed to send/i.test(e.message));
+          if (isRetryable && attempt < maxAttempts) {
+            const base = 1500 + Math.floor(Math.random() * 1000) + attempt * 1000;
             await new Promise(r => setTimeout(r, base));
-            onProgress?.({ current: 0, total: 0, label: `Retrying ${label} (timeout)…` });
+            onProgress?.({ current: 0, total: 0, label: `Retrying ${label} (attempt ${attempt + 1})…` });
             continue;
           }
           throw e;
