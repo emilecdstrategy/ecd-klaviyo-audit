@@ -557,19 +557,29 @@ async function pickBestConversionMetricId(params: {
   deadlineAtMs?: number;
 }) {
   const candidates = Array.from(new Set(params.candidateMetricIds.filter(Boolean)));
-  const maxProbes = Math.min(candidates.length, 6);
-  const timeBudgetMs = params.deadlineAtMs ? params.deadlineAtMs - Date.now() : 30_000;
-  const probeDeadline = Date.now() + Math.min(timeBudgetMs * 0.25, 25_000);
+  const maxProbes = Math.min(candidates.length, 8);
+  const timeBudgetMs = params.deadlineAtMs ? params.deadlineAtMs - Date.now() : 40_000;
+  const probeDeadline = Date.now() + Math.min(timeBudgetMs * 0.35, 35_000);
+  let probesRun = 0;
 
-  const sampleFlowIds = params.flowIds.slice(0, 15);
+  const sampleFlowIds = params.flowIds.slice(0, 20);
   const flowFilter = sampleFlowIds.length
     ? `contains-any(flow_id,[${sampleFlowIds.map((id) => JSON.stringify(id)).join(",")}])`
     : undefined;
 
+  function hasNonZeroConversion(rows: any[]): boolean {
+    return rows.some((r: any) => {
+      const stats = r?.statistics ?? {};
+      return Number(stats.conversion_value ?? 0) > 0 || Number(stats.conversion_uniques ?? 0) > 0;
+    });
+  }
+
+  // Pass 1: probe flow-values-reports with flow filter
   for (let i = 0; i < maxProbes; i++) {
     if (Date.now() >= probeDeadline) break;
     const metricId = candidates[i];
-    if (i > 0) await sleep(600);
+    if (i > 0) await sleep(500);
+    probesRun++;
     const probe = await fetchWithRetry(
       () =>
         queryValuesReportWithBackoff({
@@ -579,28 +589,24 @@ async function pickBestConversionMetricId(params: {
           timeframeKey: "last_30_days",
           conversionMetricId: metricId,
           filter: flowFilter,
-          statistics: ["recipients", "conversion_rate", "conversion_value", "revenue_per_recipient"],
+          statistics: ["recipients", "conversion_rate", "conversion_value"],
           groupBy: ["flow_id", "send_channel"],
           deadlineAtMs: probeDeadline,
         }),
       2,
     );
     if (!probe.ok) continue;
-    const rows = probe.body?.data?.attributes?.results ?? [];
-    const hasConversionData = rows.some((r: any) => {
-      const stats = r?.statistics ?? {};
-      return Number(stats.conversion_value ?? 0) > 0 || Number(stats.conversion_uniques ?? 0) > 0;
-    });
-    if (hasConversionData) {
-      return { metricId, reason: "probe_nonzero_conversion" as const };
+    if (hasNonZeroConversion(probe.body?.data?.attributes?.results ?? [])) {
+      return { metricId, reason: "probe_flow_filtered" as const, probesRun };
     }
   }
 
-  // Quick second pass without flow filter for top 2 candidates only
-  for (let i = 0; i < Math.min(candidates.length, 2); i++) {
+  // Pass 2: probe flow-values-reports WITHOUT flow filter (top 3 candidates)
+  for (let i = 0; i < Math.min(candidates.length, 3); i++) {
     if (Date.now() >= probeDeadline) break;
     const metricId = candidates[i];
-    await sleep(600);
+    await sleep(500);
+    probesRun++;
     const probe = await fetchWithRetry(
       () =>
         queryValuesReportWithBackoff({
@@ -609,24 +615,46 @@ async function pickBestConversionMetricId(params: {
           endpointPath: "/api/flow-values-reports/",
           timeframeKey: "last_30_days",
           conversionMetricId: metricId,
-          statistics: ["recipients", "conversion_rate", "conversion_value", "revenue_per_recipient"],
+          statistics: ["recipients", "conversion_rate", "conversion_value"],
           groupBy: ["flow_id", "send_channel"],
           deadlineAtMs: probeDeadline,
         }),
       2,
     );
     if (!probe.ok) continue;
-    const rows = probe.body?.data?.attributes?.results ?? [];
-    const hasConversionData = rows.some((r: any) => {
-      const stats = r?.statistics ?? {};
-      return Number(stats.conversion_value ?? 0) > 0 || Number(stats.conversion_uniques ?? 0) > 0;
-    });
-    if (hasConversionData) {
-      return { metricId, reason: "probe_unfiltered_nonzero" as const };
+    if (hasNonZeroConversion(probe.body?.data?.attributes?.results ?? [])) {
+      return { metricId, reason: "probe_flow_unfiltered" as const, probesRun };
     }
   }
 
-  return { metricId: candidates[0] ?? null, reason: "fallback_first_candidate" as const };
+  // Pass 3: probe campaign-values-reports (top 3 candidates)
+  for (let i = 0; i < Math.min(candidates.length, 3); i++) {
+    if (Date.now() >= probeDeadline) break;
+    const metricId = candidates[i];
+    await sleep(500);
+    probesRun++;
+    const probe = await fetchWithRetry(
+      () =>
+        queryValuesReportWithBackoff({
+          apiKey: params.apiKey,
+          revision: params.revision,
+          endpointPath: "/api/campaign-values-reports/",
+          timeframeKey: "last_30_days",
+          conversionMetricId: metricId,
+          filter: "contains-any(send_channel,[\"email\"])",
+          statistics: ["recipients", "conversion_rate", "conversion_value"],
+          groupBy: ["send_channel"],
+          deadlineAtMs: probeDeadline,
+        }),
+      2,
+    );
+    if (!probe.ok) continue;
+    if (hasNonZeroConversion(probe.body?.data?.attributes?.results ?? [])) {
+      return { metricId, reason: "probe_campaign" as const, probesRun };
+    }
+  }
+
+  return { metricId: candidates[0] ?? null, reason: "fallback_first_candidate" as const, probesRun };
 }
 
 const REVENUE_METRIC_PATTERNS = [
@@ -993,6 +1021,8 @@ serve(async (req) => {
         })
       : { metricId: null, reason: "metrics_fetch_failed" as const };
     const conversionMetricId = pickedMetric.metricId;
+    const metricPickReason = pickedMetric.reason;
+    const metricProbesRun = (pickedMetric as any).probesRun ?? 0;
 
     // Keep reporting lightweight to avoid edge runtime timeout on large accounts.
     const timeframeKeys: Array<"last_30_days" | "last_90_days"> = ["last_30_days"];
@@ -1026,6 +1056,13 @@ serve(async (req) => {
         stage: "metrics_lookup",
         status: 200,
         message: "No conversion metric id available from /api/metrics",
+      });
+    }
+    if (metricPickReason === "fallback_first_candidate") {
+      reportingErrors.push({
+        stage: "metric_probing",
+        status: null,
+        message: `Conversion metric probing found no non-zero conversion data after ${metricProbesRun} probes. Using fallback metric ${conversionMetricId}. Revenue/conversion data may be inaccurate.`,
       });
     }
 
@@ -1199,15 +1236,13 @@ serve(async (req) => {
     // Deliverability indicators (last 90 days, email campaigns only) computed from campaign values report
     let bounceRate90d: number | null = null;
     let spamRate90d: number | null = null;
-    const camp90 =
-      campaignReports.find((r) => r.timeframe === "last_90_days")?.results
-      ?? campaignReports.find((r) => r.timeframe === "last_30_days")?.results
-      ?? [];
-    if (Array.isArray(camp90) && camp90.length > 0) {
+
+    function extractBounceSpam(rows: any[]): { bounce: number | null; spam: number | null } {
+      if (!Array.isArray(rows) || rows.length === 0) return { bounce: null, spam: null };
       let denom = 0;
       let bounceNum = 0;
       let spamNum = 0;
-      for (const row of camp90) {
+      for (const row of rows) {
         const stats = row?.statistics ?? {};
         const recipients = Number(stats.recipients ?? 0) || 0;
         const b = Number(stats.bounce_rate ?? NaN);
@@ -1217,9 +1252,47 @@ serve(async (req) => {
         if (Number.isFinite(b)) bounceNum += b * recipients;
         if (Number.isFinite(s)) spamNum += s * recipients;
       }
-      if (denom > 0) {
-        bounceRate90d = bounceNum / denom;
-        spamRate90d = spamNum / denom;
+      if (denom > 0) return { bounce: bounceNum / denom, spam: spamNum / denom };
+      return { bounce: null, spam: null };
+    }
+
+    const camp90 =
+      campaignReports.find((r) => r.timeframe === "last_90_days")?.results
+      ?? campaignReports.find((r) => r.timeframe === "last_30_days")?.results
+      ?? [];
+    const deliverability = extractBounceSpam(camp90);
+    bounceRate90d = deliverability.bounce;
+    spamRate90d = deliverability.spam;
+
+    // Fallback: if main campaign report had 0 rows (e.g. wrong conversion metric), try
+    // a simple aggregate campaign report with each tier-1 metric candidate to get bounce/spam.
+    if (bounceRate90d == null && spamRate90d == null && conversionMetricId && allMetrics.length > 0) {
+      const delivCandidates = [conversionMetricId, ...allMetrics.slice(0, 4).map((m: any) => m.id)];
+      const seen = new Set<string>();
+      for (const mid of delivCandidates) {
+        if (seen.has(mid)) continue;
+        seen.add(mid);
+        if (Date.now() >= (deadlineAtMs ?? Infinity) - 5_000) break;
+        await sleep(400);
+        const rep = await queryValuesReportWithBackoff({
+          apiKey,
+          revision,
+          endpointPath: "/api/campaign-values-reports/",
+          timeframeKey: "last_90_days",
+          conversionMetricId: mid,
+          filter: "contains-any(send_channel,[\"email\"])",
+          statistics: ["recipients", "bounce_rate", "spam_complaint_rate"],
+          groupBy: ["send_channel"],
+          deadlineAtMs,
+        });
+        if (!rep.ok) continue;
+        const rows = rep.body?.data?.attributes?.results ?? [];
+        const deliv = extractBounceSpam(rows);
+        if (deliv.bounce != null || deliv.spam != null) {
+          bounceRate90d = deliv.bounce;
+          spamRate90d = deliv.spam;
+          break;
+        }
       }
     }
 

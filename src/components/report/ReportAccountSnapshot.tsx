@@ -122,7 +122,7 @@ export default function ReportAccountSnapshot({
     ? (flowPerformance.reduce((s, f) => s + (f.monthly_revenue_current ?? 0), 0) / totalRecipients)
     : null;
 
-  const perfUnavailableReason = normalizeReportingDiagnostic(reportingDiagnostic) || 'requires Klaviyo metrics scope';
+  const perfUnavailableReason = normalizeReportingDiagnostic(reportingDiagnostic) || 'not enough reporting data available';
   const { recentSent, perWeek } = calcWeeklySendFrequency(campaignSnapshots);
 
   return (
@@ -197,7 +197,7 @@ export default function ReportAccountSnapshot({
           sub={
             accountSnapshot?.bounce_rate_90d != null
               ? `${accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30' : 'last 90'} days · email campaigns (weighted by recipients)`
-              : 'requires campaigns:read scope'
+              : 'not enough campaign data available'
           }
         />
         <Card
@@ -207,7 +207,7 @@ export default function ReportAccountSnapshot({
           sub={
             accountSnapshot?.spam_rate_90d != null
               ? `${accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30' : 'last 90'} days · email campaigns (weighted by recipients)`
-              : 'requires campaigns:read scope'
+              : 'not enough campaign data available'
           }
         />
         <Card
