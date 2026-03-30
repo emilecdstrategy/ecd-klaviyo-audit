@@ -556,13 +556,17 @@ async function pickBestConversionMetricId(params: {
   flowIds: string[];
 }) {
   const candidates = Array.from(new Set(params.candidateMetricIds.filter(Boolean)));
-  for (let i = 0; i < candidates.length; i++) {
+  const maxProbes = Math.min(candidates.length, 15);
+
+  // First pass: probe with a flow_id filter (faster, but can miss if sample flows have no conversions)
+  const sampleFlowIds = params.flowIds.slice(0, 20);
+  const flowFilter = sampleFlowIds.length
+    ? `contains-any(flow_id,[${sampleFlowIds.map((id) => JSON.stringify(id)).join(",")}])`
+    : undefined;
+
+  for (let i = 0; i < maxProbes; i++) {
     const metricId = candidates[i];
-    if (i > 0) await sleep(900);
-    const sampleFlowIds = params.flowIds.slice(0, 10);
-    const filter = sampleFlowIds.length
-      ? `contains-any(flow_id,[${sampleFlowIds.map((id) => JSON.stringify(id)).join(",")}])`
-      : undefined;
+    if (i > 0) await sleep(800);
     const probe = await fetchWithRetry(
       () =>
         queryValuesReportWithBackoff({
@@ -571,7 +575,7 @@ async function pickBestConversionMetricId(params: {
           endpointPath: "/api/flow-values-reports/",
           timeframeKey: "last_30_days",
           conversionMetricId: metricId,
-          filter,
+          filter: flowFilter,
           statistics: ["recipients", "conversion_rate", "conversion_value", "revenue_per_recipient"],
           groupBy: ["flow_id", "send_channel"],
         }),
@@ -587,8 +591,49 @@ async function pickBestConversionMetricId(params: {
       return { metricId, reason: "probe_nonzero_conversion" as const };
     }
   }
+
+  // Second pass: try top 5 candidates WITHOUT flow filter (catches accounts where
+  // the sample flows happen to have zero conversions but other flows do convert)
+  const retryCount = Math.min(candidates.length, 5);
+  for (let i = 0; i < retryCount; i++) {
+    const metricId = candidates[i];
+    await sleep(800);
+    const probe = await fetchWithRetry(
+      () =>
+        queryValuesReportWithBackoff({
+          apiKey: params.apiKey,
+          revision: params.revision,
+          endpointPath: "/api/flow-values-reports/",
+          timeframeKey: "last_30_days",
+          conversionMetricId: metricId,
+          statistics: ["recipients", "conversion_rate", "conversion_value", "revenue_per_recipient"],
+          groupBy: ["flow_id", "send_channel"],
+        }),
+      2,
+    );
+    if (!probe.ok) continue;
+    const rows = probe.body?.data?.attributes?.results ?? [];
+    const hasConversionData = rows.some((r: any) => {
+      const stats = r?.statistics ?? {};
+      return Number(stats.conversion_value ?? 0) > 0 || Number(stats.conversion_uniques ?? 0) > 0;
+    });
+    if (hasConversionData) {
+      return { metricId, reason: "probe_unfiltered_nonzero" as const };
+    }
+  }
+
   return { metricId: candidates[0] ?? null, reason: "fallback_first_candidate" as const };
 }
+
+const REVENUE_METRIC_PATTERNS = [
+  "placed order",
+  "ordered product",
+  "order completed",
+  "completed order",
+  "checkout completed",
+  "fulfilled order",
+  "purchase",
+];
 
 async function klaviyoPostJson(apiKey: string, revision: string, path: string, body: unknown) {
   const res = await fetch(`${KLAVIYO_BASE}${path}`, {
@@ -901,16 +946,40 @@ serve(async (req) => {
     // 5) Reporting rollups (values reports). Profile KPIs are filled by chained resume invocations.
     // Reporting endpoints require conversion_metric_id. We'll attempt to resolve "Placed Order" metric id.
     // Metrics endpoint can reject page[size] on some revisions/accounts; use cursor pagination only.
-    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/", 5);
+    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/", 10);
     const flowIdsForMetricProbe = flows.ok ? flows.items.map((f: any) => f.id) : [];
-    const placedOrderCandidates = metricsRes.ok
-      ? metricsRes.items
-          .filter((m: any) => (m?.attributes?.name ?? "").toLowerCase().includes("placed order"))
-          .map((m: any) => m.id)
-      : [];
-    const fallbackCandidates = metricsRes.ok ? metricsRes.items.map((m: any) => m.id).slice(0, 10) : [];
-    const metricCandidates = placedOrderCandidates.length > 0 ? placedOrderCandidates : fallbackCandidates;
-    const pickedMetric = metricsRes.ok
+
+    // Build ranked candidate list: exact "Placed Order" first, then broader revenue patterns, then all metrics as fallback.
+    const allMetrics = metricsRes.ok ? metricsRes.items : [];
+    const nameOf = (m: any) => (m?.attributes?.name ?? "").toLowerCase();
+    const integrationOf = (m: any) => (m?.attributes?.integration?.name ?? m?.attributes?.integration?.category ?? "").toLowerCase();
+
+    // Tier 1: Shopify "Placed Order" (the standard Shopify integration metric)
+    const shopifyPlacedOrder = allMetrics.filter((m: any) =>
+      nameOf(m).includes("placed order") && (integrationOf(m).includes("shopify") || integrationOf(m).includes("api"))
+    ).map((m: any) => m.id);
+
+    // Tier 2: Any metric with "placed order" in the name
+    const anyPlacedOrder = allMetrics.filter((m: any) =>
+      nameOf(m).includes("placed order")
+    ).map((m: any) => m.id);
+
+    // Tier 3: Other common revenue metric names
+    const otherRevenue = allMetrics.filter((m: any) =>
+      REVENUE_METRIC_PATTERNS.some(p => nameOf(m).includes(p))
+    ).map((m: any) => m.id);
+
+    // Tier 4: All remaining metrics as last resort
+    const allIds = allMetrics.map((m: any) => m.id);
+
+    // Deduplicate while preserving priority order
+    const seen = new Set<string>();
+    const metricCandidates: string[] = [];
+    for (const id of [...shopifyPlacedOrder, ...anyPlacedOrder, ...otherRevenue, ...allIds]) {
+      if (!seen.has(id)) { seen.add(id); metricCandidates.push(id); }
+    }
+
+    const pickedMetric = metricsRes.ok && metricCandidates.length > 0
       ? await pickBestConversionMetricId({
           apiKey,
           revision,
