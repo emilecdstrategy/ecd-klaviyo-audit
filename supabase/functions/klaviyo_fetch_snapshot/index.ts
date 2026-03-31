@@ -557,12 +557,12 @@ async function pickBestConversionMetricId(params: {
   deadlineAtMs?: number;
 }) {
   const candidates = Array.from(new Set(params.candidateMetricIds.filter(Boolean)));
-  const maxProbes = Math.min(candidates.length, 8);
-  const timeBudgetMs = params.deadlineAtMs ? params.deadlineAtMs - Date.now() : 40_000;
-  const probeDeadline = Date.now() + Math.min(timeBudgetMs * 0.35, 35_000);
+  const timeBudgetMs = params.deadlineAtMs ? params.deadlineAtMs - Date.now() : 30_000;
+  // Hard cap: 15 seconds max for probing to leave room for the actual reporting queries.
+  const probeDeadline = Date.now() + Math.min(timeBudgetMs * 0.15, 15_000);
   let probesRun = 0;
 
-  const sampleFlowIds = params.flowIds.slice(0, 20);
+  const sampleFlowIds = params.flowIds.slice(0, 10);
   const flowFilter = sampleFlowIds.length
     ? `contains-any(flow_id,[${sampleFlowIds.map((id) => JSON.stringify(id)).join(",")}])`
     : undefined;
@@ -574,11 +574,12 @@ async function pickBestConversionMetricId(params: {
     });
   }
 
-  // Pass 1: probe flow-values-reports with flow filter
-  for (let i = 0; i < maxProbes; i++) {
+  // Pass 1: probe flow-values-reports with flow filter (top 4 candidates only)
+  const pass1Count = Math.min(candidates.length, 4);
+  for (let i = 0; i < pass1Count; i++) {
     if (Date.now() >= probeDeadline) break;
     const metricId = candidates[i];
-    if (i > 0) await sleep(500);
+    if (i > 0) await sleep(300);
     probesRun++;
     const probe = await fetchWithRetry(
       () =>
@@ -589,11 +590,11 @@ async function pickBestConversionMetricId(params: {
           timeframeKey: "last_30_days",
           conversionMetricId: metricId,
           filter: flowFilter,
-          statistics: ["recipients", "conversion_rate", "conversion_value"],
-          groupBy: ["flow_id", "send_channel"],
+          statistics: ["recipients", "conversion_value"],
+          groupBy: ["flow_id"],
           deadlineAtMs: probeDeadline,
         }),
-      2,
+      1,
     );
     if (!probe.ok) continue;
     if (hasNonZeroConversion(probe.body?.data?.attributes?.results ?? [])) {
@@ -601,37 +602,11 @@ async function pickBestConversionMetricId(params: {
     }
   }
 
-  // Pass 2: probe flow-values-reports WITHOUT flow filter (top 3 candidates)
-  for (let i = 0; i < Math.min(candidates.length, 3); i++) {
+  // Pass 2: probe campaign-values-reports (top 2 candidates) — lighter than flow probing
+  for (let i = 0; i < Math.min(candidates.length, 2); i++) {
     if (Date.now() >= probeDeadline) break;
     const metricId = candidates[i];
-    await sleep(500);
-    probesRun++;
-    const probe = await fetchWithRetry(
-      () =>
-        queryValuesReportWithBackoff({
-          apiKey: params.apiKey,
-          revision: params.revision,
-          endpointPath: "/api/flow-values-reports/",
-          timeframeKey: "last_30_days",
-          conversionMetricId: metricId,
-          statistics: ["recipients", "conversion_rate", "conversion_value"],
-          groupBy: ["flow_id", "send_channel"],
-          deadlineAtMs: probeDeadline,
-        }),
-      2,
-    );
-    if (!probe.ok) continue;
-    if (hasNonZeroConversion(probe.body?.data?.attributes?.results ?? [])) {
-      return { metricId, reason: "probe_flow_unfiltered" as const, probesRun };
-    }
-  }
-
-  // Pass 3: probe campaign-values-reports (top 3 candidates)
-  for (let i = 0; i < Math.min(candidates.length, 3); i++) {
-    if (Date.now() >= probeDeadline) break;
-    const metricId = candidates[i];
-    await sleep(500);
+    await sleep(300);
     probesRun++;
     const probe = await fetchWithRetry(
       () =>
@@ -642,11 +617,11 @@ async function pickBestConversionMetricId(params: {
           timeframeKey: "last_30_days",
           conversionMetricId: metricId,
           filter: "contains-any(send_channel,[\"email\"])",
-          statistics: ["recipients", "conversion_rate", "conversion_value"],
+          statistics: ["recipients", "conversion_value"],
           groupBy: ["send_channel"],
           deadlineAtMs: probeDeadline,
         }),
-      2,
+      1,
     );
     if (!probe.ok) continue;
     if (hasNonZeroConversion(probe.body?.data?.attributes?.results ?? [])) {
@@ -978,7 +953,7 @@ serve(async (req) => {
     // 5) Reporting rollups (values reports). Profile KPIs are filled by chained resume invocations.
     // Reporting endpoints require conversion_metric_id. We'll attempt to resolve "Placed Order" metric id.
     // Metrics endpoint can reject page[size] on some revisions/accounts; use cursor pagination only.
-    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/", 10);
+    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/", 5);
     const flowIdsForMetricProbe = flows.ok ? flows.items.map((f: any) => f.id) : [];
 
     // Build ranked candidate list: exact "Placed Order" first, then broader revenue patterns, then all metrics as fallback.
@@ -1265,15 +1240,12 @@ serve(async (req) => {
     spamRate90d = deliverability.spam;
 
     // Fallback: if main campaign report had 0 rows (e.g. wrong conversion metric), try
-    // a simple aggregate campaign report with each tier-1 metric candidate to get bounce/spam.
+    // a simple aggregate campaign report with a couple of alternate metrics to get bounce/spam.
     if (bounceRate90d == null && spamRate90d == null && conversionMetricId && allMetrics.length > 0) {
-      const delivCandidates = [conversionMetricId, ...allMetrics.slice(0, 4).map((m: any) => m.id)];
-      const seen = new Set<string>();
+      const delivCandidates = allMetrics.slice(0, 2).map((m: any) => m.id).filter((id: string) => id !== conversionMetricId);
       for (const mid of delivCandidates) {
-        if (seen.has(mid)) continue;
-        seen.add(mid);
-        if (Date.now() >= (deadlineAtMs ?? Infinity) - 5_000) break;
-        await sleep(400);
+        if (Date.now() >= (deadlineAtMs ?? Infinity) - 8_000) break;
+        await sleep(300);
         const rep = await queryValuesReportWithBackoff({
           apiKey,
           revision,
