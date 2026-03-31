@@ -953,7 +953,8 @@ serve(async (req) => {
     // 5) Reporting rollups (values reports). Profile KPIs are filled by chained resume invocations.
     // Reporting endpoints require conversion_metric_id. We'll attempt to resolve "Placed Order" metric id.
     // Metrics endpoint can reject page[size] on some revisions/accounts; use cursor pagination only.
-    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/", 5);
+    // Request integration field explicitly so tier-1 Shopify detection works reliably.
+    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", 5);
     const flowIdsForMetricProbe = flows.ok ? flows.items.map((f: any) => f.id) : [];
 
     // Build ranked candidate list: exact "Placed Order" first, then broader revenue patterns, then all metrics as fallback.
@@ -986,18 +987,28 @@ serve(async (req) => {
       if (!seen.has(id)) { seen.add(id); metricCandidates.push(id); }
     }
 
-    const pickedMetric = metricsRes.ok && metricCandidates.length > 0
-      ? await pickBestConversionMetricId({
-          apiKey,
-          revision,
-          candidateMetricIds: metricCandidates,
-          flowIds: flowIdsForMetricProbe,
-          deadlineAtMs,
-        })
-      : { metricId: null, reason: "metrics_fetch_failed" as const };
+    // If we have a single, unambiguous Shopify "Placed Order" metric, trust it directly.
+    // Probing only helps when there are multiple candidates to disambiguate, and for
+    // low-volume accounts probing always fails (no conversion data in last 30 days).
+    let pickedMetric: { metricId: string | null; reason: string; probesRun?: number };
+    if (shopifyPlacedOrder.length === 1) {
+      pickedMetric = { metricId: shopifyPlacedOrder[0], reason: "shopify_placed_order_direct", probesRun: 0 };
+    } else if (anyPlacedOrder.length === 1 && shopifyPlacedOrder.length === 0) {
+      pickedMetric = { metricId: anyPlacedOrder[0], reason: "placed_order_direct", probesRun: 0 };
+    } else if (metricsRes.ok && metricCandidates.length > 0) {
+      pickedMetric = await pickBestConversionMetricId({
+        apiKey,
+        revision,
+        candidateMetricIds: metricCandidates,
+        flowIds: flowIdsForMetricProbe,
+        deadlineAtMs,
+      });
+    } else {
+      pickedMetric = { metricId: null, reason: "metrics_fetch_failed" };
+    }
     const conversionMetricId = pickedMetric.metricId;
     const metricPickReason = pickedMetric.reason;
-    const metricProbesRun = (pickedMetric as any).probesRun ?? 0;
+    const metricProbesRun = pickedMetric.probesRun ?? 0;
 
     // Keep reporting lightweight to avoid edge runtime timeout on large accounts.
     const timeframeKeys: Array<"last_30_days" | "last_90_days"> = ["last_30_days"];
