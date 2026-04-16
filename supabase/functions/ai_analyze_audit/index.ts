@@ -11,7 +11,16 @@ import {
   failedSectionKeysFromErrors,
   validateOutput,
 } from "./schema.ts";
-import { buildAuditSystemPrompt, buildAuditUserPrompt, buildRepairUserPrompt, type KlaviyoContext } from "./prompts.ts";
+import {
+  buildAuditSystemPrompt,
+  buildAuditUserPrompt,
+  buildRepairUserPrompt,
+  buildRefineSystemPrompt,
+  buildRefineUserPrompt,
+  type KlaviyoContext,
+  type RefineBaseline,
+  type AuditContextInput,
+} from "./prompts.ts";
 
 type WizardData = Record<string, unknown>;
 
@@ -291,11 +300,91 @@ serve(async (req) => {
       );
     }
 
-    const body = (await req.json()) as WizardData;
+    const body = (await req.json()) as WizardData & { refineBaseline?: RefineBaseline; auditContext?: AuditContextInput };
+
+    const explicitModeRaw = (body as any)?.aiMode as string | undefined;
+    if (explicitModeRaw === "refine") {
+      const baseline = body.refineBaseline;
+      const auditContext = body.auditContext ?? {};
+      if (!baseline || typeof baseline.executiveSummary !== "string" || !Array.isArray(baseline.sections)) {
+        return jsonCors(
+          {
+            ok: false,
+            error: { code: "bad_request", message: "refine mode requires refineBaseline with executiveSummary and sections" },
+            correlationId,
+          },
+          { status: 200 },
+        );
+      }
+      const keysFound = new Set(baseline.sections.map((s) => s.section_key));
+      const missingKeys = AUDIT_SECTION_KEYS.filter((k) => !keysFound.has(k));
+      if (missingKeys.length > 0) {
+        return jsonCors(
+          {
+            ok: false,
+            error: { code: "bad_request", message: `refine baseline missing sections: ${missingKeys.join(", ")}` },
+            correlationId,
+          },
+          { status: 200 },
+        );
+      }
+      const first = await callOpenAI({
+        model: PRIMARY_MODEL,
+        systemPrompt: buildRefineSystemPrompt(),
+        userPrompt: buildRefineUserPrompt(baseline, auditContext),
+        jsonSchema: AI_OUTPUT_JSON_SCHEMA,
+        reasoningEffort: "medium",
+      });
+      const validation = validateOutput(first.output, AUDIT_SECTION_KEYS, "full");
+      if (!validation.ok) {
+        await logRun({
+          correlation_id: correlationId,
+          status: "validation_failed",
+          model: PRIMARY_MODEL,
+          retries: 0,
+          elapsed_ms: Date.now() - startedAt,
+          error_code: "validation_failed",
+          error_message: `refine: ${validation.errors.join("; ")}`.slice(0, 1000),
+        });
+        return jsonCors(
+          {
+            ok: false,
+            error: { code: "validation_failed", message: "Refine output validation failed", details: validation.errors },
+            correlationId,
+          },
+          { status: 200 },
+        );
+      }
+      await logRun({
+        correlation_id: correlationId,
+        status: "success",
+        model: PRIMARY_MODEL,
+        retries: 0,
+        elapsed_ms: Date.now() - startedAt,
+        input_tokens: first.usage?.input_tokens ?? null,
+        output_tokens: first.usage?.output_tokens ?? null,
+        total_tokens: first.usage?.total_tokens ?? null,
+        schema_version: AI_SCHEMA_VERSION,
+      });
+      return jsonCors(
+        {
+          ok: true,
+          correlationId,
+          schemaVersion: AI_SCHEMA_VERSION,
+          executiveSummary: validation.value.executiveSummary,
+          strengths: validation.value.strengths ?? [],
+          concerns: validation.value.concerns ?? [],
+          implementationTimeline: validation.value.implementationTimeline ?? [],
+          sections: validation.value.sections,
+        },
+        { status: 200 },
+      );
+    }
+
     const requestedSectionKeys: SectionKey[] | null = Array.isArray((body as any)?.requestedSectionKeys)
       ? ((body as any).requestedSectionKeys as SectionKey[]).filter((k) => (AUDIT_SECTION_KEYS as readonly string[]).includes(k))
       : null;
-    const explicitMode = (body as any)?.aiMode as ValidationMode | undefined;
+    const explicitMode = explicitModeRaw as ValidationMode | undefined;
     let mode: ValidationMode = "full";
     if (explicitMode === "top_level_only" || explicitMode === "sections_only" || explicitMode === "full") {
       mode = explicitMode;

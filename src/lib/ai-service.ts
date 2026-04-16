@@ -1,4 +1,4 @@
-import type { AuditSection, WizardData } from './types';
+import type { AuditContext, AuditSection, WizardData } from './types';
 import { supabase } from './supabase';
 import { AI_SCHEMA_VERSION, AUDIT_SECTION_KEYS } from './ai/schema';
 
@@ -13,7 +13,16 @@ interface AIAnalysisResult {
   implementationTimeline?: { phase: string; timeframe: string; label: string; items: string[] }[];
 }
 
-type AIRequestMode = 'full' | 'sections_only' | 'top_level_only';
+type AIRequestMode = 'full' | 'sections_only' | 'top_level_only' | 'refine';
+
+function auditContextHasContent(c?: AuditContext | null): boolean {
+  if (!c) return false;
+  return Boolean(
+    (c.meeting_notes?.trim() ?? '') ||
+      (c.client_background?.trim() ?? '') ||
+      (c.custom_instructions?.trim() ?? ''),
+  );
+}
 type ProgressUpdate = { current: number; total: number; label: string };
 
 type AIErrorCode =
@@ -64,9 +73,23 @@ export async function runAIAnalysis(
   const allowFallback = import.meta.env.DEV && import.meta.env.VITE_ALLOW_AI_FALLBACK === 'true';
 
   try {
-    const call = async (requestedSectionKeys: string[], aiMode: AIRequestMode, label: string) => {
+    const call = async (
+      requestedSectionKeys: string[],
+      aiMode: AIRequestMode,
+      label: string,
+      extra?: { refineBaseline?: unknown; auditContext?: unknown },
+    ) => {
+      const body =
+        aiMode === 'refine'
+          ? {
+              ...wizardData,
+              aiMode: 'refine',
+              refineBaseline: extra?.refineBaseline,
+              auditContext: extra?.auditContext ?? wizardData.auditContext,
+            }
+          : { ...wizardData, requestedSectionKeys, aiMode };
       const { data, error } = await supabase.functions.invoke<any>('ai_analyze_audit', {
-        body: { ...wizardData, requestedSectionKeys, aiMode },
+        body,
       });
       if (error) {
         const anyErr = error as any;
@@ -93,7 +116,11 @@ export async function runAIAnalysis(
         const msg = data?.error?.message ?? 'AI request failed';
         throw new AIAnalysisError(msg, code, data?.correlationId);
       }
-      if (aiMode === 'top_level_only') {
+      if (aiMode === 'refine') {
+        if (!hasTopLevelPayload(data) || !hasSectionsPayload(data)) {
+          throw new AIAnalysisError(`Invalid AI refine response shape (${label})`, 'bad_response', data?.correlationId);
+        }
+      } else if (aiMode === 'top_level_only') {
         if (!hasTopLevelPayload(data)) throw new AIAnalysisError(`Invalid AI top-level response shape (${label})`, 'bad_response', data?.correlationId);
       } else if (!hasSectionsPayload(data)) {
         throw new AIAnalysisError(`Invalid AI sections response shape (${label})`, 'bad_response', data?.correlationId);
@@ -135,7 +162,8 @@ export async function runAIAnalysis(
       { keys: ['signup_forms'], label: 'section 6/6' },
     ];
 
-    const totalSteps = 1 + sectionBatches.length;
+    const hasRefine = auditContextHasContent(wizardData.auditContext);
+    const totalSteps = 1 + sectionBatches.length + (hasRefine ? 1 : 0);
     onProgress?.({ current: 1, total: totalSteps, label: `Generating executive summary (1/${totalSteps})…` });
     const top = await withRetryOnTimeout(
       () => call([], 'top_level_only', 'top-level summary'),
@@ -145,7 +173,7 @@ export async function runAIAnalysis(
     const sections: Partial<AuditSection>[] = [];
     for (let i = 0; i < sectionBatches.length; i++) {
       const batch = sectionBatches[i];
-      onProgress?.({ current: i + 2, total: totalSteps, label: `Analyzing ${batch.label}…` });
+      onProgress?.({ current: i + 2, total: totalSteps, label: `Analyzing ${batch.label} (${i + 2}/${totalSteps})…` });
       const result = await withRetryOnTimeout(
         () => call(batch.keys, 'sections_only', batch.label),
         batch.label,
@@ -154,17 +182,61 @@ export async function runAIAnalysis(
     }
 
     if (!sections.length) throw new AIAnalysisError('AI returned no sections', 'bad_response');
-    const order = new Map(AUDIT_SECTION_KEYS.map((k, i) => [k, i]));
+    const order = new Map<string, number>(AUDIT_SECTION_KEYS.map((k, i) => [k, i]));
     sections.sort((a, b) =>
       (order.get(String((a as any).section_key)) ?? 999) - (order.get(String((b as any).section_key)) ?? 999),
     );
 
+    let executiveSummary = top.executiveSummary;
+    let strengthsOut = top.strengths ?? [];
+    let concernsOut = top.concerns ?? [];
+    let timelineOut = top.implementationTimeline ?? [];
+    let sectionOut: Partial<AuditSection>[] = sections;
+
+    if (hasRefine) {
+      const refineBaseline = {
+        companyName: wizardData.companyName,
+        clientName: wizardData.clientName,
+        executiveSummary,
+        strengths: strengthsOut,
+        concerns: concernsOut,
+        implementationTimeline: timelineOut,
+        sections: sectionOut.map((s) => ({ ...s })),
+      };
+      onProgress?.({
+        current: totalSteps,
+        total: totalSteps,
+        label: `Refining with client context (${totalSteps}/${totalSteps})…`,
+      });
+      try {
+        const refined = await withRetryOnTimeout(
+          () =>
+            call([], 'refine', 'client context refinement', {
+              refineBaseline,
+              auditContext: wizardData.auditContext,
+            }),
+          'client context refinement',
+        );
+        executiveSummary = refined.executiveSummary;
+        strengthsOut = refined.strengths ?? strengthsOut;
+        concernsOut = refined.concerns ?? concernsOut;
+        timelineOut = refined.implementationTimeline ?? timelineOut;
+        sectionOut = (refined.sections ?? sectionOut) as Partial<AuditSection>[];
+      } catch {
+        onProgress?.({
+          current: totalSteps,
+          total: totalSteps,
+          label: 'Keeping baseline audit (context refinement failed or timed out)',
+        });
+      }
+    }
+
     return {
-      executiveSummary: top.executiveSummary,
-      strengths: top.strengths ?? [],
-      concerns: top.concerns ?? [],
-      implementationTimeline: top.implementationTimeline ?? [],
-      sections,
+      executiveSummary,
+      strengths: strengthsOut,
+      concerns: concernsOut,
+      implementationTimeline: timelineOut,
+      sections: sectionOut,
     };
   } catch (e) {
     if (!allowFallback) {

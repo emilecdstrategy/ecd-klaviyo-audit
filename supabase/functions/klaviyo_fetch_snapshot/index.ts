@@ -18,10 +18,16 @@ const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 const KLAVIYO_BASE = "https://a.klaviyo.com";
 const DEFAULT_REVISION = "2024-10-15";
 const MAX_REPORT_IDS = 50;
+/** Cursor pages: campaigns beyond ~8 pages rarely affect audit UX; reduces edge runtime. */
+const MAX_CAMPAIGN_PAGES = 8;
+const MAX_LIST_SEGMENT_PAGES = 5;
+const METRICS_MAX_PAGES = 5;
+/** Skip optional email HTML fetch if less than this many ms remain before deadline. */
+const MIN_SLACK_MS_EMAIL_HTML = 15_000;
 const PROFILE_FIRST_PATH =
   "/api/profiles/?page%5Bsize%5D=100&additional-fields%5Bprofile%5D=subscriptions";
 /** Space out heavy Reporting API POSTs to reduce 429 bursts (ms). */
-const REPORTING_REQUEST_GAP_MS = 1_600;
+const REPORTING_REQUEST_GAP_MS = 1_000;
 
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -519,7 +525,7 @@ async function queryValuesReportWithBackoff(
   params: Parameters<typeof queryValuesReport>[0] & { deadlineAtMs?: number },
 ) {
   // Values reports throttle often; retry 429s with server-suggested or exponential waits (never cap at 4s).
-  const maxAttempts = 8;
+  const maxAttempts = 5;
   let last: ValuesReportResult = {
     ok: false,
     status: 0,
@@ -796,13 +802,16 @@ serve(async (req) => {
     // 2) Fetch configuration snapshots
     // Flows and forms support page[size]; campaigns, lists, and segments use
     // cursor-only pagination with fixed page sizes (do NOT pass page[size]).
-    const [flows, lists, segments, forms, campaigns] = await Promise.all([
+    const [flows, lists, segments, forms, campaigns, metricsRes] = await Promise.all([
       klaviyoPaged(apiKey, revision, "/api/flows/?page%5Bsize%5D=50"),
-      klaviyoPaged(apiKey, revision, "/api/lists/", 20),
-      klaviyoPaged(apiKey, revision, "/api/segments/", 20),
+      klaviyoPaged(apiKey, revision, "/api/lists/", MAX_LIST_SEGMENT_PAGES),
+      klaviyoPaged(apiKey, revision, "/api/segments/", MAX_LIST_SEGMENT_PAGES),
       klaviyoPaged(apiKey, revision, "/api/forms/?page%5Bsize%5D=100"),
-      klaviyoPaged(apiKey, revision, "/api/campaigns/?filter=equals(messages.channel,'email')", 20),
+      klaviyoPaged(apiKey, revision, "/api/campaigns/?filter=equals(messages.channel,'email')", MAX_CAMPAIGN_PAGES),
+      klaviyoPaged(apiKey, revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", METRICS_MAX_PAGES),
     ]);
+
+    const reportingErrors: Array<{ stage: string; status?: number | null; message: string }> = [];
 
     // 3) Persist snapshots (clear prior snapshots for this audit_id to keep latest)
     await mustSucceed("delete klaviyo_flow_snapshots", sb.from("klaviyo_flow_snapshots").delete().eq("audit_id", auditId));
@@ -843,37 +852,39 @@ serve(async (req) => {
 
       // Best-effort: fetch HTML of the most recent sent campaign for email design comparison
       try {
-        const sentCampaigns = campaigns.items
-          .filter((c: any) => (c.attributes?.status ?? "").toLowerCase() === "sent")
-          .sort((a: any, b: any) => {
-            const da = a.attributes?.updated_at || a.attributes?.created_at || "";
-            const db = b.attributes?.updated_at || b.attributes?.created_at || "";
-            return db.localeCompare(da);
-          });
-        const recentCampaign = sentCampaigns[0];
-        if (recentCampaign) {
-          const msgRes = await klaviyoFetch(apiKey, revision, `/api/campaigns/${recentCampaign.id}/campaign-messages/`);
-          const messages = msgRes.ok ? (msgRes.body?.data ?? []) : [];
-          let emailHtml: string | null = null;
-          for (const msg of messages) {
-            const htmlBody = msg?.attributes?.content?.html;
-            if (htmlBody) { emailHtml = htmlBody; break; }
-            const templateId = msg?.relationships?.template?.data?.id;
-            if (templateId) {
-              const tplRes = await klaviyoFetch(apiKey, revision, `/api/templates/${templateId}/`);
-              if (tplRes.ok && tplRes.body?.data?.attributes?.html) {
-                emailHtml = tplRes.body.data.attributes.html;
-                break;
+        if (deadlineAtMs - Date.now() >= MIN_SLACK_MS_EMAIL_HTML) {
+          const sentCampaigns = campaigns.items
+            .filter((c: any) => (c.attributes?.status ?? "").toLowerCase() === "sent")
+            .sort((a: any, b: any) => {
+              const da = a.attributes?.updated_at || a.attributes?.created_at || "";
+              const db = b.attributes?.updated_at || b.attributes?.created_at || "";
+              return db.localeCompare(da);
+            });
+          const recentCampaign = sentCampaigns[0];
+          if (recentCampaign) {
+            const msgRes = await klaviyoFetch(apiKey, revision, `/api/campaigns/${recentCampaign.id}/campaign-messages/`);
+            const messages = msgRes.ok ? (msgRes.body?.data ?? []) : [];
+            let emailHtml: string | null = null;
+            for (const msg of messages) {
+              const htmlBody = msg?.attributes?.content?.html;
+              if (htmlBody) { emailHtml = htmlBody; break; }
+              const templateId = msg?.relationships?.template?.data?.id;
+              if (templateId) {
+                const tplRes = await klaviyoFetch(apiKey, revision, `/api/templates/${templateId}/`);
+                if (tplRes.ok && tplRes.body?.data?.attributes?.html) {
+                  emailHtml = tplRes.body.data.attributes.html;
+                  break;
+                }
               }
             }
-          }
-          if (emailHtml) {
-            await sb.from("audit_email_design").upsert({
-              audit_id: auditId,
-              client_email_html: emailHtml,
-              client_campaign_name: recentCampaign.attributes?.name ?? null,
-              client_campaign_id: recentCampaign.id,
-            }, { onConflict: "audit_id" }).select();
+            if (emailHtml) {
+              await sb.from("audit_email_design").upsert({
+                audit_id: auditId,
+                client_email_html: emailHtml,
+                client_campaign_name: recentCampaign.attributes?.name ?? null,
+                client_campaign_id: recentCampaign.id,
+              }, { onConflict: "audit_id" }).select();
+            }
           }
         }
       } catch { /* non-critical */ }
@@ -918,7 +929,7 @@ serve(async (req) => {
       try { return JSON.stringify(res.body).slice(0, 500); } catch { return "unknown"; }
     }
     const scopeDiag: Record<string, any> = {};
-    const resources = { accounts: accountRes, flows, lists, segments, forms, campaigns } as Record<string, any>;
+    const resources = { accounts: accountRes, flows, lists, segments, forms, campaigns, metrics: metricsRes } as Record<string, any>;
     for (const [name, res] of Object.entries(resources)) {
       scopeDiag[name] = res.ok
         ? true
@@ -952,9 +963,7 @@ serve(async (req) => {
 
     // 5) Reporting rollups (values reports). Profile KPIs are filled by chained resume invocations.
     // Reporting endpoints require conversion_metric_id. We'll attempt to resolve "Placed Order" metric id.
-    // Metrics endpoint can reject page[size] on some revisions/accounts; use cursor pagination only.
-    // Request integration field explicitly so tier-1 Shopify detection works reliably.
-    const metricsRes = await klaviyoPaged(apiKey, revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", 5);
+    // Metrics were fetched in parallel with configuration snapshots above.
     const flowIdsForMetricProbe = flows.ok ? flows.items.map((f: any) => f.id) : [];
 
     // Build ranked candidate list: exact "Placed Order" first, then broader revenue patterns, then all metrics as fallback.
@@ -1023,7 +1032,6 @@ serve(async (req) => {
       "bounce_rate",
       "spam_complaint_rate",
     ];
-    const reportingErrors: Array<{ stage: string; status?: number | null; message: string }> = [];
     /** Weighted flow revenue / recipients (last_30_days reporting); mirrors public report "Revenue / Recipient". */
     let revenuePerRecipient: number | null = null;
 
@@ -1052,33 +1060,108 @@ serve(async (req) => {
       });
     }
 
+    const flowIdsForReport = flows.ok ? flows.items.map((f: any) => f.id).slice(0, MAX_REPORT_IDS) : [];
+    const flowFilterForReport = flowIdsForReport.length
+      ? `contains-any(flow_id,[${flowIdsForReport.map((id) => JSON.stringify(id)).join(",")}])`
+      : undefined;
+
     if (conversionMetricId) {
       await sleep(REPORTING_REQUEST_GAP_MS);
 
-      // Campaign values: email only
-      for (const tf of timeframeKeys) {
-        const rep = await queryValuesReportWithBackoff({
-          apiKey,
-          revision,
-          endpointPath: "/api/campaign-values-reports/",
-          timeframeKey: tf,
-          conversionMetricId,
-          filter: "contains-any(send_channel,[\"email\"])",
-          statistics: campaignReportStats,
-          groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
-          deadlineAtMs,
-        });
-        if (rep.ok) {
-          campaignReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
+      // Campaign 30d + flow 30d in parallel (independent Klaviyo endpoints) to save wall-clock time.
+      if (timeframeKeys.length === 1 && timeframeKeys[0] === "last_30_days") {
+        const tf = "last_30_days" as const;
+        const [camp30Rep, flow30Rep] = await Promise.all([
+          queryValuesReportWithBackoff({
+            apiKey,
+            revision,
+            endpointPath: "/api/campaign-values-reports/",
+            timeframeKey: tf,
+            conversionMetricId,
+            filter: "contains-any(send_channel,[\"email\"])",
+            statistics: campaignReportStats,
+            groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
+            deadlineAtMs,
+          }),
+          queryValuesReportWithBackoff({
+            apiKey,
+            revision,
+            endpointPath: "/api/flow-values-reports/",
+            timeframeKey: tf,
+            conversionMetricId,
+            filter: flowFilterForReport,
+            statistics: flowReportStats,
+            groupBy: ["flow_id", "flow_message_id", "send_channel"],
+            deadlineAtMs,
+          }),
+        ]);
+        if (camp30Rep.ok) {
+          campaignReports.push({ timeframe: tf, results: camp30Rep.body?.data?.attributes?.results ?? [] });
         } else {
           reportingErrors.push({
             stage: `campaign_values_${tf}`,
-            status: rep.status ?? null,
-            message: trimBody(rep.body) ?? "Campaign values report failed",
+            status: camp30Rep.status ?? null,
+            message: trimBody(camp30Rep.body) ?? "Campaign values report failed",
           });
         }
-        await sleep(REPORTING_REQUEST_GAP_MS);
+        if (flow30Rep.ok) {
+          flowReports.push({ timeframe: tf, results: flow30Rep.body?.data?.attributes?.results ?? [] });
+        } else {
+          reportingErrors.push({
+            stage: `flow_values_${tf}`,
+            status: flow30Rep.status ?? null,
+            message: trimBody(flow30Rep.body) ?? "Flow values report failed",
+          });
+        }
+      } else {
+        for (const tf of timeframeKeys) {
+          const rep = await queryValuesReportWithBackoff({
+            apiKey,
+            revision,
+            endpointPath: "/api/campaign-values-reports/",
+            timeframeKey: tf,
+            conversionMetricId,
+            filter: "contains-any(send_channel,[\"email\"])",
+            statistics: campaignReportStats,
+            groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
+            deadlineAtMs,
+          });
+          if (rep.ok) {
+            campaignReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
+          } else {
+            reportingErrors.push({
+              stage: `campaign_values_${tf}`,
+              status: rep.status ?? null,
+              message: trimBody(rep.body) ?? "Campaign values report failed",
+            });
+          }
+          await sleep(REPORTING_REQUEST_GAP_MS);
+        }
+        for (const tf of timeframeKeys) {
+          const rep = await queryValuesReportWithBackoff({
+            apiKey,
+            revision,
+            endpointPath: "/api/flow-values-reports/",
+            timeframeKey: tf,
+            conversionMetricId,
+            filter: flowFilterForReport,
+            statistics: flowReportStats,
+            groupBy: ["flow_id", "flow_message_id", "send_channel"],
+            deadlineAtMs,
+          });
+          if (rep.ok) {
+            flowReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
+          } else {
+            reportingErrors.push({
+              stage: `flow_values_${tf}`,
+              status: rep.status ?? null,
+              message: trimBody(rep.body) ?? "Flow values report failed",
+            });
+          }
+        }
       }
+
+      await sleep(REPORTING_REQUEST_GAP_MS);
 
       // Separate 90-day campaign report for bounce/spam (UI promises "last 90 days"; timeframeKeys stays last_30 only for flows).
       if (!timeframeKeys.includes("last_90_days")) {
@@ -1100,36 +1183,6 @@ serve(async (req) => {
             stage: "campaign_values_last_90_days",
             status: repCamp90.status ?? null,
             message: trimBody(repCamp90.body) ?? "Campaign values report failed (last_90_days)",
-          });
-        }
-        await sleep(REPORTING_REQUEST_GAP_MS);
-      }
-
-      // Flow values: limit to first N flows to stay within rate limits and filter limits.
-      const flowIds = flows.ok ? flows.items.map((f: any) => f.id).slice(0, MAX_REPORT_IDS) : [];
-      const flowFilter = flowIds.length
-        ? `contains-any(flow_id,[${flowIds.map((id) => JSON.stringify(id)).join(",")}])`
-        : undefined;
-
-      for (const tf of timeframeKeys) {
-        const rep = await queryValuesReportWithBackoff({
-          apiKey,
-          revision,
-          endpointPath: "/api/flow-values-reports/",
-          timeframeKey: tf,
-          conversionMetricId,
-          filter: flowFilter,
-          statistics: flowReportStats,
-          groupBy: ["flow_id", "flow_message_id", "send_channel"],
-          deadlineAtMs,
-        });
-        if (rep.ok) {
-          flowReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
-        } else {
-          reportingErrors.push({
-            stage: `flow_values_${tf}`,
-            status: rep.status ?? null,
-            message: trimBody(rep.body) ?? "Flow values report failed",
           });
         }
       }
@@ -1252,7 +1305,10 @@ serve(async (req) => {
 
     // Fallback: if main campaign report had 0 rows (e.g. wrong conversion metric), try
     // a simple aggregate campaign report with a couple of alternate metrics to get bounce/spam.
-    if (bounceRate90d == null && spamRate90d == null && conversionMetricId && allMetrics.length > 0) {
+    if (
+      bounceRate90d == null && spamRate90d == null && conversionMetricId && allMetrics.length > 0 &&
+      Date.now() < (deadlineAtMs ?? Infinity) - 12_000
+    ) {
       const delivCandidates = allMetrics.slice(0, 2).map((m: any) => m.id).filter((id: string) => id !== conversionMetricId);
       for (const mid of delivCandidates) {
         if (Date.now() >= (deadlineAtMs ?? Infinity) - 8_000) break;

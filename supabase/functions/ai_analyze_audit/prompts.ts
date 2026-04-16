@@ -331,3 +331,66 @@ export function buildRepairUserPrompt(params: {
     2,
   );
 }
+
+const REFINE_MEETING_MAX = 25_000;
+
+export type RefineBaselineSection = {
+  section_key: string;
+  summary_text?: string;
+  ai_findings?: string;
+  current_state_notes?: string;
+  optimized_notes?: string;
+  revenue_opportunity?: number;
+};
+
+export type RefineBaseline = {
+  companyName?: string;
+  clientName?: string;
+  executiveSummary: string;
+  strengths: string[];
+  concerns: string[];
+  implementationTimeline: Array<{ phase: string; timeframe: string; label: string; items: string[] }>;
+  sections: RefineBaselineSection[];
+};
+
+export type AuditContextInput = {
+  meeting_notes?: string;
+  client_background?: string;
+  custom_instructions?: string;
+};
+
+export function buildRefineSystemPrompt() {
+  return [
+    "You are refining an existing Klaviyo audit report for a client using NEW context from sales calls, internal notes, and custom instructions.",
+    "The baseline audit was generated from Klaviyo data alone and is technically sound.",
+    "Your job: adjust priorities, tone, executive summary, strengths, concerns, implementation timeline, and section narratives so they align with the client's stated goals, constraints, and conversation context.",
+    "Do NOT invent Klaviyo facts or metrics that are not implied by the baseline. You may reprioritize and rephrase based on client context.",
+    "Preserve realistic revenue_opportunity numbers unless context clearly warrants reprioritization. Do not multiply all numbers arbitrarily.",
+    "Return only valid JSON matching the full audit schema (all six sections required).",
+    `Set schemaVersion to '${AI_SCHEMA_VERSION}'.`,
+    "Same writing rules as the main auditor: no em-dashes, client-facing language, no mention of APIs, snapshots, or internal tooling.",
+  ].join("\n");
+}
+
+export function buildRefineUserPrompt(baseline: RefineBaseline, ctx: AuditContextInput) {
+  const trim = (s: string | undefined, max: number) => (typeof s === "string" ? s.slice(0, max) : "");
+  const safeCtx: AuditContextInput = {
+    meeting_notes: trim(ctx.meeting_notes, REFINE_MEETING_MAX),
+    client_background: trim(ctx.client_background, 12_000),
+    custom_instructions: trim(ctx.custom_instructions, 8_000),
+  };
+  return JSON.stringify(
+    {
+      task: "Refine the audit using client context.",
+      baseline_audit: baseline,
+      client_context: safeCtx,
+      instructions: [
+        "Return the complete refined audit JSON.",
+        "Integrate meeting notes and background into the executive summary and timeline priorities where relevant.",
+        "Where context adds nothing for a section, keep baseline substance; you may tighten wording only.",
+      ],
+    },
+    null,
+    2,
+  );
+}

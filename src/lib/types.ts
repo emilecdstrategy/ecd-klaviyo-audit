@@ -37,6 +37,8 @@ export interface Audit {
   published_at: string | null;
   public_share_token: string | null;
   show_recommendations: boolean;
+  /** Meeting notes / client background / instructions for contextual AI refinement */
+  context?: AuditContext | null;
   client?: Client;
 }
 
@@ -210,6 +212,13 @@ export interface AuditEmailDesign {
 
 export type UserRole = 'admin' | 'viewer';
 
+/** Optional inputs for Phase 2 AI refinement (stored on audit row). */
+export interface AuditContext {
+  meeting_notes?: string;
+  client_background?: string;
+  custom_instructions?: string;
+}
+
 export interface WizardData {
   auditId?: string;
   clientId: string;
@@ -225,4 +234,6 @@ export interface WizardData {
   auditMethod: 'api';
   apiKey?: string;
   screenshots?: Record<string, File[]>;
+  /** Passed to AI Phase 2 when non-empty */
+  auditContext?: AuditContext;
 }

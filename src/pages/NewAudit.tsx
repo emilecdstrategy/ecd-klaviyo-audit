@@ -12,16 +12,20 @@ import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import { useAuth } from '../contexts/AuthContext';
 import { formatClientListMeta } from '../lib/client-display';
 import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, updateClient, getIndustryEmailByIndustry, upsertAuditEmailDesign, createAnnotation } from '../lib/db';
-import type { Audit, Client } from '../lib/types';
+import type { Audit, AuditContext, Client } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { supabase } from '../lib/supabase';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 
+const CONTEXT_CHAR_SOFT = 15_000;
+const CONTEXT_CHAR_HARD = 30_000;
+
 const STEPS = [
   { label: 'Prospect Details', description: 'Basic information' },
   { label: 'API Connection', description: 'Connect Klaviyo data' },
+  { label: 'Client Context', description: 'Optional notes for the AI' },
   { label: 'Run Analysis', description: 'AI-powered audit' },
 ];
 
@@ -116,6 +120,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     apiKey: '',
   });
 
+  const [auditContextForm, setAuditContextForm] = useState({
+    meeting_notes: '',
+    client_background: '',
+    custom_instructions: '',
+  });
+
   const [clients, setClients] = useState<Client[]>([]);
   const selectedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
   const hasSavedKlaviyoConnection = Boolean((selectedClient as any)?.klaviyo_connected);
@@ -147,6 +157,32 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const updateField = (field: string, value: string | number) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };
+
+  const updateContextField = (field: keyof typeof auditContextForm, value: string) => {
+    const capped = value.length > CONTEXT_CHAR_HARD ? value.slice(0, CONTEXT_CHAR_HARD) : value;
+    setAuditContextForm(prev => ({ ...prev, [field]: capped }));
+  };
+
+  const appendMeetingNotesFromFile = async (file: File) => {
+    const lower = file.name.toLowerCase();
+    if (!lower.endsWith('.txt') && !lower.endsWith('.md') && file.type !== 'text/plain') {
+      setError('Please upload a .txt or .md file, or paste notes directly.');
+      return;
+    }
+    const text = await file.text();
+    const block = `\n\n--- From file: ${file.name} ---\n${text}`;
+    const next = (auditContextForm.meeting_notes + block).slice(0, CONTEXT_CHAR_HARD);
+    setAuditContextForm(prev => ({ ...prev, meeting_notes: next }));
+    setError('');
+  };
+
+  function buildAuditContextForSave(): AuditContext | null {
+    const meeting_notes = auditContextForm.meeting_notes.trim().slice(0, CONTEXT_CHAR_HARD) || undefined;
+    const client_background = auditContextForm.client_background.trim().slice(0, CONTEXT_CHAR_HARD) || undefined;
+    const custom_instructions = auditContextForm.custom_instructions.trim().slice(0, CONTEXT_CHAR_HARD) || undefined;
+    if (!meeting_notes && !client_background && !custom_instructions) return null;
+    return { meeting_notes, client_background, custom_instructions };
+  }
 
   const handleClientSelect = (clientId: string) => {
     const client = clients.find(c => c.id === clientId);
@@ -203,6 +239,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       // 2) Create audit row
       setAnalysisStage('Creating audit…');
       const title = `${form.companyName} - Klaviyo Audit`;
+      const contextPayload = buildAuditContextForSave();
       const audit = await createAudit({
         client_id: clientId,
         title,
@@ -215,6 +252,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         executive_summary: '',
         created_by: user?.id || '',
         show_recommendations: true,
+        context: contextPayload,
       } as any);
 
       // 3) Create default section rows
@@ -336,6 +374,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           monthlyTraffic: snapshotEngagement,
           notes: form.notes,
           auditMethod: 'api' as any,
+          auditContext: contextPayload ?? undefined,
         }, (update) => {
           if (update.total > 0) {
             setAnalysisStage(update.label);
@@ -409,6 +448,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const canProceed = () => {
     if (step === 0) return form.companyName;
     if (step === 1) return hasSavedKlaviyoConnection || form.apiKey;
+    if (step === 2) return true;
     return true;
   };
 
@@ -540,6 +580,99 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {step === 2 && (
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-6 animate-slide-up">
+            {error ? (
+              <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
+            ) : null}
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Client Context</h2>
+                <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+                  Optional. Paste meeting notes from Fireflies, Fathom, Google Meet, or any tool. Add what the client cares about so the report matches their conversation.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setError(''); setStep(3); }}
+                className="text-sm text-brand-primary font-medium hover:underline whitespace-nowrap"
+              >
+                Skip this step
+              </button>
+            </div>
+
+            <details className="group border border-gray-200 rounded-lg open:ring-1 open:ring-brand-primary/15" open>
+              <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 font-medium text-gray-900 bg-gray-50/80 rounded-lg group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
+                <span>Meeting notes & transcripts</span>
+                <span className="text-xs text-gray-500 font-normal">Fireflies, Fathom, etc.</span>
+              </summary>
+              <div className="px-4 pb-4 pt-2 border-t border-gray-100 space-y-2">
+                <label className="block text-xs font-medium text-gray-600">Paste notes or transcript</label>
+                <textarea
+                  value={auditContextForm.meeting_notes}
+                  onChange={e => updateContextField('meeting_notes', e.target.value)}
+                  rows={8}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y min-h-[120px]"
+                  placeholder="Paste call summary, transcript, or key quotes…"
+                />
+                <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                  <span>
+                    {auditContextForm.meeting_notes.length.toLocaleString()} / {CONTEXT_CHAR_HARD.toLocaleString()} characters
+                    {auditContextForm.meeting_notes.length > CONTEXT_CHAR_SOFT && (
+                      <span className="text-amber-600 ml-1">(large; consider trimming)</span>
+                    )}
+                  </span>
+                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-brand-primary font-medium">
+                    <input
+                      type="file"
+                      accept=".txt,.md,text/plain"
+                      className="sr-only"
+                      onChange={async (e) => {
+                        const f = e.target.files?.[0];
+                        e.target.value = '';
+                        if (f) await appendMeetingNotesFromFile(f);
+                      }}
+                    />
+                    Upload .txt / .md
+                  </label>
+                </div>
+              </div>
+            </details>
+
+            <details className="group border border-gray-200 rounded-lg">
+              <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 font-medium text-gray-900 bg-gray-50/80 rounded-lg group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
+                <span>Client background</span>
+                <span className="text-xs text-gray-500 font-normal">Goals, pain points</span>
+              </summary>
+              <div className="px-4 pb-4 pt-2 border-t border-gray-100">
+                <textarea
+                  value={auditContextForm.client_background}
+                  onChange={e => updateContextField('client_background', e.target.value)}
+                  rows={4}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y"
+                  placeholder="e.g. Launching a new line in Q2, focused on VIP retention, deliverability concerns…"
+                />
+              </div>
+            </details>
+
+            <details className="group border border-gray-200 rounded-lg">
+              <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 font-medium text-gray-900 bg-gray-50/80 rounded-lg group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
+                <span>Custom instructions for the audit</span>
+                <span className="text-xs text-gray-500 font-normal">Focus areas</span>
+              </summary>
+              <div className="px-4 pb-4 pt-2 border-t border-gray-100">
+                <textarea
+                  value={auditContextForm.custom_instructions}
+                  onChange={e => updateContextField('custom_instructions', e.target.value)}
+                  rows={3}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y"
+                  placeholder="e.g. Deep dive on abandoned cart, they asked about SMS…"
+                />
+              </div>
+            </details>
+          </div>
+        )}
+
+        {step === 3 && (
           <div className="bg-white rounded-xl p-8 card-shadow text-center animate-slide-up">
             {error && (
               <div className="mb-4 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg text-left">
@@ -683,10 +816,13 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {step < 2 && (
+        {step < 3 && (
           <div className="flex justify-end mt-6">
             <button
-              onClick={() => setStep(step + 1)}
+              onClick={() => {
+                if (step === 2) setError('');
+                setStep(step + 1);
+              }}
               disabled={!canProceed()}
               className="flex items-center gap-2 px-6 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
             >
