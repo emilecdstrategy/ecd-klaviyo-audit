@@ -31,6 +31,17 @@ const STEPS = [
 
 type NewAuditProps = { asModal?: boolean };
 
+async function invokeKlaviyoSnapshot(body: Record<string, unknown>) {
+  const { data: { session } } = await supabase.auth.getSession();
+  if (!session?.access_token) {
+    throw new Error('Your session has expired. Please refresh the page, sign in again, and retry.');
+  }
+  return supabase.functions.invoke<any>('klaviyo_fetch_snapshot', {
+    body,
+    headers: { Authorization: `Bearer ${session.access_token}` },
+  });
+}
+
 /** Poll until Edge function finishes full Klaviyo profile pagination (multi-invocation). */
 async function waitForProfileJobComplete(
   auditId: string,
@@ -66,9 +77,7 @@ async function waitForProfileJobComplete(
     }
     if (staleCount >= 5) {
       staleCount = 0;
-      supabase.functions.invoke('klaviyo_fetch_snapshot', {
-        body: { mode: 'resume_profile_scan', audit_id: auditId },
-      }).catch(() => {});
+      invokeKlaviyoSnapshot({ mode: 'resume_profile_scan', audit_id: auditId }).catch(() => {});
     }
     await new Promise((r) => setTimeout(r, 3000));
   }
@@ -268,9 +277,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         client_id: clientId,
         api_key: form.apiKey || undefined,
       };
-      const invokeSnapshot = () => supabase.functions.invoke<any>('klaviyo_fetch_snapshot', {
-        body: snapshotPayload,
-      });
+      const invokeSnapshot = () => invokeKlaviyoSnapshot(snapshotPayload);
       let { data, error: fnErr } = await invokeSnapshot();
       if (fnErr) {
         const firstAnyErr = fnErr as any;
@@ -304,6 +311,11 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           bodyPreview ? `body ${bodyPreview}` : null,
           import.meta.env.VITE_SUPABASE_URL ? `supabase ${String(import.meta.env.VITE_SUPABASE_URL)}` : null,
         ].filter(Boolean).join(' • ');
+        if (Number(status) === 401) {
+          throw new Error(
+            'Klaviyo snapshot was rejected (401). Refresh the page, sign in again, and retry. If it keeps happening, redeploy the klaviyo_fetch_snapshot Supabase Edge Function (auth validation was updated).',
+          );
+        }
         throw new Error(`Klaviyo snapshot failed: ${fnErr.message}${details ? ` (${details})` : ''}`);
       }
       if (!data?.ok) throw new Error(data?.error?.message || 'Failed to fetch Klaviyo snapshot');
