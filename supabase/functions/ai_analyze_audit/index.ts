@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getUserIdFromAuthorization } from "../_shared/auth.ts";
 import {
   AI_OUTPUT_JSON_SCHEMA,
   AI_SECTIONS_ONLY_SCHEMA,
@@ -55,19 +56,6 @@ function jsonCors(data: unknown, init: ResponseInit = {}) {
     headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) },
     ...init,
   });
-}
-
-async function requireAuthenticatedUser(req: Request) {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader) throw new Error("Missing Authorization header");
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  const jwt = authHeader.replace(/^Bearer\s+/i, "");
-  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  const { data, error } = await sb.auth.getUser(jwt);
-  if (error || !data?.user) throw new Error("Invalid session");
-  return data.user;
 }
 
 function timeoutSignal(ms: number) {
@@ -290,7 +278,7 @@ serve(async (req) => {
 
   try {
     try {
-      await requireAuthenticatedUser(req);
+      await getUserIdFromAuthorization(req);
     } catch (e) {
       // Important: return 200 so supabase-js doesn't surface a non-2xx transport error.
       // The client handles ok:false responses and can show a friendly message.

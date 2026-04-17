@@ -1,8 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+import { assertServiceRoleClient, requireAdminUserId } from "../_shared/auth.ts";
 
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -22,28 +19,6 @@ function json(data: unknown, init: ResponseInit = {}) {
   });
 }
 
-function serviceClient(authHeader?: string | null) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: authHeader ? { headers: { Authorization: authHeader } } : undefined,
-  });
-}
-
-async function requireAdmin(req: Request) {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader) throw new Error("Missing Authorization header");
-  const jwt = authHeader.replace(/^Bearer\s+/i, "");
-  const sb = serviceClient();
-  const { data, error } = await sb.auth.getUser(jwt);
-  if (error || !data?.user) throw new Error("Unauthorized");
-  const uid = data.user.id;
-  const { data: profile, error: pErr } = await sb.from("profiles").select("role").eq("id", uid).maybeSingle();
-  if (pErr) throw pErr;
-  if (profile?.role !== "admin") throw new Error("Forbidden");
-  return { uid };
-}
-
 type Role = "admin" | "viewer";
 
 serve(async (req) => {
@@ -51,14 +26,14 @@ serve(async (req) => {
   if (req.method !== "POST") return json({ ok: false, error: { code: "method_not_allowed" } }, { status: 405 });
 
   try {
-    await requireAdmin(req);
+    await requireAdminUserId(req);
     const body = (await req.json()) as
       | { action: "list" }
       | { action: "invite"; email: string }
       | { action: "update_role"; user_id: string; role: Role }
       | { action: "remove"; user_id: string };
 
-    const sb = serviceClient();
+    const sb = assertServiceRoleClient();
 
     if (body.action === "list") {
       const { data: profs, error } = await sb

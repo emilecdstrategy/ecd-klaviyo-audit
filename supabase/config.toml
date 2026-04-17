@@ -1,0 +1,25 @@
+# JWT is verified inside each function via GoTrue /auth/v1/user (see _shared/auth.ts).
+# Supabase's gateway JWT check was rejecting otherwise-valid browser sessions (401 before the function ran).
+[functions.klaviyo_fetch_snapshot]
+verify_jwt = false
+
+[functions.admin_delete_audit]
+verify_jwt = false
+
+[functions.admin_delete_client]
+verify_jwt = false
+
+[functions.klaviyo_connect_client]
+verify_jwt = false
+
+[functions.admin_users]
+verify_jwt = false
+
+[functions.openai_key_admin]
+verify_jwt = false
+
+[functions.ai_analyze_audit]
+verify_jwt = false
+
+[functions.klaviyo_test_connection]
+verify_jwt = false

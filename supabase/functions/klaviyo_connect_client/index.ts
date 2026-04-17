@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getUserIdFromAuthorization } from "../_shared/auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -31,18 +32,6 @@ function assertServiceClient() {
   return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
     auth: { persistSession: false, autoRefreshToken: false },
   });
-}
-
-async function requireAuthenticatedUser(req: Request) {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader) throw new Error("Missing Authorization header");
-  const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: { headers: { Authorization: authHeader } },
-  });
-  const { data, error } = await sb.auth.getUser();
-  if (error || !data?.user) throw new Error("Invalid session");
-  return data.user;
 }
 
 function b64encode(bytes: Uint8Array) {
@@ -106,7 +95,7 @@ serve(async (req) => {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return json({ ok: false, error: { code: "config_missing", message: "Supabase env missing" }, correlationId }, { status: 500 });
     }
-    await requireAuthenticatedUser(req);
+    await getUserIdFromAuthorization(req);
 
     const input = (await req.json()) as { client_id?: string; api_key?: string };
     const clientId = (input.client_id ?? "").trim();

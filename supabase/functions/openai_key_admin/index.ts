@@ -1,8 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
-
-const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+import { assertServiceRoleClient, requireAdminUserId } from "../_shared/auth.ts";
 const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 
 const corsHeaders: Record<string, string> = {
@@ -69,37 +66,15 @@ async function decryptString(ciphertextB64: string, ivB64: string) {
   return new TextDecoder().decode(pt);
 }
 
-function serviceClient(authHeader?: string | null) {
-  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) throw new Error("Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY");
-  return createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
-    auth: { persistSession: false, autoRefreshToken: false },
-    global: authHeader ? { headers: { Authorization: authHeader } } : undefined,
-  });
-}
-
-async function requireAdmin(req: Request) {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader) throw new Error("Missing Authorization header");
-  const jwt = authHeader.replace(/^Bearer\s+/i, "");
-  const sb = serviceClient();
-  const { data, error } = await sb.auth.getUser(jwt);
-  if (error || !data?.user) throw new Error("Unauthorized");
-  const uid = data.user.id;
-  const { data: profile, error: pErr } = await sb.from("profiles").select("role").eq("id", uid).maybeSingle();
-  if (pErr) throw pErr;
-  if (profile?.role !== "admin") throw new Error("Forbidden");
-  return { uid };
-}
-
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false, error: { code: "method_not_allowed" } }, { status: 405 });
 
   try {
-    await requireAdmin(req);
+    await requireAdminUserId(req);
     const body = (await req.json()) as { action?: "set" | "status"; openai_api_key?: string };
 
-    const sb = serviceClient();
+    const sb = assertServiceRoleClient();
 
     if (body.action === "status") {
       const { data, error } = await sb.from("app_secrets").select("key, updated_at").eq("key", "openai_api_key").maybeSingle();

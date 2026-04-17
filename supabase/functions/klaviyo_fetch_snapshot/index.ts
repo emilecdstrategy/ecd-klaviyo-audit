@@ -1,5 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getUserIdFromAuthorization } from "../_shared/auth.ts";
 
 type FetchInput = {
   audit_id?: string;
@@ -10,7 +11,6 @@ type FetchInput = {
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
-const SUPABASE_ANON_KEY = Deno.env.get("SUPABASE_ANON_KEY") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 // Secret used to encrypt/decrypt Klaviyo keys stored in DB.
@@ -65,29 +65,8 @@ function assertServiceClient() {
   });
 }
 
-/** Verify caller JWT against GoTrue (avoids supabase-js + service-role quirks in Deno Edge). */
 async function requireAuthenticatedUser(req: Request) {
-  const authHeader = req.headers.get("authorization");
-  if (!authHeader?.trim()) throw new Error("Missing Authorization header");
-  const base = SUPABASE_URL.replace(/\/$/, "");
-  if (!base) throw new Error("Missing SUPABASE_URL");
-  const anonKey = SUPABASE_ANON_KEY.trim();
-  if (!anonKey) throw new Error("Missing SUPABASE_ANON_KEY");
-  const res = await fetch(`${base}/auth/v1/user`, {
-    headers: {
-      Authorization: authHeader,
-      apikey: anonKey,
-    },
-  });
-  if (res.status === 401 || res.status === 403) {
-    throw new Error("Invalid or expired session");
-  }
-  if (!res.ok) {
-    const t = await res.text().catch(() => "");
-    throw new Error(`Auth verification failed (${res.status}): ${redactSecrets(t).slice(0, 160)}`);
-  }
-  const body = await res.json().catch(() => null) as { id?: string } | null;
-  if (!body?.id) throw new Error("Invalid session");
+  await getUserIdFromAuthorization(req);
 }
 
 function b64encode(bytes: Uint8Array) {
