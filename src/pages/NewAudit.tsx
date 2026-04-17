@@ -32,14 +32,14 @@ const STEPS = [
 type NewAuditProps = { asModal?: boolean };
 
 async function invokeKlaviyoSnapshot(body: Record<string, unknown>) {
+  // Refresh access token so the gateway (JWT verify) and Edge auth see a valid JWT.
+  // Do not pass a custom Authorization header on invoke — that bypasses the client’s token refresh path.
+  await supabase.auth.refreshSession().catch(() => {});
   const { data: { session } } = await supabase.auth.getSession();
   if (!session?.access_token) {
     throw new Error('Your session has expired. Please refresh the page, sign in again, and retry.');
   }
-  return supabase.functions.invoke<any>('klaviyo_fetch_snapshot', {
-    body,
-    headers: { Authorization: `Bearer ${session.access_token}` },
-  });
+  return supabase.functions.invoke<any>('klaviyo_fetch_snapshot', { body });
 }
 
 /** Poll until Edge function finishes full Klaviyo profile pagination (multi-invocation). */
@@ -313,7 +313,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         ].filter(Boolean).join(' • ');
         if (Number(status) === 401) {
           throw new Error(
-            'Klaviyo snapshot was rejected (401). Refresh the page, sign in again, and retry. If it keeps happening, redeploy the klaviyo_fetch_snapshot Supabase Edge Function (auth validation was updated).',
+            'Klaviyo snapshot was rejected (401), usually an expired session. Refresh the page, sign in again, and retry.',
           );
         }
         throw new Error(`Klaviyo snapshot failed: ${fnErr.message}${details ? ` (${details})` : ''}`);
