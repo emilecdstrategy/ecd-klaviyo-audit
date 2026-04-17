@@ -101,7 +101,12 @@ function AppRoutes() {
         <Route
           path="/audits/new"
           element={
-            <Modal open title="New Audit" onClose={() => navigate(-1)}>
+            <Modal
+              open
+              title="New Audit"
+              onClose={() => navigate(-1)}
+              className="max-w-5xl"
+            >
               <NewAudit asModal />
             </Modal>
           }

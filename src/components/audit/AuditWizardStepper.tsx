@@ -13,7 +13,7 @@ interface AuditWizardStepperProps {
 
 export default function AuditWizardStepper({ steps, currentStep }: AuditWizardStepperProps) {
   return (
-    <div className="flex w-full min-w-0 items-center">
+    <div className="flex w-full min-w-0 items-center overflow-hidden">
       {steps.map((step, i) => {
         const isCompleted = i < currentStep;
         const isCurrent = i === currentStep;
@@ -21,7 +21,7 @@ export default function AuditWizardStepper({ steps, currentStep }: AuditWizardSt
 
         return (
           <Fragment key={i}>
-            <div className="flex shrink-0 items-center gap-2 sm:gap-3">
+            <div className="flex min-w-0 flex-[2_1_0%] items-center gap-2 sm:gap-3">
               <div
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-all ${
                   isCompleted
@@ -44,7 +44,7 @@ export default function AuditWizardStepper({ steps, currentStep }: AuditWizardSt
             </div>
             {i < steps.length - 1 && (
               <div
-                className={`mx-2 h-px min-h-px min-w-4 flex-1 sm:mx-4 ${lineCompleted ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                className={`mx-1 h-px min-h-px min-w-2 flex-[1_1_0%] self-center sm:mx-2 sm:min-w-4 ${lineCompleted ? 'bg-brand-primary' : 'bg-gray-200'}`}
                 aria-hidden
               />
             )}
