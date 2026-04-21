@@ -59,7 +59,7 @@ async function waitForProfileJobComplete(
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error('Profile scan job not found');
-    if (data.status === 'complete') {
+    if (data.status === 'complete' || data.status === 'skipped') {
       onProgress?.(data.total_profiles ?? 0);
       return;
     }
@@ -108,6 +108,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisStage, setAnalysisStage] = useState<string>('');
   const [error, setError] = useState('');
+  const [fullProfileScan, setFullProfileScan] = useState(false);
   const [snapshotMeta, setSnapshotMeta] = useState<null | {
     counts?: Record<string, number | null>;
     reporting?: {
@@ -276,6 +277,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         audit_id: audit.id,
         client_id: clientId,
         api_key: form.apiKey || undefined,
+        profile_scan: fullProfileScan ? ('full' as const) : ('fast' as const),
       };
       const invokeSnapshot = () => invokeKlaviyoSnapshot(snapshotPayload);
       let { data, error: fnErr } = await invokeSnapshot();
@@ -387,6 +389,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           notes: form.notes,
           auditMethod: 'api' as any,
           auditContext: contextPayload ?? undefined,
+          profileAudienceScan: fullProfileScan ? 'full' : 'skipped',
         }, (update) => {
           if (update.total > 0) {
             setAnalysisStage(update.label);
@@ -697,10 +700,26 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                   <Sparkles className="w-7 h-7 text-white" />
                 </div>
                 <h2 className="text-xl font-bold text-gray-900 mb-2">Ready to Analyze</h2>
-                <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
+                <p className="text-sm text-gray-500 max-w-md mx-auto mb-4">
                   Our AI will review the collected data and generate detailed findings for each audit section.
                   You'll be able to review and edit everything before publishing.
                 </p>
+                <label className="flex items-start gap-2.5 max-w-md mx-auto mb-6 text-left text-sm text-gray-700 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={fullProfileScan}
+                    onChange={(e) => setFullProfileScan(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/30"
+                  />
+                  <span>
+                    <span className="font-medium text-gray-900">Full Klaviyo profile scan</span>
+                    {' '}
+                    (exact list size, subscribed, suppressed, and active-profile counts). Large accounts can take a long time. Leave unchecked for a{' '}
+                    <span className="font-medium">faster audit</span>
+                    {' '}
+                    without those audience totals (Klaviyo does not expose them without scanning profiles).
+                  </span>
+                </label>
                 <button
                   onClick={runAnalysis}
                   className="inline-flex items-center gap-2 px-6 py-3 gradient-bg text-white font-medium rounded-lg hover:opacity-90 transition-opacity"

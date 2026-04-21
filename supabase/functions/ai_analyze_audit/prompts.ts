@@ -15,6 +15,8 @@ type WizardData = {
   notes?: string;
   auditMethod?: "api" | "screenshot";
   requestedSectionKeys?: SectionKey[];
+  /** When skipped, per-profile audience totals were not collected (fast audit). */
+  profileAudienceScan?: "full" | "skipped";
 };
 
 export type KlaviyoContext = {
@@ -288,6 +290,12 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
       revenue_realism: "revenue_opportunity is MONTHLY. Total across all 6 sections must NOT exceed 100% of the current monthly flow revenue. Per section: max 35%, or up to 50% if a critical flow is completely missing. Scale proportionally to account size: a $50K/mo account with a missing Welcome Series should show $10-15K opportunity for that section, not $1K. When things look good, use $0-$500. Don't undersell real gaps.",
       analyze_actual_data: "You MUST reference and analyze the actual Klaviyo data above. Do NOT claim data is missing if it is provided.",
       balanced_assessment: "If a section is healthy, say so and give it near-zero opportunity. Not every area needs a big number. Praise what works.",
+      ...(data.profileAudienceScan === "skipped"
+        ? {
+          audience_list_metrics:
+            "This run did not include a full Klaviyo profile scan. Do NOT state specific total profile counts, subscribed counts, suppressed counts, or active-profile counts. Infer scale only from flows, campaigns, segments, and performance metrics provided. If asked about list size in narrative, say it was not measured in this pass and point to flow/campaign reach instead.",
+        }
+        : {}),
     },
     section_rubric: {
       flows: "Cover Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",

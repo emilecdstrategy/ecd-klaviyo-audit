@@ -236,4 +236,6 @@ export interface WizardData {
   screenshots?: Record<string, File[]>;
   /** Passed to AI Phase 2 when non-empty */
   auditContext?: AuditContext;
+  /** full = exact audience counts from profile scan; skipped = fast audit without per-profile pagination */
+  profileAudienceScan?: 'full' | 'skipped';
 }

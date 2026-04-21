@@ -8,6 +8,8 @@ type FetchInput = {
   api_key?: string; // optional if already stored
   revision?: string; // optional override
   mode?: "resume_profile_scan";
+  /** Default fast: skip full /api/profiles pagination (Klaviyo has no aggregate audience-count API). Use full for exact metrics. */
+  profile_scan?: "full" | "fast";
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -25,6 +27,7 @@ const MAX_LIST_SEGMENT_PAGES = 5;
 const METRICS_MAX_PAGES = 5;
 /** Skip optional email HTML fetch if less than this many ms remain before deadline. */
 const MIN_SLACK_MS_EMAIL_HTML = 15_000;
+/** Full enumeration is required for exact consent/suppression counts; Klaviyo has no aggregate-only endpoint for those metrics. */
 const PROFILE_FIRST_PATH =
   "/api/profiles/?page%5Bsize%5D=100&additional-fields%5Bprofile%5D=subscriptions";
 /** Space out heavy Reporting API POSTs to reduce 429 bursts (ms). */
@@ -383,6 +386,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
     const { data: job } = await sb.from("klaviyo_profile_scan_jobs").select("status").eq("audit_id", auditId).maybeSingle();
     if (!job) return json({ ok: false, error: { code: "not_found", message: "No profile scan job" }, correlationId }, { status: 404 });
     if (job.status === "complete") return json({ ok: true, correlationId, profile_metrics_status: "complete" });
+    if (job.status === "skipped") return json({ ok: true, correlationId, profile_metrics_status: "complete" });
     if (job.status === "failed") return json({ ok: false, correlationId, profile_metrics_status: "failed" });
     return json({ ok: true, correlationId, profile_metrics_status: "skipped", reason: "already_running" });
   }
@@ -741,6 +745,7 @@ serve(async (req) => {
     clientId = input.client_id ?? null;
     revision = (input.revision || DEFAULT_REVISION).trim();
     if (!auditId || !clientId) return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id or client_id" }, correlationId }, { status: 400 });
+    const profileScanFull = input.profile_scan === "full";
 
     const sb = assertServiceClient();
 
@@ -1339,7 +1344,7 @@ serve(async (req) => {
       email_subscribed_profiles_truncated: null as boolean | null,
       active_profiles_90d_truncated: null as boolean | null,
       suppressed_profiles_truncated: null as boolean | null,
-      profile_scan_status: "pending" as const,
+      profile_scan_status: (profileScanFull ? "pending" : "skipped") as "pending" | "skipped",
       computed_at: new Date().toISOString(),
     };
 
@@ -1374,22 +1379,39 @@ serve(async (req) => {
       }));
     }
 
-    await mustSucceed("upsert klaviyo_profile_scan_jobs", sb.from("klaviyo_profile_scan_jobs").upsert({
-      audit_id: auditId,
-      client_id: clientId,
-      revision,
-      since90_iso: since90,
-      next_path: null,
-      subscribed: 0,
-      active90d: 0,
-      suppressed: 0,
-      status: "pending",
-      staged_revenue_per_recipient: revenuePerRecipient,
-      error_message: null,
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "audit_id" }));
+    if (profileScanFull) {
+      await mustSucceed("upsert klaviyo_profile_scan_jobs", sb.from("klaviyo_profile_scan_jobs").upsert({
+        audit_id: auditId,
+        client_id: clientId,
+        revision,
+        since90_iso: since90,
+        next_path: null,
+        subscribed: 0,
+        active90d: 0,
+        suppressed: 0,
+        status: "pending",
+        staged_revenue_per_recipient: revenuePerRecipient,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "audit_id" }));
 
-    await chainProfileResume(auditId);
+      await chainProfileResume(auditId);
+    } else {
+      await mustSucceed("upsert klaviyo_profile_scan_jobs skipped", sb.from("klaviyo_profile_scan_jobs").upsert({
+        audit_id: auditId,
+        client_id: clientId,
+        revision,
+        since90_iso: since90,
+        next_path: null,
+        subscribed: 0,
+        active90d: 0,
+        suppressed: 0,
+        status: "skipped",
+        staged_revenue_per_recipient: revenuePerRecipient,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "audit_id" }));
+    }
 
     // Observability
     const failedEndpoints = Object.entries(scopeDiag).filter(([, v]) => v !== true);
@@ -1439,7 +1461,7 @@ serve(async (req) => {
         reporting_ok: reportingErrors.length === 0,
       },
       account_snapshot: accountSnapshot,
-      profile_metrics_status: "pending" as const,
+      profile_metrics_status: (profileScanFull ? "pending" : "complete") as "pending" | "complete",
       derived_metrics: {
         /** Filled to 0 until profile job completes; then finalized in DB and on poll. */
         list_size: 0,

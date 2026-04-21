@@ -104,7 +104,7 @@ export default function ReportAccountSnapshot({
     active_profiles_90d_truncated?: boolean | null;
     suppressed_profiles_truncated?: boolean | null;
     deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
-    profile_scan_status?: 'pending' | 'complete' | 'failed' | null;
+    profile_scan_status?: 'pending' | 'complete' | 'failed' | 'skipped' | null;
   } | null;
 }) {
   const totalFlows = flowSnapshots.length;
@@ -141,11 +141,13 @@ export default function ReportAccountSnapshot({
             accountSnapshot?.email_subscribed_profiles_truncated,
           )}
           sub={
-            accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.total_profiles_count == null && accountSnapshot?.email_subscribed_profiles_count == null
-              ? 'full profile scan in progress'
-              : (accountSnapshot?.total_profiles_count ?? accountSnapshot?.email_subscribed_profiles_count) == null
-                ? 'requires profiles:read scope'
-                : 'all profiles in Klaviyo account'
+            accountSnapshot?.profile_scan_status === 'skipped'
+              ? 'fast audit — full profile scan not run'
+              : accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.total_profiles_count == null && accountSnapshot?.email_subscribed_profiles_count == null
+                ? 'full profile scan in progress'
+                : (accountSnapshot?.total_profiles_count ?? accountSnapshot?.email_subscribed_profiles_count) == null
+                  ? 'requires profiles:read scope'
+                  : 'all profiles in Klaviyo account'
           }
         />
         <Card
@@ -156,11 +158,13 @@ export default function ReportAccountSnapshot({
             accountSnapshot?.email_subscribed_profiles_truncated,
           )}
           sub={
-            accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.email_subscribed_profiles_count == null
-              ? 'full profile scan in progress'
-              : accountSnapshot?.email_subscribed_profiles_count == null
-                ? 'requires profiles:read scope'
-                : 'email-subscribed profiles'
+            accountSnapshot?.profile_scan_status === 'skipped'
+              ? 'fast audit — full profile scan not run'
+              : accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.email_subscribed_profiles_count == null
+                ? 'full profile scan in progress'
+                : accountSnapshot?.email_subscribed_profiles_count == null
+                  ? 'requires profiles:read scope'
+                  : 'email-subscribed profiles'
           }
         />
         <Card
@@ -171,16 +175,18 @@ export default function ReportAccountSnapshot({
             accountSnapshot?.suppressed_profiles_truncated,
           )}
           sub={
-            accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.suppressed_profiles_count == null
-              ? 'full profile scan in progress'
-              : accountSnapshot?.suppressed_profiles_count == null
-                ? 'requires profiles:read scope'
-                : [
-                    'email marketing suppression on profile',
-                    accountSnapshot?.suppressed_profiles_truncated
-                      ? 'partial scan — 0 often means “not counted yet”, not “none in Klaviyo”'
-                      : null,
-                  ].filter(Boolean).join(' · ')
+            accountSnapshot?.profile_scan_status === 'skipped'
+              ? 'fast audit — full profile scan not run'
+              : accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.suppressed_profiles_count == null
+                ? 'full profile scan in progress'
+                : accountSnapshot?.suppressed_profiles_count == null
+                  ? 'requires profiles:read scope'
+                  : [
+                      'email marketing suppression on profile',
+                      accountSnapshot?.suppressed_profiles_truncated
+                        ? 'partial scan — 0 often means “not counted yet”, not “none in Klaviyo”'
+                        : null,
+                    ].filter(Boolean).join(' · ')
           }
         />
         <Card
