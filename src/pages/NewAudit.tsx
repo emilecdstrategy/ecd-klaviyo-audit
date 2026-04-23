@@ -176,7 +176,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     elapsed_ms?: number;
     correlationId?: string;
   }>(null);
-  const [fullProfileScan, setFullProfileScan] = useState(true);
   const [stageRuns, setStageRuns] = useState<KlaviyoRunRow[]>([]);
   const [form, setForm] = useState({
     clientId: '',
@@ -358,7 +357,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         client_id: clientId,
         api_key: form.apiKey || undefined,
         stage: 'config' as const,
-        profile_scan: fullProfileScan ? ('full' as const) : ('fast' as const),
+        profile_scan: 'full' as const,
       };
       const invokeSnapshot = () => invokeKlaviyoSnapshot(snapshotPayload);
       let { data, error: fnErr } = await invokeSnapshot();
@@ -839,26 +838,10 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                   <Sparkles className="w-7 h-7 text-white" />
                 </div>
                 <h2 className="text-xl font-bold text-gray-900 mb-2">Ready to Analyze</h2>
-                <p className="text-sm text-gray-500 max-w-md mx-auto mb-4">
+                <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
                   Our AI will review the collected data and generate detailed findings for each audit section.
                   You'll be able to review and edit everything before publishing.
                 </p>
-                <label className="flex items-start gap-2.5 max-w-md mx-auto mb-6 text-left text-sm text-gray-700 cursor-pointer select-none">
-                  <input
-                    type="checkbox"
-                    checked={fullProfileScan}
-                    onChange={(e) => setFullProfileScan(e.target.checked)}
-                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/30"
-                  />
-                  <span>
-                    <span className="font-medium text-gray-900">Full Klaviyo profile scan</span>
-                    {' '}
-                    (exact list size, subscribed, suppressed, and active-profile counts). Large accounts can take a long time. Leave unchecked for a{' '}
-                    <span className="font-medium">faster audit</span>
-                    {' '}
-                    without those audience totals (Klaviyo does not expose them without scanning profiles).
-                  </span>
-                </label>
                 <button
                   onClick={runAnalysis}
                   className="inline-flex items-center gap-2 px-6 py-3 gradient-bg text-white font-medium rounded-lg hover:opacity-90 transition-opacity"

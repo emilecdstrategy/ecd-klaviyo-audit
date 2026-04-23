@@ -39,6 +39,8 @@ export interface Audit {
   show_recommendations: boolean;
   /** Meeting notes / client background / instructions for contextual AI refinement */
   context?: AuditContext | null;
+  /** Audit-wide layout overrides (nav labels, footer, etc.). JSONB column. */
+  layout?: Record<string, unknown> | null;
   client?: Client;
 }
 
@@ -61,6 +63,16 @@ export interface FlowPerformance {
   monthly_revenue_current: number;
   monthly_revenue_opportunity: number;
   notes: string;
+  /** Soft-hide this row in the public report without deleting the data. */
+  is_hidden?: boolean;
+  /** Override the displayed flow name (Klaviyo name stays in `flow_name`). */
+  display_name?: string | null;
+  /** Override the computed assessment text in the performance table. */
+  display_assessment?: string | null;
+  /** Override the computed rating dot color. */
+  display_rating?: 'good' | 'warning' | 'bad' | 'missing' | null;
+  /** Optional manual ordering in the performance table. */
+  display_order?: number | null;
 }
 
 export interface KlaviyoFlowSnapshot {
@@ -148,6 +160,8 @@ export interface AuditSection {
   confidence: 'low' | 'medium' | 'high';
   status: 'draft' | 'approved';
   section_details?: Record<string, unknown> | null;
+  /** Per-section override tree, see `src/lib/report-config/types.ts`. JSONB column. */
+  section_config?: Record<string, unknown> | null;
 }
 
 export interface AuditAsset {

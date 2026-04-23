@@ -1,10 +1,14 @@
 import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
 import { isNonRevenueFlow } from '../../lib/revenue-calculator';
+import type { FlowsHealthBenchmarks } from '../../lib/report-config/types';
 
 interface Props {
   snapshots: KlaviyoFlowSnapshot[];
   performance: FlowPerformance[];
   segmentCount?: number;
+  title?: string;
+  subtitle?: string;
+  benchmarks?: FlowsHealthBenchmarks;
 }
 
 interface Category {
@@ -27,7 +31,36 @@ function flowNameMatchesAny(name: string, patterns: string[]): boolean {
   return patterns.some(p => new RegExp(p, 'i').test(lower));
 }
 
-function computeCategories(snapshots: KlaviyoFlowSnapshot[], performance: FlowPerformance[], segmentCount: number): Category[] {
+const DEFAULT_BENCHMARKS: Required<FlowsHealthBenchmarks> = {
+  openRateLow: 0.30,
+  openRateHigh: 0.45,
+  clickRateLow: 0.05,
+  clickRateHigh: 0.10,
+  revenueTiers: [
+    { min: 500_000, label: 'Strong' },
+    { min: 300_000, label: 'Good' },
+    { min: 200_000, label: 'Moderate' },
+    { min: 100_000, label: 'Needs work' },
+    { min: 50_000, label: 'Starter' },
+  ],
+};
+
+function resolveBenchmarks(overrides?: FlowsHealthBenchmarks): Required<FlowsHealthBenchmarks> {
+  return {
+    openRateLow: overrides?.openRateLow ?? DEFAULT_BENCHMARKS.openRateLow,
+    openRateHigh: overrides?.openRateHigh ?? DEFAULT_BENCHMARKS.openRateHigh,
+    clickRateLow: overrides?.clickRateLow ?? DEFAULT_BENCHMARKS.clickRateLow,
+    clickRateHigh: overrides?.clickRateHigh ?? DEFAULT_BENCHMARKS.clickRateHigh,
+    revenueTiers: overrides?.revenueTiers?.length ? overrides.revenueTiers : DEFAULT_BENCHMARKS.revenueTiers,
+  };
+}
+
+function computeCategories(
+  snapshots: KlaviyoFlowSnapshot[],
+  performance: FlowPerformance[],
+  segmentCount: number,
+  benchmarks: Required<FlowsHealthBenchmarks>,
+): Category[] {
   const revenueFlows = performance.filter(f => !isNonRevenueFlow(f.flow_name));
   const totalRecipients = performance.reduce((s, f) => s + f.recipients_per_month, 0);
   const totalRevenue = revenueFlows.reduce((s, f) => s + f.monthly_revenue_current, 0);
@@ -54,19 +87,22 @@ function computeCategories(snapshots: KlaviyoFlowSnapshot[], performance: FlowPe
 
   const categories: Category[] = [];
 
-  // Revenue Generation (0-10)
-  let revScore = 0;
-  if (annualRevenue >= 500_000) revScore = 10;
-  else if (annualRevenue >= 300_000) revScore = 8;
-  else if (annualRevenue >= 200_000) revScore = 6;
-  else if (annualRevenue >= 100_000) revScore = 4;
-  else if (annualRevenue >= 50_000) revScore = 2;
-  else revScore = 1;
+  const tiersSorted = [...benchmarks.revenueTiers].sort((a, b) => b.min - a.min);
+  const tierIndex = tiersSorted.findIndex(t => annualRevenue >= t.min);
+  const matchedTier = tierIndex >= 0 ? tiersSorted[tierIndex] : null;
+  const revScore = matchedTier
+    ? Math.max(1, Math.round(((tiersSorted.length - tierIndex) / tiersSorted.length) * 10))
+    : 1;
+  const moderateThreshold = tiersSorted[Math.min(2, tiersSorted.length - 1)]?.min ?? 200_000;
+  const weakThreshold = tiersSorted[Math.min(3, tiersSorted.length - 1)]?.min ?? 100_000;
   categories.push({
     name: 'Revenue Generation',
     score: revScore, maxScore: 10,
-    assessment: annualRevenue >= 200_000 ? 'Strong flow revenue' : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(annualRevenue)} is ${annualRevenue < 100_000 ? '20-35%' : '50-70%'} of expected`,
+    assessment: matchedTier?.label
+      ? `${matchedTier.label} flow revenue`
+      : `${new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(annualRevenue)} is ${annualRevenue < weakThreshold ? '20-35%' : '50-70%'} of expected`,
   });
+  void moderateThreshold;
 
   // Flow Coverage (0-10)
   const coverageScore = Math.min(10, Math.round((essentialPresent.length / ESSENTIAL_FLOW_PATTERNS.length) * 10));
@@ -91,31 +127,35 @@ function computeCategories(snapshots: KlaviyoFlowSnapshot[], performance: FlowPe
     assessment: `${(weightedConv * 100).toFixed(2)}% overall vs. 2-5% benchmark`,
   });
 
-  // Click-Through Rates (0-10)
+  const clickLow = benchmarks.clickRateLow;
+  const clickHigh = benchmarks.clickRateHigh;
   let clickScore = 0;
-  if (weightedClick >= 0.10) clickScore = 10;
-  else if (weightedClick >= 0.06) clickScore = 7;
-  else if (weightedClick >= 0.04) clickScore = 5;
-  else if (weightedClick >= 0.02) clickScore = 3;
+  if (weightedClick >= clickHigh) clickScore = 10;
+  else if (weightedClick >= (clickLow + clickHigh) / 2) clickScore = 7;
+  else if (weightedClick >= clickLow) clickScore = 5;
+  else if (weightedClick >= clickLow / 2) clickScore = 3;
   else clickScore = 1;
   categories.push({
     name: 'Click-Through Rates',
     score: clickScore, maxScore: 10,
-    assessment: `${(weightedClick * 100).toFixed(1)}% avg vs. 8-15% benchmark`,
+    assessment: `${(weightedClick * 100).toFixed(1)}% avg vs. ${(clickLow * 100).toFixed(0)}-${(clickHigh * 100).toFixed(0)}% benchmark`,
   });
 
-  // Open Rates (0-10)
+  const openLow = benchmarks.openRateLow;
+  const openHigh = benchmarks.openRateHigh;
   let openScore = 0;
-  if (weightedOpen >= 0.50) openScore = 8;
-  else if (weightedOpen >= 0.40) openScore = 7;
-  else if (weightedOpen >= 0.30) openScore = 6;
-  else if (weightedOpen >= 0.20) openScore = 4;
+  if (weightedOpen >= openHigh + 0.05) openScore = 8;
+  else if (weightedOpen >= openHigh) openScore = 7;
+  else if (weightedOpen >= openLow) openScore = 6;
+  else if (weightedOpen >= openLow - 0.10) openScore = 4;
   else openScore = 2;
-  if (weightedOpen >= 0.45) openScore = Math.min(10, openScore);
+  if (weightedOpen >= openHigh) openScore = Math.min(10, openScore);
   categories.push({
     name: 'Open Rates',
     score: openScore, maxScore: 10,
-    assessment: weightedOpen >= 0.40 ? 'Decent but inflated by Apple MPP' : `${(weightedOpen * 100).toFixed(1)}% avg, room for improvement`,
+    assessment: weightedOpen >= openHigh
+      ? 'Decent but likely inflated by Apple MPP'
+      : `${(weightedOpen * 100).toFixed(1)}% avg, room for improvement`,
   });
 
   // Flow Hygiene (0-10)
@@ -174,8 +214,16 @@ function overallRingColor(score: number): string {
   return 'stroke-red-400';
 }
 
-export default function ReportFlowHealthScore({ snapshots, performance, segmentCount = 0 }: Props) {
-  const categories = computeCategories(snapshots, performance, segmentCount);
+export default function ReportFlowHealthScore({
+  snapshots,
+  performance,
+  segmentCount = 0,
+  title = 'Overall Flow Health Score',
+  subtitle,
+  benchmarks,
+}: Props) {
+  const resolvedBenchmarks = resolveBenchmarks(benchmarks);
+  const categories = computeCategories(snapshots, performance, segmentCount, resolvedBenchmarks);
   const totalScore = categories.reduce((s, c) => s + c.score, 0);
   const maxTotal = categories.reduce((s, c) => s + c.maxScore, 0);
   const overall = maxTotal > 0 ? Math.round((totalScore / maxTotal) * 100) : 0;
@@ -187,7 +235,9 @@ export default function ReportFlowHealthScore({ snapshots, performance, segmentC
 
   return (
     <div>
-      <h3 className="text-lg font-bold text-gray-900 mb-5">Overall Flow Health Score</h3>
+      <h3 className="text-lg font-bold text-gray-900 mb-1">{title}</h3>
+      {subtitle && <p className="text-sm text-gray-500 mb-4">{subtitle}</p>}
+      {!subtitle && <div className="mb-5" />}
       <div className="flex flex-col lg:flex-row gap-8 items-start">
         <div className="flex flex-col items-center shrink-0">
           <div className="relative w-36 h-36">

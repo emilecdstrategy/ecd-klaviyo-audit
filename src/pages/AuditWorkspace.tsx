@@ -3,6 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { FileText, BarChart3, LayoutGrid as Layout, Target, Mail, Palette, FormInput, DollarSign, ExternalLink, Maximize2, X as XIcon, Check } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import AuditSectionEditor from '../components/audit/AuditSectionEditor';
+import FlowPerformanceEditor from '../components/audit/FlowPerformanceEditor';
 import RevenueOpportunityCard from '../components/ui/RevenueOpportunityCard';
 import ShareLinkPanel from '../components/ui/ShareLinkPanel';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -403,10 +404,15 @@ export default function AuditWorkspace() {
               </div>
             </div>
           ) : currentSection ? (
-            <AuditSectionEditor
-              section={currentSection}
-              onUpdate={updates => handleSectionUpdate(currentSection.id, updates)}
-            />
+            <>
+              <AuditSectionEditor
+                section={currentSection}
+                onUpdate={updates => handleSectionUpdate(currentSection.id, updates)}
+              />
+              {activeSection === 'flows' && (
+                <FlowPerformanceEditor auditId={audit.id} />
+              )}
+            </>
           ) : (
             <div className="bg-white rounded-xl p-8 card-shadow text-center">
               <p className="text-sm text-gray-500">

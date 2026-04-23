@@ -1,8 +1,11 @@
 import type { FlowPerformance } from '../../lib/types';
 import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
+import type { FlowsRevenueInsights } from '../../lib/report-config/types';
 
 interface Props {
   performance: FlowPerformance[];
+  title?: string;
+  insights?: FlowsRevenueInsights;
 }
 
 const BAR_COLORS = [
@@ -31,8 +34,9 @@ const TEXT_COLORS = [
   'text-lime-700',
 ];
 
-export default function ReportFlowRevenueBreakdown({ performance }: Props) {
-  const sorted = [...performance].sort((a, b) => b.monthly_revenue_current - a.monthly_revenue_current);
+export default function ReportFlowRevenueBreakdown({ performance, title, insights }: Props) {
+  const visiblePerformance = performance.filter(f => !f.is_hidden);
+  const sorted = [...visiblePerformance].sort((a, b) => b.monthly_revenue_current - a.monthly_revenue_current);
   const totalRevenue = sorted.reduce((s, f) => s + f.monthly_revenue_current, 0);
   if (totalRevenue <= 0) return null;
 
@@ -48,15 +52,24 @@ export default function ReportFlowRevenueBreakdown({ performance }: Props) {
   const top2Pct = totalRevenue > 0 ? (top2Revenue / totalRevenue) * 100 : 0;
   const concentrationRisk = top2Pct > 50;
 
-  const highVolumeFlows = performance.filter(f =>
+  const highVolumeFlows = visiblePerformance.filter(f =>
     !isNonRevenueFlow(f.flow_name) &&
     f.recipients_per_month > 100_000 && f.monthly_revenue_current > 0 &&
     (f.monthly_revenue_current / f.recipients_per_month) < 0.02
   );
 
+  const concentrationCopy = insights?.concentration === undefined
+    ? `${top[0]?.flow_name ?? ''}${top[1] ? ` + ${top[1].flow_name}` : ''} = ${top2Pct.toFixed(1)}% of all flow revenue. If either breaks, more than half your automation revenue disappears. Diversify into post-purchase, cross-sell, and winback flows.`
+    : insights.concentration;
+  const volumeCopy = insights?.volume === undefined
+    ? `${highVolumeFlows.slice(0, 2).map(f => f.flow_name).join(' and ')} sent ${highVolumeFlows.reduce((s, f) => s + f.recipients_per_month, 0).toLocaleString()}+ emails but generated only ${formatCurrency(highVolumeFlows.reduce((s, f) => s + f.monthly_revenue_current, 0))}. These flows need rebuilding or sunsetting.`
+    : insights.volume;
+  const showConcentration = concentrationRisk && concentrationCopy !== null;
+  const showVolume = highVolumeFlows.length > 0 && volumeCopy !== null;
+
   return (
     <div>
-      <h3 className="text-lg font-bold text-gray-900 mb-1">Revenue Breakdown by Flow</h3>
+      <h3 className="text-lg font-bold text-gray-900 mb-1">{title ?? 'Revenue Breakdown by Flow'}</h3>
       <p className="text-sm text-gray-500 mb-5">
         Top {top.length} revenue-generating flows account for{' '}
         <span className="font-semibold text-gray-800">{formatCurrency(topRevenue)}</span>{' '}
@@ -138,26 +151,21 @@ export default function ReportFlowRevenueBreakdown({ performance }: Props) {
         )}
       </div>
 
-      {(concentrationRisk || highVolumeFlows.length > 0) && (
-        <div className={`grid grid-cols-1 ${concentrationRisk && highVolumeFlows.length > 0 ? 'md:grid-cols-2' : ''} gap-4 mt-6`}>
-          {concentrationRisk && (
+      {(showConcentration || showVolume) && (
+        <div className={`grid grid-cols-1 ${showConcentration && showVolume ? 'md:grid-cols-2' : ''} gap-4 mt-6`}>
+          {showConcentration && (
             <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
               <p className="text-sm text-gray-800">
                 <span className="font-bold text-amber-800">Revenue Concentration Risk:</span>{' '}
-                {top[0]?.flow_name}{top[1] ? ` + ${top[1].flow_name}` : ''} = {top2Pct.toFixed(1)}% of all flow revenue.
-                If either breaks, more than half your automation revenue disappears.
-                Diversify into post-purchase, cross-sell, and winback flows.
+                {concentrationCopy}
               </p>
             </div>
           )}
-          {highVolumeFlows.length > 0 && (
+          {showVolume && (
             <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
               <p className="text-sm text-gray-800">
                 <span className="font-bold text-red-700">Volume vs. Value Mismatch:</span>{' '}
-                {highVolumeFlows.slice(0, 2).map(f => f.flow_name).join(' and ')}{' '}
-                sent {highVolumeFlows.reduce((s, f) => s + f.recipients_per_month, 0).toLocaleString()}+ emails but generated only{' '}
-                {formatCurrency(highVolumeFlows.reduce((s, f) => s + f.monthly_revenue_current, 0))}.
-                These flows need rebuilding or sunsetting.
+                {volumeCopy}
               </p>
             </div>
           )}

@@ -1,9 +1,12 @@
 import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
 import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
 import { useRef, useState, useLayoutEffect, useCallback, type MouseEvent } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-type MetricStatus = 'good' | 'warning' | 'bad' | 'missing';
+const DEFAULT_VISIBLE_FLOWS = 5;
+
+export type MetricStatus = 'good' | 'warning' | 'bad' | 'missing';
 
 function metricStatus(actual: number | null, low: number, _high: number): MetricStatus {
   if (actual === null) return 'missing';
@@ -101,9 +104,11 @@ function pctCell(actual: number | null, low: number, high: number) {
 interface ReportFlowTableProps {
   flows: FlowPerformance[];
   snapshots?: KlaviyoFlowSnapshot[];
+  defaultVisibleRows?: number;
+  subtitleOverride?: string;
 }
 
-export default function ReportFlowTable({ flows, snapshots }: ReportFlowTableProps) {
+export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, subtitleOverride }: ReportFlowTableProps) {
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<{ isDown: boolean; startX: number; startScrollLeft: number }>({
     isDown: false,
@@ -111,8 +116,19 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
     startScrollLeft: 0,
   });
   const [hasHorizontalOverflow, setHasHorizontalOverflow] = useState(false);
+  const [expanded, setExpanded] = useState(false);
 
-  const sorted = [...flows].sort((a, b) => b.monthly_revenue_current - a.monthly_revenue_current);
+  const visibleRowLimit = Math.max(1, defaultVisibleRows ?? DEFAULT_VISIBLE_FLOWS);
+  const filtered = flows.filter(f => !f.is_hidden);
+  const sorted = [...filtered].sort((a, b) => {
+    if (typeof a.display_order === 'number' && typeof b.display_order === 'number') {
+      return a.display_order - b.display_order;
+    }
+    return b.monthly_revenue_current - a.monthly_revenue_current;
+  });
+  const hasMore = sorted.length > visibleRowLimit;
+  const visible = expanded || !hasMore ? sorted : sorted.slice(0, visibleRowLimit);
+  const hiddenCount = sorted.length - visible.length;
 
   const updateOverflow = useCallback(() => {
     const el = scrollRef.current;
@@ -135,7 +151,7 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
       ro.disconnect();
       window.removeEventListener('resize', updateOverflow);
     };
-  }, [updateOverflow, sorted.length, flows.length]);
+  }, [updateOverflow, sorted.length, flows.length, expanded]);
 
   const snapshotMap = new Map<string, KlaviyoFlowSnapshot>();
   if (snapshots) {
@@ -148,7 +164,8 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
   const totalRevenue = sorted.reduce((s, f) => s + f.monthly_revenue_current, 0);
 
   const revenueGenerators = sorted.filter(f => f.monthly_revenue_current > 0);
-  const subtitle = `${revenueGenerators.length} flows generating ${totalRevenue > 0 ? ((revenueGenerators.reduce((s, f) => s + f.monthly_revenue_current, 0) / totalRevenue) * 100).toFixed(1) : 0}% of total flow revenue.`;
+  const computedSubtitle = `${revenueGenerators.length} flows generating ${totalRevenue > 0 ? ((revenueGenerators.reduce((s, f) => s + f.monthly_revenue_current, 0) / totalRevenue) * 100).toFixed(1) : 0}% of total flow revenue.`;
+  const subtitle = subtitleOverride || computedSubtitle;
 
   const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
     if (!hasHorizontalOverflow) return;
@@ -208,12 +225,13 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
-              {sorted.map((flow) => {
+              {visible.map((flow) => {
                 const snap = snapshotMap.get(flow.flow_name);
                 const actionCount = snap?.raw?.attributes?.action_count ?? snap?.raw?.relationships?.flow_actions?.data?.length ?? null;
                 const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
-                const rating = overallRating(flow);
-                const assessment = buildAssessment(flow);
+                const rating: MetricStatus = (flow.display_rating as MetricStatus | null | undefined) ?? overallRating(flow);
+                const assessment = flow.display_assessment ?? buildAssessment(flow);
+                const displayName = flow.display_name ?? flow.flow_name;
                 const nonRevenue = isNonRevenueFlow(flow.flow_name);
 
                 return (
@@ -225,7 +243,7 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
                     )}
                   >
                     <td className="py-4 pl-6 pr-4">
-                      <p className="text-sm font-medium text-gray-900 leading-tight">{flow.flow_name}</p>
+                      <p className="text-sm font-medium text-gray-900 leading-tight">{displayName}</p>
                       {nonRevenue && (
                         <span className="inline-block mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
                           Engagement only
@@ -291,6 +309,26 @@ export default function ReportFlowTable({ flows, snapshots }: ReportFlowTablePro
             </tfoot>
           </table>
         </div>
+        {hasMore && (
+          <button
+            type="button"
+            onClick={() => setExpanded((v) => !v)}
+            className="w-full flex items-center justify-center gap-1.5 py-3 text-sm font-medium text-brand-primary hover:bg-gray-50 border-t border-gray-100 transition-colors"
+          >
+            {expanded ? (
+              <>
+                <ChevronUp className="w-4 h-4" />
+                Show less
+              </>
+            ) : (
+              <>
+                <ChevronDown className="w-4 h-4" />
+                Show all {sorted.length} flows
+                <span className="text-gray-400 font-normal">({hiddenCount} hidden)</span>
+              </>
+            )}
+          </button>
+        )}
       </div>
     </div>
   );

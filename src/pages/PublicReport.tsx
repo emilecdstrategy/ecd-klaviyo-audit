@@ -17,6 +17,7 @@ import { RichAuditText } from '../components/ui/RichAuditText';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign } from '../lib/types';
 import { getPublicReportByToken, getPlatformSettings } from '../lib/db';
 import { cn } from '../lib/utils';
+import { extractFlowsRawConfig, isFlowsBlockVisible, resolveFlowsConfig } from '../lib/report-config/resolve';
 
 const NAV_ITEMS = [
   { id: 'summary', label: 'Summary' },
@@ -195,15 +196,41 @@ export default function PublicReport() {
 
   const stripInlineBoldMarkers = (s: string) => s.replace(/\*\*(.+?)\*\*/g, '$1');
 
-  const visibleNavItems = NAV_ITEMS.filter(n => {
-    if (n.id === 'email_design' && !emailDesign?.client_email_html && !emailDesign?.ecd_example) return false;
-    if (n.id === 'flows' && flowSnapshots.length === 0 && flowPerformance.length === 0) return false;
-    if (n.id === 'segments' && segmentSnapshots.length === 0) return false;
-    if (n.id === 'forms' && formSnapshots.length === 0) return false;
-    if (n.id === 'campaigns' && campaignSnapshots.length === 0) return false;
-    if (n.id === 'health' && healthScores.length === 0) return false;
-    return true;
-  });
+  const flowsSectionRow = reportSections.find(s => s.section_key === 'flows');
+  const flowsCfg = resolveFlowsConfig(
+    extractFlowsRawConfig((flowsSectionRow?.section_config as Record<string, unknown> | null | undefined) ?? null),
+  );
+
+  const flowsDataAvailable = flowSnapshots.length > 0 || flowPerformance.length > 0;
+  const flowsSectionVisible = flowsDataAvailable && !flowsCfg.hidden;
+  const healthSectionVisible = healthScores.length > 0;
+  const segmentsSectionVisible = segmentSnapshots.length > 0;
+  const formsSectionVisible = formSnapshots.length > 0;
+  const campaignsSectionVisible = campaignSnapshots.length > 0;
+  const emailDesignSectionVisible = Boolean(emailDesign?.client_email_html || emailDesign?.ecd_example);
+
+  const sectionVisibility: Record<string, boolean> = {
+    summary: true,
+    health: healthSectionVisible,
+    flows: flowsSectionVisible,
+    segments: segmentsSectionVisible,
+    forms: formsSectionVisible,
+    campaigns: campaignsSectionVisible,
+    email_design: emailDesignSectionVisible,
+    opportunity: true,
+  };
+
+  const sectionNumbers: Record<string, string> = {};
+  {
+    let n = 1;
+    for (const item of NAV_ITEMS) {
+      if (!sectionVisibility[item.id]) continue;
+      sectionNumbers[item.id] = String(n).padStart(2, '0');
+      n += 1;
+    }
+  }
+
+  const visibleNavItems = NAV_ITEMS.filter(n => sectionVisibility[n.id]);
 
   const setRef = (id: string) => (el: HTMLElement | null) => {
     sectionRefs.current[id] = el;
@@ -266,7 +293,7 @@ export default function PublicReport() {
 
       <main className="max-w-[90rem] mx-auto px-6 py-10 space-y-16">
         <section id="summary" ref={setRef('summary')}>
-          <SectionHeader number="01" label="Executive Summary" />
+          <SectionHeader number={sectionNumbers['summary'] ?? '01'} label="Executive Summary" />
 
           <div className="bg-white rounded-2xl p-8 border border-gray-100 mb-6">
             <p className="text-xs font-semibold text-brand-primary uppercase tracking-widest mb-3">
@@ -368,67 +395,96 @@ export default function PublicReport() {
           </div>
         </section>
 
-        {healthScores.length > 0 && (
+        {healthSectionVisible && (
           <section id="health" ref={setRef('health')}>
-            <SectionHeader number="02" label="Account Health Score" />
+            <SectionHeader number={sectionNumbers['health'] ?? '02'} label="Account Health Score" />
             <ReportHealthScore scores={healthScores} />
           </section>
         )}
 
-        {(flowSnapshots.length > 0 || flowPerformance.length > 0) && (
+        {flowsSectionVisible && (
           <section id="flows" ref={setRef('flows')}>
-            <SectionHeader number="03" label="Flows" />
+            <SectionHeader
+              number={sectionNumbers['flows'] ?? flowsCfg.sectionNumber ?? '03'}
+              label={flowsCfg.sectionTitle ?? 'Flows'}
+            />
 
-            {(() => {
-              const flowsSection = reportSections.find(s => s.section_key === 'flows');
+            {(isFlowsBlockVisible(flowsCfg, 'narrative') || isFlowsBlockVisible(flowsCfg, 'rubric')) && (() => {
+              const flowsSection = flowsSectionRow;
               const idx = flowsSection ? reportSections.findIndex(s => s.id === flowsSection.id) : -1;
               if (!flowsSection) return null;
+              const narrativeCfg = flowsCfg.blocks.narrative;
+              const narrativeVisible = isFlowsBlockVisible(flowsCfg, 'narrative');
+              const rubricVisible = isFlowsBlockVisible(flowsCfg, 'rubric');
+              const sectionForBlock: AuditSection = {
+                ...flowsSection,
+                current_state_title: narrativeCfg?.currentTitle ?? flowsSection.current_state_title,
+                optimized_state_title: narrativeCfg?.optimizedTitle ?? flowsSection.optimized_state_title,
+              };
               return (
                 <div className="mb-6">
                   <ReportSectionBlock
-                    section={flowsSection}
+                    section={sectionForBlock}
                     index={idx < 0 ? 0 : idx}
                     assets={assets}
                     annotations={annotations}
                     hideHeader
-                    hideCurrentOptimized
+                    hideCurrentOptimized={!narrativeVisible}
+                    hideRubric={!rubricVisible}
+                    hideKeyTakeaway={!narrativeVisible}
                     entityNames={entityNames}
                   />
                 </div>
               );
             })()}
 
-            {flowPerformance.length > 0 && (
+            {isFlowsBlockVisible(flowsCfg, 'healthScore') && flowPerformance.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
                 <ReportFlowHealthScore
                   snapshots={flowSnapshots as any}
                   performance={flowPerformance}
                   segmentCount={segmentSnapshots.length}
+                  title={flowsCfg.blocks.healthScore?.title}
+                  subtitle={flowsCfg.blocks.healthScore?.subtitle}
+                  benchmarks={flowsCfg.blocks.healthScore?.benchmarks}
                 />
               </div>
             )}
 
-            {flowPerformance.length > 0 && (
+            {isFlowsBlockVisible(flowsCfg, 'revenueBreakdown') && flowPerformance.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
-                <ReportFlowRevenueBreakdown performance={flowPerformance} />
+                <ReportFlowRevenueBreakdown
+                  performance={flowPerformance}
+                  title={flowsCfg.blocks.revenueBreakdown?.title}
+                  insights={flowsCfg.blocks.revenueBreakdown?.insights}
+                />
               </div>
             )}
 
-            {flowPerformance.length > 0 && (
+            {isFlowsBlockVisible(flowsCfg, 'flowTable') && flowPerformance.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6">
                 <div className="px-6 py-4 border-b border-gray-50">
-                  <h3 className="text-lg font-bold text-gray-900">Flow Performance Details</h3>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {flowsCfg.blocks.flowTable?.title ?? 'Flow Performance Details'}
+                  </h3>
                 </div>
                 <div className="p-6">
-                  <ReportFlowTable flows={flowPerformance} snapshots={flowSnapshots as any} />
+                  <ReportFlowTable
+                    flows={flowPerformance}
+                    snapshots={flowSnapshots as any}
+                    defaultVisibleRows={flowsCfg.blocks.flowTable?.defaultVisibleRows}
+                    subtitleOverride={flowsCfg.blocks.flowTable?.subtitleOverride}
+                  />
                 </div>
               </div>
             )}
 
-            {flowSnapshots.length > 0 && (
+            {isFlowsBlockVisible(flowsCfg, 'inventoryTable') && flowSnapshots.length > 0 && (
               <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
                 <div className="px-6 py-4 border-b border-gray-50">
-                  <h3 className="text-lg font-bold text-gray-900">Full Flow Inventory</h3>
+                  <h3 className="text-lg font-bold text-gray-900">
+                    {flowsCfg.blocks.inventoryTable?.title ?? 'Full Flow Inventory'}
+                  </h3>
                   <p className="text-sm text-gray-500 mt-1">
                     All flows pulled from Klaviyo ({flowSnapshots.length} total).
                   </p>
@@ -443,7 +499,7 @@ export default function PublicReport() {
 
         {segmentSnapshots.length > 0 && (
           <section id="segments" ref={setRef('segments')}>
-            <SectionHeader number="04" label="Segments" />
+            <SectionHeader number={sectionNumbers['segments'] ?? '04'} label="Segments" />
 
             {(() => {
               const segSection = reportSections.find(s => s.section_key === 'segmentation');
@@ -479,7 +535,7 @@ export default function PublicReport() {
 
         {formSnapshots.length > 0 && (
           <section id="forms" ref={setRef('forms')}>
-            <SectionHeader number="05" label="Signup Forms" />
+            <SectionHeader number={sectionNumbers['forms'] ?? '05'} label="Signup Forms" />
 
             {(() => {
               const formsSection = reportSections.find(s => s.section_key === 'signup_forms');
@@ -515,7 +571,7 @@ export default function PublicReport() {
 
         {campaignSnapshots.length > 0 && (
           <section id="campaigns" ref={setRef('campaigns')}>
-            <SectionHeader number="06" label="Campaigns" />
+            <SectionHeader number={sectionNumbers['campaigns'] ?? '06'} label="Campaigns" />
 
             {(() => {
               const campSection = reportSections.find(s => s.section_key === 'campaigns');
@@ -551,13 +607,13 @@ export default function PublicReport() {
 
         {(emailDesign?.client_email_html || emailDesign?.ecd_example) && (
           <section id="email_design" ref={setRef('email_design')}>
-            <SectionHeader number="07" label="Email Design" />
+            <SectionHeader number={sectionNumbers['email_design'] ?? '07'} label="Email Design" />
             <EmailDesignSection emailDesign={emailDesign} annotations={annotations} sections={reportSections} />
           </section>
         )}
 
         <section id="opportunity" ref={setRef('opportunity')}>
-          <SectionHeader number="08" label="Revenue Opportunity" />
+          <SectionHeader number={sectionNumbers['opportunity'] ?? '08'} label="Revenue Opportunity" />
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
             <div className="bg-white rounded-xl p-6 border border-gray-100">
@@ -1045,6 +1101,8 @@ function ReportSectionBlock({
   annotations,
   hideHeader = false,
   hideCurrentOptimized = false,
+  hideRubric = false,
+  hideKeyTakeaway = false,
   entityNames,
 }: {
   section: AuditSection;
@@ -1053,6 +1111,8 @@ function ReportSectionBlock({
   annotations: Annotation[];
   hideHeader?: boolean;
   hideCurrentOptimized?: boolean;
+  hideRubric?: boolean;
+  hideKeyTakeaway?: boolean;
   entityNames?: string[];
 }) {
   const currentAsset = assets.find(a => a.section_key === section.section_key && a.side === 'current');
@@ -1126,9 +1186,9 @@ function ReportSectionBlock({
             </div>
           </div>
         )}
-        <SectionRubricDetails section={section} />
+        {!hideRubric && <SectionRubricDetails section={section} />}
 
-        {(section.human_edited_findings || section.summary_text) && (
+        {!hideKeyTakeaway && (section.human_edited_findings || section.summary_text) && (
           <div className="rounded-xl p-4 border border-gray-100" style={{ backgroundColor: '#f9f9f9' }}>
             <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Key Takeaway</p>
             <RichAuditText text={section.human_edited_findings || section.summary_text || ''} className="text-sm text-gray-700 leading-relaxed" boldFlowNames entityNames={entityNames} />

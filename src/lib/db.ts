@@ -153,6 +153,29 @@ export async function updateAuditSection(id: string, updates: Partial<AuditSecti
   return data as AuditSection;
 }
 
+export async function updateFlowPerformanceRow(
+  id: string,
+  patch: Partial<Pick<FlowPerformance, 'is_hidden' | 'display_name' | 'display_assessment' | 'display_rating' | 'display_order' | 'notes'>>,
+): Promise<FlowPerformance> {
+  const { data, error } = await supabase
+    .from('flow_performance')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as FlowPerformance;
+}
+
+export async function listFlowPerformance(auditId: string): Promise<FlowPerformance[]> {
+  const { data, error } = await supabase
+    .from('flow_performance')
+    .select('*')
+    .eq('audit_id', auditId);
+  if (error) throw error;
+  return (data ?? []) as FlowPerformance[];
+}
+
 export async function createAuditSections(
   auditId: string,
   sectionKeys: string[],
