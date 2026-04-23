@@ -21,18 +21,21 @@ import {
   extractAccountHealthRawConfig,
   extractCampaignsRawConfig,
   extractEmailDesignRawConfig,
+  extractExecutiveSummaryRawConfig,
   extractFlowsRawConfig,
   extractSegmentationRawConfig,
   extractSignupFormsRawConfig,
   isAccountHealthBlockVisible,
   isCampaignsBlockVisible,
   isEmailDesignBlockVisible,
+  isExecutiveSummaryBlockVisible,
   isFlowsBlockVisible,
   isSegmentationBlockVisible,
   isSignupFormsBlockVisible,
   resolveAccountHealthConfig,
   resolveCampaignsConfig,
   resolveEmailDesignConfig,
+  resolveExecutiveSummaryConfig,
   resolveFlowsConfig,
   resolveRevenueSummaryConfig,
   resolveSegmentationConfig,
@@ -253,6 +256,10 @@ export default function PublicReport() {
     revenueSummaryRaw && typeof revenueSummaryRaw === 'object' ? revenueSummaryRaw : undefined,
   );
 
+  const executiveSummaryCfg = resolveExecutiveSummaryConfig(
+    extractExecutiveSummaryRawConfig(auditLayout),
+  );
+
   const flowsDataAvailable = flowSnapshots.length > 0 || flowPerformance.length > 0;
   const flowsSectionVisible = flowsDataAvailable && !flowsCfg.hidden;
   const healthSectionVisible = healthScores.length > 0 && !accountHealthCfg.hidden;
@@ -262,9 +269,10 @@ export default function PublicReport() {
   const emailDesignSectionVisible =
     Boolean(emailDesign?.client_email_html || emailDesign?.ecd_example) && !emailDesignCfg.hidden;
   const opportunitySectionVisible = !revenueSummaryCfg.hidden;
+  const summarySectionVisible = !executiveSummaryCfg.hidden;
 
   const sectionVisibility: Record<string, boolean> = {
-    summary: true,
+    summary: summarySectionVisible,
     health: healthSectionVisible,
     flows: flowsSectionVisible,
     segments: segmentsSectionVisible,
@@ -346,39 +354,79 @@ export default function PublicReport() {
       </div>
 
       <main className="max-w-[90rem] mx-auto px-6 py-10 space-y-16">
+        {summarySectionVisible && (
         <section id="summary" ref={setRef('summary')}>
-          <SectionHeader number={sectionNumbers['summary'] ?? '01'} label="Executive Summary" />
+          <SectionHeader
+            number={sectionNumbers['summary'] ?? executiveSummaryCfg.sectionNumber ?? '01'}
+            label={executiveSummaryCfg.sectionTitle ?? 'Executive Summary'}
+          />
 
-          <div className="bg-white rounded-2xl p-8 border border-gray-100 mb-6">
-            <p className="text-xs font-semibold text-brand-primary uppercase tracking-widest mb-3">
-              Klaviyo Email Audit — {client.company_name}
-            </p>
-            <h1 className="text-3xl lg:text-4xl font-extrabold text-gray-900 leading-tight mb-5">
-              {client.company_name} could unlock{' '}
-              <span className="text-brand-primary">{formatCurrency(totalRevenue)}/month</span>{' '}
-              in additional email revenue.
-            </h1>
-            <RichAuditText text={toOneOrTwoSentences(execText?.split('\n')[0] || '')} className="text-base text-gray-600 leading-relaxed" />
-          </div>
+          {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'hero') && (() => {
+            const hero = executiveSummaryCfg.blocks.hero;
+            const eyebrow = hero?.eyebrow;
+            const headline = hero?.headline;
+            const intro = hero?.intro;
+            const defaultHeadline = (
+              <>
+                {client.company_name} could unlock{' '}
+                <span className="text-brand-primary">{formatCurrency(totalRevenue)}/month</span>{' '}
+                in additional email revenue.
+              </>
+            );
+            const defaultIntro = toOneOrTwoSentences(execText?.split('\n')[0] || '');
+            return (
+              <div className="bg-white rounded-2xl p-8 border border-gray-100 mb-6">
+                {eyebrow !== null && (
+                  <p className="text-xs font-semibold text-brand-primary uppercase tracking-widest mb-3">
+                    {eyebrow ?? `Klaviyo Email Audit — ${client.company_name}`}
+                  </p>
+                )}
+                {headline !== null && (
+                  <h1 className="text-3xl lg:text-4xl font-extrabold text-gray-900 leading-tight mb-5">
+                    {typeof headline === 'string' && headline.length > 0 ? headline : defaultHeadline}
+                  </h1>
+                )}
+                {intro !== null && (
+                  <RichAuditText
+                    text={typeof intro === 'string' && intro.length > 0 ? intro : defaultIntro}
+                    className="text-base text-gray-600 leading-relaxed"
+                  />
+                )}
+              </div>
+            );
+          })()}
 
-          {(flowSnapshots.length > 0 || campaignSnapshots.length > 0) && (
-            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-4">Account Snapshot</h3>
-              <ReportAccountSnapshot
-                flowSnapshots={flowSnapshots as any}
-                flowPerformance={flowPerformance}
-                campaignSnapshots={campaignSnapshots as any}
-                reportingDiagnostic={reportingDiagnostic}
-                accountSnapshot={accountSnapshot}
-              />
-            </div>
-          )}
+          {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'accountSnapshot') &&
+            (flowSnapshots.length > 0 || campaignSnapshots.length > 0) && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
+                <h3 className="text-lg font-bold text-gray-900 mb-4">
+                  {executiveSummaryCfg.blocks.accountSnapshot?.title ?? 'Account Snapshot'}
+                </h3>
+                <ReportAccountSnapshot
+                  flowSnapshots={flowSnapshots as any}
+                  flowPerformance={flowPerformance}
+                  campaignSnapshots={campaignSnapshots as any}
+                  reportingDiagnostic={reportingDiagnostic}
+                  accountSnapshot={accountSnapshot}
+                />
+              </div>
+            )}
 
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
+          {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'strengths') ||
+            isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'concerns')) && (
+          <div className={`grid grid-cols-1 ${
+            isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'strengths') &&
+            isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'concerns')
+              ? 'lg:grid-cols-2'
+              : ''
+          } gap-5 mb-6`}>
+            {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'strengths') && (
             <div className="bg-white rounded-xl p-5 border border-gray-100">
               <div className="flex items-center gap-2 mb-4">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <h3 className="text-sm font-semibold text-gray-900">What's Working</h3>
+                <h3 className="text-sm font-semibold text-gray-900">
+                  {executiveSummaryCfg.blocks.strengths?.title ?? "What's Working"}
+                </h3>
               </div>
               <ul className="space-y-3">
                 {aiStrengths.length > 0 ? aiStrengths.map((s, i) => {
@@ -399,10 +447,14 @@ export default function PublicReport() {
                 )}
               </ul>
             </div>
+            )}
+            {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'concerns') && (
             <div className="bg-white rounded-xl p-5 border border-gray-100">
               <div className="flex items-center gap-2 mb-4">
                 <AlertTriangle className="w-4 h-4 text-red-400" />
-                <h3 className="text-sm font-semibold text-gray-900">What Needs Attention</h3>
+                <h3 className="text-sm font-semibold text-gray-900">
+                  {executiveSummaryCfg.blocks.concerns?.title ?? 'What Needs Attention'}
+                </h3>
               </div>
               <ul className="space-y-3">
                 {aiConcerns.length > 0 ? aiConcerns.map((s, i) => {
@@ -423,10 +475,15 @@ export default function PublicReport() {
                 )}
               </ul>
             </div>
+            )}
           </div>
+          )}
 
+          {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'topOpportunities') && (
           <div>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">Top 3 Opportunities</h3>
+            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
+              {executiveSummaryCfg.blocks.topOpportunities?.title ?? 'Top 3 Opportunities'}
+            </h3>
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               {topOpportunities.slice(0, 3).map((s, i) => (
                 <div key={s.id} className="bg-white rounded-xl p-5 border border-gray-100 relative overflow-hidden">
@@ -447,7 +504,9 @@ export default function PublicReport() {
               ))}
             </div>
           </div>
+          )}
         </section>
+        )}
 
         {healthSectionVisible && (
           <section id="health" ref={setRef('health')}>

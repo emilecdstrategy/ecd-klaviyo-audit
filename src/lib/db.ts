@@ -176,6 +176,86 @@ export async function listFlowPerformance(auditId: string): Promise<FlowPerforma
   return (data ?? []) as FlowPerformance[];
 }
 
+// -----------------------------------------------------------------------------
+// Per-row overrides for segment / form / campaign snapshots
+// -----------------------------------------------------------------------------
+
+type SnapshotRowPatch = {
+  is_hidden?: boolean;
+  display_name?: string | null;
+  display_notes?: string | null;
+  display_order?: number | null;
+};
+
+export async function listSegmentSnapshots(auditId: string): Promise<KlaviyoSegmentSnapshot[]> {
+  const { data, error } = await supabase
+    .from('klaviyo_segment_snapshots')
+    .select('*')
+    .eq('audit_id', auditId);
+  if (error) throw error;
+  return (data ?? []) as KlaviyoSegmentSnapshot[];
+}
+
+export async function updateSegmentSnapshotRow(
+  id: string,
+  patch: SnapshotRowPatch,
+): Promise<KlaviyoSegmentSnapshot> {
+  const { data, error } = await supabase
+    .from('klaviyo_segment_snapshots')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as KlaviyoSegmentSnapshot;
+}
+
+export async function listFormSnapshots(auditId: string): Promise<KlaviyoFormSnapshot[]> {
+  const { data, error } = await supabase
+    .from('klaviyo_form_snapshots')
+    .select('*')
+    .eq('audit_id', auditId);
+  if (error) throw error;
+  return (data ?? []) as KlaviyoFormSnapshot[];
+}
+
+export async function updateFormSnapshotRow(
+  id: string,
+  patch: SnapshotRowPatch,
+): Promise<KlaviyoFormSnapshot> {
+  const { data, error } = await supabase
+    .from('klaviyo_form_snapshots')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as KlaviyoFormSnapshot;
+}
+
+export async function listCampaignSnapshots(auditId: string): Promise<KlaviyoCampaignSnapshot[]> {
+  const { data, error } = await supabase
+    .from('klaviyo_campaign_snapshots')
+    .select('*')
+    .eq('audit_id', auditId);
+  if (error) throw error;
+  return (data ?? []) as KlaviyoCampaignSnapshot[];
+}
+
+export async function updateCampaignSnapshotRow(
+  id: string,
+  patch: SnapshotRowPatch,
+): Promise<KlaviyoCampaignSnapshot> {
+  const { data, error } = await supabase
+    .from('klaviyo_campaign_snapshots')
+    .update(patch)
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as KlaviyoCampaignSnapshot;
+}
+
 export async function createAuditSections(
   auditId: string,
   sectionKeys: string[],

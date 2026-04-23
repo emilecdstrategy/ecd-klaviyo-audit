@@ -5,6 +5,8 @@ import type {
   CampaignsSectionConfig,
   EmailDesignBlockKey,
   EmailDesignSectionConfig,
+  ExecutiveSummaryBlockKey,
+  ExecutiveSummarySectionConfig,
   FlowsBlockKey,
   FlowsSectionConfig,
   FlowsSectionConfigRoot,
@@ -19,6 +21,7 @@ import {
   DEFAULT_ACCOUNT_HEALTH_SECTION,
   DEFAULT_CAMPAIGNS_SECTION,
   DEFAULT_EMAIL_DESIGN_SECTION,
+  DEFAULT_EXECUTIVE_SUMMARY_SECTION,
   DEFAULT_FLOWS_SECTION,
   DEFAULT_REVENUE_SUMMARY_SECTION,
   DEFAULT_SEGMENTATION_SECTION,
@@ -277,6 +280,31 @@ export function resolveRevenueSummaryConfig(
 export function isRevenueSummaryBlockVisible(
   resolved: RevenueSummarySectionConfig,
   block: RevenueSummaryBlockKey,
+): boolean {
+  return isBlockVisible(resolved, block);
+}
+
+// -----------------------------------------------------------------------------
+// Executive Summary
+// -----------------------------------------------------------------------------
+
+export function extractExecutiveSummaryRawConfig(
+  layout: Record<string, unknown> | null | undefined,
+): Partial<ExecutiveSummarySectionConfig> | undefined {
+  return extractSubtree<ExecutiveSummarySectionConfig>(layout, 'executive_summary');
+}
+
+export function resolveExecutiveSummaryConfig(
+  raw: Partial<ExecutiveSummarySectionConfig> | null | undefined,
+  defaults: ExecutiveSummarySectionConfig = DEFAULT_EXECUTIVE_SUMMARY_SECTION,
+): ExecutiveSummarySectionConfig {
+  if (!raw) return defaults;
+  return deepMerge(defaults, raw);
+}
+
+export function isExecutiveSummaryBlockVisible(
+  resolved: ExecutiveSummarySectionConfig,
+  block: ExecutiveSummaryBlockKey,
 ): boolean {
   return isBlockVisible(resolved, block);
 }

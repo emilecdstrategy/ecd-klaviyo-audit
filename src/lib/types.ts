@@ -100,6 +100,10 @@ export interface KlaviyoCampaignSnapshot {
   created_at_klaviyo: string | null;
   updated_at_klaviyo: string | null;
   raw: any;
+  is_hidden?: boolean;
+  display_name?: string | null;
+  display_notes?: string | null;
+  display_order?: number | null;
 }
 
 export interface KlaviyoFormSnapshot {
@@ -113,6 +117,10 @@ export interface KlaviyoFormSnapshot {
   created_at_klaviyo: string | null;
   updated_at_klaviyo: string | null;
   raw: any;
+  is_hidden?: boolean;
+  display_name?: string | null;
+  display_notes?: string | null;
+  display_order?: number | null;
 }
 
 export interface KlaviyoSegmentSnapshot {
@@ -124,6 +132,10 @@ export interface KlaviyoSegmentSnapshot {
   created_at_klaviyo: string | null;
   updated_at_klaviyo: string | null;
   raw: any;
+  is_hidden?: boolean;
+  display_name?: string | null;
+  display_notes?: string | null;
+  display_order?: number | null;
 }
 
 export interface Recommendation {

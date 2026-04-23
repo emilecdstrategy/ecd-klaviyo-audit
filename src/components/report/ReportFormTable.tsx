@@ -20,7 +20,16 @@ function StatusBadge({ status }: { status: string }) {
 const COLLAPSED_COUNT = 5;
 
 export default function ReportFormTable({ forms }: { forms: KlaviyoFormSnapshot[] }) {
-  const rows = [...forms].sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  const rows = [...forms]
+    .filter(f => !f.is_hidden)
+    .sort((a, b) => {
+      if (typeof a.display_order === 'number' && typeof b.display_order === 'number') {
+        return a.display_order - b.display_order;
+      }
+      if (typeof a.display_order === 'number') return -1;
+      if (typeof b.display_order === 'number') return 1;
+      return ((a.display_name ?? a.name) || '').localeCompare((b.display_name ?? b.name) || '');
+    });
   const [expanded, setExpanded] = useState(false);
   const needsExpand = rows.length > COLLAPSED_COUNT;
   const { wrapRef, maxHeight } = useExpandableTableClip(rows.length, expanded, COLLAPSED_COUNT);
@@ -48,8 +57,14 @@ export default function ReportFormTable({ forms }: { forms: KlaviyoFormSnapshot[
               <tr key={f.id} className={`border-b border-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
                 <td className="px-4 py-3">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">{f.name || '—'}</p>
-                    <p className="text-xs text-gray-400 truncate">{f.form_id}</p>
+                    <p className="text-sm font-semibold text-gray-900 truncate">
+                      {f.display_name || f.name || '—'}
+                    </p>
+                    {f.display_notes ? (
+                      <p className="text-xs text-gray-500 leading-relaxed mt-0.5">{f.display_notes}</p>
+                    ) : (
+                      <p className="text-xs text-gray-400 truncate">{f.form_id}</p>
+                    )}
                   </div>
                 </td>
                 <td className="px-4 py-3">

@@ -4,7 +4,9 @@ import { FileText, BarChart3, LayoutGrid as Layout, Target, Mail, Palette, FormI
 import TopBar from '../components/layout/TopBar';
 import AuditSectionEditor from '../components/audit/AuditSectionEditor';
 import FlowPerformanceEditor from '../components/audit/FlowPerformanceEditor';
+import SnapshotRowsEditor from '../components/audit/SnapshotRowsEditor';
 import RevenueSummaryLayoutEditor from '../components/audit/RevenueSummaryLayoutEditor';
+import ExecutiveSummaryLayoutEditor from '../components/audit/ExecutiveSummaryLayoutEditor';
 import RevenueOpportunityCard from '../components/ui/RevenueOpportunityCard';
 import ShareLinkPanel from '../components/ui/ShareLinkPanel';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -404,6 +406,7 @@ export default function AuditWorkspace() {
                 />
               </div>
 
+              <ExecutiveSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
               <RevenueSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
             </div>
           ) : currentSection ? (
@@ -414,6 +417,15 @@ export default function AuditWorkspace() {
               />
               {activeSection === 'flows' && (
                 <FlowPerformanceEditor auditId={audit.id} />
+              )}
+              {activeSection === 'segmentation' && (
+                <SnapshotRowsEditor auditId={audit.id} kind="segment" />
+              )}
+              {activeSection === 'signup_forms' && (
+                <SnapshotRowsEditor auditId={audit.id} kind="form" />
+              )}
+              {activeSection === 'campaigns' && (
+                <SnapshotRowsEditor auditId={audit.id} kind="campaign" />
               )}
             </>
           ) : (

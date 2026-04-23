@@ -2,6 +2,7 @@ import type {
   AccountHealthSectionConfig,
   CampaignsSectionConfig,
   EmailDesignSectionConfig,
+  ExecutiveSummarySectionConfig,
   FlowsSectionConfig,
   RevenueSummarySectionConfig,
   SegmentationSectionConfig,
@@ -234,6 +235,45 @@ export const DEFAULT_REVENUE_SUMMARY_SECTION: RevenueSummarySectionConfig = {
       hidden: false,
       title: 'Implementation Timeline',
       subtitle: 'Suggested rollout order — work through each phase before moving to the next.',
+    },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Executive Summary / Hero (section 01)
+// -----------------------------------------------------------------------------
+
+export const DEFAULT_EXECUTIVE_SUMMARY_SECTION: ExecutiveSummarySectionConfig = {
+  hidden: false,
+  sectionNumber: '01',
+  sectionTitle: 'Executive Summary',
+  sectionSubtitle: undefined,
+  blocks: {
+    hero: {
+      hidden: false,
+      headline: undefined,
+      intro: undefined,
+      eyebrow: undefined,
+    },
+    accountSnapshot: {
+      hidden: false,
+      title: 'Account Snapshot',
+      subtitle: undefined,
+    },
+    strengths: {
+      hidden: false,
+      title: "What's Working",
+      subtitle: undefined,
+    },
+    concerns: {
+      hidden: false,
+      title: 'What Needs Attention',
+      subtitle: undefined,
+    },
+    topOpportunities: {
+      hidden: false,
+      title: 'Top 3 Opportunities',
+      subtitle: undefined,
     },
   },
 };

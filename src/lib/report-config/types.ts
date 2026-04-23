@@ -186,6 +186,27 @@ export interface RevenueSummarySectionConfig extends BaseSectionConfig {
 
 export type RevenueSummaryBlockKey = keyof NonNullable<RevenueSummarySectionConfig['blocks']>;
 
+// ----- Executive Summary (section 01, hero) ---------------------------------
+
+export interface ExecutiveSummarySectionConfig extends BaseSectionConfig {
+  blocks: {
+    hero?: GenericBlockConfig & {
+      /** Override the headline; when omitted the auto-generated "X could unlock $Y" line is used. */
+      headline?: string | null;
+      /** Override the intro paragraph; when null the paragraph is hidden. */
+      intro?: string | null;
+      /** Override the leading eyebrow tag ("Klaviyo Email Audit — X"). Null hides it. */
+      eyebrow?: string | null;
+    };
+    accountSnapshot?: GenericBlockConfig;
+    strengths?: GenericBlockConfig;
+    concerns?: GenericBlockConfig;
+    topOpportunities?: GenericBlockConfig;
+  };
+}
+
+export type ExecutiveSummaryBlockKey = keyof NonNullable<ExecutiveSummarySectionConfig['blocks']>;
+
 // -----------------------------------------------------------------------------
 // Root shapes per section row
 // -----------------------------------------------------------------------------
