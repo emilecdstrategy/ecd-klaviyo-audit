@@ -7,12 +7,21 @@ import StatusBadge from '../ui/StatusBadge';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import {
+  DEFAULT_ACCOUNT_HEALTH_SECTION,
+  DEFAULT_CAMPAIGNS_SECTION,
+  DEFAULT_EMAIL_DESIGN_SECTION,
   DEFAULT_FLOWS_SECTION,
   DEFAULT_FLOWS_VISIBLE_ROWS,
   DEFAULT_FLOWS_HEALTH_BENCHMARKS,
+  DEFAULT_SEGMENTATION_SECTION,
+  DEFAULT_SIGNUP_FORMS_SECTION,
 } from '../../lib/report-config/defaults';
 import { extractFlowsRawConfig, resolveFlowsConfig } from '../../lib/report-config/resolve';
-import type { FlowsBlockKey, FlowsSectionConfig } from '../../lib/report-config/types';
+import type {
+  BaseSectionConfig,
+  FlowsBlockKey,
+  FlowsSectionConfig,
+} from '../../lib/report-config/types';
 
 interface AuditSectionEditorProps {
   section: AuditSection;
@@ -29,6 +38,150 @@ const FLOWS_BLOCK_ORDER: { key: FlowsBlockKey; label: string; hint: string }[] =
   { key: 'inventoryTable', label: 'Full Flow Inventory', hint: 'All flows pulled from Klaviyo.' },
   { key: 'rubric', label: 'Core Flows Matrix', hint: 'Structured rubric from AI analysis.' },
 ];
+
+type GenericBlockDescriptor = {
+  key: string;
+  label: string;
+  hint: string;
+  kind: 'narrative' | 'titled' | 'titled-with-subtitle' | 'simple';
+};
+
+type GenericSectionDescriptor = {
+  defaults: BaseSectionConfig & { blocks: Record<string, unknown> };
+  blocks: GenericBlockDescriptor[];
+};
+
+const GENERIC_SECTION_REGISTRY: Record<string, GenericSectionDescriptor> = {
+  account_health: {
+    defaults: DEFAULT_ACCOUNT_HEALTH_SECTION,
+    blocks: [
+      {
+        key: 'healthScoreTable',
+        label: 'Health Score Table',
+        hint: 'Category status table (flows, segmentation, campaigns, signup forms).',
+        kind: 'simple',
+      },
+    ],
+  },
+  segmentation: {
+    defaults: DEFAULT_SEGMENTATION_SECTION,
+    blocks: [
+      {
+        key: 'narrative',
+        label: 'Narrative (Current vs Optimized)',
+        hint: 'Current/optimized state commentary plus key takeaway.',
+        kind: 'narrative',
+      },
+      {
+        key: 'rubric',
+        label: 'Rubric',
+        hint: 'Structured rubric notes from the AI analysis.',
+        kind: 'titled',
+      },
+      {
+        key: 'segmentTable',
+        label: 'Segment Inventory Table',
+        hint: 'All segments pulled from Klaviyo for this audit.',
+        kind: 'titled-with-subtitle',
+      },
+    ],
+  },
+  signup_forms: {
+    defaults: DEFAULT_SIGNUP_FORMS_SECTION,
+    blocks: [
+      {
+        key: 'narrative',
+        label: 'Narrative (Current vs Optimized)',
+        hint: 'Current/optimized state commentary plus key takeaway.',
+        kind: 'narrative',
+      },
+      {
+        key: 'rubric',
+        label: 'Rubric',
+        hint: 'Structured rubric notes from the AI analysis.',
+        kind: 'titled',
+      },
+      {
+        key: 'formTable',
+        label: 'Signup Form Inventory Table',
+        hint: 'All signup forms pulled from Klaviyo for this audit.',
+        kind: 'titled-with-subtitle',
+      },
+    ],
+  },
+  campaigns: {
+    defaults: DEFAULT_CAMPAIGNS_SECTION,
+    blocks: [
+      {
+        key: 'narrative',
+        label: 'Narrative (Current vs Optimized)',
+        hint: 'Current/optimized state commentary plus key takeaway.',
+        kind: 'narrative',
+      },
+      {
+        key: 'rubric',
+        label: 'Rubric',
+        hint: 'Structured rubric notes from the AI analysis.',
+        kind: 'titled',
+      },
+      {
+        key: 'campaignTable',
+        label: 'Campaign Inventory Table',
+        hint: 'All campaigns pulled from Klaviyo for this audit.',
+        kind: 'titled-with-subtitle',
+      },
+    ],
+  },
+  email_design: {
+    defaults: DEFAULT_EMAIL_DESIGN_SECTION,
+    blocks: [
+      {
+        key: 'comparison',
+        label: 'Email Design Comparison',
+        hint: 'Side-by-side comparison of a recent campaign email and an ECD benchmark.',
+        kind: 'titled-with-subtitle',
+      },
+    ],
+  },
+};
+
+function writeGenericConfigPatch(
+  base: Record<string, unknown> | null | undefined,
+  sectionKey: string,
+  patch: { hidden?: boolean; sectionTitle?: string; sectionNumber?: string },
+): Record<string, unknown> {
+  const root = (base ?? {}) as Record<string, unknown>;
+  const existing =
+    root[sectionKey] && typeof root[sectionKey] === 'object' && !Array.isArray(root[sectionKey])
+      ? (root[sectionKey] as Record<string, unknown>)
+      : {};
+  const merged = { ...existing, ...patch };
+  return { ...root, [sectionKey]: merged };
+}
+
+function writeGenericBlockPatch(
+  base: Record<string, unknown> | null | undefined,
+  sectionKey: string,
+  blockKey: string,
+  blockPatch: Record<string, unknown>,
+): Record<string, unknown> {
+  const root = (base ?? {}) as Record<string, unknown>;
+  const existing =
+    root[sectionKey] && typeof root[sectionKey] === 'object' && !Array.isArray(root[sectionKey])
+      ? (root[sectionKey] as Record<string, unknown>)
+      : {};
+  const prevBlocks =
+    existing.blocks && typeof existing.blocks === 'object' && !Array.isArray(existing.blocks)
+      ? (existing.blocks as Record<string, unknown>)
+      : {};
+  const prevBlock =
+    prevBlocks[blockKey] && typeof prevBlocks[blockKey] === 'object' && !Array.isArray(prevBlocks[blockKey])
+      ? (prevBlocks[blockKey] as Record<string, unknown>)
+      : {};
+  const mergedBlock = { ...prevBlock, ...blockPatch };
+  const mergedBlocks = { ...prevBlocks, [blockKey]: mergedBlock };
+  return { ...root, [sectionKey]: { ...existing, blocks: mergedBlocks } };
+}
 
 const RUBRIC_FIELDS: Record<string, { path: string[]; label: string; placeholder?: string; rows?: number }[]> = {
   segmentation: [
@@ -161,14 +314,22 @@ export default function AuditSectionEditor({
   const sectionConfig = (section.section_config as Record<string, unknown> | null | undefined) ?? {};
   const flowsRaw = extractFlowsRawConfig(sectionConfig);
   const resolvedFlows = resolveFlowsConfig(flowsRaw);
-  const sectionHidden = Boolean(flowsRaw?.hidden) || Boolean((sectionConfig as { hidden?: boolean }).hidden);
+  const genericRaw = (() => {
+    const bucket = (sectionConfig as Record<string, unknown>)[section.section_key];
+    return bucket && typeof bucket === 'object' && !Array.isArray(bucket)
+      ? (bucket as Record<string, unknown>)
+      : undefined;
+  })();
+  const sectionHidden = isFlows
+    ? Boolean(flowsRaw?.hidden)
+    : Boolean((genericRaw as { hidden?: boolean } | undefined)?.hidden);
 
   const onSetFlowsSectionHidden = (hidden: boolean) => {
     onUpdate({ section_config: writeFlowsConfigPatch(sectionConfig, { hidden }) });
   };
 
   const onSetGenericSectionHidden = (hidden: boolean) => {
-    onUpdate({ section_config: { ...sectionConfig, hidden } });
+    onUpdate({ section_config: writeGenericConfigPatch(sectionConfig, section.section_key, { hidden }) });
   };
 
   return (
@@ -228,6 +389,7 @@ export default function AuditSectionEditor({
                 isFlows={isFlows}
                 flowsRaw={flowsRaw}
                 resolvedFlows={resolvedFlows}
+                genericRaw={genericRaw}
                 onSetFlowsSectionHidden={onSetFlowsSectionHidden}
                 onSetGenericSectionHidden={onSetGenericSectionHidden}
               />
@@ -406,6 +568,7 @@ function LayoutTab({
   isFlows,
   flowsRaw,
   resolvedFlows,
+  genericRaw,
   onSetFlowsSectionHidden,
   onSetGenericSectionHidden,
 }: {
@@ -416,9 +579,11 @@ function LayoutTab({
   isFlows: boolean;
   flowsRaw: Partial<FlowsSectionConfig> | undefined;
   resolvedFlows: FlowsSectionConfig;
+  genericRaw: Record<string, unknown> | undefined;
   onSetFlowsSectionHidden: (hidden: boolean) => void;
   onSetGenericSectionHidden: (hidden: boolean) => void;
 }) {
+  const genericDescriptor = GENERIC_SECTION_REGISTRY[section.section_key];
   return (
     <div className="space-y-5">
       <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4">
@@ -579,11 +744,193 @@ function LayoutTab({
             })}
           </div>
         </div>
+      ) : genericDescriptor ? (
+        <GenericLayoutPanel
+          sectionKey={section.section_key}
+          descriptor={genericDescriptor}
+          sectionConfig={sectionConfig}
+          genericRaw={genericRaw}
+          onUpdate={onUpdate}
+        />
       ) : (
         <p className="text-sm text-gray-500 italic">
-          Per-block layout overrides are currently available for the Flows section. The rest of the report inherits its default layout.
+          Per-block layout overrides are not available for this section yet.
         </p>
       )}
+    </div>
+  );
+}
+
+function GenericLayoutPanel({
+  sectionKey,
+  descriptor,
+  sectionConfig,
+  genericRaw,
+  onUpdate,
+}: {
+  sectionKey: string;
+  descriptor: GenericSectionDescriptor;
+  sectionConfig: Record<string, unknown>;
+  genericRaw: Record<string, unknown> | undefined;
+  onUpdate: (updates: Partial<AuditSection>) => void;
+}) {
+  const sectionTitle = (genericRaw as { sectionTitle?: string } | undefined)?.sectionTitle ?? '';
+  const sectionNumber = (genericRaw as { sectionNumber?: string } | undefined)?.sectionNumber ?? '';
+  const blocksRaw =
+    genericRaw?.blocks && typeof genericRaw.blocks === 'object' && !Array.isArray(genericRaw.blocks)
+      ? (genericRaw.blocks as Record<string, Record<string, unknown>>)
+      : {};
+
+  return (
+    <div className="rounded-xl border border-gray-100 p-4">
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+        {SECTION_LABELS[sectionKey] || sectionKey} section layout
+      </p>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 mb-4">
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Section title</label>
+          <input
+            type="text"
+            value={sectionTitle}
+            placeholder={descriptor.defaults.sectionTitle ?? ''}
+            onChange={e =>
+              onUpdate({
+                section_config: writeGenericConfigPatch(sectionConfig, sectionKey, {
+                  sectionTitle: e.target.value || undefined,
+                }),
+              })
+            }
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Section number</label>
+          <input
+            type="text"
+            value={sectionNumber}
+            placeholder={descriptor.defaults.sectionNumber ?? ''}
+            onChange={e =>
+              onUpdate({
+                section_config: writeGenericConfigPatch(sectionConfig, sectionKey, {
+                  sectionNumber: e.target.value || undefined,
+                }),
+              })
+            }
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+          />
+        </div>
+      </div>
+
+      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Blocks</p>
+      <div className="space-y-2">
+        {descriptor.blocks.map(block => {
+          const blockCfg = (blocksRaw[block.key] ?? {}) as Record<string, unknown>;
+          const defaultBlock =
+            (descriptor.defaults.blocks[block.key] ?? {}) as Record<string, unknown>;
+          const hidden = Boolean(blockCfg.hidden);
+          const currentTitle = (blockCfg.title as string | undefined) ?? '';
+          const currentSubtitle = (blockCfg.subtitle as string | undefined) ?? '';
+          const currentNarrativeA = (blockCfg.currentTitle as string | undefined) ?? '';
+          const currentNarrativeB = (blockCfg.optimizedTitle as string | undefined) ?? '';
+          return (
+            <div key={block.key} className="rounded-lg border border-gray-100">
+              <ToggleRow
+                label={block.label}
+                hint={block.hint}
+                checked={!hidden}
+                onChange={v =>
+                  onUpdate({
+                    section_config: writeGenericBlockPatch(sectionConfig, sectionKey, block.key, {
+                      hidden: !v,
+                    }),
+                  })
+                }
+              />
+              {!hidden && (
+                <div className="px-3 pb-3 space-y-2">
+                  {block.kind === 'narrative' && (
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-500 mb-1">
+                          Current-state heading
+                        </label>
+                        <input
+                          type="text"
+                          value={currentNarrativeA}
+                          placeholder={(defaultBlock.currentTitle as string | undefined) ?? 'Current State'}
+                          onChange={e =>
+                            onUpdate({
+                              section_config: writeGenericBlockPatch(sectionConfig, sectionKey, block.key, {
+                                currentTitle: e.target.value || undefined,
+                              }),
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[11px] font-medium text-gray-500 mb-1">
+                          Optimized-state heading
+                        </label>
+                        <input
+                          type="text"
+                          value={currentNarrativeB}
+                          placeholder={(defaultBlock.optimizedTitle as string | undefined) ?? 'Optimized State'}
+                          onChange={e =>
+                            onUpdate({
+                              section_config: writeGenericBlockPatch(sectionConfig, sectionKey, block.key, {
+                                optimizedTitle: e.target.value || undefined,
+                              }),
+                            })
+                          }
+                          className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        />
+                      </div>
+                    </div>
+                  )}
+                  {(block.kind === 'titled' || block.kind === 'titled-with-subtitle') && (
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 mb-1">Block title</label>
+                      <input
+                        type="text"
+                        value={currentTitle}
+                        placeholder={(defaultBlock.title as string | undefined) ?? ''}
+                        onChange={e =>
+                          onUpdate({
+                            section_config: writeGenericBlockPatch(sectionConfig, sectionKey, block.key, {
+                              title: e.target.value || undefined,
+                            }),
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                    </div>
+                  )}
+                  {block.kind === 'titled-with-subtitle' && (
+                    <div>
+                      <label className="block text-[11px] font-medium text-gray-500 mb-1">Subtitle</label>
+                      <input
+                        type="text"
+                        value={currentSubtitle}
+                        placeholder={(defaultBlock.subtitle as string | undefined) ?? ''}
+                        onChange={e =>
+                          onUpdate({
+                            section_config: writeGenericBlockPatch(sectionConfig, sectionKey, block.key, {
+                              subtitle: e.target.value || undefined,
+                            }),
+                          })
+                        }
+                        className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }

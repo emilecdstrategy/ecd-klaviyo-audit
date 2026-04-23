@@ -1,4 +1,12 @@
-import type { FlowsSectionConfig } from './types';
+import type {
+  AccountHealthSectionConfig,
+  CampaignsSectionConfig,
+  EmailDesignSectionConfig,
+  FlowsSectionConfig,
+  RevenueSummarySectionConfig,
+  SegmentationSectionConfig,
+  SignupFormsSectionConfig,
+} from './types';
 
 /**
  * Defaults registry for the Flows section.
@@ -77,6 +85,155 @@ export const DEFAULT_FLOWS_SECTION: FlowsSectionConfig = {
     rubric: {
       hidden: false,
       title: 'Core Flows Matrix',
+    },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Account Health (section 02)
+// -----------------------------------------------------------------------------
+
+export const DEFAULT_ACCOUNT_HEALTH_SECTION: AccountHealthSectionConfig = {
+  hidden: false,
+  sectionNumber: '02',
+  sectionTitle: 'Account Health Score',
+  sectionSubtitle: undefined,
+  blocks: {
+    healthScoreTable: {
+      hidden: false,
+      title: undefined,
+      subtitle: undefined,
+    },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Segmentation (section 04)
+// -----------------------------------------------------------------------------
+
+export const DEFAULT_SEGMENTATION_SECTION: SegmentationSectionConfig = {
+  hidden: false,
+  sectionNumber: '04',
+  sectionTitle: 'Segments',
+  sectionSubtitle: undefined,
+  blocks: {
+    narrative: {
+      hidden: false,
+      currentTitle: 'Current State',
+      optimizedTitle: 'Optimized State',
+    },
+    rubric: {
+      hidden: false,
+      title: undefined,
+    },
+    segmentTable: {
+      hidden: false,
+      title: undefined,
+      subtitle: 'Inventory of segments pulled directly from Klaviyo for this audit.',
+    },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Signup Forms (section 05)
+// -----------------------------------------------------------------------------
+
+export const DEFAULT_SIGNUP_FORMS_SECTION: SignupFormsSectionConfig = {
+  hidden: false,
+  sectionNumber: '05',
+  sectionTitle: 'Signup Forms',
+  sectionSubtitle: undefined,
+  blocks: {
+    narrative: {
+      hidden: false,
+      currentTitle: 'Current State',
+      optimizedTitle: 'Optimized State',
+    },
+    rubric: {
+      hidden: false,
+      title: undefined,
+    },
+    formTable: {
+      hidden: false,
+      title: undefined,
+      subtitle: 'Inventory of signup forms pulled directly from Klaviyo for this audit.',
+    },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Campaigns (section 06)
+// -----------------------------------------------------------------------------
+
+export const DEFAULT_CAMPAIGNS_SECTION: CampaignsSectionConfig = {
+  hidden: false,
+  sectionNumber: '06',
+  sectionTitle: 'Campaigns',
+  sectionSubtitle: undefined,
+  blocks: {
+    narrative: {
+      hidden: false,
+      currentTitle: 'Current State',
+      optimizedTitle: 'Optimized State',
+    },
+    rubric: {
+      hidden: false,
+      title: undefined,
+    },
+    campaignTable: {
+      hidden: false,
+      title: undefined,
+      subtitle: 'Inventory of campaigns pulled directly from Klaviyo for this audit.',
+    },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Email Design (section 07)
+// -----------------------------------------------------------------------------
+
+export const DEFAULT_EMAIL_DESIGN_SECTION: EmailDesignSectionConfig = {
+  hidden: false,
+  sectionNumber: '07',
+  sectionTitle: 'Email Design',
+  sectionSubtitle: undefined,
+  blocks: {
+    comparison: {
+      hidden: false,
+      title: undefined,
+      subtitle: 'Side-by-side comparison of a recent campaign email and an ECD-designed benchmark for your industry.',
+    },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Revenue Summary / Opportunity (section 08)
+// -----------------------------------------------------------------------------
+
+export const DEFAULT_REVENUE_SUMMARY_DISCLAIMER =
+  'Revenue estimates use industry benchmarks and your account metrics. Actual results depend on execution, seasonality, offers, ' +
+  'and list health. Figures represent opportunity, not guaranteed outcomes.';
+
+export const DEFAULT_REVENUE_SUMMARY_SECTION: RevenueSummarySectionConfig = {
+  hidden: false,
+  sectionNumber: '08',
+  sectionTitle: 'Revenue Opportunity',
+  sectionSubtitle: undefined,
+  blocks: {
+    metrics: {
+      hidden: false,
+      title: undefined,
+    },
+    totalBanner: {
+      hidden: false,
+      title: 'Total identified opportunity',
+      subtitle: 'Additional email-attributed revenue identified in this audit',
+      disclaimer: DEFAULT_REVENUE_SUMMARY_DISCLAIMER,
+    },
+    timeline: {
+      hidden: false,
+      title: 'Implementation Timeline',
+      subtitle: 'Suggested rollout order — work through each phase before moving to the next.',
     },
   },
 };

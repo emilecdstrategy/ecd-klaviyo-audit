@@ -17,7 +17,29 @@ import { RichAuditText } from '../components/ui/RichAuditText';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign } from '../lib/types';
 import { getPublicReportByToken, getPlatformSettings } from '../lib/db';
 import { cn } from '../lib/utils';
-import { extractFlowsRawConfig, isFlowsBlockVisible, resolveFlowsConfig } from '../lib/report-config/resolve';
+import {
+  extractAccountHealthRawConfig,
+  extractCampaignsRawConfig,
+  extractEmailDesignRawConfig,
+  extractFlowsRawConfig,
+  extractSegmentationRawConfig,
+  extractSignupFormsRawConfig,
+  isAccountHealthBlockVisible,
+  isCampaignsBlockVisible,
+  isEmailDesignBlockVisible,
+  isFlowsBlockVisible,
+  isSegmentationBlockVisible,
+  isSignupFormsBlockVisible,
+  resolveAccountHealthConfig,
+  resolveCampaignsConfig,
+  resolveEmailDesignConfig,
+  resolveFlowsConfig,
+  resolveRevenueSummaryConfig,
+  resolveSegmentationConfig,
+  resolveSignupFormsConfig,
+} from '../lib/report-config/resolve';
+import { DEFAULT_REVENUE_SUMMARY_SECTION } from '../lib/report-config/defaults';
+import type { RevenueSummarySectionConfig } from '../lib/report-config/types';
 
 const NAV_ITEMS = [
   { id: 'summary', label: 'Summary' },
@@ -196,18 +218,50 @@ export default function PublicReport() {
 
   const stripInlineBoldMarkers = (s: string) => s.replace(/\*\*(.+?)\*\*/g, '$1');
 
+  const pickConfig = (key: string) =>
+    (reportSections.find(s => s.section_key === key)?.section_config as Record<string, unknown> | null | undefined) ?? null;
+
   const flowsSectionRow = reportSections.find(s => s.section_key === 'flows');
-  const flowsCfg = resolveFlowsConfig(
-    extractFlowsRawConfig((flowsSectionRow?.section_config as Record<string, unknown> | null | undefined) ?? null),
+  const flowsCfg = resolveFlowsConfig(extractFlowsRawConfig(pickConfig('flows')));
+
+  const accountHealthCfg = resolveAccountHealthConfig(
+    extractAccountHealthRawConfig(pickConfig('account_health')),
+  );
+
+  const segmentationSectionRow = reportSections.find(s => s.section_key === 'segmentation');
+  const segmentationCfg = resolveSegmentationConfig(
+    extractSegmentationRawConfig(pickConfig('segmentation')),
+  );
+
+  const signupFormsSectionRow = reportSections.find(s => s.section_key === 'signup_forms');
+  const signupFormsCfg = resolveSignupFormsConfig(
+    extractSignupFormsRawConfig(pickConfig('signup_forms')),
+  );
+
+  const campaignsSectionRow = reportSections.find(s => s.section_key === 'campaigns');
+  const campaignsCfg = resolveCampaignsConfig(
+    extractCampaignsRawConfig(pickConfig('campaigns')),
+  );
+
+  const emailDesignCfg = resolveEmailDesignConfig(
+    extractEmailDesignRawConfig(pickConfig('email_design')),
+  );
+
+  const auditLayout = (audit.layout as Record<string, unknown> | null | undefined) ?? {};
+  const revenueSummaryRaw = auditLayout.revenue_summary as Partial<RevenueSummarySectionConfig> | null | undefined;
+  const revenueSummaryCfg = resolveRevenueSummaryConfig(
+    revenueSummaryRaw && typeof revenueSummaryRaw === 'object' ? revenueSummaryRaw : undefined,
   );
 
   const flowsDataAvailable = flowSnapshots.length > 0 || flowPerformance.length > 0;
   const flowsSectionVisible = flowsDataAvailable && !flowsCfg.hidden;
-  const healthSectionVisible = healthScores.length > 0;
-  const segmentsSectionVisible = segmentSnapshots.length > 0;
-  const formsSectionVisible = formSnapshots.length > 0;
-  const campaignsSectionVisible = campaignSnapshots.length > 0;
-  const emailDesignSectionVisible = Boolean(emailDesign?.client_email_html || emailDesign?.ecd_example);
+  const healthSectionVisible = healthScores.length > 0 && !accountHealthCfg.hidden;
+  const segmentsSectionVisible = segmentSnapshots.length > 0 && !segmentationCfg.hidden;
+  const formsSectionVisible = formSnapshots.length > 0 && !signupFormsCfg.hidden;
+  const campaignsSectionVisible = campaignSnapshots.length > 0 && !campaignsCfg.hidden;
+  const emailDesignSectionVisible =
+    Boolean(emailDesign?.client_email_html || emailDesign?.ecd_example) && !emailDesignCfg.hidden;
+  const opportunitySectionVisible = !revenueSummaryCfg.hidden;
 
   const sectionVisibility: Record<string, boolean> = {
     summary: true,
@@ -217,7 +271,7 @@ export default function PublicReport() {
     forms: formsSectionVisible,
     campaigns: campaignsSectionVisible,
     email_design: emailDesignSectionVisible,
-    opportunity: true,
+    opportunity: opportunitySectionVisible,
   };
 
   const sectionNumbers: Record<string, string> = {};
@@ -397,8 +451,13 @@ export default function PublicReport() {
 
         {healthSectionVisible && (
           <section id="health" ref={setRef('health')}>
-            <SectionHeader number={sectionNumbers['health'] ?? '02'} label="Account Health Score" />
-            <ReportHealthScore scores={healthScores} />
+            <SectionHeader
+              number={sectionNumbers['health'] ?? accountHealthCfg.sectionNumber ?? '02'}
+              label={accountHealthCfg.sectionTitle ?? 'Account Health Score'}
+            />
+            {isAccountHealthBlockVisible(accountHealthCfg, 'healthScoreTable') && (
+              <ReportHealthScore scores={healthScores} />
+            )}
           </section>
         )}
 
@@ -497,124 +556,209 @@ export default function PublicReport() {
           </section>
         )}
 
-        {segmentSnapshots.length > 0 && (
+        {segmentsSectionVisible && (
           <section id="segments" ref={setRef('segments')}>
-            <SectionHeader number={sectionNumbers['segments'] ?? '04'} label="Segments" />
+            <SectionHeader
+              number={sectionNumbers['segments'] ?? segmentationCfg.sectionNumber ?? '04'}
+              label={segmentationCfg.sectionTitle ?? 'Segments'}
+            />
 
-            {(() => {
-              const segSection = reportSections.find(s => s.section_key === 'segmentation');
-              const idx = segSection ? reportSections.findIndex(s => s.id === segSection.id) : -1;
-              if (!segSection) return null;
+            {(isSegmentationBlockVisible(segmentationCfg, 'narrative') ||
+              isSegmentationBlockVisible(segmentationCfg, 'rubric')) && segmentationSectionRow && (() => {
+              const segSection = segmentationSectionRow;
+              const idx = reportSections.findIndex(s => s.id === segSection.id);
+              const narrativeCfg = segmentationCfg.blocks.narrative;
+              const narrativeVisible = isSegmentationBlockVisible(segmentationCfg, 'narrative');
+              const rubricVisible = isSegmentationBlockVisible(segmentationCfg, 'rubric');
+              const sectionForBlock: AuditSection = {
+                ...segSection,
+                current_state_title: narrativeCfg?.currentTitle ?? segSection.current_state_title,
+                optimized_state_title: narrativeCfg?.optimizedTitle ?? segSection.optimized_state_title,
+              };
               return (
                 <div className="mb-6">
                   <ReportSectionBlock
-                    section={segSection}
+                    section={sectionForBlock}
                     index={idx < 0 ? 0 : idx}
                     assets={assets}
                     annotations={annotations}
                     hideHeader
-                    hideCurrentOptimized
+                    hideCurrentOptimized={!narrativeVisible}
+                    hideRubric={!rubricVisible}
+                    hideKeyTakeaway={!narrativeVisible}
                     entityNames={entityNames}
                   />
                 </div>
               );
             })()}
 
-            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-50">
-                <p className="text-sm text-gray-500">
-                  Inventory of segments pulled directly from Klaviyo for this audit.
-                </p>
+            {isSegmentationBlockVisible(segmentationCfg, 'segmentTable') && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                {(segmentationCfg.blocks.segmentTable?.title || segmentationCfg.blocks.segmentTable?.subtitle) && (
+                  <div className="px-6 py-4 border-b border-gray-50">
+                    {segmentationCfg.blocks.segmentTable?.title && (
+                      <h3 className="text-lg font-bold text-gray-900">
+                        {segmentationCfg.blocks.segmentTable.title}
+                      </h3>
+                    )}
+                    {segmentationCfg.blocks.segmentTable?.subtitle && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        {segmentationCfg.blocks.segmentTable.subtitle}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="p-6">
+                  <ReportSegmentTable segments={segmentSnapshots as any} />
+                </div>
               </div>
-              <div className="p-6">
-                <ReportSegmentTable segments={segmentSnapshots as any} />
-              </div>
-            </div>
+            )}
           </section>
         )}
 
-        {formSnapshots.length > 0 && (
+        {formsSectionVisible && (
           <section id="forms" ref={setRef('forms')}>
-            <SectionHeader number={sectionNumbers['forms'] ?? '05'} label="Signup Forms" />
+            <SectionHeader
+              number={sectionNumbers['forms'] ?? signupFormsCfg.sectionNumber ?? '05'}
+              label={signupFormsCfg.sectionTitle ?? 'Signup Forms'}
+            />
 
-            {(() => {
-              const formsSection = reportSections.find(s => s.section_key === 'signup_forms');
-              const idx = formsSection ? reportSections.findIndex(s => s.id === formsSection.id) : -1;
-              if (!formsSection) return null;
+            {(isSignupFormsBlockVisible(signupFormsCfg, 'narrative') ||
+              isSignupFormsBlockVisible(signupFormsCfg, 'rubric')) && signupFormsSectionRow && (() => {
+              const formsSection = signupFormsSectionRow;
+              const idx = reportSections.findIndex(s => s.id === formsSection.id);
+              const narrativeCfg = signupFormsCfg.blocks.narrative;
+              const narrativeVisible = isSignupFormsBlockVisible(signupFormsCfg, 'narrative');
+              const rubricVisible = isSignupFormsBlockVisible(signupFormsCfg, 'rubric');
+              const sectionForBlock: AuditSection = {
+                ...formsSection,
+                current_state_title: narrativeCfg?.currentTitle ?? formsSection.current_state_title,
+                optimized_state_title: narrativeCfg?.optimizedTitle ?? formsSection.optimized_state_title,
+              };
               return (
                 <div className="mb-6">
                   <ReportSectionBlock
-                    section={formsSection}
+                    section={sectionForBlock}
                     index={idx < 0 ? 0 : idx}
                     assets={assets}
                     annotations={annotations}
                     hideHeader
-                    hideCurrentOptimized
+                    hideCurrentOptimized={!narrativeVisible}
+                    hideRubric={!rubricVisible}
+                    hideKeyTakeaway={!narrativeVisible}
                     entityNames={entityNames}
                   />
                 </div>
               );
             })()}
 
-            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-50">
-                <p className="text-sm text-gray-500">
-                  Inventory of signup forms pulled directly from Klaviyo for this audit.
-                </p>
+            {isSignupFormsBlockVisible(signupFormsCfg, 'formTable') && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                {(signupFormsCfg.blocks.formTable?.title || signupFormsCfg.blocks.formTable?.subtitle) && (
+                  <div className="px-6 py-4 border-b border-gray-50">
+                    {signupFormsCfg.blocks.formTable?.title && (
+                      <h3 className="text-lg font-bold text-gray-900">
+                        {signupFormsCfg.blocks.formTable.title}
+                      </h3>
+                    )}
+                    {signupFormsCfg.blocks.formTable?.subtitle && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        {signupFormsCfg.blocks.formTable.subtitle}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="p-6">
+                  <ReportFormTable forms={formSnapshots as any} />
+                </div>
               </div>
-              <div className="p-6">
-                <ReportFormTable forms={formSnapshots as any} />
-              </div>
-            </div>
+            )}
           </section>
         )}
 
-        {campaignSnapshots.length > 0 && (
+        {campaignsSectionVisible && (
           <section id="campaigns" ref={setRef('campaigns')}>
-            <SectionHeader number={sectionNumbers['campaigns'] ?? '06'} label="Campaigns" />
+            <SectionHeader
+              number={sectionNumbers['campaigns'] ?? campaignsCfg.sectionNumber ?? '06'}
+              label={campaignsCfg.sectionTitle ?? 'Campaigns'}
+            />
 
-            {(() => {
-              const campSection = reportSections.find(s => s.section_key === 'campaigns');
-              const idx = campSection ? reportSections.findIndex(s => s.id === campSection.id) : -1;
-              if (!campSection) return null;
+            {(isCampaignsBlockVisible(campaignsCfg, 'narrative') ||
+              isCampaignsBlockVisible(campaignsCfg, 'rubric')) && campaignsSectionRow && (() => {
+              const campSection = campaignsSectionRow;
+              const idx = reportSections.findIndex(s => s.id === campSection.id);
+              const narrativeCfg = campaignsCfg.blocks.narrative;
+              const narrativeVisible = isCampaignsBlockVisible(campaignsCfg, 'narrative');
+              const rubricVisible = isCampaignsBlockVisible(campaignsCfg, 'rubric');
+              const sectionForBlock: AuditSection = {
+                ...campSection,
+                current_state_title: narrativeCfg?.currentTitle ?? campSection.current_state_title,
+                optimized_state_title: narrativeCfg?.optimizedTitle ?? campSection.optimized_state_title,
+              };
               return (
                 <div className="mb-6">
                   <ReportSectionBlock
-                    section={campSection}
+                    section={sectionForBlock}
                     index={idx < 0 ? 0 : idx}
                     assets={assets}
                     annotations={annotations}
                     hideHeader
-                    hideCurrentOptimized
+                    hideCurrentOptimized={!narrativeVisible}
+                    hideRubric={!rubricVisible}
+                    hideKeyTakeaway={!narrativeVisible}
                     entityNames={entityNames}
                   />
                 </div>
               );
             })()}
 
-            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-50">
-                <p className="text-sm text-gray-500">
-                  Inventory of campaigns pulled directly from Klaviyo for this audit.
-                </p>
+            {isCampaignsBlockVisible(campaignsCfg, 'campaignTable') && (
+              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+                {(campaignsCfg.blocks.campaignTable?.title || campaignsCfg.blocks.campaignTable?.subtitle) && (
+                  <div className="px-6 py-4 border-b border-gray-50">
+                    {campaignsCfg.blocks.campaignTable?.title && (
+                      <h3 className="text-lg font-bold text-gray-900">
+                        {campaignsCfg.blocks.campaignTable.title}
+                      </h3>
+                    )}
+                    {campaignsCfg.blocks.campaignTable?.subtitle && (
+                      <p className="text-sm text-gray-500 mt-1">
+                        {campaignsCfg.blocks.campaignTable.subtitle}
+                      </p>
+                    )}
+                  </div>
+                )}
+                <div className="p-6">
+                  <ReportCampaignTable campaigns={campaignSnapshots as any} />
+                </div>
               </div>
-              <div className="p-6">
-                <ReportCampaignTable campaigns={campaignSnapshots as any} />
-              </div>
-            </div>
+            )}
           </section>
         )}
 
-        {(emailDesign?.client_email_html || emailDesign?.ecd_example) && (
+        {emailDesignSectionVisible && emailDesign && isEmailDesignBlockVisible(emailDesignCfg, 'comparison') && (
           <section id="email_design" ref={setRef('email_design')}>
-            <SectionHeader number={sectionNumbers['email_design'] ?? '07'} label="Email Design" />
-            <EmailDesignSection emailDesign={emailDesign} annotations={annotations} sections={reportSections} />
+            <SectionHeader
+              number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
+              label={emailDesignCfg.sectionTitle ?? 'Email Design'}
+            />
+            <EmailDesignSection
+              emailDesign={emailDesign}
+              annotations={annotations}
+              sections={reportSections}
+              subtitleOverride={emailDesignCfg.blocks.comparison?.subtitle}
+            />
           </section>
         )}
 
+        {opportunitySectionVisible && (
         <section id="opportunity" ref={setRef('opportunity')}>
-          <SectionHeader number={sectionNumbers['opportunity'] ?? '08'} label="Revenue Opportunity" />
+          <SectionHeader
+            number={sectionNumbers['opportunity'] ?? revenueSummaryCfg.sectionNumber ?? '08'}
+            label={revenueSummaryCfg.sectionTitle ?? 'Revenue Opportunity'}
+          />
 
+          {revenueSummaryCfg.blocks.metrics && revenueSummaryCfg.blocks.metrics.hidden !== true && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
             <div className="bg-white rounded-xl p-6 border border-gray-100">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Current Email Revenue</p>
@@ -634,9 +778,11 @@ export default function PublicReport() {
               <p className="text-xs text-emerald-600 font-medium">+{formatCurrency(totalRevenue)}/mo identified opportunity</p>
             </div>
           </div>
+          )}
 
           {/* Breakdown by Area hidden */}
 
+          {revenueSummaryCfg.blocks.totalBanner && revenueSummaryCfg.blocks.totalBanner.hidden !== true && (
           <div className="relative overflow-hidden rounded-3xl text-center shadow-xl shadow-brand-primary/20 ring-1 ring-white/20">
             <div
               className="absolute inset-0 bg-gradient-to-br from-brand-primary-dark via-brand-primary to-brand-primary-light"
@@ -652,7 +798,7 @@ export default function PublicReport() {
               </div>
               <p className="mb-2 text-[11px] font-bold uppercase tracking-[0.2em] text-white/70">Revenue opportunity</p>
               <h2 className="mb-3 text-2xl font-extrabold tracking-tight text-white sm:text-3xl">
-                Total identified opportunity
+                {revenueSummaryCfg.blocks.totalBanner?.title ?? 'Total identified opportunity'}
               </h2>
               <div className="mb-2 flex flex-wrap items-baseline justify-center gap-x-1 gap-y-0">
                 <span className="text-4xl font-extrabold tabular-nums tracking-tight text-white drop-shadow-sm sm:text-5xl lg:text-6xl">
@@ -661,7 +807,7 @@ export default function PublicReport() {
                 <span className="text-lg font-semibold text-white/80 sm:text-xl">/month</span>
               </div>
               <p className="mb-10 text-sm font-medium text-white/75">
-                Additional email-attributed revenue identified in this audit
+                {revenueSummaryCfg.blocks.totalBanner?.subtitle ?? 'Additional email-attributed revenue identified in this audit'}
               </p>
 
               {topOpportunities.length > 0 && (
@@ -683,19 +829,24 @@ export default function PublicReport() {
                 </div>
               )}
 
-              <div className="mx-auto max-w-2xl rounded-2xl border border-white/15 bg-black/10 px-5 py-4 backdrop-blur-sm">
-                <p className="text-sm leading-relaxed text-white/80">
-                  Revenue estimates use industry benchmarks and your account metrics. Actual results depend on execution, seasonality, offers,
-                  and list health. Figures represent opportunity, not guaranteed outcomes.
-                </p>
-              </div>
+              {revenueSummaryCfg.blocks.totalBanner?.disclaimer !== null && (
+                <div className="mx-auto max-w-2xl rounded-2xl border border-white/15 bg-black/10 px-5 py-4 backdrop-blur-sm">
+                  <p className="text-sm leading-relaxed text-white/80">
+                    {revenueSummaryCfg.blocks.totalBanner?.disclaimer ?? DEFAULT_REVENUE_SUMMARY_SECTION.blocks.totalBanner?.disclaimer}
+                  </p>
+                </div>
+              )}
             </div>
           </div>
+          )}
 
+          {revenueSummaryCfg.blocks.timeline && revenueSummaryCfg.blocks.timeline.hidden !== true && (
           <div className="bg-white rounded-xl p-6 border border-gray-100 mt-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-1">Implementation Timeline</h3>
+            <h3 className="text-base font-semibold text-gray-900 mb-1">
+              {revenueSummaryCfg.blocks.timeline?.title ?? 'Implementation Timeline'}
+            </h3>
             <p className="text-sm text-gray-600 mb-6">
-              Suggested rollout order — work through each phase before moving to the next.
+              {revenueSummaryCfg.blocks.timeline?.subtitle ?? 'Suggested rollout order — work through each phase before moving to the next.'}
             </p>
             {aiTimeline.length > 0 ? (
               <div className="space-y-8">
@@ -707,7 +858,9 @@ export default function PublicReport() {
               <p className="text-sm text-gray-600 text-center py-8">AI timeline not available for this audit run.</p>
             )}
           </div>
+          )}
         </section>
+        )}
       </main>
 
       <footer className="bg-white border-t border-gray-100 py-8 mt-16">
@@ -1199,13 +1352,13 @@ function ReportSectionBlock({
   );
 }
 
-function EmailDesignSection({ emailDesign, annotations, sections }: { emailDesign: AuditEmailDesign; annotations: import('../lib/types').Annotation[]; sections: AuditSection[] }) {
+function EmailDesignSection({ emailDesign, annotations, sections, subtitleOverride }: { emailDesign: AuditEmailDesign; annotations: import('../lib/types').Annotation[]; sections: AuditSection[]; subtitleOverride?: string }) {
   const [fullscreen, setFullscreen] = useState(false);
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between gap-4">
         <p className="text-sm text-gray-500">
-          Side-by-side comparison of a recent campaign email and an ECD-designed benchmark for your industry.
+          {subtitleOverride ?? 'Side-by-side comparison of a recent campaign email and an ECD-designed benchmark for your industry.'}
         </p>
         <EmailDesignFullscreenBtn onClick={() => setFullscreen(true)} />
       </div>

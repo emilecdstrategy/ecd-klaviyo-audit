@@ -15,6 +15,10 @@ export type BlockVisibility = Record<string, boolean>;
 
 export type FlowRating = 'good' | 'warning' | 'bad' | 'missing';
 
+// -----------------------------------------------------------------------------
+// Flows (existing, keeps specialized shape for benchmarks + insights)
+// -----------------------------------------------------------------------------
+
 export interface FlowsHealthBenchmarks {
   openRateLow?: number;
   openRateHigh?: number;
@@ -84,3 +88,141 @@ export type FlowsBlockKey = keyof NonNullable<FlowsSectionConfig['blocks']>;
 export interface FlowsSectionConfigRoot {
   flows?: Partial<FlowsSectionConfig>;
 }
+
+// -----------------------------------------------------------------------------
+// Generic section config (used by the other 6 sections)
+// -----------------------------------------------------------------------------
+
+/**
+ * Shared block shape. Per-section types can extend this with extra fields.
+ *
+ *   - `hidden`:   toggles the block on/off
+ *   - `title`:    override the block heading
+ *   - `subtitle`: override the block sub-heading / lead paragraph
+ */
+export interface GenericBlockConfig {
+  hidden?: boolean;
+  title?: string;
+  subtitle?: string;
+}
+
+export interface NarrativeBlockConfig extends GenericBlockConfig {
+  currentTitle?: string;
+  optimizedTitle?: string;
+}
+
+export interface BaseSectionConfig {
+  hidden?: boolean;
+  sectionNumber?: string;
+  sectionTitle?: string;
+  sectionSubtitle?: string;
+}
+
+// ----- Account Health --------------------------------------------------------
+
+export interface AccountHealthSectionConfig extends BaseSectionConfig {
+  blocks: {
+    healthScoreTable?: GenericBlockConfig;
+  };
+}
+
+export type AccountHealthBlockKey = keyof NonNullable<AccountHealthSectionConfig['blocks']>;
+
+// ----- Segmentation ----------------------------------------------------------
+
+export interface SegmentationSectionConfig extends BaseSectionConfig {
+  blocks: {
+    narrative?: NarrativeBlockConfig;
+    rubric?: GenericBlockConfig;
+    segmentTable?: GenericBlockConfig;
+  };
+}
+
+export type SegmentationBlockKey = keyof NonNullable<SegmentationSectionConfig['blocks']>;
+
+// ----- Signup Forms ----------------------------------------------------------
+
+export interface SignupFormsSectionConfig extends BaseSectionConfig {
+  blocks: {
+    narrative?: NarrativeBlockConfig;
+    rubric?: GenericBlockConfig;
+    formTable?: GenericBlockConfig;
+  };
+}
+
+export type SignupFormsBlockKey = keyof NonNullable<SignupFormsSectionConfig['blocks']>;
+
+// ----- Campaigns -------------------------------------------------------------
+
+export interface CampaignsSectionConfig extends BaseSectionConfig {
+  blocks: {
+    narrative?: NarrativeBlockConfig;
+    rubric?: GenericBlockConfig;
+    campaignTable?: GenericBlockConfig;
+  };
+}
+
+export type CampaignsBlockKey = keyof NonNullable<CampaignsSectionConfig['blocks']>;
+
+// ----- Email Design ----------------------------------------------------------
+
+export interface EmailDesignSectionConfig extends BaseSectionConfig {
+  blocks: {
+    comparison?: GenericBlockConfig;
+  };
+}
+
+export type EmailDesignBlockKey = keyof NonNullable<EmailDesignSectionConfig['blocks']>;
+
+// ----- Revenue Summary (Opportunity) -----------------------------------------
+
+export interface RevenueSummarySectionConfig extends BaseSectionConfig {
+  blocks: {
+    metrics?: GenericBlockConfig;
+    totalBanner?: GenericBlockConfig & { disclaimer?: string | null };
+    timeline?: GenericBlockConfig;
+  };
+}
+
+export type RevenueSummaryBlockKey = keyof NonNullable<RevenueSummarySectionConfig['blocks']>;
+
+// -----------------------------------------------------------------------------
+// Root shapes per section row
+// -----------------------------------------------------------------------------
+
+export interface AccountHealthSectionConfigRoot {
+  account_health?: Partial<AccountHealthSectionConfig>;
+}
+
+export interface SegmentationSectionConfigRoot {
+  segmentation?: Partial<SegmentationSectionConfig>;
+}
+
+export interface SignupFormsSectionConfigRoot {
+  signup_forms?: Partial<SignupFormsSectionConfig>;
+}
+
+export interface CampaignsSectionConfigRoot {
+  campaigns?: Partial<CampaignsSectionConfig>;
+}
+
+export interface EmailDesignSectionConfigRoot {
+  email_design?: Partial<EmailDesignSectionConfig>;
+}
+
+export interface RevenueSummarySectionConfigRoot {
+  revenue_summary?: Partial<RevenueSummarySectionConfig>;
+}
+
+// -----------------------------------------------------------------------------
+// Section key union
+// -----------------------------------------------------------------------------
+
+export type SectionKey =
+  | 'account_health'
+  | 'flows'
+  | 'segmentation'
+  | 'signup_forms'
+  | 'campaigns'
+  | 'email_design'
+  | 'revenue_summary';

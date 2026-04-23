@@ -4,6 +4,7 @@ import { FileText, BarChart3, LayoutGrid as Layout, Target, Mail, Palette, FormI
 import TopBar from '../components/layout/TopBar';
 import AuditSectionEditor from '../components/audit/AuditSectionEditor';
 import FlowPerformanceEditor from '../components/audit/FlowPerformanceEditor';
+import RevenueSummaryLayoutEditor from '../components/audit/RevenueSummaryLayoutEditor';
 import RevenueOpportunityCard from '../components/ui/RevenueOpportunityCard';
 import ShareLinkPanel from '../components/ui/ShareLinkPanel';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -402,6 +403,8 @@ export default function AuditWorkspace() {
                   placeholder="Enter the executive summary..."
                 />
               </div>
+
+              <RevenueSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
             </div>
           ) : currentSection ? (
             <>

@@ -1,5 +1,29 @@
-import type { FlowsBlockKey, FlowsSectionConfig, FlowsSectionConfigRoot } from './types';
-import { DEFAULT_FLOWS_SECTION } from './defaults';
+import type {
+  AccountHealthBlockKey,
+  AccountHealthSectionConfig,
+  CampaignsBlockKey,
+  CampaignsSectionConfig,
+  EmailDesignBlockKey,
+  EmailDesignSectionConfig,
+  FlowsBlockKey,
+  FlowsSectionConfig,
+  FlowsSectionConfigRoot,
+  RevenueSummaryBlockKey,
+  RevenueSummarySectionConfig,
+  SegmentationBlockKey,
+  SegmentationSectionConfig,
+  SignupFormsBlockKey,
+  SignupFormsSectionConfig,
+} from './types';
+import {
+  DEFAULT_ACCOUNT_HEALTH_SECTION,
+  DEFAULT_CAMPAIGNS_SECTION,
+  DEFAULT_EMAIL_DESIGN_SECTION,
+  DEFAULT_FLOWS_SECTION,
+  DEFAULT_REVENUE_SUMMARY_SECTION,
+  DEFAULT_SEGMENTATION_SECTION,
+  DEFAULT_SIGNUP_FORMS_SECTION,
+} from './defaults';
 
 /**
  * Deep-merge defaults with overrides.
@@ -36,6 +60,42 @@ function deepMerge<T>(base: T, patch: unknown): T {
   return patch as T;
 }
 
+// -----------------------------------------------------------------------------
+// Generic helpers
+// -----------------------------------------------------------------------------
+
+/**
+ * Extracts a nested key from the `section_config` JSONB value.
+ * Returns `undefined` when the value is missing or malformed.
+ */
+function extractSubtree<T>(
+  sectionConfig: Record<string, unknown> | null | undefined,
+  key: string,
+): Partial<T> | undefined {
+  if (!sectionConfig || typeof sectionConfig !== 'object') return undefined;
+  const value = (sectionConfig as Record<string, unknown>)[key];
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return undefined;
+  return value as Partial<T>;
+}
+
+/**
+ * Generic visibility check. Works against any resolved config whose blocks all
+ * extend the shared `{ hidden? }` shape.
+ */
+export function isBlockVisible<BlockKey extends string>(
+  resolved: { hidden?: boolean; blocks?: Partial<Record<BlockKey, { hidden?: boolean } | undefined>> },
+  block: BlockKey,
+): boolean {
+  if (resolved.hidden) return false;
+  const cfg = resolved.blocks?.[block];
+  if (!cfg) return true;
+  return cfg.hidden !== true;
+}
+
+// -----------------------------------------------------------------------------
+// Flows
+// -----------------------------------------------------------------------------
+
 /**
  * Resolves a raw `section_config.flows` override tree against the defaults
  * registry and returns a fully-populated `FlowsSectionConfig`.
@@ -68,8 +128,155 @@ export function extractFlowsRawConfig(
  * Returns `true` when the block should render.
  */
 export function isFlowsBlockVisible(resolved: FlowsSectionConfig, block: FlowsBlockKey): boolean {
-  if (resolved.hidden) return false;
-  const cfg = resolved.blocks?.[block];
-  if (!cfg) return true;
-  return cfg.hidden !== true;
+  return isBlockVisible(resolved, block);
+}
+
+// -----------------------------------------------------------------------------
+// Account Health
+// -----------------------------------------------------------------------------
+
+export function extractAccountHealthRawConfig(
+  sectionConfig: Record<string, unknown> | null | undefined,
+): Partial<AccountHealthSectionConfig> | undefined {
+  return extractSubtree<AccountHealthSectionConfig>(sectionConfig, 'account_health');
+}
+
+export function resolveAccountHealthConfig(
+  raw: Partial<AccountHealthSectionConfig> | null | undefined,
+  defaults: AccountHealthSectionConfig = DEFAULT_ACCOUNT_HEALTH_SECTION,
+): AccountHealthSectionConfig {
+  if (!raw) return defaults;
+  return deepMerge(defaults, raw);
+}
+
+export function isAccountHealthBlockVisible(
+  resolved: AccountHealthSectionConfig,
+  block: AccountHealthBlockKey,
+): boolean {
+  return isBlockVisible(resolved, block);
+}
+
+// -----------------------------------------------------------------------------
+// Segmentation
+// -----------------------------------------------------------------------------
+
+export function extractSegmentationRawConfig(
+  sectionConfig: Record<string, unknown> | null | undefined,
+): Partial<SegmentationSectionConfig> | undefined {
+  return extractSubtree<SegmentationSectionConfig>(sectionConfig, 'segmentation');
+}
+
+export function resolveSegmentationConfig(
+  raw: Partial<SegmentationSectionConfig> | null | undefined,
+  defaults: SegmentationSectionConfig = DEFAULT_SEGMENTATION_SECTION,
+): SegmentationSectionConfig {
+  if (!raw) return defaults;
+  return deepMerge(defaults, raw);
+}
+
+export function isSegmentationBlockVisible(
+  resolved: SegmentationSectionConfig,
+  block: SegmentationBlockKey,
+): boolean {
+  return isBlockVisible(resolved, block);
+}
+
+// -----------------------------------------------------------------------------
+// Signup Forms
+// -----------------------------------------------------------------------------
+
+export function extractSignupFormsRawConfig(
+  sectionConfig: Record<string, unknown> | null | undefined,
+): Partial<SignupFormsSectionConfig> | undefined {
+  return extractSubtree<SignupFormsSectionConfig>(sectionConfig, 'signup_forms');
+}
+
+export function resolveSignupFormsConfig(
+  raw: Partial<SignupFormsSectionConfig> | null | undefined,
+  defaults: SignupFormsSectionConfig = DEFAULT_SIGNUP_FORMS_SECTION,
+): SignupFormsSectionConfig {
+  if (!raw) return defaults;
+  return deepMerge(defaults, raw);
+}
+
+export function isSignupFormsBlockVisible(
+  resolved: SignupFormsSectionConfig,
+  block: SignupFormsBlockKey,
+): boolean {
+  return isBlockVisible(resolved, block);
+}
+
+// -----------------------------------------------------------------------------
+// Campaigns
+// -----------------------------------------------------------------------------
+
+export function extractCampaignsRawConfig(
+  sectionConfig: Record<string, unknown> | null | undefined,
+): Partial<CampaignsSectionConfig> | undefined {
+  return extractSubtree<CampaignsSectionConfig>(sectionConfig, 'campaigns');
+}
+
+export function resolveCampaignsConfig(
+  raw: Partial<CampaignsSectionConfig> | null | undefined,
+  defaults: CampaignsSectionConfig = DEFAULT_CAMPAIGNS_SECTION,
+): CampaignsSectionConfig {
+  if (!raw) return defaults;
+  return deepMerge(defaults, raw);
+}
+
+export function isCampaignsBlockVisible(
+  resolved: CampaignsSectionConfig,
+  block: CampaignsBlockKey,
+): boolean {
+  return isBlockVisible(resolved, block);
+}
+
+// -----------------------------------------------------------------------------
+// Email Design
+// -----------------------------------------------------------------------------
+
+export function extractEmailDesignRawConfig(
+  sectionConfig: Record<string, unknown> | null | undefined,
+): Partial<EmailDesignSectionConfig> | undefined {
+  return extractSubtree<EmailDesignSectionConfig>(sectionConfig, 'email_design');
+}
+
+export function resolveEmailDesignConfig(
+  raw: Partial<EmailDesignSectionConfig> | null | undefined,
+  defaults: EmailDesignSectionConfig = DEFAULT_EMAIL_DESIGN_SECTION,
+): EmailDesignSectionConfig {
+  if (!raw) return defaults;
+  return deepMerge(defaults, raw);
+}
+
+export function isEmailDesignBlockVisible(
+  resolved: EmailDesignSectionConfig,
+  block: EmailDesignBlockKey,
+): boolean {
+  return isBlockVisible(resolved, block);
+}
+
+// -----------------------------------------------------------------------------
+// Revenue Summary
+// -----------------------------------------------------------------------------
+
+export function extractRevenueSummaryRawConfig(
+  sectionConfig: Record<string, unknown> | null | undefined,
+): Partial<RevenueSummarySectionConfig> | undefined {
+  return extractSubtree<RevenueSummarySectionConfig>(sectionConfig, 'revenue_summary');
+}
+
+export function resolveRevenueSummaryConfig(
+  raw: Partial<RevenueSummarySectionConfig> | null | undefined,
+  defaults: RevenueSummarySectionConfig = DEFAULT_REVENUE_SUMMARY_SECTION,
+): RevenueSummarySectionConfig {
+  if (!raw) return defaults;
+  return deepMerge(defaults, raw);
+}
+
+export function isRevenueSummaryBlockVisible(
+  resolved: RevenueSummarySectionConfig,
+  block: RevenueSummaryBlockKey,
+): boolean {
+  return isBlockVisible(resolved, block);
 }
