@@ -2,27 +2,43 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization } from "../_shared/auth.ts";
 
+// Stage machine: each stage runs in its own edge invocation with a fresh ~150s
+// budget. `config` is the entry point the frontend calls; subsequent stages
+// chain via self-POST so long accounts can't exceed one invocation's budget.
+//
+//   stage=config            -> fetch account + snapshots + resolve/cache conversion metric, chain reporting
+//   stage=reporting         -> run 30d/90d values reports + flow_performance + rollups, chain profile if full
+//   stage=profile           -> seed profile scan job + chain resume_profile_scan
+//   stage=resume_profile_scan -> process one chunk of /api/profiles/ and self-chain if truncated
+//
+// Back-compat: if neither `stage` nor `mode` is provided, behave like `config`
+// (so older clients keep working through the same entry point).
+type Stage =
+  | "config"
+  | "reporting"
+  | "profile"
+  | "resume_profile_scan";
+
 type FetchInput = {
   audit_id?: string;
   client_id?: string;
-  api_key?: string; // optional if already stored
-  revision?: string; // optional override
+  api_key?: string;
+  revision?: string;
+  stage?: Stage;
+  // Legacy alias kept for old clients that only know `mode: "resume_profile_scan"`.
   mode?: "resume_profile_scan";
-  /** Default fast: skip full /api/profiles pagination (Klaviyo has no aggregate audience-count API). Use full for exact metrics. */
   profile_scan?: "full" | "fast";
 };
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-
-// Secret used to encrypt/decrypt Klaviyo keys stored in DB.
 const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 
 const KLAVIYO_BASE = "https://a.klaviyo.com";
 const DEFAULT_REVISION = "2024-10-15";
-const MAX_REPORT_IDS = 50;
-/** Cursor pages: campaigns beyond ~8 pages rarely affect audit UX; reduces edge runtime. */
-const MAX_CAMPAIGN_PAGES = 8;
+/** Flow-id cap for values-reports filter. Flamingo Estate has >50 flows. */
+const MAX_REPORT_IDS = 100;
+const MAX_CAMPAIGN_PAGES = 6;
 const MAX_LIST_SEGMENT_PAGES = 5;
 const METRICS_MAX_PAGES = 5;
 /** Skip optional email HTML fetch if less than this many ms remain before deadline. */
@@ -30,8 +46,13 @@ const MIN_SLACK_MS_EMAIL_HTML = 15_000;
 /** Full enumeration is required for exact consent/suppression counts; Klaviyo has no aggregate-only endpoint for those metrics. */
 const PROFILE_FIRST_PATH =
   "/api/profiles/?page%5Bsize%5D=100&additional-fields%5Bprofile%5D=subscriptions";
-/** Space out heavy Reporting API POSTs to reduce 429 bursts (ms). */
-const REPORTING_REQUEST_GAP_MS = 1_000;
+/** Per-client cached metric is honored for this long before we re-probe. */
+const METRIC_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
+/** Klaviyo values-reports are documented at 1/s burst + 2/min steady. */
+const REPORTING_TOKENS_PER_MIN = 2;
+const REPORTING_BURST = 1;
+/** Hard timeout on any single Klaviyo HTTP call so a hung socket can't burn our whole stage budget. */
+const KLAVIYO_HTTP_TIMEOUT_MS = 30_000;
 
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -117,22 +138,40 @@ async function decryptString(ciphertextB64: string, ivB64: string) {
   return new TextDecoder().decode(pt);
 }
 
+// ---------------------------------------------------------------------------
+// Klaviyo HTTP helpers
+// ---------------------------------------------------------------------------
+
 async function klaviyoFetch(apiKey: string, revision: string, path: string) {
-  const res = await fetch(`${KLAVIYO_BASE}${path}`, {
-    headers: {
-      accept: "application/json",
-      authorization: `Klaviyo-API-Key ${apiKey}`,
-      revision,
-    },
-  });
-  const text = await res.text();
-  let body: any = null;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), KLAVIYO_HTTP_TIMEOUT_MS);
   try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = text;
+    const res = await fetch(`${KLAVIYO_BASE}${path}`, {
+      headers: {
+        accept: "application/json",
+        authorization: `Klaviyo-API-Key ${apiKey}`,
+        revision,
+      },
+      signal: ctrl.signal,
+    });
+    const text = await res.text();
+    let body: any = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text;
+    }
+    return { ok: res.ok, status: res.status, body };
+  } catch (e) {
+    const aborted = (e as any)?.name === "AbortError";
+    return {
+      ok: false,
+      status: aborted ? 504 : 0,
+      body: aborted ? `Klaviyo request timed out after ${KLAVIYO_HTTP_TIMEOUT_MS}ms` : String(e),
+    };
+  } finally {
+    clearTimeout(t);
   }
-  return { ok: res.ok, status: res.status, body };
 }
 
 async function fetchWithRetry(fn: () => Promise<{ ok: boolean; status: number; body: any }>, attempts = 3) {
@@ -143,7 +182,7 @@ async function fetchWithRetry(fn: () => Promise<{ ok: boolean; status: number; b
     if (res.ok) return res;
     if (![429, 500, 502, 503, 504].includes(res.status)) return res;
     const delay = 400 * Math.pow(2, i - 1);
-    await new Promise((r) => setTimeout(r, delay));
+    await sleep(delay);
   }
   return last;
 }
@@ -156,7 +195,6 @@ async function klaviyoPaged(apiKey: string, revision: string, path: string, maxP
     if (!res.ok) return { ok: false as const, status: res.status, body: res.body, items: out };
     const items = res.body?.data ?? [];
     out.push(...items);
-    // JSON:API pagination uses links.next when available
     const nextUrl: string | null = res.body?.links?.next ?? null;
     if (!nextUrl) break;
     const u = new URL(nextUrl);
@@ -165,47 +203,9 @@ async function klaviyoPaged(apiKey: string, revision: string, path: string, maxP
   return { ok: true as const, status: 200, items: out };
 }
 
-async function klaviyoCountProfiles(params: {
-  apiKey: string;
-  revision: string;
-  // Optional filter string using Klaviyo filtering syntax
-  filter?: string;
-  // If provided, count only when predicate returns true
-  predicate?: (profile: any) => boolean;
-  // Guard rails to avoid blowing the function timeout on huge accounts
-  maxPages?: number;
-  // Stop early if this time budget is exceeded
-  deadlineAtMs?: number;
-}) {
-  const maxPages = params.maxPages ?? 200; // 200 * 100 = 20k profiles max
-  let count = 0;
-  let next = `/api/profiles/?page%5Bsize%5D=100&additional-fields%5Bprofile%5D=subscriptions`;
-  if (params.filter) next += `&filter=${encodeURIComponent(params.filter)}`;
-  let truncated = false;
-
-  for (let i = 0; i < maxPages && next; i++) {
-    if (params.deadlineAtMs && Date.now() >= params.deadlineAtMs) {
-      truncated = true;
-      break;
-    }
-    const res = await fetchWithRetry(() => klaviyoFetch(params.apiKey, params.revision, next), 3);
-    if (!res.ok) return { ok: false as const, status: res.status, body: res.body, count: null, truncated: false };
-    const items = res.body?.data ?? [];
-    for (const p of items) {
-      if (!params.predicate || params.predicate(p)) count += 1;
-    }
-    const nextUrl: string | null = res.body?.links?.next ?? null;
-    if (!nextUrl) {
-      next = "";
-      break;
-    }
-    const u = new URL(nextUrl);
-    next = `${u.pathname}${u.search}`;
-  }
-
-  if (next) truncated = true;
-  return { ok: true as const, status: 200, body: null, count, truncated };
-}
+// ---------------------------------------------------------------------------
+// Profile scan helpers
+// ---------------------------------------------------------------------------
 
 type ProfileChunkOk = {
   ok: true;
@@ -254,16 +254,13 @@ async function computeProfileSnapshotChunk(params: {
     const items = res.body?.data ?? [];
     for (const p of items) {
       totalProfiles += 1;
-
       const consent = String(p?.attributes?.subscriptions?.email?.marketing?.consent ?? "").toUpperCase();
       const isSubscribed = consent === "SUBSCRIBED";
       if (isSubscribed) subscribed += 1;
-
       const suppressionList = p?.attributes?.subscriptions?.email?.marketing?.suppression;
       if (Array.isArray(suppressionList) ? suppressionList.length > 0 : suppressionList != null) {
         suppressed += 1;
       }
-
       if (isSubscribed) {
         const updated = p?.attributes?.updated;
         const updatedMs = typeof updated === "string" ? Date.parse(updated) : NaN;
@@ -289,13 +286,15 @@ async function computeProfileSnapshotChunk(params: {
   }
 }
 
-async function chainProfileResume(auditId: string) {
+/**
+ * Fire-and-forget POST to this same edge function with the given stage payload.
+ * We await only long enough to confirm the request left the isolate; the
+ * downstream invocation continues on its own fresh budget.
+ */
+async function chainStage(stage: Stage, auditId: string, extra: Record<string, unknown> = {}) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
   const url = `${SUPABASE_URL}/functions/v1/klaviyo_fetch_snapshot`;
-  // Await the fetch so the HTTP request is guaranteed to leave before the
-  // edge function isolate shuts down.  We race with a 4s timeout so we never
-  // block the response for long — we only need the request to be *sent*, not
-  // for the downstream invocation to finish.
+  const body: Record<string, unknown> = { stage, audit_id: auditId, ...extra };
   try {
     await Promise.race([
       fetch(url, {
@@ -305,11 +304,11 @@ async function chainProfileResume(auditId: string) {
           Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
           apikey: SUPABASE_SERVICE_ROLE_KEY,
         },
-        body: JSON.stringify({ mode: "resume_profile_scan", audit_id: auditId }),
+        body: JSON.stringify(body),
       }),
       sleep(4_000),
     ]);
-  } catch { /* swallow – best effort */ }
+  } catch { /* best effort */ }
 }
 
 async function finalizeProfileScan(
@@ -392,7 +391,9 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
   }
 
   const startedAt = Date.now();
-  const deadlineAtMs = startedAt + 145_000;
+  // Full 148s headroom (was 145s). We don't chain until after this returns so
+  // we can use the full edge budget.
+  const deadlineAtMs = startedAt + 148_000;
   let apiKey: string;
   try {
     const { data: sec, error } = await sb.from("client_secrets").select("*").eq("client_id", claimed.client_id as string).maybeSingle();
@@ -406,6 +407,17 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       error_message: msg.slice(0, 500),
       updated_at: new Date().toISOString(),
     }).eq("audit_id", auditId);
+    await logStageRun(sb, {
+      correlationId,
+      auditId,
+      clientId: (claimed.client_id as string) ?? null,
+      stage: "resume_profile_scan",
+      status: "error",
+      revision: String(claimed.revision ?? DEFAULT_REVISION),
+      elapsedMs: Date.now() - startedAt,
+      errorCode: "key_error",
+      errorMessage: msg,
+    });
     return json({ ok: false, error: { code: "key_error", message: msg }, correlationId }, { status: 200 });
   }
 
@@ -428,6 +440,17 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       error_message: trimBody(chunk.body) ?? "Klaviyo profile fetch failed",
       updated_at: new Date().toISOString(),
     }).eq("audit_id", auditId);
+    await logStageRun(sb, {
+      correlationId,
+      auditId,
+      clientId: (claimed.client_id as string) ?? null,
+      stage: "resume_profile_scan",
+      status: "error",
+      revision: String(claimed.revision ?? DEFAULT_REVISION),
+      elapsedMs: Date.now() - startedAt,
+      errorCode: `profile_${chunk.status}`,
+      errorMessage: trimBody(chunk.body) ?? "profile fetch failed",
+    });
     return json({ ok: false, correlationId, profile_metrics_status: "failed", error: "profile_fetch_failed" }, { status: 200 });
   }
 
@@ -441,14 +464,68 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       suppressed: chunk.suppressed,
       updated_at: new Date().toISOString(),
     }).eq("audit_id", auditId));
-    await chainProfileResume(auditId);
+    await chainStage("resume_profile_scan", auditId);
+    await logStageRun(sb, {
+      correlationId,
+      auditId,
+      clientId: (claimed.client_id as string) ?? null,
+      stage: "resume_profile_scan",
+      status: "partial",
+      revision: String(claimed.revision ?? DEFAULT_REVISION),
+      elapsedMs: Date.now() - startedAt,
+      errorMessage: `chunk_ok total=${chunk.totalProfiles} subscribed=${chunk.subscribed}`,
+    });
     return json({ ok: true, correlationId, profile_metrics_status: "in_progress" });
   }
 
   const staged = claimed.staged_revenue_per_recipient;
   const stagedRpr = staged != null && Number.isFinite(Number(staged)) ? Number(staged) : null;
   await finalizeProfileScan(sb, auditId, chunk.totalProfiles, chunk.subscribed, chunk.active90d, chunk.suppressed, stagedRpr);
+  await logStageRun(sb, {
+    correlationId,
+    auditId,
+    clientId: (claimed.client_id as string) ?? null,
+    stage: "resume_profile_scan",
+    status: "success",
+    revision: String(claimed.revision ?? DEFAULT_REVISION),
+    elapsedMs: Date.now() - startedAt,
+    errorMessage: `final total=${chunk.totalProfiles} subscribed=${chunk.subscribed}`,
+  });
   return json({ ok: true, correlationId, profile_metrics_status: "complete" });
+}
+
+// ---------------------------------------------------------------------------
+// Reporting (values reports) + rate limiting
+// ---------------------------------------------------------------------------
+
+/**
+ * Simple token bucket with both burst and per-minute steady caps. Klaviyo's
+ * Query Campaign/Flow Values are documented at 1/s burst + 2/min steady, so
+ * running these POSTs through a shared bucket avoids bursts of 429s that each
+ * carry 30-60s Retry-After waits.
+ */
+function createReportingBucket(opts: { tokensPerMin: number; burst: number }) {
+  let tokens = opts.burst;
+  let lastRefill = Date.now();
+  const refillIntervalMs = 60_000 / opts.tokensPerMin;
+  async function take() {
+    for (;;) {
+      const now = Date.now();
+      const elapsed = now - lastRefill;
+      const refill = Math.floor(elapsed / refillIntervalMs);
+      if (refill > 0) {
+        tokens = Math.min(opts.burst + opts.tokensPerMin - 1, tokens + refill);
+        lastRefill += refill * refillIntervalMs;
+      }
+      if (tokens > 0) {
+        tokens -= 1;
+        return;
+      }
+      const waitMs = refillIntervalMs - (now - lastRefill);
+      await sleep(Math.max(50, Math.min(refillIntervalMs, waitMs)));
+    }
+  }
+  return { take };
 }
 
 async function queryValuesReport(params: {
@@ -461,39 +538,53 @@ async function queryValuesReport(params: {
   statistics: string[];
   groupBy: string[];
 }) {
-  const res = await fetch(`${KLAVIYO_BASE}${params.endpointPath}`, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      authorization: `Klaviyo-API-Key ${params.apiKey}`,
-      revision: params.revision,
-    },
-    body: JSON.stringify({
-      data: {
-        type: params.endpointPath.includes("campaign") ? "campaign-values-report" : "flow-values-report",
-        attributes: {
-          timeframe: { key: params.timeframeKey },
-          conversion_metric_id: params.conversionMetricId,
-          filter: params.filter,
-          statistics: params.statistics,
-          group_by: params.groupBy,
-        },
-      },
-    }),
-  });
-  const text = await res.text();
-  let body: any = null;
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), KLAVIYO_HTTP_TIMEOUT_MS);
   try {
-    body = text ? JSON.parse(text) : null;
-  } catch {
-    body = text;
+    const res = await fetch(`${KLAVIYO_BASE}${params.endpointPath}`, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        authorization: `Klaviyo-API-Key ${params.apiKey}`,
+        revision: params.revision,
+      },
+      body: JSON.stringify({
+        data: {
+          type: params.endpointPath.includes("campaign") ? "campaign-values-report" : "flow-values-report",
+          attributes: {
+            timeframe: { key: params.timeframeKey },
+            conversion_metric_id: params.conversionMetricId,
+            filter: params.filter,
+            statistics: params.statistics,
+            group_by: params.groupBy,
+          },
+        },
+      }),
+      signal: ctrl.signal,
+    });
+    const text = await res.text();
+    let body: any = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text;
+    }
+    const retryAfterMs = retryAfterMsFromHttpHeaders(res.headers);
+    return { ok: res.ok, status: res.status, body, retryAfterMs };
+  } catch (e) {
+    const aborted = (e as any)?.name === "AbortError";
+    return {
+      ok: false,
+      status: aborted ? 504 : 0,
+      body: aborted ? `Reporting request timed out after ${KLAVIYO_HTTP_TIMEOUT_MS}ms` : String(e),
+      retryAfterMs: null as number | null,
+    };
+  } finally {
+    clearTimeout(t);
   }
-  const retryAfterMs = retryAfterMsFromHttpHeaders(res.headers);
-  return { ok: res.ok, status: res.status, body, retryAfterMs };
 }
 
-/** Standard Retry-After header (seconds). */
 function retryAfterMsFromHttpHeaders(headers: Headers): number | null {
   const raw = headers.get("retry-after");
   if (!raw) return null;
@@ -519,7 +610,10 @@ function retryAfterMsFromKlaviyo429(body: any): number | null {
 type ValuesReportResult = Awaited<ReturnType<typeof queryValuesReport>>;
 
 async function queryValuesReportWithBackoff(
-  params: Parameters<typeof queryValuesReport>[0] & { deadlineAtMs?: number },
+  params: Parameters<typeof queryValuesReport>[0] & {
+    deadlineAtMs?: number;
+    bucket?: { take: () => Promise<void> };
+  },
 ) {
   // Values reports throttle often; retry 429s with server-suggested or exponential waits (never cap at 4s).
   const maxAttempts = 5;
@@ -531,6 +625,7 @@ async function queryValuesReportWithBackoff(
   };
 
   for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+    if (params.bucket) await params.bucket.take();
     last = await queryValuesReport(params);
     if (last.ok) return last;
     if (last.status !== 429) return last;
@@ -558,10 +653,11 @@ async function pickBestConversionMetricId(params: {
   candidateMetricIds: string[];
   flowIds: string[];
   deadlineAtMs?: number;
+  bucket?: { take: () => Promise<void> };
 }) {
   const candidates = Array.from(new Set(params.candidateMetricIds.filter(Boolean)));
   const timeBudgetMs = params.deadlineAtMs ? params.deadlineAtMs - Date.now() : 30_000;
-  // Hard cap: 15 seconds max for probing to leave room for the actual reporting queries.
+  // Hard cap: 15s max for probing to leave room for actual reporting queries.
   const probeDeadline = Date.now() + Math.min(timeBudgetMs * 0.15, 15_000);
   let probesRun = 0;
 
@@ -577,12 +673,10 @@ async function pickBestConversionMetricId(params: {
     });
   }
 
-  // Pass 1: probe flow-values-reports with flow filter (top 4 candidates only)
   const pass1Count = Math.min(candidates.length, 4);
   for (let i = 0; i < pass1Count; i++) {
     if (Date.now() >= probeDeadline) break;
     const metricId = candidates[i];
-    if (i > 0) await sleep(300);
     probesRun++;
     const probe = await fetchWithRetry(
       () =>
@@ -596,6 +690,7 @@ async function pickBestConversionMetricId(params: {
           statistics: ["recipients", "conversion_value"],
           groupBy: ["flow_id"],
           deadlineAtMs: probeDeadline,
+          bucket: params.bucket,
         }),
       1,
     );
@@ -605,11 +700,9 @@ async function pickBestConversionMetricId(params: {
     }
   }
 
-  // Pass 2: probe campaign-values-reports (top 2 candidates) — lighter than flow probing
   for (let i = 0; i < Math.min(candidates.length, 2); i++) {
     if (Date.now() >= probeDeadline) break;
     const metricId = candidates[i];
-    await sleep(300);
     probesRun++;
     const probe = await fetchWithRetry(
       () =>
@@ -623,6 +716,7 @@ async function pickBestConversionMetricId(params: {
           statistics: ["recipients", "conversion_value"],
           groupBy: ["send_channel"],
           deadlineAtMs: probeDeadline,
+          bucket: params.bucket,
         }),
       1,
     );
@@ -645,25 +739,27 @@ const REVENUE_METRIC_PATTERNS = [
   "purchase",
 ];
 
-async function klaviyoPostJson(apiKey: string, revision: string, path: string, body: unknown) {
-  const res = await fetch(`${KLAVIYO_BASE}${path}`, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      authorization: `Klaviyo-API-Key ${apiKey}`,
-      revision,
-    },
-    body: JSON.stringify(body),
-  });
-  const text = await res.text();
-  let parsed: any = null;
-  try {
-    parsed = text ? JSON.parse(text) : null;
-  } catch {
-    parsed = text;
+function pickMetricCandidatesFromList(allMetrics: any[]) {
+  const nameOf = (m: any) => (m?.attributes?.name ?? "").toLowerCase();
+  const integrationOf = (m: any) => (m?.attributes?.integration?.name ?? m?.attributes?.integration?.category ?? "").toLowerCase();
+  const shopifyPlacedOrder = allMetrics.filter((m: any) =>
+    nameOf(m).includes("placed order") && (integrationOf(m).includes("shopify") || integrationOf(m).includes("api"))
+  ).map((m: any) => m.id);
+  const anyPlacedOrder = allMetrics.filter((m: any) => nameOf(m).includes("placed order")).map((m: any) => m.id);
+  const otherRevenue = allMetrics.filter((m: any) =>
+    REVENUE_METRIC_PATTERNS.some((p) => nameOf(m).includes(p))
+  ).map((m: any) => m.id);
+  const allIds = allMetrics.map((m: any) => m.id);
+  const seen = new Set<string>();
+  const candidates: string[] = [];
+  for (const id of [...shopifyPlacedOrder, ...anyPlacedOrder, ...otherRevenue, ...allIds]) {
+    if (!seen.has(id)) { seen.add(id); candidates.push(id); }
   }
-  return { ok: res.ok, status: res.status, body: parsed };
+  const findName = (id: string) => {
+    const m = allMetrics.find((x: any) => x.id === id);
+    return m?.attributes?.name ?? null;
+  };
+  return { shopifyPlacedOrder, anyPlacedOrder, candidates, findName };
 }
 
 function trimBody(body: unknown, max = 500) {
@@ -681,114 +777,114 @@ async function mustSucceed(label: string, p: Promise<{ error: any }>) {
   if (error) throw new Error(`${label} failed: ${error.message ?? "unknown error"}`);
 }
 
-serve(async (req) => {
-  if (req.method === "OPTIONS") {
-    return new Response(null, { status: 204, headers: corsHeaders });
-  }
-  if (req.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
-  const correlationId = crypto.randomUUID();
+// ---------------------------------------------------------------------------
+// klaviyo_runs logging (stage-aware)
+// ---------------------------------------------------------------------------
 
-  let bodyJson: FetchInput;
+async function logStageRun(
+  sb: ReturnType<typeof assertServiceClient>,
+  row: {
+    correlationId: string;
+    auditId: string | null;
+    clientId: string | null;
+    stage: Stage;
+    status: "success" | "error" | "partial" | "timeout";
+    revision: string | null;
+    elapsedMs: number;
+    errorCode?: string;
+    errorMessage?: string | null;
+  },
+) {
   try {
-    bodyJson = (await req.json()) as FetchInput;
-  } catch {
-    return json({ ok: false, error: { code: "bad_request", message: "Invalid JSON body" }, correlationId }, { status: 400 });
-  }
+    await sb.from("klaviyo_runs").insert({
+      correlation_id: row.correlationId,
+      audit_id: row.auditId,
+      client_id: row.clientId,
+      stage: row.stage,
+      status: row.status,
+      revision: row.revision,
+      elapsed_ms: row.elapsedMs,
+      error_code: row.errorCode ?? null,
+      error_message: row.errorMessage ? row.errorMessage.slice(0, 1000) : null,
+    });
+  } catch { /* swallow */ }
+}
 
-  if (bodyJson.mode === "resume_profile_scan") {
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      return json({ ok: false, error: { code: "config_missing", message: "Supabase env missing" }, correlationId }, { status: 500 });
-    }
-    // Accept service role key (server-to-server chain) OR authenticated user (frontend retry)
-    const auth = req.headers.get("authorization") ?? "";
-    const token = auth.replace(/^Bearer\s+/i, "");
-    const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
-    if (!isServiceRole) {
-      try {
-        await requireAuthenticatedUser(req);
-      } catch {
-        return json({ ok: false, error: { code: "unauthorized", message: "Invalid authorization" }, correlationId }, { status: 401 });
-      }
-    }
-    const resumeAuditId = (bodyJson.audit_id ?? "").trim();
-    if (!resumeAuditId) {
-      return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id" }, correlationId }, { status: 400 });
-    }
-    try {
-      return await handleResumeProfileScan(resumeAuditId, correlationId);
-    } catch (e) {
-      const msg = redactSecrets(e instanceof Error ? e.message : "Unknown error");
-      return json({ ok: false, error: { code: "resume_failed", message: msg }, correlationId }, { status: 500 });
-    }
-  }
+// ---------------------------------------------------------------------------
+// Shared: resolve API key for a client
+// ---------------------------------------------------------------------------
 
+async function resolveApiKey(
+  sb: ReturnType<typeof assertServiceClient>,
+  clientId: string,
+  inlineKey: string | null | undefined,
+): Promise<string> {
+  const inline = (inlineKey ?? "").trim();
+  if (inline) {
+    const enc = await encryptString(inline);
+    await mustSucceed("client_secrets upsert", sb.from("client_secrets").upsert({
+      client_id: clientId,
+      klaviyo_private_key_ciphertext: enc.ciphertext,
+      klaviyo_private_key_iv: enc.iv,
+      klaviyo_private_key_alg: enc.alg,
+      updated_at: new Date().toISOString(),
+    }, { onConflict: "client_id" }));
+    return inline;
+  }
+  const { data, error } = await sb.from("client_secrets").select("*").eq("client_id", clientId).maybeSingle();
+  if (error) throw error;
+  if (!data?.klaviyo_private_key_ciphertext || !data?.klaviyo_private_key_iv) {
+    throw new Error("No Klaviyo key stored for this client");
+  }
+  return await decryptString(data.klaviyo_private_key_ciphertext, data.klaviyo_private_key_iv);
+}
+
+// ---------------------------------------------------------------------------
+// Stage 1: config
+// ---------------------------------------------------------------------------
+
+async function runStageConfig(params: {
+  auditId: string;
+  clientId: string;
+  apiKeyInline: string | null;
+  revision: string;
+  profileScan: "full" | "fast";
+  correlationId: string;
+}): Promise<Response> {
   const startedAt = Date.now();
-  // Leave ~2s headroom under typical 150s edge limits so retries can finish.
   const deadlineAtMs = startedAt + 148_000;
-  let auditId: string | null = null;
-  let clientId: string | null = null;
-  let revision: string | null = null;
+  const sb = assertServiceClient();
 
   try {
-    if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
-      return json({ ok: false, error: { code: "config_missing", message: "Supabase env missing" }, correlationId }, { status: 500 });
-    }
+    const apiKey = await resolveApiKey(sb, params.clientId, params.apiKeyInline);
 
-    try {
-      await requireAuthenticatedUser(req);
-    } catch (e) {
-      return json({ ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId }, { status: 401 });
-    }
-
-    const input = bodyJson;
-    auditId = input.audit_id ?? null;
-    clientId = input.client_id ?? null;
-    revision = (input.revision || DEFAULT_REVISION).trim();
-    if (!auditId || !clientId) return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id or client_id" }, correlationId }, { status: 400 });
-    const profileScanFull = input.profile_scan === "full";
-
-    const sb = assertServiceClient();
-
-    // Resolve API key: request-provided overrides stored.
-    let apiKey = (input.api_key || "").trim();
-    if (!apiKey) {
-      const { data, error } = await sb.from("client_secrets").select("*").eq("client_id", clientId).maybeSingle();
-      if (error) throw error;
-      if (!data?.klaviyo_private_key_ciphertext || !data?.klaviyo_private_key_iv) {
-        return json({ ok: false, error: { code: "missing_key", message: "No Klaviyo key stored for this client" }, correlationId }, { status: 400 });
-      }
-      apiKey = await decryptString(data.klaviyo_private_key_ciphertext, data.klaviyo_private_key_iv);
-    } else {
-      // Store/refresh encrypted key for the client
-      const enc = await encryptString(apiKey);
-      await mustSucceed("client_secrets upsert", sb.from("client_secrets").upsert({
-        client_id: clientId,
-        klaviyo_private_key_ciphertext: enc.ciphertext,
-        klaviyo_private_key_iv: enc.iv,
-        klaviyo_private_key_alg: enc.alg,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "client_id" }));
-    }
-
-    // 1) Validate + account identity
-    const accountRes = await fetchWithRetry(() => klaviyoFetch(apiKey, revision, "/api/accounts/"), 3);
+    // Account + config fetches.
+    const accountRes = await fetchWithRetry(() => klaviyoFetch(apiKey, params.revision, "/api/accounts/"), 3);
     if (!accountRes.ok) {
       const detail =
         (accountRes.body as any)?.errors?.[0]?.detail ??
         (accountRes.body as any)?.error?.message ??
         null;
-      return json(
-        {
-          ok: false,
-          error: {
-            code: "invalid_key_or_scope",
-            status: accountRes.status,
-            message: `Account lookup failed (${accountRes.status})${detail ? `: ${detail}` : ""}`,
-          },
-          correlationId,
+      await logStageRun(sb, {
+        correlationId: params.correlationId,
+        auditId: params.auditId,
+        clientId: params.clientId,
+        stage: "config",
+        status: "error",
+        revision: params.revision,
+        elapsedMs: Date.now() - startedAt,
+        errorCode: "invalid_key_or_scope",
+        errorMessage: `Account lookup failed (${accountRes.status})${detail ? `: ${detail}` : ""}`,
+      });
+      return json({
+        ok: false,
+        error: {
+          code: "invalid_key_or_scope",
+          status: accountRes.status,
+          message: `Account lookup failed (${accountRes.status})${detail ? `: ${detail}` : ""}`,
         },
-        { status: 200 },
-      );
+        correlationId: params.correlationId,
+      }, { status: 200 });
     }
     const account = accountRes.body?.data?.[0] ?? null;
     const accountId = account?.id ?? null;
@@ -797,31 +893,26 @@ serve(async (req) => {
     const timezone = account?.attributes?.timezone ?? null;
     const preferredCurrency = account?.attributes?.preferred_currency ?? null;
 
-    // 2) Fetch configuration snapshots
-    // Flows and forms support page[size]; campaigns, lists, and segments use
-    // cursor-only pagination with fixed page sizes (do NOT pass page[size]).
     const [flows, lists, segments, forms, campaigns, metricsRes] = await Promise.all([
-      klaviyoPaged(apiKey, revision, "/api/flows/?page%5Bsize%5D=50"),
-      klaviyoPaged(apiKey, revision, "/api/lists/", MAX_LIST_SEGMENT_PAGES),
-      klaviyoPaged(apiKey, revision, "/api/segments/", MAX_LIST_SEGMENT_PAGES),
-      klaviyoPaged(apiKey, revision, "/api/forms/?page%5Bsize%5D=100"),
-      klaviyoPaged(apiKey, revision, "/api/campaigns/?filter=equals(messages.channel,'email')", MAX_CAMPAIGN_PAGES),
-      klaviyoPaged(apiKey, revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", METRICS_MAX_PAGES),
+      klaviyoPaged(apiKey, params.revision, "/api/flows/?page%5Bsize%5D=50"),
+      klaviyoPaged(apiKey, params.revision, "/api/lists/", MAX_LIST_SEGMENT_PAGES),
+      klaviyoPaged(apiKey, params.revision, "/api/segments/", MAX_LIST_SEGMENT_PAGES),
+      klaviyoPaged(apiKey, params.revision, "/api/forms/?page%5Bsize%5D=100"),
+      klaviyoPaged(apiKey, params.revision, "/api/campaigns/?filter=equals(messages.channel,'email')", MAX_CAMPAIGN_PAGES),
+      klaviyoPaged(apiKey, params.revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", METRICS_MAX_PAGES),
     ]);
 
-    const reportingErrors: Array<{ stage: string; status?: number | null; message: string }> = [];
-
-    // 3) Persist snapshots (clear prior snapshots for this audit_id to keep latest)
-    await mustSucceed("delete klaviyo_flow_snapshots", sb.from("klaviyo_flow_snapshots").delete().eq("audit_id", auditId));
-    await mustSucceed("delete klaviyo_campaign_snapshots", sb.from("klaviyo_campaign_snapshots").delete().eq("audit_id", auditId));
-    await mustSucceed("delete klaviyo_form_snapshots", sb.from("klaviyo_form_snapshots").delete().eq("audit_id", auditId));
-    await mustSucceed("delete klaviyo_segment_snapshots", sb.from("klaviyo_segment_snapshots").delete().eq("audit_id", auditId));
-    await mustSucceed("delete klaviyo_reporting_rollups", sb.from("klaviyo_reporting_rollups").delete().eq("audit_id", auditId));
+    // Clear prior snapshots for this audit.
+    await mustSucceed("delete klaviyo_flow_snapshots", sb.from("klaviyo_flow_snapshots").delete().eq("audit_id", params.auditId));
+    await mustSucceed("delete klaviyo_campaign_snapshots", sb.from("klaviyo_campaign_snapshots").delete().eq("audit_id", params.auditId));
+    await mustSucceed("delete klaviyo_form_snapshots", sb.from("klaviyo_form_snapshots").delete().eq("audit_id", params.auditId));
+    await mustSucceed("delete klaviyo_segment_snapshots", sb.from("klaviyo_segment_snapshots").delete().eq("audit_id", params.auditId));
+    await mustSucceed("delete klaviyo_reporting_rollups", sb.from("klaviyo_reporting_rollups").delete().eq("audit_id", params.auditId));
 
     if (flows.ok) {
       const rows = flows.items.map((f: any) => ({
-        audit_id: auditId,
-        client_id: clientId,
+        audit_id: params.auditId,
+        client_id: params.clientId,
         flow_id: f.id,
         name: f.attributes?.name ?? "",
         status: f.attributes?.status ?? "",
@@ -836,8 +927,8 @@ serve(async (req) => {
 
     if (campaigns.ok) {
       const rows = campaigns.items.map((c: any) => ({
-        audit_id: auditId,
-        client_id: clientId,
+        audit_id: params.auditId,
+        client_id: params.clientId,
         campaign_id: c.id,
         name: c.attributes?.name ?? "",
         status: c.attributes?.status ?? "",
@@ -848,7 +939,7 @@ serve(async (req) => {
       }));
       if (rows.length) await mustSucceed("insert klaviyo_campaign_snapshots", sb.from("klaviyo_campaign_snapshots").insert(rows));
 
-      // Best-effort: fetch HTML of the most recent sent campaign for email design comparison
+      // Best-effort: grab HTML of most recent sent campaign for email-design comparison.
       try {
         if (deadlineAtMs - Date.now() >= MIN_SLACK_MS_EMAIL_HTML) {
           const sentCampaigns = campaigns.items
@@ -860,7 +951,7 @@ serve(async (req) => {
             });
           const recentCampaign = sentCampaigns[0];
           if (recentCampaign) {
-            const msgRes = await klaviyoFetch(apiKey, revision, `/api/campaigns/${recentCampaign.id}/campaign-messages/`);
+            const msgRes = await klaviyoFetch(apiKey, params.revision, `/api/campaigns/${recentCampaign.id}/campaign-messages/`);
             const messages = msgRes.ok ? (msgRes.body?.data ?? []) : [];
             let emailHtml: string | null = null;
             for (const msg of messages) {
@@ -868,7 +959,7 @@ serve(async (req) => {
               if (htmlBody) { emailHtml = htmlBody; break; }
               const templateId = msg?.relationships?.template?.data?.id;
               if (templateId) {
-                const tplRes = await klaviyoFetch(apiKey, revision, `/api/templates/${templateId}/`);
+                const tplRes = await klaviyoFetch(apiKey, params.revision, `/api/templates/${templateId}/`);
                 if (tplRes.ok && tplRes.body?.data?.attributes?.html) {
                   emailHtml = tplRes.body.data.attributes.html;
                   break;
@@ -877,7 +968,7 @@ serve(async (req) => {
             }
             if (emailHtml) {
               await sb.from("audit_email_design").upsert({
-                audit_id: auditId,
+                audit_id: params.auditId,
                 client_email_html: emailHtml,
                 client_campaign_name: recentCampaign.attributes?.name ?? null,
                 client_campaign_id: recentCampaign.id,
@@ -890,8 +981,8 @@ serve(async (req) => {
 
     if (forms.ok) {
       const rows = forms.items.map((f: any) => ({
-        audit_id: auditId,
-        client_id: clientId,
+        audit_id: params.auditId,
+        client_id: params.clientId,
         form_id: f.id,
         name: f.attributes?.name ?? "",
         status: f.attributes?.status ?? "",
@@ -905,8 +996,8 @@ serve(async (req) => {
 
     if (segments.ok) {
       const rows = segments.items.map((s: any) => ({
-        audit_id: auditId,
-        client_id: clientId,
+        audit_id: params.auditId,
+        client_id: params.clientId,
         segment_id: s.id,
         name: s.attributes?.name ?? "",
         created_at_klaviyo: s.attributes?.created ?? null,
@@ -916,7 +1007,7 @@ serve(async (req) => {
       if (rows.length) await mustSucceed("insert klaviyo_segment_snapshots", sb.from("klaviyo_segment_snapshots").insert(rows));
     }
 
-    // 4) Store connection metadata (with diagnostic info for failures)
+    // Diagnostic summary + connection metadata.
     function extractKlaviyoError(res: any): string | null {
       if (res.ok) return null;
       const errs = res.body?.errors;
@@ -926,99 +1017,265 @@ serve(async (req) => {
       if (typeof res.body === "string") return res.body.slice(0, 500);
       try { return JSON.stringify(res.body).slice(0, 500); } catch { return "unknown"; }
     }
-    const scopeDiag: Record<string, any> = {};
     const resources = { accounts: accountRes, flows, lists, segments, forms, campaigns, metrics: metricsRes } as Record<string, any>;
+    const scopeDiag: Record<string, any> = {};
     for (const [name, res] of Object.entries(resources)) {
-      scopeDiag[name] = res.ok
-        ? true
-        : { ok: false, status: res.status ?? null, error: extractKlaviyoError(res) };
+      scopeDiag[name] = res.ok ? true : { ok: false, status: res.status ?? null, error: extractKlaviyoError(res) };
     }
-    const scopes = scopeDiag;
+
     await mustSucceed("upsert klaviyo_connections", sb.from("klaviyo_connections").upsert({
-      client_id: clientId,
+      client_id: params.clientId,
       account_id: accountId,
       account_name: accountName,
       website_url: websiteUrl,
       timezone,
       preferred_currency: preferredCurrency,
-      revision,
-      scopes,
+      revision: params.revision,
+      scopes: scopeDiag,
       last_verified_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     }, { onConflict: "client_id" }));
 
-    // Backfill client website if missing.
     if (websiteUrl) {
-      const { data: existingClient } = await sb.from("clients").select("website_url").eq("id", clientId).maybeSingle();
+      const { data: existingClient } = await sb.from("clients").select("website_url").eq("id", params.clientId).maybeSingle();
       if (!existingClient?.website_url) {
-        await mustSucceed("update clients.website_url", sb.from("clients").update({ website_url: websiteUrl }).eq("id", clientId));
+        await mustSucceed("update clients.website_url", sb.from("clients").update({ website_url: websiteUrl }).eq("id", params.clientId));
       }
     }
+    await mustSucceed("update clients.klaviyo_connected", sb.from("clients").update({ klaviyo_connected: true }).eq("id", params.clientId));
 
-    await mustSucceed("update clients.klaviyo_connected", sb.from("clients").update({ klaviyo_connected: true }).eq("id", clientId));
+    // Resolve conversion metric: prefer cache, then single unambiguous Shopify "Placed Order", else probe.
+    const allMetrics = metricsRes.ok ? metricsRes.items : [];
+    const { shopifyPlacedOrder, anyPlacedOrder, candidates: metricCandidates, findName } =
+      pickMetricCandidatesFromList(allMetrics);
+
+    let conversionMetricId: string | null = null;
+    let conversionMetricName: string | null = null;
+    let metricPickReason: string = "none";
+    let metricProbesRun = 0;
+
+    // Cache read.
+    const { data: conn } = await sb.from("klaviyo_connections")
+      .select("conversion_metric_id, conversion_metric_name, conversion_metric_verified_at")
+      .eq("client_id", params.clientId).maybeSingle();
+    const cachedId = (conn?.conversion_metric_id ?? null) as string | null;
+    const cachedVerifiedAtMs = conn?.conversion_metric_verified_at ? Date.parse(String(conn.conversion_metric_verified_at)) : NaN;
+    const cacheFresh =
+      !!cachedId &&
+      Number.isFinite(cachedVerifiedAtMs) &&
+      (Date.now() - cachedVerifiedAtMs) < METRIC_CACHE_TTL_MS &&
+      allMetrics.some((m: any) => m.id === cachedId);
+    if (cacheFresh && cachedId) {
+      conversionMetricId = cachedId;
+      conversionMetricName = (conn?.conversion_metric_name as string | null) ?? findName(cachedId) ?? null;
+      metricPickReason = "cache_hit";
+    } else if (shopifyPlacedOrder.length === 1) {
+      conversionMetricId = shopifyPlacedOrder[0];
+      conversionMetricName = findName(conversionMetricId!) ?? null;
+      metricPickReason = "shopify_placed_order_direct";
+    } else if (anyPlacedOrder.length === 1 && shopifyPlacedOrder.length === 0) {
+      conversionMetricId = anyPlacedOrder[0];
+      conversionMetricName = findName(conversionMetricId!) ?? null;
+      metricPickReason = "placed_order_direct";
+    } else if (metricsRes.ok && metricCandidates.length > 0) {
+      const bucket = createReportingBucket({ tokensPerMin: REPORTING_TOKENS_PER_MIN, burst: REPORTING_BURST });
+      const flowIds = flows.ok ? flows.items.map((f: any) => f.id) : [];
+      const picked = await pickBestConversionMetricId({
+        apiKey,
+        revision: params.revision,
+        candidateMetricIds: metricCandidates,
+        flowIds,
+        deadlineAtMs,
+        bucket,
+      });
+      conversionMetricId = picked.metricId;
+      conversionMetricName = conversionMetricId ? (findName(conversionMetricId) ?? null) : null;
+      metricPickReason = picked.reason;
+      metricProbesRun = picked.probesRun ?? 0;
+    } else {
+      metricPickReason = "metrics_fetch_failed";
+    }
+
+    if (conversionMetricId) {
+      await sb.from("klaviyo_connections").update({
+        conversion_metric_id: conversionMetricId,
+        conversion_metric_name: conversionMetricName,
+        conversion_metric_verified_at: new Date().toISOString(),
+      }).eq("client_id", params.clientId);
+    }
 
     const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
-    // 5) Reporting rollups (values reports). Profile KPIs are filled by chained resume invocations.
-    // Reporting endpoints require conversion_metric_id. We'll attempt to resolve "Placed Order" metric id.
-    // Metrics were fetched in parallel with configuration snapshots above.
-    const flowIdsForMetricProbe = flows.ok ? flows.items.map((f: any) => f.id) : [];
-
-    // Build ranked candidate list: exact "Placed Order" first, then broader revenue patterns, then all metrics as fallback.
-    const allMetrics = metricsRes.ok ? metricsRes.items : [];
-    const nameOf = (m: any) => (m?.attributes?.name ?? "").toLowerCase();
-    const integrationOf = (m: any) => (m?.attributes?.integration?.name ?? m?.attributes?.integration?.category ?? "").toLowerCase();
-
-    // Tier 1: Shopify "Placed Order" (the standard Shopify integration metric)
-    const shopifyPlacedOrder = allMetrics.filter((m: any) =>
-      nameOf(m).includes("placed order") && (integrationOf(m).includes("shopify") || integrationOf(m).includes("api"))
-    ).map((m: any) => m.id);
-
-    // Tier 2: Any metric with "placed order" in the name
-    const anyPlacedOrder = allMetrics.filter((m: any) =>
-      nameOf(m).includes("placed order")
-    ).map((m: any) => m.id);
-
-    // Tier 3: Other common revenue metric names
-    const otherRevenue = allMetrics.filter((m: any) =>
-      REVENUE_METRIC_PATTERNS.some(p => nameOf(m).includes(p))
-    ).map((m: any) => m.id);
-
-    // Tier 4: All remaining metrics as last resort
-    const allIds = allMetrics.map((m: any) => m.id);
-
-    // Deduplicate while preserving priority order
-    const seen = new Set<string>();
-    const metricCandidates: string[] = [];
-    for (const id of [...shopifyPlacedOrder, ...anyPlacedOrder, ...otherRevenue, ...allIds]) {
-      if (!seen.has(id)) { seen.add(id); metricCandidates.push(id); }
-    }
-
-    // If we have a single, unambiguous Shopify "Placed Order" metric, trust it directly.
-    // Probing only helps when there are multiple candidates to disambiguate, and for
-    // low-volume accounts probing always fails (no conversion data in last 30 days).
-    let pickedMetric: { metricId: string | null; reason: string; probesRun?: number };
-    if (shopifyPlacedOrder.length === 1) {
-      pickedMetric = { metricId: shopifyPlacedOrder[0], reason: "shopify_placed_order_direct", probesRun: 0 };
-    } else if (anyPlacedOrder.length === 1 && shopifyPlacedOrder.length === 0) {
-      pickedMetric = { metricId: anyPlacedOrder[0], reason: "placed_order_direct", probesRun: 0 };
-    } else if (metricsRes.ok && metricCandidates.length > 0) {
-      pickedMetric = await pickBestConversionMetricId({
-        apiKey,
-        revision,
-        candidateMetricIds: metricCandidates,
-        flowIds: flowIdsForMetricProbe,
-        deadlineAtMs,
-      });
-    } else {
-      pickedMetric = { metricId: null, reason: "metrics_fetch_failed" };
-    }
-    const conversionMetricId = pickedMetric.metricId;
-    const metricPickReason = pickedMetric.reason;
-    const metricProbesRun = pickedMetric.probesRun ?? 0;
-
-    // Keep reporting lightweight to avoid edge runtime timeout on large accounts.
+    // Seed reporting rollup shell (counts only); stage 2 fills in report data.
     const timeframeKeys: Array<"last_30_days" | "last_90_days"> = ["last_30_days"];
+    const accountSnapshotSeed = {
+      email_subscribed_profiles_count: null as number | null,
+      active_profiles_90d_count: null as number | null,
+      suppressed_profiles_count: null as number | null,
+      bounce_rate_90d: null as number | null,
+      spam_rate_90d: null as number | null,
+      deliverability_campaign_timeframe: "last_30_days",
+      active_profiles_definition: "Proxy: email-subscribed profiles updated in last 90 days",
+      email_subscribed_profiles_truncated: null as boolean | null,
+      active_profiles_90d_truncated: null as boolean | null,
+      suppressed_profiles_truncated: null as boolean | null,
+      profile_scan_status: (params.profileScan === "full" ? "pending" : "skipped") as "pending" | "skipped",
+      computed_at: new Date().toISOString(),
+    };
+    const derivedMetricsSeed = { list_size: 0, monthly_engagement: 0, revenue_per_recipient: null as number | null };
+    for (const tf of timeframeKeys) {
+      await mustSucceed("insert klaviyo_reporting_rollups seed", sb.from("klaviyo_reporting_rollups").insert({
+        audit_id: params.auditId,
+        client_id: params.clientId,
+        timeframe_key: tf,
+        conversion_metric_id: conversionMetricId,
+        campaigns: [],
+        flows: [],
+        computed: {
+          counts: {
+            flows: flows.ok ? flows.items.length : null,
+            campaigns: campaigns.ok ? campaigns.items.length : null,
+            forms: forms.ok ? forms.items.length : null,
+            segments: segments.ok ? segments.items.length : null,
+            lists: lists.ok ? lists.items.length : null,
+          },
+          reporting_errors: [],
+          account_snapshot: accountSnapshotSeed,
+          derived_metrics: derivedMetricsSeed,
+          metric_selection: { reason: metricPickReason, probes_run: metricProbesRun },
+          since90_iso: since90,
+          stage: "config_complete",
+        },
+      }));
+    }
+
+    // Chain stage 2 (reporting). Stage 3 (profile) is kicked off by stage 2.
+    await chainStage("reporting", params.auditId);
+
+    const failedEndpoints = Object.entries(scopeDiag).filter(([, v]) => v !== true);
+    await logStageRun(sb, {
+      correlationId: params.correlationId,
+      auditId: params.auditId,
+      clientId: params.clientId,
+      stage: "config",
+      status: failedEndpoints.length > 0 ? "partial" : "success",
+      revision: params.revision,
+      elapsedMs: Date.now() - startedAt,
+      errorMessage: failedEndpoints.length > 0 ? JSON.stringify(Object.fromEntries(failedEndpoints)) : null,
+    });
+
+    return json({
+      ok: true,
+      correlationId: params.correlationId,
+      stage: "config",
+      revision: params.revision,
+      account: { id: accountId, name: accountName, timezone, preferredCurrency },
+      counts: {
+        flows: flows.ok ? flows.items.length : null,
+        campaigns: campaigns.ok ? campaigns.items.length : null,
+        forms: forms.ok ? forms.items.length : null,
+        segments: segments.ok ? segments.items.length : null,
+        lists: lists.ok ? lists.items.length : null,
+      },
+      fetch: Object.fromEntries(
+        Object.entries(resources).map(([name, res]) => [
+          name,
+          res.ok
+            ? { ok: true, status: res.status ?? 200 }
+            : { ok: false, status: res.status ?? null, error: extractKlaviyoError(res) },
+        ]),
+      ),
+      reporting: {
+        conversion_metric_id: conversionMetricId,
+        conversion_metric_name: conversionMetricName,
+        conversion_metric_selection: {
+          reason: metricPickReason,
+          probes_run: metricProbesRun,
+          candidates_tested: metricCandidates.slice(0, 10),
+        },
+        // Stage 2 will fill these in; the frontend should poll klaviyo_runs(stage=reporting).
+        campaign_reports: [],
+        flow_reports: [],
+        errors: [],
+        reporting_ok: null,
+      },
+      account_snapshot: accountSnapshotSeed,
+      // Frontend uses this to decide whether to poll klaviyo_profile_scan_jobs.
+      // Either way it still polls klaviyo_runs(stage='reporting') for stage 2 completion.
+      profile_metrics_status: (params.profileScan === "full" ? "pending" : "complete") as "pending" | "complete",
+      derived_metrics: derivedMetricsSeed,
+      elapsed_ms: Date.now() - startedAt,
+    });
+  } catch (e) {
+    const msg = redactSecrets(e instanceof Error ? e.message : "Unknown error");
+    await logStageRun(sb, {
+      correlationId: params.correlationId,
+      auditId: params.auditId,
+      clientId: params.clientId,
+      stage: "config",
+      status: "error",
+      revision: params.revision,
+      elapsedMs: Date.now() - startedAt,
+      errorCode: "config_failed",
+      errorMessage: msg,
+    });
+    return json({ ok: false, error: { code: "config_failed", message: msg }, correlationId: params.correlationId }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Stage 2: reporting
+// ---------------------------------------------------------------------------
+
+async function runStageReporting(params: {
+  auditId: string;
+  correlationId: string;
+}): Promise<Response> {
+  const startedAt = Date.now();
+  const deadlineAtMs = startedAt + 148_000;
+  const sb = assertServiceClient();
+
+  let clientId: string | null = null;
+  let revision: string = DEFAULT_REVISION;
+  try {
+    const { data: audit, error: auditErr } = await sb.from("audits").select("client_id").eq("id", params.auditId).maybeSingle();
+    if (auditErr) throw auditErr;
+    if (!audit?.client_id) throw new Error("audit not found");
+    clientId = audit.client_id as string;
+
+    const { data: conn } = await sb.from("klaviyo_connections")
+      .select("revision, conversion_metric_id")
+      .eq("client_id", clientId).maybeSingle();
+    revision = (conn?.revision as string | null) || DEFAULT_REVISION;
+    const conversionMetricId = (conn?.conversion_metric_id as string | null) || null;
+
+    const apiKey = await resolveApiKey(sb, clientId, null);
+
+    // Reload snapshots + counts from DB (stage 1 persisted them).
+    const { data: flowRows } = await sb.from("klaviyo_flow_snapshots")
+      .select("flow_id, name, status").eq("audit_id", params.auditId);
+    const flowIds = (flowRows ?? []).map((r) => r.flow_id as string);
+
+    const { data: rollups } = await sb.from("klaviyo_reporting_rollups")
+      .select("id, timeframe_key, computed").eq("audit_id", params.auditId);
+    const timeframeKeys: Array<"last_30_days" | "last_90_days"> = ["last_30_days"];
+    const reportingErrors: Array<{ stage: string; status?: number | null; message: string }> = [];
+
+    // Profile-scan mode from stage 1 seed.
+    const accountSnapshotSeed = rollups?.[0]?.computed && (rollups[0].computed as any)?.account_snapshot;
+    const profileScanFull = (accountSnapshotSeed?.profile_scan_status ?? "skipped") === "pending";
+    const since90 = (rollups?.[0]?.computed as any)?.since90_iso
+      || new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
+
+    if (!conversionMetricId) {
+      reportingErrors.push({ stage: "metrics_lookup", status: null, message: "No cached conversion_metric_id; run stage=config first." });
+    }
+
+    const flowIdsForReport = flowIds.slice(0, MAX_REPORT_IDS);
+    const flowFilterForReport = flowIdsForReport.length
+      ? `contains-any(flow_id,[${flowIdsForReport.map((id) => JSON.stringify(id)).join(",")}])`
+      : undefined;
+
     const flowReportStats = ["recipients", "open_rate", "click_rate", "conversion_rate", "conversion_value", "revenue_per_recipient"];
     const campaignReportStats = [
       "recipients",
@@ -1030,162 +1287,76 @@ serve(async (req) => {
       "bounce_rate",
       "spam_complaint_rate",
     ];
-    /** Weighted flow revenue / recipients (last_30_days reporting); mirrors public report "Revenue / Recipient". */
+
+    const bucket = createReportingBucket({ tokensPerMin: REPORTING_TOKENS_PER_MIN, burst: REPORTING_BURST });
+    const campaignReports: Array<{ timeframe: "last_30_days" | "last_90_days"; results: any[] }> = [];
+    const flowReports: Array<{ timeframe: "last_30_days" | "last_90_days"; results: any[] }> = [];
     let revenuePerRecipient: number | null = null;
+    let bounceRate90d: number | null = null;
+    let spamRate90d: number | null = null;
+    let metricReCacheAt: string | null = null;
 
-    let campaignReports: any[] = [];
-    let flowReports: any[] = [];
-    await mustSucceed("delete flow_performance", sb.from("flow_performance").delete().eq("audit_id", auditId));
-
-    if (!metricsRes.ok) {
-      reportingErrors.push({
-        stage: "metrics_lookup",
-        status: metricsRes.status ?? null,
-        message: trimBody(metricsRes.body) ?? "Metrics lookup failed",
-      });
-    } else if (!conversionMetricId) {
-      reportingErrors.push({
-        stage: "metrics_lookup",
-        status: 200,
-        message: "No conversion metric id available from /api/metrics",
-      });
-    }
-    if (metricPickReason === "fallback_first_candidate") {
-      reportingErrors.push({
-        stage: "metric_probing",
-        status: null,
-        message: `Conversion metric probing found no non-zero conversion data after ${metricProbesRun} probes. Using fallback metric ${conversionMetricId}. Revenue/conversion data may be inaccurate.`,
-      });
-    }
-
-    const flowIdsForReport = flows.ok ? flows.items.map((f: any) => f.id).slice(0, MAX_REPORT_IDS) : [];
-    const flowFilterForReport = flowIdsForReport.length
-      ? `contains-any(flow_id,[${flowIdsForReport.map((id) => JSON.stringify(id)).join(",")}])`
-      : undefined;
+    await mustSucceed("delete flow_performance", sb.from("flow_performance").delete().eq("audit_id", params.auditId));
 
     if (conversionMetricId) {
-      await sleep(REPORTING_REQUEST_GAP_MS);
-
-      // Campaign 30d + flow 30d in parallel (independent Klaviyo endpoints) to save wall-clock time.
-      if (timeframeKeys.length === 1 && timeframeKeys[0] === "last_30_days") {
-        const tf = "last_30_days" as const;
-        const [camp30Rep, flow30Rep] = await Promise.all([
-          queryValuesReportWithBackoff({
-            apiKey,
-            revision,
-            endpointPath: "/api/campaign-values-reports/",
-            timeframeKey: tf,
-            conversionMetricId,
-            filter: "contains-any(send_channel,[\"email\"])",
-            statistics: campaignReportStats,
-            groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
-            deadlineAtMs,
-          }),
-          queryValuesReportWithBackoff({
-            apiKey,
-            revision,
-            endpointPath: "/api/flow-values-reports/",
-            timeframeKey: tf,
-            conversionMetricId,
-            filter: flowFilterForReport,
-            statistics: flowReportStats,
-            groupBy: ["flow_id", "flow_message_id", "send_channel"],
-            deadlineAtMs,
-          }),
-        ]);
-        if (camp30Rep.ok) {
-          campaignReports.push({ timeframe: tf, results: camp30Rep.body?.data?.attributes?.results ?? [] });
-        } else {
-          reportingErrors.push({
-            stage: `campaign_values_${tf}`,
-            status: camp30Rep.status ?? null,
-            message: trimBody(camp30Rep.body) ?? "Campaign values report failed",
-          });
-        }
-        if (flow30Rep.ok) {
-          flowReports.push({ timeframe: tf, results: flow30Rep.body?.data?.attributes?.results ?? [] });
-        } else {
-          reportingErrors.push({
-            stage: `flow_values_${tf}`,
-            status: flow30Rep.status ?? null,
-            message: trimBody(flow30Rep.body) ?? "Flow values report failed",
-          });
-        }
+      // Serialize main reports through the token bucket (2/min steady).
+      const tf: "last_30_days" = "last_30_days";
+      const camp30 = await queryValuesReportWithBackoff({
+        apiKey,
+        revision,
+        endpointPath: "/api/campaign-values-reports/",
+        timeframeKey: tf,
+        conversionMetricId,
+        filter: "contains-any(send_channel,[\"email\"])",
+        statistics: campaignReportStats,
+        groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
+        deadlineAtMs,
+        bucket,
+      });
+      if (camp30.ok) {
+        campaignReports.push({ timeframe: tf, results: camp30.body?.data?.attributes?.results ?? [] });
       } else {
-        for (const tf of timeframeKeys) {
-          const rep = await queryValuesReportWithBackoff({
-            apiKey,
-            revision,
-            endpointPath: "/api/campaign-values-reports/",
-            timeframeKey: tf,
-            conversionMetricId,
-            filter: "contains-any(send_channel,[\"email\"])",
-            statistics: campaignReportStats,
-            groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
-            deadlineAtMs,
-          });
-          if (rep.ok) {
-            campaignReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
-          } else {
-            reportingErrors.push({
-              stage: `campaign_values_${tf}`,
-              status: rep.status ?? null,
-              message: trimBody(rep.body) ?? "Campaign values report failed",
-            });
-          }
-          await sleep(REPORTING_REQUEST_GAP_MS);
-        }
-        for (const tf of timeframeKeys) {
-          const rep = await queryValuesReportWithBackoff({
-            apiKey,
-            revision,
-            endpointPath: "/api/flow-values-reports/",
-            timeframeKey: tf,
-            conversionMetricId,
-            filter: flowFilterForReport,
-            statistics: flowReportStats,
-            groupBy: ["flow_id", "flow_message_id", "send_channel"],
-            deadlineAtMs,
-          });
-          if (rep.ok) {
-            flowReports.push({ timeframe: tf, results: rep.body?.data?.attributes?.results ?? [] });
-          } else {
-            reportingErrors.push({
-              stage: `flow_values_${tf}`,
-              status: rep.status ?? null,
-              message: trimBody(rep.body) ?? "Flow values report failed",
-            });
-          }
-        }
+        reportingErrors.push({ stage: `campaign_values_${tf}`, status: camp30.status ?? null, message: trimBody(camp30.body) ?? "Campaign values report failed" });
       }
 
-      await sleep(REPORTING_REQUEST_GAP_MS);
-
-      // Separate 90-day campaign report for bounce/spam (UI promises "last 90 days"; timeframeKeys stays last_30 only for flows).
-      if (!timeframeKeys.includes("last_90_days")) {
-        const repCamp90 = await queryValuesReportWithBackoff({
-          apiKey,
-          revision,
-          endpointPath: "/api/campaign-values-reports/",
-          timeframeKey: "last_90_days",
-          conversionMetricId,
-          filter: "contains-any(send_channel,[\"email\"])",
-          statistics: campaignReportStats,
-          groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
-          deadlineAtMs,
-        });
-        if (repCamp90.ok) {
-          campaignReports.push({ timeframe: "last_90_days", results: repCamp90.body?.data?.attributes?.results ?? [] });
-        } else {
-          reportingErrors.push({
-            stage: "campaign_values_last_90_days",
-            status: repCamp90.status ?? null,
-            message: trimBody(repCamp90.body) ?? "Campaign values report failed (last_90_days)",
-          });
-        }
+      const flow30 = await queryValuesReportWithBackoff({
+        apiKey,
+        revision,
+        endpointPath: "/api/flow-values-reports/",
+        timeframeKey: tf,
+        conversionMetricId,
+        filter: flowFilterForReport,
+        statistics: flowReportStats,
+        groupBy: ["flow_id", "flow_message_id", "send_channel"],
+        deadlineAtMs,
+        bucket,
+      });
+      if (flow30.ok) {
+        flowReports.push({ timeframe: tf, results: flow30.body?.data?.attributes?.results ?? [] });
+      } else {
+        reportingErrors.push({ stage: `flow_values_${tf}`, status: flow30.status ?? null, message: trimBody(flow30.body) ?? "Flow values report failed" });
       }
 
-      // Compute flow_performance rows (aggregate by flow_id) + count distinct email messages per flow
+      // 90d campaign for deliverability.
+      const camp90 = await queryValuesReportWithBackoff({
+        apiKey,
+        revision,
+        endpointPath: "/api/campaign-values-reports/",
+        timeframeKey: "last_90_days",
+        conversionMetricId,
+        filter: "contains-any(send_channel,[\"email\"])",
+        statistics: campaignReportStats,
+        groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
+        deadlineAtMs,
+        bucket,
+      });
+      if (camp90.ok) {
+        campaignReports.push({ timeframe: "last_90_days", results: camp90.body?.data?.attributes?.results ?? [] });
+      } else {
+        reportingErrors.push({ stage: "campaign_values_last_90_days", status: camp90.status ?? null, message: trimBody(camp90.body) ?? "Campaign values report failed (last_90_days)" });
+      }
+
+      // Flow rollup into flow_performance.
       const flowAgg: Record<string, { recipients: number; open: number; click: number; conv: number; value: number; rpr: number; messageIds: Set<string> }> = {};
       const last30 = flowReports.find((r) => r.timeframe === "last_30_days")?.results ?? [];
       for (const row of last30) {
@@ -1209,7 +1380,6 @@ serve(async (req) => {
         if (mid) flowAgg[gid].messageIds.add(mid);
       }
 
-      // Replace flow_performance rows for this audit_id
       const NON_REVENUE_PATTERNS = [
         /review\s*request/i, /review\s*follow/i, /feedback/i, /survey/i, /nps/i,
         /sunset/i, /list\s*clean/i,
@@ -1217,7 +1387,7 @@ serve(async (req) => {
         /shipping/i, /delivery/i, /fulfillment/i, /transactional/i,
         /password\s*reset/i, /account\s*confirm/i, /double\s*opt/i,
       ];
-      const isNonRevenueFlow = (name: string) => NON_REVENUE_PATTERNS.some(p => p.test(name));
+      const isNonRevenueFlow = (name: string) => NON_REVENUE_PATTERNS.some((p) => p.test(name));
 
       const flowPerfRows = Object.entries(flowAgg).map(([flowId, a]) => {
         const denom = Math.max(1, a.recipients);
@@ -1225,16 +1395,16 @@ serve(async (req) => {
         const actual_click = a.click / denom;
         const actual_conv = a.conv / denom;
         const actual_rpr = a.rpr / denom;
-        const flowMeta = flows.ok ? flows.items.find((f: any) => f.id === flowId) : null;
-        const flowName = flowMeta?.attributes?.name ?? flowId;
-        const flowStatus = (flowMeta?.attributes?.status ?? "live").toLowerCase();
+        const flowMeta = (flowRows ?? []).find((f) => f.flow_id === flowId);
+        const flowName = flowMeta?.name ?? flowId;
+        const flowStatus = ((flowMeta?.status ?? "live") as string).toLowerCase();
         const mappedStatus =
           flowStatus.includes("draft") ? "draft" : flowStatus.includes("paused") ? "paused" : "live";
         const nonRevenue = isNonRevenueFlow(flowName);
         const targetRpr = actual_rpr * 1.15;
         const opportunity = nonRevenue ? 0 : Math.max(0, (targetRpr - actual_rpr) * a.recipients);
         return {
-          audit_id: auditId,
+          audit_id: params.auditId,
           flow_name: flowName,
           flow_status: mappedStatus,
           priority: "medium",
@@ -1267,121 +1437,81 @@ serve(async (req) => {
           status: 200,
           message: "No flow reporting rows returned for last_30_days; flow_performance was not populated.",
         });
-      }
-    }
-
-    // Deliverability indicators (last 90 days, email campaigns only) computed from campaign values report
-    let bounceRate90d: number | null = null;
-    let spamRate90d: number | null = null;
-
-    function extractBounceSpam(rows: any[]): { bounce: number | null; spam: number | null } {
-      if (!Array.isArray(rows) || rows.length === 0) return { bounce: null, spam: null };
-      let denom = 0;
-      let bounceNum = 0;
-      let spamNum = 0;
-      for (const row of rows) {
-        const stats = row?.statistics ?? {};
-        const recipients = Number(stats.recipients ?? 0) || 0;
-        const b = Number(stats.bounce_rate ?? NaN);
-        const s = Number(stats.spam_complaint_rate ?? NaN);
-        if (recipients <= 0) continue;
-        denom += recipients;
-        if (Number.isFinite(b)) bounceNum += b * recipients;
-        if (Number.isFinite(s)) spamNum += s * recipients;
-      }
-      if (denom > 0) return { bounce: bounceNum / denom, spam: spamNum / denom };
-      return { bounce: null, spam: null };
-    }
-
-    const camp90 =
-      campaignReports.find((r) => r.timeframe === "last_90_days")?.results
-      ?? campaignReports.find((r) => r.timeframe === "last_30_days")?.results
-      ?? [];
-    const deliverability = extractBounceSpam(camp90);
-    bounceRate90d = deliverability.bounce;
-    spamRate90d = deliverability.spam;
-
-    // Fallback: if main campaign report had 0 rows (e.g. wrong conversion metric), try
-    // a simple aggregate campaign report with a couple of alternate metrics to get bounce/spam.
-    if (
-      bounceRate90d == null && spamRate90d == null && conversionMetricId && allMetrics.length > 0 &&
-      Date.now() < (deadlineAtMs ?? Infinity) - 12_000
-    ) {
-      const delivCandidates = allMetrics.slice(0, 2).map((m: any) => m.id).filter((id: string) => id !== conversionMetricId);
-      for (const mid of delivCandidates) {
-        if (Date.now() >= (deadlineAtMs ?? Infinity) - 8_000) break;
-        await sleep(300);
-        const rep = await queryValuesReportWithBackoff({
-          apiKey,
-          revision,
-          endpointPath: "/api/campaign-values-reports/",
-          timeframeKey: "last_90_days",
-          conversionMetricId: mid,
-          filter: "contains-any(send_channel,[\"email\"])",
-          statistics: ["recipients", "bounce_rate", "spam_complaint_rate"],
-          groupBy: ["send_channel"],
-          deadlineAtMs,
-        });
-        if (!rep.ok) continue;
-        const rows = rep.body?.data?.attributes?.results ?? [];
-        const deliv = extractBounceSpam(rows);
-        if (deliv.bounce != null || deliv.spam != null) {
-          bounceRate90d = deliv.bounce;
-          spamRate90d = deliv.spam;
-          break;
+        // If we got 0 rows at all AND stage 1 used a cached metric, invalidate the cache so next run re-probes.
+        if (last30.length === 0 && clientId) {
+          await sb.from("klaviyo_connections").update({
+            conversion_metric_verified_at: null,
+          }).eq("client_id", clientId);
+          metricReCacheAt = new Date().toISOString();
         }
       }
+
+      function extractBounceSpam(rowsIn: any[]): { bounce: number | null; spam: number | null } {
+        if (!Array.isArray(rowsIn) || rowsIn.length === 0) return { bounce: null, spam: null };
+        let denom = 0;
+        let bounceNum = 0;
+        let spamNum = 0;
+        for (const row of rowsIn) {
+          const stats = row?.statistics ?? {};
+          const recipients = Number(stats.recipients ?? 0) || 0;
+          const b = Number(stats.bounce_rate ?? NaN);
+          const s = Number(stats.spam_complaint_rate ?? NaN);
+          if (recipients <= 0) continue;
+          denom += recipients;
+          if (Number.isFinite(b)) bounceNum += b * recipients;
+          if (Number.isFinite(s)) spamNum += s * recipients;
+        }
+        if (denom > 0) return { bounce: bounceNum / denom, spam: spamNum / denom };
+        return { bounce: null, spam: null };
+      }
+      const camp90Rows = campaignReports.find((r) => r.timeframe === "last_90_days")?.results
+        ?? campaignReports.find((r) => r.timeframe === "last_30_days")?.results
+        ?? [];
+      const deliv = extractBounceSpam(camp90Rows);
+      bounceRate90d = deliv.bounce;
+      spamRate90d = deliv.spam;
     }
 
-    const accountSnapshot = {
-      email_subscribed_profiles_count: null as number | null,
-      active_profiles_90d_count: null as number | null,
-      suppressed_profiles_count: null as number | null,
+    // Merge into rollups: update existing seeded rows with results.
+    const accountSnapshotFinal = {
+      ...(accountSnapshotSeed ?? {}),
       bounce_rate_90d: bounceRate90d,
       spam_rate_90d: spamRate90d,
       deliverability_campaign_timeframe: campaignReports.some((r) => r.timeframe === "last_90_days") ? "last_90_days" : "last_30_days",
-      active_profiles_definition: "Proxy: email-subscribed profiles updated in last 90 days",
-      email_subscribed_profiles_truncated: null as boolean | null,
-      active_profiles_90d_truncated: null as boolean | null,
-      suppressed_profiles_truncated: null as boolean | null,
-      profile_scan_status: (profileScanFull ? "pending" : "skipped") as "pending" | "skipped",
+      profile_scan_status: profileScanFull ? "pending" : "skipped",
       computed_at: new Date().toISOString(),
     };
-
     const derivedMetricsPartial = {
       list_size: 0,
       monthly_engagement: 0,
       revenue_per_recipient: revenuePerRecipient,
     };
 
-    for (const tf of timeframeKeys) {
+    for (const row of rollups ?? []) {
+      const tf = row.timeframe_key as "last_30_days" | "last_90_days";
       const camp = campaignReports.find((r) => r.timeframe === tf)?.results ?? [];
       const flw = flowReports.find((r) => r.timeframe === tf)?.results ?? [];
-      await mustSucceed("insert klaviyo_reporting_rollups", sb.from("klaviyo_reporting_rollups").insert({
-        audit_id: auditId,
-        client_id: clientId,
-        timeframe_key: tf,
-        conversion_metric_id: conversionMetricId,
-        campaigns: camp,
-        flows: flw,
-        computed: {
-          counts: {
-            flows: flows.ok ? flows.items.length : null,
-            campaigns: campaigns.ok ? campaigns.items.length : null,
-            forms: forms.ok ? forms.items.length : null,
-            segments: segments.ok ? segments.items.length : null,
-            lists: lists.ok ? lists.items.length : null,
+      const prevComputed = (row.computed ?? {}) as Record<string, unknown>;
+      const prevCounts = (prevComputed as any).counts ?? {};
+      await mustSucceed("update klaviyo_reporting_rollups", sb.from("klaviyo_reporting_rollups")
+        .update({
+          campaigns: camp,
+          flows: flw,
+          computed: {
+            ...prevComputed,
+            counts: prevCounts,
+            reporting_errors: reportingErrors,
+            account_snapshot: accountSnapshotFinal,
+            derived_metrics: derivedMetricsPartial,
+            stage: "reporting_complete",
+            metric_re_cache_invalidated_at: metricReCacheAt,
           },
-          reporting_errors: reportingErrors,
-          account_snapshot: accountSnapshot,
-          derived_metrics: derivedMetricsPartial,
-        },
-      }));
+        }).eq("id", row.id));
     }
 
-    if (profileScanFull) {
+    if (profileScanFull && clientId) {
       await mustSucceed("upsert klaviyo_profile_scan_jobs", sb.from("klaviyo_profile_scan_jobs").upsert({
-        audit_id: auditId,
+        audit_id: params.auditId,
         client_id: clientId,
         revision,
         since90_iso: since90,
@@ -1395,100 +1525,137 @@ serve(async (req) => {
         updated_at: new Date().toISOString(),
       }, { onConflict: "audit_id" }));
 
-      await chainProfileResume(auditId);
-    } else {
-      await mustSucceed("upsert klaviyo_profile_scan_jobs skipped", sb.from("klaviyo_profile_scan_jobs").upsert({
-        audit_id: auditId,
-        client_id: clientId,
-        revision,
-        since90_iso: since90,
-        next_path: null,
-        subscribed: 0,
-        active90d: 0,
-        suppressed: 0,
-        status: "skipped",
-        staged_revenue_per_recipient: revenuePerRecipient,
-        error_message: null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "audit_id" }));
+      await chainStage("resume_profile_scan", params.auditId);
     }
 
-    // Observability
-    const failedEndpoints = Object.entries(scopeDiag).filter(([, v]) => v !== true);
-    try {
-      await sb.from("klaviyo_runs").insert({
-        correlation_id: correlationId,
-        audit_id: auditId,
-        client_id: clientId,
-        status: failedEndpoints.length > 0 ? "partial" : "success",
-        revision,
-        elapsed_ms: Date.now() - startedAt,
-        error_message: failedEndpoints.length > 0 ? JSON.stringify(Object.fromEntries(failedEndpoints)).slice(0, 1000) : null,
-      });
-    } catch {
-      // swallow logging errors
-    }
+    await logStageRun(sb, {
+      correlationId: params.correlationId,
+      auditId: params.auditId,
+      clientId,
+      stage: "reporting",
+      status: reportingErrors.length ? "partial" : "success",
+      revision,
+      elapsedMs: Date.now() - startedAt,
+      errorMessage: reportingErrors.length ? JSON.stringify(reportingErrors).slice(0, 1000) : null,
+    });
 
     return json({
       ok: true,
-      correlationId,
+      correlationId: params.correlationId,
+      stage: "reporting",
       revision,
-      account: { id: accountId, name: accountName, timezone, preferredCurrency },
-      counts: {
-        flows: flows.ok ? flows.items.length : null,
-        campaigns: campaigns.ok ? campaigns.items.length : null,
-        forms: forms.ok ? forms.items.length : null,
-        segments: segments.ok ? segments.items.length : null,
-        lists: lists.ok ? lists.items.length : null,
-      },
-      fetch: Object.fromEntries(
-        Object.entries(resources).map(([name, res]) => [
-          name,
-          res.ok
-            ? { ok: true, status: res.status ?? 200 }
-            : { ok: false, status: res.status ?? null, error: extractKlaviyoError(res) },
-        ]),
-      ),
       reporting: {
         conversion_metric_id: conversionMetricId,
-        conversion_metric_selection: {
-          reason: pickedMetric.reason,
-          candidates_tested: metricCandidates.slice(0, 10),
-        },
         campaign_reports: campaignReports.map((r) => ({ timeframe: r.timeframe, rows: (r.results ?? []).length })),
         flow_reports: flowReports.map((r) => ({ timeframe: r.timeframe, rows: (r.results ?? []).length })),
         errors: reportingErrors,
         reporting_ok: reportingErrors.length === 0,
       },
-      account_snapshot: accountSnapshot,
-      profile_metrics_status: (profileScanFull ? "pending" : "complete") as "pending" | "complete",
-      derived_metrics: {
-        /** Filled to 0 until profile job completes; then finalized in DB and on poll. */
-        list_size: 0,
-        monthly_engagement: 0,
-        /** Flow email revenue per recipient (last 30d); available immediately from reporting. */
-        revenue_per_recipient: revenuePerRecipient,
-      },
+      account_snapshot: accountSnapshotFinal,
+      derived_metrics: derivedMetricsPartial,
+      profile_metrics_status: profileScanFull ? "pending" : "complete",
       elapsed_ms: Date.now() - startedAt,
     });
   } catch (e) {
     const msg = redactSecrets(e instanceof Error ? e.message : "Unknown error");
-    try {
-      const sb = assertServiceClient();
-      await sb.from("klaviyo_runs").insert({
-        correlation_id: correlationId,
-        audit_id: auditId,
-        client_id: clientId,
-        status: "error",
-        revision,
-        elapsed_ms: Date.now() - startedAt,
-        error_code: "fetch_failed",
-        error_message: msg.slice(0, 1000),
-      });
-    } catch {
-      // swallow logging errors
-    }
-    return json({ ok: false, error: { code: "fetch_failed", message: msg }, correlationId }, { status: 500 });
+    await logStageRun(sb, {
+      correlationId: params.correlationId,
+      auditId: params.auditId,
+      clientId,
+      stage: "reporting",
+      status: "error",
+      revision,
+      elapsedMs: Date.now() - startedAt,
+      errorCode: "reporting_failed",
+      errorMessage: msg,
+    });
+    return json({ ok: false, error: { code: "reporting_failed", message: msg }, correlationId: params.correlationId }, { status: 500 });
   }
-});
+}
 
+// ---------------------------------------------------------------------------
+// Entry point
+// ---------------------------------------------------------------------------
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") {
+    return new Response(null, { status: 204, headers: corsHeaders });
+  }
+  if (req.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
+  const correlationId = crypto.randomUUID();
+
+  let bodyJson: FetchInput;
+  try {
+    bodyJson = (await req.json()) as FetchInput;
+  } catch {
+    return json({ ok: false, error: { code: "bad_request", message: "Invalid JSON body" }, correlationId }, { status: 400 });
+  }
+
+  // Normalize legacy `mode` into `stage`.
+  const stage: Stage =
+    bodyJson.stage ??
+    (bodyJson.mode === "resume_profile_scan" ? "resume_profile_scan" : "config");
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
+    return json({ ok: false, error: { code: "config_missing", message: "Supabase env missing" }, correlationId }, { status: 500 });
+  }
+
+  // Stage-specific auth + dispatch.
+  if (stage === "resume_profile_scan" || stage === "reporting" || stage === "profile") {
+    // These stages are usually chain-invoked with the service role key; accept either the SR key or a signed-in user (for manual retries).
+    const auth = req.headers.get("authorization") ?? "";
+    const token = auth.replace(/^Bearer\s+/i, "");
+    const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+    if (!isServiceRole) {
+      try {
+        await requireAuthenticatedUser(req);
+      } catch {
+        return json({ ok: false, error: { code: "unauthorized", message: "Invalid authorization" }, correlationId }, { status: 401 });
+      }
+    }
+
+    const auditId = (bodyJson.audit_id ?? "").trim();
+    if (!auditId) {
+      return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id" }, correlationId }, { status: 400 });
+    }
+
+    try {
+      if (stage === "resume_profile_scan") {
+        return await handleResumeProfileScan(auditId, correlationId);
+      }
+      if (stage === "reporting") {
+        return await runStageReporting({ auditId, correlationId });
+      }
+      // stage === "profile" — just kicks the resume chain (used by stage 2 and nudges).
+      await chainStage("resume_profile_scan", auditId);
+      return json({ ok: true, correlationId, stage: "profile", profile_metrics_status: "in_progress" });
+    } catch (e) {
+      const msg = redactSecrets(e instanceof Error ? e.message : "Unknown error");
+      return json({ ok: false, error: { code: `${stage}_failed`, message: msg }, correlationId }, { status: 500 });
+    }
+  }
+
+  // stage === "config" — the entry point called by the frontend.
+  try {
+    await requireAuthenticatedUser(req);
+  } catch (e) {
+    return json({ ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId }, { status: 401 });
+  }
+
+  const auditId = (bodyJson.audit_id ?? "").trim();
+  const clientId = (bodyJson.client_id ?? "").trim();
+  if (!auditId || !clientId) {
+    return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id or client_id" }, correlationId }, { status: 400 });
+  }
+  const revision = (bodyJson.revision || DEFAULT_REVISION).trim();
+  const profileScan: "full" | "fast" = bodyJson.profile_scan === "fast" ? "fast" : "full";
+
+  return await runStageConfig({
+    auditId,
+    clientId,
+    apiKeyInline: bodyJson.api_key ?? null,
+    revision,
+    profileScan,
+    correlationId,
+  });
+});

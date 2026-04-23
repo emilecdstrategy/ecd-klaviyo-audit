@@ -42,46 +42,102 @@ async function invokeKlaviyoSnapshot(body: Record<string, unknown>) {
   return supabase.functions.invoke<any>('klaviyo_fetch_snapshot', { body });
 }
 
-/** Poll until Edge function finishes full Klaviyo profile pagination (multi-invocation). */
+type KlaviyoRunRow = {
+  id: string;
+  correlation_id: string;
+  stage: string | null;
+  status: string;
+  elapsed_ms: number | null;
+  error_code: string | null;
+  error_message: string | null;
+  created_at: string;
+};
+
+/**
+ * Poll klaviyo_runs for a stage-2 (reporting) row for the given audit. Stage 2
+ * is chain-invoked from stage 1 with a fresh 150s budget, so wall time is
+ * Klaviyo-bound (2/min steady reporting rate), not edge-timeout-bound. We keep
+ * a generous cap while still nudging stage 2 if nothing has appeared.
+ */
+async function waitForReportingStage(
+  auditId: string,
+  onProgress?: (latest: KlaviyoRunRow | null) => void,
+): Promise<'success' | 'partial' | 'error' | 'timed_out'> {
+  const maxMs = 10 * 60 * 1000;
+  const t0 = Date.now();
+  let lastNudge = 0;
+  while (Date.now() - t0 < maxMs) {
+    const { data } = await supabase
+      .from('klaviyo_runs')
+      .select('id, correlation_id, stage, status, elapsed_ms, error_code, error_message, created_at')
+      .eq('audit_id', auditId)
+      .eq('stage', 'reporting')
+      .order('created_at', { ascending: false })
+      .limit(1);
+    const latest = (data?.[0] ?? null) as KlaviyoRunRow | null;
+    onProgress?.(latest);
+    if (latest?.status === 'success' || latest?.status === 'partial') return latest.status as any;
+    if (latest?.status === 'error' || latest?.status === 'timeout') return 'error';
+    // If no reporting row has been written after ~120s, kick stage 2 again.
+    if (!latest && Date.now() - t0 > 120_000 && Date.now() - lastNudge > 90_000) {
+      lastNudge = Date.now();
+      invokeKlaviyoSnapshot({ stage: 'reporting', audit_id: auditId }).catch(() => {});
+    }
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  return 'timed_out';
+}
+
+/** Poll until profile job finishes. Large accounts can take hours across many Edge invocations. */
 async function waitForProfileJobComplete(
   auditId: string,
   onProgress?: (totalProfiles: number) => void,
-) {
-  const maxMs = 45 * 60 * 1000;
+): Promise<'complete' | 'skipped' | 'timed_out'> {
+  const maxMs = 4 * 60 * 60 * 1000; // 4 hours (was 45m; huge lists need many resume chunks)
   const t0 = Date.now();
   let lastUpdated = '';
   let staleCount = 0;
+  let lastResumeAssist = 0;
   while (Date.now() - t0 < maxMs) {
     const { data, error } = await supabase
       .from('klaviyo_profile_scan_jobs')
-      .select('status, error_message, total_profiles, updated_at')
+      .select('status, error_message, total_profiles, subscribed, updated_at')
       .eq('audit_id', auditId)
       .maybeSingle();
     if (error) throw error;
     if (!data) throw new Error('Profile scan job not found');
-    if (data.status === 'complete' || data.status === 'skipped') {
+    if (data.status === 'complete') {
       onProgress?.(data.total_profiles ?? 0);
-      return;
+      return 'complete';
+    }
+    if (data.status === 'skipped') {
+      onProgress?.(data.total_profiles ?? 0);
+      return 'skipped';
     }
     if (data.status === 'failed') {
       throw new Error(data.error_message || 'Audience metrics scan failed');
     }
     onProgress?.(data.total_profiles ?? 0);
 
-    // Detect stalled scan and re-trigger the resume chain
+    // Detect stalled scan and re-trigger the resume chain sooner
     if (data.updated_at === lastUpdated) {
       staleCount++;
     } else {
       staleCount = 0;
       lastUpdated = data.updated_at ?? '';
     }
-    if (staleCount >= 5) {
+    if (staleCount >= 3) {
       staleCount = 0;
       invokeKlaviyoSnapshot({ mode: 'resume_profile_scan', audit_id: auditId }).catch(() => {});
     }
-    await new Promise((r) => setTimeout(r, 3000));
+    // Nudge resume periodically in case chain calls were dropped (large accounts)
+    if (Date.now() - lastResumeAssist > 90_000) {
+      lastResumeAssist = Date.now();
+      invokeKlaviyoSnapshot({ mode: 'resume_profile_scan', audit_id: auditId }).catch(() => {});
+    }
+    await new Promise((r) => setTimeout(r, 2000));
   }
-  throw new Error('Audience metrics scan timed out. Try again or contact support.');
+  return 'timed_out';
 }
 
 function normalizeReportingDiagnostic(raw?: string | null, status?: number | null) {
@@ -108,7 +164,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisStage, setAnalysisStage] = useState<string>('');
   const [error, setError] = useState('');
-  const [fullProfileScan, setFullProfileScan] = useState(false);
   const [snapshotMeta, setSnapshotMeta] = useState<null | {
     counts?: Record<string, number | null>;
     reporting?: {
@@ -121,6 +176,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     elapsed_ms?: number;
     correlationId?: string;
   }>(null);
+  const [fullProfileScan, setFullProfileScan] = useState(true);
+  const [stageRuns, setStageRuns] = useState<KlaviyoRunRow[]>([]);
   const [form, setForm] = useState({
     clientId: '',
     clientName: '',
@@ -217,6 +274,26 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasSavedKlaviyoConnection]);
 
+  // Poll recent klaviyo_runs (by audit_id) while analyzing so the "View run log" panel
+  // shows all stages in real time — each stage gets its own correlation_id.
+  const [currentAuditId, setCurrentAuditId] = useState<string | null>(null);
+  useEffect(() => {
+    if (!analyzing || !currentAuditId) return;
+    let cancelled = false;
+    const tick = async () => {
+      const { data } = await supabase
+        .from('klaviyo_runs')
+        .select('id, correlation_id, stage, status, elapsed_ms, error_code, error_message, created_at')
+        .eq('audit_id', currentAuditId)
+        .order('created_at', { ascending: false })
+        .limit(10);
+      if (!cancelled && data) setStageRuns(data as KlaviyoRunRow[]);
+    };
+    const id = setInterval(tick, 3000);
+    tick();
+    return () => { cancelled = true; clearInterval(id); };
+  }, [analyzing, currentAuditId]);
+
   const runAnalysis = async () => {
     setError('');
     setAnalyzing(true);
@@ -265,18 +342,22 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         context: contextPayload,
       } as any);
 
+      setCurrentAuditId(audit.id);
+      setStageRuns([]);
+
       // 3) Create default section rows
       setAnalysisStage('Setting up audit sections…');
       const sectionKeys = ['account_health', 'flows', 'segmentation', 'campaigns', 'email_design', 'signup_forms', 'revenue_summary'];
       const createdSections = await createAuditSections(audit.id, sectionKeys);
 
-      // 4) Fetch Klaviyo snapshot (API only)
-      setAnalysisProgress(35);
-      setAnalysisStage('Fetching Klaviyo account data…');
+      // 4) Fetch Klaviyo snapshot (stage 1 = config; stages 2+ run on chained edge invocations)
+      setAnalysisProgress(20);
+      setAnalysisStage('Stage 1/3: Fetching Klaviyo config…');
       const snapshotPayload = {
         audit_id: audit.id,
         client_id: clientId,
         api_key: form.apiKey || undefined,
+        stage: 'config' as const,
         profile_scan: fullProfileScan ? ('full' as const) : ('fast' as const),
       };
       const invokeSnapshot = () => invokeKlaviyoSnapshot(snapshotPayload);
@@ -329,16 +410,60 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         correlationId: data?.correlationId,
       });
 
+      // Stage 2 (reporting) runs asynchronously via edge function self-chain.
+      // Poll klaviyo_runs(stage='reporting') until it lands so rollups + flow_performance are populated before AI.
+      setAnalysisProgress(30);
+      setAnalysisStage('Stage 2/3: Pulling Klaviyo reporting (flow/campaign values)…');
+      const reportingResult = await waitForReportingStage(audit.id, (latest) => {
+        if (latest) {
+          setStageRuns((prev) => {
+            if (prev.find((p) => p.id === latest.id)) return prev;
+            return [latest, ...prev].slice(0, 10);
+          });
+        }
+      });
+      if (reportingResult === 'error') {
+        // Reporting hit a hard failure. Surface it but keep going — AI can still analyze config-level data.
+        setAnalysisStage('Reporting had errors (continuing with available data)…');
+      } else if (reportingResult === 'timed_out') {
+        setAnalysisStage('Reporting slow (Klaviyo rate-limited). Continuing with available data…');
+      }
+
+      // Refresh snapshot meta from the latest rollup so the UI and AI pick up stage-2 results.
+      try {
+        const { data: rollup } = await supabase
+          .from('klaviyo_reporting_rollups')
+          .select('computed')
+          .eq('audit_id', audit.id)
+          .eq('timeframe_key', 'last_30_days')
+          .maybeSingle();
+        const computed = (rollup?.computed ?? {}) as any;
+        setSnapshotMeta((prev) => ({
+          ...(prev ?? {}),
+          counts: computed?.counts ?? prev?.counts,
+          reporting: {
+            ...(prev?.reporting ?? {}),
+            errors: computed?.reporting_errors ?? prev?.reporting?.errors,
+            reporting_ok: (computed?.reporting_errors?.length ?? 0) === 0,
+          },
+        }));
+      } catch { /* non-critical */ }
+
       const profilePending = (data as { profile_metrics_status?: string })?.profile_metrics_status === 'pending';
+      let audienceWait: 'complete' | 'skipped' | 'timed_out' | 'none' = 'none';
       if (profilePending) {
-        setAnalysisStage('Finishing audience metrics (full Klaviyo profile scan)…');
-        await waitForProfileJobComplete(audit.id, (totalProfiles) => {
+        setAnalysisProgress(35);
+        setAnalysisStage('Stage 3/3: Full Klaviyo profile scan…');
+        audienceWait = await waitForProfileJobComplete(audit.id, (totalProfiles) => {
           setAnalysisStage(
             totalProfiles > 0
-              ? `Scanning profiles… ${totalProfiles.toLocaleString()} scanned so far`
-              : 'Finishing audience metrics (full Klaviyo profile scan)…',
+              ? `Stage 3/3: Scanning profiles… ${totalProfiles.toLocaleString()} scanned so far`
+              : 'Stage 3/3: Full Klaviyo profile scan…',
           );
         });
+        if (audienceWait === 'timed_out') {
+          setAnalysisStage('Audience scan still running in the background — continuing with AI…');
+        }
       }
 
       const dm = (data as { derived_metrics?: { list_size?: number; monthly_engagement?: number; revenue_per_recipient?: number | null } })?.derived_metrics;
@@ -363,7 +488,21 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             snapshotRpr = Math.round(Number(aud.aov) * 100) / 100;
           }
         }
+        if (audienceWait === 'timed_out') {
+          const { data: jobPartial } = await supabase
+            .from('klaviyo_profile_scan_jobs')
+            .select('total_profiles, subscribed')
+            .eq('audit_id', audit.id)
+            .maybeSingle();
+          const tp = jobPartial?.total_profiles != null ? Number(jobPartial.total_profiles) : 0;
+          const sub = jobPartial?.subscribed != null ? Number(jobPartial.subscribed) : 0;
+          if (tp > 0) snapshotListSize = Math.round(tp);
+          if (sub > 0) snapshotEngagement = Math.round(sub);
+        }
       }
+
+      const profileAudienceScan: 'full' | 'skipped' | 'timed_out' =
+        audienceWait === 'timed_out' ? 'timed_out' : audienceWait === 'skipped' ? 'skipped' : 'full';
 
       // 5) Run AI analysis and persist section updates
       setAnalysisProgress(40);
@@ -389,7 +528,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           notes: form.notes,
           auditMethod: 'api' as any,
           auditContext: contextPayload ?? undefined,
-          profileAudienceScan: fullProfileScan ? 'full' : 'skipped',
+          profileAudienceScan,
         }, (update) => {
           if (update.total > 0) {
             setAnalysisStage(update.label);
@@ -842,6 +981,44 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                     </div>
                   );
                 })()}
+                {stageRuns.length > 0 && (
+                  <details className="max-w-md mx-auto mt-3 text-left border border-gray-100 rounded-lg bg-gray-50/60">
+                    <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider list-none flex items-center justify-between [&::-webkit-details-marker]:hidden">
+                      <span>Run log ({stageRuns.length})</span>
+                      <span className="text-[10px] text-gray-400 normal-case tracking-normal">audit_id {currentAuditId?.slice(0, 8)}</span>
+                    </summary>
+                    <div className="px-3 pb-3 space-y-1.5">
+                      {stageRuns.map((r) => {
+                        const badge =
+                          r.status === 'success' ? 'bg-emerald-100 text-emerald-700'
+                          : r.status === 'partial' ? 'bg-amber-100 text-amber-700'
+                          : r.status === 'timeout' ? 'bg-orange-100 text-orange-700'
+                          : 'bg-red-100 text-red-700';
+                        return (
+                          <div key={r.id} className="flex items-start justify-between gap-2 text-[11px] text-gray-700">
+                            <div className="flex-1 min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className={`px-1.5 py-0.5 rounded ${badge} font-medium`}>
+                                  {r.stage ?? 'unknown'}
+                                </span>
+                                <span className="text-gray-500">{r.status}</span>
+                                {r.elapsed_ms != null && (
+                                  <span className="text-gray-400">· {(r.elapsed_ms / 1000).toFixed(1)}s</span>
+                                )}
+                              </div>
+                              {r.error_message && (
+                                <p className="text-[10px] text-gray-500 mt-0.5 break-words">{r.error_message.slice(0, 200)}</p>
+                              )}
+                            </div>
+                            <span className="text-[10px] text-gray-400 whitespace-nowrap">
+                              {new Date(r.created_at).toLocaleTimeString()}
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </details>
+                )}
               </>
             )}
           </div>
