@@ -414,27 +414,29 @@ export default function AuditSectionEditor({
 function ContentTab({ section, onUpdate }: AuditSectionEditorProps) {
   return (
     <>
-      <div>
-        <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-          Key Takeaway
-        </label>
-        <SimpleRichEditor
-          value={section.human_edited_findings}
-          onChange={v => onUpdate({ human_edited_findings: v })}
-          rows={3}
-          placeholder="Edit or refine the AI-generated key takeaway..."
-        />
-      </div>
+      {section.section_key !== 'flows' && (
+        <div>
+          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
+            Key Takeaway
+          </label>
+          <SimpleRichEditor
+            value={section.human_edited_findings}
+            onChange={v => onUpdate({ human_edited_findings: v })}
+            rows={3}
+            placeholder="Edit or refine the AI-generated key takeaway..."
+          />
+        </div>
+      )}
 
       <div>
         <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-          Opportunity Summary (shown in Top 3 cards)
+          Opportunity Summary
         </label>
         <SimpleRichEditor
           value={section.summary_text}
           onChange={v => onUpdate({ summary_text: v })}
           rows={2}
-          placeholder="Brief summary shown in the Top 3 Opportunities cards..."
+          placeholder="Brief summary of this section's main revenue opportunity..."
         />
       </div>
 

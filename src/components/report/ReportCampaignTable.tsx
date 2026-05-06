@@ -19,7 +19,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-const COLLAPSED_COUNT = 5;
+const COLLAPSED_COUNT = 2;
 
 export default function ReportCampaignTable({ campaigns }: { campaigns: KlaviyoCampaignSnapshot[] }) {
   const rows = [...campaigns]

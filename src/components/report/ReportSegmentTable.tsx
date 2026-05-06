@@ -4,7 +4,7 @@ import { useExpandableTableClip } from '../../hooks/useExpandableTableClip';
 import { cn } from '../../lib/utils';
 import type { KlaviyoSegmentSnapshot } from '../../lib/types';
 
-const COLLAPSED_COUNT = 5;
+const COLLAPSED_COUNT = 2;
 
 export default function ReportSegmentTable({ segments }: { segments: KlaviyoSegmentSnapshot[] }) {
   const rows = [...segments]

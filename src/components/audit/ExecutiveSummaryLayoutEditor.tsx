@@ -117,12 +117,6 @@ export default function ExecutiveSummaryLayoutEditor({
       hint: 'Right-hand column of AI-generated concerns.',
       hasTitle: true,
     },
-    {
-      key: 'topOpportunities',
-      label: 'Top 3 Opportunities cards',
-      hint: 'Three opportunity cards pulled from the top section-level revenue opportunities.',
-      hasTitle: true,
-    },
   ];
 
   const renderExtraValue = (cfg: Record<string, unknown>, key: 'headline' | 'intro' | 'eyebrow') => {
@@ -177,7 +171,7 @@ export default function ExecutiveSummaryLayoutEditor({
                   Hide entire Executive Summary section from the public report
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">
-                  Removes the hero, snapshot, and top-3 cards. Later sections renumber automatically.
+                  Removes the hero, snapshot, and overview columns. Later sections renumber automatically.
                 </div>
               </div>
             </label>

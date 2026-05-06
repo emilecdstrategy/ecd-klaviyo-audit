@@ -24,7 +24,7 @@ function StatusBadge({ status }: { status: string }) {
   );
 }
 
-const COLLAPSED_COUNT = 5;
+const COLLAPSED_COUNT = 2;
 
 export default function ReportFlowInventoryTable({ flows }: { flows: KlaviyoFlowSnapshot[]; title?: string }) {
   const rows = [...flows].sort((a, b) => (a.name || '').localeCompare(b.name || ''));

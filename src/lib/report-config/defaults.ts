@@ -19,7 +19,7 @@ import type {
  * column header), so this registry intentionally covers only overridable copy.
  */
 
-export const DEFAULT_FLOWS_VISIBLE_ROWS = 5;
+export const DEFAULT_FLOWS_VISIBLE_ROWS = 2;
 
 export const DEFAULT_FLOWS_HEALTH_BENCHMARKS = {
   openRateLow: 0.30,

@@ -182,7 +182,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     clientName: '',
     companyName: '',
     industry: '',
-    notes: '',
     apiKey: '',
     clientSellsSubscriptions: false,
   });
@@ -261,7 +260,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         clientName: client.name,
         companyName: client.company_name,
         industry: client.industry ?? '',
-        notes: client.notes ?? '',
         apiKey: '',
         clientSellsSubscriptions: prev.clientSellsSubscriptions,
       }));
@@ -315,14 +313,16 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           industry: form.industry,
           esp_platform: 'Klaviyo',
           api_key_placeholder: '',
-          notes: form.notes,
+          notes: '',
         }) as any);
         clientId = created.id;
       } else {
-        const patch: Record<string, string> = { notes: form.notes };
+        const patch: Record<string, string> = {};
         if (form.industry) patch.industry = form.industry;
-        const updated = await updateClient(clientId, patch);
-        setClients(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+        if (Object.keys(patch).length > 0) {
+          const updated = await updateClient(clientId, patch);
+          setClients(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+        }
       }
 
       // 2) Create audit row
@@ -527,7 +527,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           listSize: snapshotListSize,
           aov: snapshotRpr,
           monthlyTraffic: snapshotEngagement,
-          notes: form.notes,
           auditMethod: 'api' as any,
           auditContext: contextPayload ?? undefined,
           profileAudienceScan,
@@ -686,17 +685,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
               <IndustrySelectWithCustom value={form.industry} onValueChange={v => updateField('industry', v)} />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
-              <textarea
-                value={form.notes}
-                onChange={e => updateField('notes', e.target.value)}
-                rows={2}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-none"
-                placeholder="Any relevant context about this prospect..."
-              />
             </div>
 
             <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50/60 cursor-pointer">

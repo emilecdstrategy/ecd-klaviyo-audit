@@ -52,7 +52,7 @@ const NAV_ITEMS = [
   { id: 'forms', label: 'Signup Forms' },
   { id: 'campaigns', label: 'Campaigns' },
   { id: 'email_design', label: 'Email Design' },
-  { id: 'opportunity', label: 'Revenue' },
+  { id: 'opportunity', label: 'Revenue Opportunity' },
 ];
 
 export default function PublicReport() {
@@ -479,32 +479,6 @@ export default function PublicReport() {
           </div>
           )}
 
-          {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'topOpportunities') && (
-          <div>
-            <h3 className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-4">
-              {executiveSummaryCfg.blocks.topOpportunities?.title ?? 'Top 3 Opportunities'}
-            </h3>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {topOpportunities.slice(0, 3).map((s, i) => (
-                <div key={s.id} className="bg-white rounded-xl p-5 border border-gray-100 relative overflow-hidden">
-                  <div className="absolute top-0 left-0 w-1 h-full bg-brand-primary rounded-l-xl" />
-                  <div className="pl-3">
-                    <div className="flex items-center gap-2 mb-2">
-                      <span className="text-[10px] font-bold text-white bg-brand-primary w-5 h-5 rounded-full flex items-center justify-center shrink-0">
-                        {i + 1}
-                      </span>
-                      <span className="text-sm font-semibold text-gray-900">{SECTION_LABELS[s.section_key]}</span>
-                    </div>
-                    <p className="text-2xl font-bold text-emerald-700 mb-1">
-                      {formatCurrency(s.revenue_opportunity)}<span className="text-sm font-medium text-emerald-600">/mo</span>
-                    </p>
-                    <RichAuditText text={s.summary_text || ''} className="text-xs text-gray-500 leading-relaxed line-clamp-2" />
-                  </div>
-                </div>
-              ))}
-            </div>
-          </div>
-          )}
         </section>
         )}
 
@@ -549,7 +523,7 @@ export default function PublicReport() {
                     hideHeader
                     hideCurrentOptimized={!narrativeVisible}
                     hideRubric={!rubricVisible}
-                    hideKeyTakeaway={!narrativeVisible}
+                    hideKeyTakeaway
                     entityNames={entityNames}
                   />
                 </div>

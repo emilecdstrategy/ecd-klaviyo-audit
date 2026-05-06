@@ -4,7 +4,7 @@ import { useRef, useState, useLayoutEffect, useCallback, type MouseEvent } from 
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
-const DEFAULT_VISIBLE_FLOWS = 5;
+const DEFAULT_VISIBLE_FLOWS = 2;
 
 export type MetricStatus = 'good' | 'warning' | 'bad' | 'missing';
 
