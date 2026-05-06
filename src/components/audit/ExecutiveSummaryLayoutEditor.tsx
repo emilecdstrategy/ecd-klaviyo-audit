@@ -193,8 +193,7 @@ export default function ExecutiveSummaryLayoutEditor({
                 <label className="block text-xs font-medium text-gray-500 mb-1">Section title</label>
                 <input
                   type="text"
-                  value={raw.sectionTitle ?? ''}
-                  placeholder={DEFAULT_EXECUTIVE_SUMMARY_SECTION.sectionTitle ?? ''}
+                  value={raw.sectionTitle ?? DEFAULT_EXECUTIVE_SUMMARY_SECTION.sectionTitle ?? ''}
                   onChange={e => writeSectionPatch({ sectionTitle: e.target.value || undefined })}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                 />
@@ -203,8 +202,7 @@ export default function ExecutiveSummaryLayoutEditor({
                 <label className="block text-xs font-medium text-gray-500 mb-1">Section number</label>
                 <input
                   type="text"
-                  value={raw.sectionNumber ?? ''}
-                  placeholder={DEFAULT_EXECUTIVE_SUMMARY_SECTION.sectionNumber ?? ''}
+                  value={raw.sectionNumber ?? DEFAULT_EXECUTIVE_SUMMARY_SECTION.sectionNumber ?? ''}
                   onChange={e => writeSectionPatch({ sectionNumber: e.target.value || undefined })}
                   className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                 />
@@ -239,8 +237,7 @@ export default function ExecutiveSummaryLayoutEditor({
                             <label className="block text-[11px] font-medium text-gray-500 mb-1">Block title</label>
                             <input
                               type="text"
-                              value={(bcfg.title as string | undefined) ?? ''}
-                              placeholder={(defaultBlock.title as string | undefined) ?? ''}
+                              value={(bcfg.title as string | undefined) ?? (defaultBlock.title as string | undefined) ?? ''}
                               onChange={e => writeBlockPatch(block.key, { title: e.target.value || undefined })}
                               className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                             />

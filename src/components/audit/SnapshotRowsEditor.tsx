@@ -203,7 +203,7 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
                   <td className="px-3 py-2 align-top">
                     <input
                       type="text"
-                      value={r.display_name ?? ''}
+                      value={r.display_name ?? r.name}
                       placeholder={r.name}
                       onChange={e => patch(r.id, { display_name: e.target.value || null })}
                       className="w-full px-2 py-1 border border-gray-200 rounded text-sm"

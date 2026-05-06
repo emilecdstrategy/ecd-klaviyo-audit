@@ -387,7 +387,6 @@ export default function AuditSectionEditor({
                 sectionConfig={sectionConfig}
                 sectionHidden={sectionHidden}
                 isFlows={isFlows}
-                flowsRaw={flowsRaw}
                 resolvedFlows={resolvedFlows}
                 genericRaw={genericRaw}
                 onSetFlowsSectionHidden={onSetFlowsSectionHidden}
@@ -566,7 +565,6 @@ function LayoutTab({
   sectionConfig,
   sectionHidden,
   isFlows,
-  flowsRaw,
   resolvedFlows,
   genericRaw,
   onSetFlowsSectionHidden,
@@ -577,7 +575,6 @@ function LayoutTab({
   sectionConfig: Record<string, unknown>;
   sectionHidden: boolean;
   isFlows: boolean;
-  flowsRaw: Partial<FlowsSectionConfig> | undefined;
   resolvedFlows: FlowsSectionConfig;
   genericRaw: Record<string, unknown> | undefined;
   onSetFlowsSectionHidden: (hidden: boolean) => void;
@@ -605,8 +602,7 @@ function LayoutTab({
               <label className="block text-xs font-medium text-gray-500 mb-1">Section title</label>
               <input
                 type="text"
-                value={flowsRaw?.sectionTitle ?? ''}
-                placeholder={DEFAULT_FLOWS_SECTION.sectionTitle}
+                value={resolvedFlows.sectionTitle ?? ''}
                 onChange={e => onUpdate({
                   section_config: writeFlowsConfigPatch(sectionConfig, { sectionTitle: e.target.value || undefined }),
                 })}
@@ -617,8 +613,7 @@ function LayoutTab({
               <label className="block text-xs font-medium text-gray-500 mb-1">Section number</label>
               <input
                 type="text"
-                value={flowsRaw?.sectionNumber ?? ''}
-                placeholder={DEFAULT_FLOWS_SECTION.sectionNumber}
+                value={resolvedFlows.sectionNumber ?? ''}
                 onChange={e => onUpdate({
                   section_config: writeFlowsConfigPatch(sectionConfig, { sectionNumber: e.target.value || undefined }),
                 })}
@@ -774,8 +769,8 @@ function GenericLayoutPanel({
   genericRaw: Record<string, unknown> | undefined;
   onUpdate: (updates: Partial<AuditSection>) => void;
 }) {
-  const sectionTitle = (genericRaw as { sectionTitle?: string } | undefined)?.sectionTitle ?? '';
-  const sectionNumber = (genericRaw as { sectionNumber?: string } | undefined)?.sectionNumber ?? '';
+  const sectionTitle = (genericRaw as { sectionTitle?: string } | undefined)?.sectionTitle ?? descriptor.defaults.sectionTitle ?? '';
+  const sectionNumber = (genericRaw as { sectionNumber?: string } | undefined)?.sectionNumber ?? descriptor.defaults.sectionNumber ?? '';
   const blocksRaw =
     genericRaw?.blocks && typeof genericRaw.blocks === 'object' && !Array.isArray(genericRaw.blocks)
       ? (genericRaw.blocks as Record<string, Record<string, unknown>>)
@@ -825,9 +820,10 @@ function GenericLayoutPanel({
       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Blocks</p>
       <div className="space-y-2">
         {descriptor.blocks.map(block => {
-          const blockCfg = (blocksRaw[block.key] ?? {}) as Record<string, unknown>;
+          const blockCfgRaw = (blocksRaw[block.key] ?? {}) as Record<string, unknown>;
           const defaultBlock =
             (descriptor.defaults.blocks[block.key] ?? {}) as Record<string, unknown>;
+          const blockCfg = { ...defaultBlock, ...blockCfgRaw } as Record<string, unknown>;
           const hidden = Boolean(blockCfg.hidden);
           const currentTitle = (blockCfg.title as string | undefined) ?? '';
           const currentSubtitle = (blockCfg.subtitle as string | undefined) ?? '';
@@ -858,7 +854,6 @@ function GenericLayoutPanel({
                         <input
                           type="text"
                           value={currentNarrativeA}
-                          placeholder={(defaultBlock.currentTitle as string | undefined) ?? 'Current State'}
                           onChange={e =>
                             onUpdate({
                               section_config: writeGenericBlockPatch(sectionConfig, sectionKey, block.key, {
@@ -876,7 +871,6 @@ function GenericLayoutPanel({
                         <input
                           type="text"
                           value={currentNarrativeB}
-                          placeholder={(defaultBlock.optimizedTitle as string | undefined) ?? 'Optimized State'}
                           onChange={e =>
                             onUpdate({
                               section_config: writeGenericBlockPatch(sectionConfig, sectionKey, block.key, {
@@ -895,7 +889,6 @@ function GenericLayoutPanel({
                       <input
                         type="text"
                         value={currentTitle}
-                        placeholder={(defaultBlock.title as string | undefined) ?? ''}
                         onChange={e =>
                           onUpdate({
                             section_config: writeGenericBlockPatch(sectionConfig, sectionKey, block.key, {
@@ -913,7 +906,6 @@ function GenericLayoutPanel({
                       <input
                         type="text"
                         value={currentSubtitle}
-                        placeholder={(defaultBlock.subtitle as string | undefined) ?? ''}
                         onChange={e =>
                           onUpdate({
                             section_config: writeGenericBlockPatch(sectionConfig, sectionKey, block.key, {
