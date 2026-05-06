@@ -243,6 +243,8 @@ export interface AuditContext {
   meeting_notes?: string;
   client_background?: string;
   custom_instructions?: string;
+  /** If true, the flows audit should treat Subscription lifecycle as a core flow. */
+  sells_subscriptions?: boolean;
 }
 
 export interface WizardData {
@@ -264,4 +266,6 @@ export interface WizardData {
   auditContext?: AuditContext;
   /** full = exact audience counts from profile scan; skipped = fast audit without per-profile pagination */
   profileAudienceScan?: 'full' | 'skipped';
+  /** Client has a subscription business model and should be audited for subscription lifecycle flows. */
+  clientSellsSubscriptions?: boolean;
 }

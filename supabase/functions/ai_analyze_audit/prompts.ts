@@ -17,6 +17,8 @@ type WizardData = {
   requestedSectionKeys?: SectionKey[];
   /** When skipped, per-profile audience totals were not collected (fast audit). */
   profileAudienceScan?: "full" | "skipped";
+  /** Whether to treat subscription lifecycle as a core flow in the flows rubric. */
+  clientSellsSubscriptions?: boolean;
 };
 
 export type KlaviyoContext = {
@@ -211,6 +213,37 @@ function summarizeFlowPerformance(perf: KlaviyoContext["flowPerformance"]): stri
   return lines.join("\n");
 }
 
+const SUBSCRIPTION_FLOW_PATTERNS = [
+  /\bsubscr/i,
+  /subscribe\s*&\s*save/i,
+  /\brenew(al)?\b/i,
+  /\bre[-\s]?bill/i,
+  /next\s*order/i,
+  /\bmembership\b/i,
+  /\brecharge\b/i,
+  /\bskio\b/i,
+  /\bloop\b/i,
+  /ordergroove/i,
+  /\bsmartrr\b/i,
+  /stay\.?ai/i,
+];
+
+function summarizeSubscriptionFlowCandidates(
+  flows: KlaviyoContext["flows"],
+  perf: KlaviyoContext["flowPerformance"],
+): string {
+  if (!flows?.length) return "No flow inventory available to evaluate subscription lifecycle flows.";
+  const perfByName = new Map((perf ?? []).map((p) => [p.flow_name.toLowerCase(), p]));
+  const matches = flows.filter((f) => SUBSCRIPTION_FLOW_PATTERNS.some((re) => re.test(f.name)));
+  if (!matches.length) return "No obvious subscription lifecycle flow names matched (soft match).";
+  const lines = matches.slice(0, 15).map((f) => {
+    const p = perfByName.get(f.name.toLowerCase());
+    const metric = p?.monthly_revenue_current ? `, revenue: $${Math.round(p.monthly_revenue_current)}` : "";
+    return `${f.name} (${f.status}${metric})`;
+  });
+  return `Soft-matched subscription lifecycle flows: ${lines.join("; ")}`;
+}
+
 function buildScopedKlaviyoData(klaviyo: KlaviyoContext, requestedKeys: readonly string[]): Record<string, unknown> {
   const scoped: Record<string, unknown> = { account: klaviyo.account ?? null };
   const needs = new Set(requestedKeys);
@@ -277,6 +310,9 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
       audit_method: data.auditMethod,
       notes: data.notes || undefined,
     },
+    business_model: {
+      sells_subscriptions: Boolean(data.clientSellsSubscriptions),
+    },
     klaviyo_data: klaviyoSection,
     required_sections: mode === "top_level_only" ? [] : requested,
     style: {
@@ -298,12 +334,21 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
         : {}),
     },
     section_rubric: {
-      flows: "Cover Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
+      flows: data.clientSellsSubscriptions
+        ? "Cover Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Subscription lifecycle, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus). For Subscription lifecycle, use soft matching on flow names (subscription/subscr/recharge/skio/loop/renewal/rebill/next order/membership/etc.) and mark present/live accordingly."
+        : "Cover Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
       segmentation: "Assess full-list vs segmented, engaged/unengaged definitions, VIP/high-LTV, and benchmark architecture.",
       campaigns: "Assess frequency consistency, segmented targeting, subject/preview hygiene, and campaign type mix.",
       signup_forms: "Assess popup + embedded presence, offer quality, mobile optimization, benchmark conversion framing.",
     },
   };
+
+  if (data.clientSellsSubscriptions) {
+    payload.klaviyo_subscription_flow_hints = summarizeSubscriptionFlowCandidates(
+      klaviyo?.flows,
+      klaviyo?.flowPerformance,
+    );
+  }
 
   if (mode !== "sections_only") {
     payload.required_top_level_fields = {
@@ -365,6 +410,7 @@ export type AuditContextInput = {
   meeting_notes?: string;
   client_background?: string;
   custom_instructions?: string;
+  sells_subscriptions?: boolean;
 };
 
 export function buildRefineSystemPrompt() {
@@ -386,6 +432,7 @@ export function buildRefineUserPrompt(baseline: RefineBaseline, ctx: AuditContex
     meeting_notes: trim(ctx.meeting_notes, REFINE_MEETING_MAX),
     client_background: trim(ctx.client_background, 12_000),
     custom_instructions: trim(ctx.custom_instructions, 8_000),
+    sells_subscriptions: ctx.sells_subscriptions === true ? true : undefined,
   };
   return JSON.stringify(
     {

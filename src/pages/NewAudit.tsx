@@ -184,6 +184,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     industry: '',
     notes: '',
     apiKey: '',
+    clientSellsSubscriptions: false,
   });
 
   const [auditContextForm, setAuditContextForm] = useState({
@@ -246,8 +247,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     const meeting_notes = auditContextForm.meeting_notes.trim().slice(0, CONTEXT_CHAR_HARD) || undefined;
     const client_background = auditContextForm.client_background.trim().slice(0, CONTEXT_CHAR_HARD) || undefined;
     const custom_instructions = auditContextForm.custom_instructions.trim().slice(0, CONTEXT_CHAR_HARD) || undefined;
-    if (!meeting_notes && !client_background && !custom_instructions) return null;
-    return { meeting_notes, client_background, custom_instructions };
+    const sells_subscriptions = form.clientSellsSubscriptions || undefined;
+    if (!meeting_notes && !client_background && !custom_instructions && !sells_subscriptions) return null;
+    return { meeting_notes, client_background, custom_instructions, sells_subscriptions };
   }
 
   const handleClientSelect = (clientId: string) => {
@@ -261,6 +263,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         industry: client.industry ?? '',
         notes: client.notes ?? '',
         apiKey: '',
+        clientSellsSubscriptions: prev.clientSellsSubscriptions,
       }));
     }
   };
@@ -528,6 +531,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           auditMethod: 'api' as any,
           auditContext: contextPayload ?? undefined,
           profileAudienceScan,
+          clientSellsSubscriptions: Boolean(form.clientSellsSubscriptions),
         }, (update) => {
           if (update.total > 0) {
             setAnalysisStage(update.label);
@@ -694,6 +698,21 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 placeholder="Any relevant context about this prospect..."
               />
             </div>
+
+            <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50/60 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={form.clientSellsSubscriptions}
+                onChange={e => setForm(prev => ({ ...prev, clientSellsSubscriptions: e.target.checked }))}
+                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
+              />
+              <div className="min-w-0">
+                <p className="text-sm font-medium text-gray-800">Client sells subscriptions</p>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  If checked, the Flows audit will also evaluate a Subscription lifecycle flow with soft matching on flow names.
+                </p>
+              </div>
+            </label>
           </div>
         )}
 
