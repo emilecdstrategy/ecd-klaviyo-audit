@@ -11,8 +11,8 @@ import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import { useAuth } from '../contexts/AuthContext';
 import { formatClientListMeta } from '../lib/client-display';
-import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, updateClient, getIndustryEmailByIndustry, upsertAuditEmailDesign, createAnnotation } from '../lib/db';
-import type { Audit, AuditContext, Client } from '../lib/types';
+import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, updateClient, getIndustryEmailByIndustry, upsertAuditEmailDesign, createAnnotation, listRevenueOpportunityTemplates } from '../lib/db';
+import type { Audit, AuditContext, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
@@ -184,6 +184,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     industry: '',
     apiKey: '',
     clientSellsSubscriptions: false,
+    selectedAddOnSlugs: [] as string[],
   });
 
   const [auditContextForm, setAuditContextForm] = useState({
@@ -193,6 +194,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   });
 
   const [clients, setClients] = useState<Client[]>([]);
+  const [revenueTemplates, setRevenueTemplates] = useState<RevenueOpportunityTemplate[]>([]);
   const selectedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
   const hasSavedKlaviyoConnection = Boolean((selectedClient as any)?.klaviyo_connected);
 
@@ -204,6 +206,19 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         if (!cancelled) setClients(c);
       } catch {
         // ignore; audit can still create new client
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const templates = await listRevenueOpportunityTemplates({ activeOnly: true });
+        if (!cancelled) setRevenueTemplates(templates);
+      } catch {
+        if (!cancelled) setRevenueTemplates([]);
       }
     })();
     return () => { cancelled = true; };
@@ -262,6 +277,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         industry: client.industry ?? '',
         apiKey: '',
         clientSellsSubscriptions: prev.clientSellsSubscriptions,
+        selectedAddOnSlugs: prev.selectedAddOnSlugs,
       }));
     }
   };
@@ -329,6 +345,28 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       setAnalysisStage('Creating audit…');
       const title = `${form.companyName} - Klaviyo Audit`;
       const contextPayload = buildAuditContextForSave();
+      const selectedAddOnItems: RevenueOpportunityAddOnItem[] = revenueTemplates
+        .filter(template => form.selectedAddOnSlugs.includes(template.slug))
+        .map((template, index) => ({
+          template_slug: template.slug,
+          name: template.name,
+          description: template.description || undefined,
+          bullets: Array.isArray(template.bullets) ? template.bullets : [],
+          revenue_monthly: Number(template.default_revenue_monthly ?? 0),
+          display_order: template.display_order ?? (index + 1) * 10,
+          is_hidden: false,
+        }));
+      const initialLayout = selectedAddOnItems.length > 0
+        ? {
+            revenue_summary: {
+              blocks: {
+                addOns: {
+                  items: selectedAddOnItems,
+                },
+              },
+            },
+          }
+        : undefined;
       const audit = await createAudit({
         client_id: clientId,
         title,
@@ -342,6 +380,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         created_by: user?.id || '',
         show_recommendations: true,
         context: contextPayload,
+        layout: initialLayout,
       } as any);
 
       setCurrentAuditId(audit.id);
@@ -829,6 +868,52 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 />
               </div>
             </details>
+
+            {revenueTemplates.length > 0 && (
+              <details className="group border border-gray-200 rounded-lg" open>
+                <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 font-medium text-gray-900 bg-gray-50/80 rounded-lg group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
+                  <span>Predefined Revenue Opportunities</span>
+                  <span className="text-xs text-gray-500 font-normal">Optional report add-ons</span>
+                </summary>
+                <div className="px-4 pb-4 pt-2 border-t border-gray-100 space-y-2">
+                  <p className="text-xs text-gray-500">
+                    Select opportunities to include in this report. You can edit their copy and monthly value later in the Revenue Opportunity editor.
+                  </p>
+                  <div className="space-y-2">
+                    {revenueTemplates.map(template => {
+                      const checked = form.selectedAddOnSlugs.includes(template.slug);
+                      return (
+                        <label
+                          key={template.id}
+                          className="flex items-start gap-3 rounded-lg border border-gray-100 bg-white px-3 py-2.5 cursor-pointer"
+                        >
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            onChange={e => {
+                              setForm(prev => {
+                                const current = prev.selectedAddOnSlugs;
+                                const next = e.target.checked
+                                  ? [...current, template.slug]
+                                  : current.filter(slug => slug !== template.slug);
+                                return { ...prev, selectedAddOnSlugs: next };
+                              });
+                            }}
+                            className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
+                          />
+                          <div className="min-w-0">
+                            <p className="text-sm font-medium text-gray-800">{template.name}</p>
+                            {template.description && (
+                              <p className="text-xs text-gray-500 mt-0.5">{template.description}</p>
+                            )}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+              </details>
+            )}
           </div>
         )}
 

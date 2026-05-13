@@ -231,6 +231,12 @@ export const DEFAULT_REVENUE_SUMMARY_SECTION: RevenueSummarySectionConfig = {
       subtitle: 'Additional email-attributed revenue identified in this audit',
       disclaimer: DEFAULT_REVENUE_SUMMARY_DISCLAIMER,
     },
+    addOns: {
+      hidden: false,
+      title: 'Recommended Klaviyo Add-Ons',
+      subtitle: 'Optional platform opportunities selected for this audit.',
+      items: [],
+    },
     timeline: {
       hidden: false,
       title: 'Implementation Timeline',

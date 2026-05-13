@@ -11,6 +11,7 @@ import {
   Code,
   Pencil,
   X,
+  TrendingUp,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -29,12 +30,17 @@ import {
   uploadAuditAssetFile,
   getPlatformSettings,
   updatePlatformSettings,
+  listRevenueOpportunityTemplates,
+  createRevenueOpportunityTemplate,
+  updateRevenueOpportunityTemplate,
+  deleteRevenueOpportunityTemplate,
 } from '../lib/db';
-import type { IndustryEmailLibrary } from '../lib/types';
+import type { IndustryEmailLibrary, RevenueOpportunityTemplate } from '../lib/types';
 
 const TABS = [
   { id: 'users', label: 'Users', icon: Users },
   { id: 'email_library', label: 'Email Library', icon: ImageIcon },
+  { id: 'revenue_opportunities', label: 'Revenue Opportunities', icon: TrendingUp },
   { id: 'settings', label: 'Settings', icon: Settings },
 ];
 
@@ -90,6 +96,7 @@ export default function AdminArea() {
 
         {tab === 'users' && <UsersTab />}
         {tab === 'email_library' && <EmailLibraryTab />}
+        {tab === 'revenue_opportunities' && <RevenueOpportunitiesTab />}
         {tab === 'settings' && <SettingsTab />}
       </div>
     </div>
@@ -711,6 +718,323 @@ function EmailLibraryTab() {
           ))}
       </div>
       )}
+    </div>
+  );
+}
+
+function RevenueOpportunitiesTab() {
+  const [entries, setEntries] = useState<RevenueOpportunityTemplate[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [savingId, setSavingId] = useState<string | null>(null);
+  const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [creating, setCreating] = useState(false);
+
+  const [newEntry, setNewEntry] = useState({
+    slug: '',
+    name: '',
+    description: '',
+    bulletsText: '',
+    defaultRevenue: '0',
+    displayOrder: '0',
+    isActive: true,
+  });
+
+  const parseBullets = (raw: string) =>
+    raw
+      .split('\n')
+      .map(v => v.trim())
+      .filter(Boolean);
+
+  const reload = useCallback(async () => {
+    setError('');
+    try {
+      setLoading(true);
+      const data = await listRevenueOpportunityTemplates();
+      setEntries(data);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to load templates');
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => { reload(); }, [reload]);
+
+  const saveEntry = async (entry: RevenueOpportunityTemplate) => {
+    setError('');
+    setSavingId(entry.id);
+    try {
+      await updateRevenueOpportunityTemplate(entry.id, {
+        slug: entry.slug.trim(),
+        name: entry.name.trim(),
+        description: entry.description.trim(),
+        bullets: entry.bullets,
+        default_revenue_monthly: Number(entry.default_revenue_monthly || 0),
+        display_order: Number(entry.display_order || 0),
+        is_active: Boolean(entry.is_active),
+      });
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to save template');
+    } finally {
+      setSavingId(null);
+    }
+  };
+
+  const removeEntry = async (id: string) => {
+    setError('');
+    setDeletingId(id);
+    try {
+      await deleteRevenueOpportunityTemplate(id);
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to delete template');
+    } finally {
+      setDeletingId(null);
+    }
+  };
+
+  const createEntry = async () => {
+    setError('');
+    const slug = newEntry.slug.trim().toLowerCase();
+    const name = newEntry.name.trim();
+    if (!slug) {
+      setError('Slug is required');
+      return;
+    }
+    if (!name) {
+      setError('Name is required');
+      return;
+    }
+    setCreating(true);
+    try {
+      await createRevenueOpportunityTemplate({
+        slug,
+        name,
+        description: newEntry.description.trim(),
+        bullets: parseBullets(newEntry.bulletsText),
+        default_revenue_monthly: Number(newEntry.defaultRevenue || 0),
+        display_order: Number(newEntry.displayOrder || 0),
+        is_active: newEntry.isActive,
+      });
+      setNewEntry({
+        slug: '',
+        name: '',
+        description: '',
+        bulletsText: '',
+        defaultRevenue: '0',
+        displayOrder: '0',
+        isActive: true,
+      });
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to create template');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  return (
+    <div className="space-y-6 animate-slide-up">
+      <div>
+        <h2 className="text-base font-semibold text-gray-900">Predefined Revenue Opportunities</h2>
+        <p className="text-sm text-gray-500 mt-0.5">
+          Manage reusable Klaviyo opportunities that can be selected in the audit wizard.
+        </p>
+      </div>
+
+      {error && <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>}
+
+      <div className="bg-white rounded-xl p-5 card-shadow space-y-4">
+        <h3 className="text-sm font-semibold text-gray-900">Create New Template</h3>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Slug</label>
+            <input
+              type="text"
+              value={newEntry.slug}
+              onChange={e => setNewEntry(prev => ({ ...prev, slug: e.target.value }))}
+              placeholder="klaviyo_sms"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+            <input
+              type="text"
+              value={newEntry.name}
+              onChange={e => setNewEntry(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="Klaviyo SMS"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            />
+          </div>
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+          <input
+            type="text"
+            value={newEntry.description}
+            onChange={e => setNewEntry(prev => ({ ...prev, description: e.target.value }))}
+            placeholder="One-line summary shown in the report card."
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+          />
+        </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Bullets (one per line)</label>
+          <textarea
+            rows={3}
+            value={newEntry.bulletsText}
+            onChange={e => setNewEntry(prev => ({ ...prev, bulletsText: e.target.value }))}
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            placeholder="First value bullet&#10;Second value bullet"
+          />
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Default Revenue ($/mo)</label>
+            <input
+              type="number"
+              value={newEntry.defaultRevenue}
+              onChange={e => setNewEntry(prev => ({ ...prev, defaultRevenue: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Display Order</label>
+            <input
+              type="number"
+              value={newEntry.displayOrder}
+              onChange={e => setNewEntry(prev => ({ ...prev, displayOrder: e.target.value }))}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-700 mt-6">
+            <input
+              type="checkbox"
+              checked={newEntry.isActive}
+              onChange={e => setNewEntry(prev => ({ ...prev, isActive: e.target.checked }))}
+              className="w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
+            />
+            Active in wizard
+          </label>
+        </div>
+        <div>
+          <button
+            type="button"
+            onClick={createEntry}
+            disabled={creating}
+            className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+          >
+            {creating ? 'Creating...' : 'Create Template'}
+          </button>
+        </div>
+      </div>
+
+      <div className="space-y-3">
+        {loading ? (
+          <div className="bg-white rounded-xl p-6 card-shadow text-sm text-gray-500">Loading templates...</div>
+        ) : entries.length === 0 ? (
+          <div className="bg-white rounded-xl p-6 card-shadow text-sm text-gray-500">No templates yet.</div>
+        ) : (
+          entries.map(entry => {
+            const bulletsText = entry.bullets.join('\n');
+            return (
+              <div key={entry.id} className="bg-white rounded-xl p-5 card-shadow space-y-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Slug</label>
+                    <input
+                      type="text"
+                      value={entry.slug}
+                      onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, slug: e.target.value } : p)))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                    <input
+                      type="text"
+                      value={entry.name}
+                      onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, name: e.target.value } : p)))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    />
+                  </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                  <input
+                    type="text"
+                    value={entry.description}
+                    onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, description: e.target.value } : p)))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Bullets (one per line)</label>
+                  <textarea
+                    rows={3}
+                    value={bulletsText}
+                    onChange={e => {
+                      const nextBullets = parseBullets(e.target.value);
+                      setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, bullets: nextBullets } : p)));
+                    }}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Default Revenue ($/mo)</label>
+                    <input
+                      type="number"
+                      value={entry.default_revenue_monthly}
+                      onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, default_revenue_monthly: Number(e.target.value || 0) } : p)))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Display Order</label>
+                    <input
+                      type="number"
+                      value={entry.display_order}
+                      onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, display_order: Number(e.target.value || 0) } : p)))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 mt-6">
+                    <input
+                      type="checkbox"
+                      checked={entry.is_active}
+                      onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, is_active: e.target.checked } : p)))}
+                      className="w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
+                    />
+                    Active in wizard
+                  </label>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => saveEntry(entry)}
+                    disabled={savingId === entry.id}
+                    className="px-4 py-2 text-sm font-medium rounded-lg bg-brand-primary text-white hover:bg-brand-primary-dark disabled:opacity-50"
+                  >
+                    {savingId === entry.id ? 'Saving...' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => removeEntry(entry.id)}
+                    disabled={deletingId === entry.id}
+                    className="px-4 py-2 text-sm font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                  >
+                    {deletingId === entry.id ? 'Deleting...' : 'Delete'}
+                  </button>
+                </div>
+              </div>
+            );
+          })
+        )}
+      </div>
     </div>
   );
 }

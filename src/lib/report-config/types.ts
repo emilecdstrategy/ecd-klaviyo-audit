@@ -10,6 +10,7 @@
  *   - `null`       -> hide that specific piece of copy (for nullable insights)
  *   - any value    -> replace the default
  */
+import type { RevenueOpportunityAddOnItem } from '../types';
 
 export type BlockVisibility = Record<string, boolean>;
 
@@ -180,6 +181,7 @@ export interface RevenueSummarySectionConfig extends BaseSectionConfig {
   blocks: {
     metrics?: GenericBlockConfig;
     totalBanner?: GenericBlockConfig & { disclaimer?: string | null };
+    addOns?: GenericBlockConfig & { items?: RevenueOpportunityAddOnItem[] };
     timeline?: GenericBlockConfig;
   };
 }

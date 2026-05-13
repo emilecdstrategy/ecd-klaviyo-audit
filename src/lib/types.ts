@@ -44,6 +44,29 @@ export interface Audit {
   client?: Client;
 }
 
+export interface RevenueOpportunityTemplate {
+  id: string;
+  slug: string;
+  name: string;
+  description: string;
+  bullets: string[];
+  default_revenue_monthly: number;
+  display_order: number;
+  is_active: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface RevenueOpportunityAddOnItem {
+  template_slug: string;
+  name: string;
+  description?: string;
+  bullets: string[];
+  revenue_monthly: number;
+  is_hidden?: boolean;
+  display_order?: number;
+}
+
 export interface FlowPerformance {
   id: string;
   audit_id: string;

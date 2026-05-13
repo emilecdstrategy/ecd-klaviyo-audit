@@ -14,7 +14,7 @@ import ReportSegmentTable from '../components/report/ReportSegmentTable';
 import ReportFormTable from '../components/report/ReportFormTable';
 import ReportCampaignTable from '../components/report/ReportCampaignTable';
 import { RichAuditText } from '../components/ui/RichAuditText';
-import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign } from '../lib/types';
+import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem } from '../lib/types';
 import { getPublicReportByToken, getPlatformSettings } from '../lib/db';
 import { cn } from '../lib/utils';
 import {
@@ -196,7 +196,6 @@ export default function PublicReport() {
 
   const isPreview = audit.status === 'draft' || audit.status === 'in_review';
 
-  const totalRevenue = sections.reduce((s, sec) => s + sec.revenue_opportunity, 0);
   const currentFlowMonthlyRevenue = flowPerformance.reduce((s, f) => s + (f.monthly_revenue_current ?? 0), 0);
   const topOpportunities = [...sections]
     .filter(s => s.revenue_opportunity > 0)
@@ -255,6 +254,22 @@ export default function PublicReport() {
   const revenueSummaryCfg = resolveRevenueSummaryConfig(
     revenueSummaryRaw && typeof revenueSummaryRaw === 'object' ? revenueSummaryRaw : undefined,
   );
+  const addOnItemsRaw = revenueSummaryCfg.blocks.addOns?.items;
+  const visibleAddOnItems: RevenueOpportunityAddOnItem[] = Array.isArray(addOnItemsRaw)
+    ? addOnItemsRaw
+      .filter((item): item is RevenueOpportunityAddOnItem => !!item && typeof item === 'object')
+      .map((item, index) => ({
+        ...item,
+        bullets: Array.isArray(item.bullets) ? item.bullets.map(v => String(v)) : [],
+        revenue_monthly: Number(item.revenue_monthly ?? 0),
+        display_order: typeof item.display_order === 'number' ? item.display_order : (index + 1) * 10,
+        is_hidden: Boolean(item.is_hidden),
+      }))
+      .filter(item => !item.is_hidden)
+      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+    : [];
+  const addOnRevenue = visibleAddOnItems.reduce((sum, item) => sum + (Number(item.revenue_monthly) || 0), 0);
+  const totalRevenue = sections.reduce((s, sec) => s + sec.revenue_opportunity, 0) + addOnRevenue;
 
   const executiveSummaryCfg = resolveExecutiveSummaryConfig(
     extractExecutiveSummaryRawConfig(auditLayout),
@@ -869,6 +884,49 @@ export default function PublicReport() {
                   </p>
                 </div>
               )}
+            </div>
+          </div>
+          )}
+
+          {revenueSummaryCfg.blocks.addOns && revenueSummaryCfg.blocks.addOns.hidden !== true && visibleAddOnItems.length > 0 && (
+          <div className="bg-white rounded-xl p-6 border border-gray-100 mt-6">
+            <h3 className="text-base font-semibold text-gray-900 mb-1">
+              {revenueSummaryCfg.blocks.addOns.title ?? 'Recommended Klaviyo Add-Ons'}
+            </h3>
+            {(revenueSummaryCfg.blocks.addOns.subtitle ?? '').trim() !== '' && (
+              <p className="text-sm text-gray-600 mb-6">
+                {revenueSummaryCfg.blocks.addOns.subtitle}
+              </p>
+            )}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {visibleAddOnItems.map((item) => (
+                <div key={`${item.template_slug}-${item.display_order}`} className="rounded-xl border border-gray-100 p-5 bg-gray-50/40">
+                  <div className="flex items-start justify-between gap-3 mb-3">
+                    <div>
+                      <h4 className="text-sm font-semibold text-gray-900">{item.name}</h4>
+                      {item.description && (
+                        <p className="text-xs text-gray-500 mt-0.5">{item.description}</p>
+                      )}
+                    </div>
+                    <div className="text-right shrink-0">
+                      <p className="text-sm font-semibold text-emerald-700 tabular-nums">
+                        {formatCurrency(item.revenue_monthly || 0)}
+                      </p>
+                      <p className="text-[11px] text-emerald-600">/mo</p>
+                    </div>
+                  </div>
+                  {item.bullets.length > 0 && (
+                    <ul className="space-y-2">
+                      {item.bullets.map((bullet, idx) => (
+                        <li key={`${item.template_slug}-bullet-${idx}`} className="flex items-start gap-2 text-sm text-gray-700">
+                          <span className="text-brand-primary mt-0.5">•</span>
+                          <span>{bullet}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
             </div>
           </div>
           )}

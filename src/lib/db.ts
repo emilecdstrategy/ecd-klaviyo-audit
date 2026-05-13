@@ -15,6 +15,7 @@ import type {
   KlaviyoCampaignSnapshot,
   IndustryEmailLibrary,
   AuditEmailDesign,
+  RevenueOpportunityTemplate,
 } from './types';
 
 function requireUserId(user: Profile | null): string {
@@ -552,6 +553,84 @@ export async function updatePlatformSettings(updates: { annotation_size?: string
     .from('platform_settings')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', 'default');
+  if (error) throw error;
+}
+
+function coerceTemplateBullets(input: unknown): string[] {
+  if (!Array.isArray(input)) return [];
+  return input
+    .map(v => String(v ?? '').trim())
+    .filter(Boolean);
+}
+
+function mapRevenueOpportunityTemplateRow(row: any): RevenueOpportunityTemplate {
+  return {
+    id: row.id,
+    slug: row.slug,
+    name: row.name,
+    description: row.description ?? '',
+    bullets: coerceTemplateBullets(row.bullets),
+    default_revenue_monthly: Number(row.default_revenue_monthly ?? 0),
+    display_order: Number(row.display_order ?? 0),
+    is_active: Boolean(row.is_active),
+    created_at: row.created_at,
+    updated_at: row.updated_at,
+  };
+}
+
+export async function listRevenueOpportunityTemplates(
+  options: { activeOnly?: boolean } = {},
+): Promise<RevenueOpportunityTemplate[]> {
+  let query = supabase
+    .from('revenue_opportunity_templates')
+    .select('*')
+    .order('display_order', { ascending: true })
+    .order('name', { ascending: true });
+  if (options.activeOnly) {
+    query = query.eq('is_active', true);
+  }
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []).map(mapRevenueOpportunityTemplateRow);
+}
+
+export async function createRevenueOpportunityTemplate(
+  input: Omit<RevenueOpportunityTemplate, 'id' | 'created_at' | 'updated_at'>,
+): Promise<RevenueOpportunityTemplate> {
+  const { data, error } = await supabase
+    .from('revenue_opportunity_templates')
+    .insert({
+      ...input,
+      bullets: input.bullets ?? [],
+    })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapRevenueOpportunityTemplateRow(data);
+}
+
+export async function updateRevenueOpportunityTemplate(
+  id: string,
+  updates: Partial<Omit<RevenueOpportunityTemplate, 'id' | 'created_at' | 'updated_at'>>,
+): Promise<RevenueOpportunityTemplate> {
+  const { data, error } = await supabase
+    .from('revenue_opportunity_templates')
+    .update({
+      ...updates,
+      updated_at: new Date().toISOString(),
+    })
+    .eq('id', id)
+    .select('*')
+    .single();
+  if (error) throw error;
+  return mapRevenueOpportunityTemplateRow(data);
+}
+
+export async function deleteRevenueOpportunityTemplate(id: string): Promise<void> {
+  const { error } = await supabase
+    .from('revenue_opportunity_templates')
+    .delete()
+    .eq('id', id);
   if (error) throw error;
 }
 
