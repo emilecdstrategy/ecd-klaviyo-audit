@@ -546,18 +546,21 @@ function ToggleRow({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={e => onChange(e.target.checked)}
-        className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
-      />
-      <div className="min-w-0 flex-1">
+    <div className="flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50">
+      <div className="min-w-0 flex-1 pr-2">
         <div className="text-sm font-medium text-gray-800">{label}</div>
         {hint && <div className="text-xs text-gray-500 mt-0.5">{hint}</div>}
       </div>
-    </label>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${checked ? 'bg-brand-primary' : 'bg-gray-200'}`}
+      >
+        <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+      </button>
+    </div>
   );
 }
 
@@ -1147,32 +1150,38 @@ function RubricTab({
                 </button>
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                <label className="flex items-center gap-2 text-xs text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(row.present)}
-                    onChange={e => {
+                <div className="flex items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5">
+                  <span className="text-xs text-gray-700">Present</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(row.present)}
+                    onClick={() => {
                       const next = coreFlows.slice();
-                      next[i] = { ...row, present: e.target.checked };
+                      next[i] = { ...row, present: !Boolean(row.present) };
                       write(['flows', 'core_flows'], next);
                     }}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-brand-primary"
-                  />
-                  Present
-                </label>
-                <label className="flex items-center gap-2 text-xs text-gray-700">
-                  <input
-                    type="checkbox"
-                    checked={Boolean(row.live)}
-                    onChange={e => {
+                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${Boolean(row.present) ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                  >
+                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${Boolean(row.present) ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between gap-2 rounded-md border border-gray-100 bg-gray-50 px-2 py-1.5">
+                  <span className="text-xs text-gray-700">Live</span>
+                  <button
+                    type="button"
+                    role="switch"
+                    aria-checked={Boolean(row.live)}
+                    onClick={() => {
                       const next = coreFlows.slice();
-                      next[i] = { ...row, live: e.target.checked };
+                      next[i] = { ...row, live: !Boolean(row.live) };
                       write(['flows', 'core_flows'], next);
                     }}
-                    className="w-3.5 h-3.5 rounded border-gray-300 text-brand-primary"
-                  />
-                  Live
-                </label>
+                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${Boolean(row.live) ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                  >
+                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${Boolean(row.live) ? 'translate-x-4' : 'translate-x-0'}`} />
+                  </button>
+                </div>
                 <div className="flex items-center gap-1 text-xs text-gray-500">
                   <span>Emails</span>
                   <input
@@ -1191,28 +1200,28 @@ function RubricTab({
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div>
                   <label className="block text-[11px] text-gray-500 mb-1">Current structure</label>
-                  <textarea
-                    rows={2}
+                  <SimpleRichEditor
                     value={String(row.current_structure_note ?? '')}
-                    onChange={e => {
+                    onChange={v => {
                       const next = coreFlows.slice();
-                      next[i] = { ...row, current_structure_note: e.target.value };
+                      next[i] = { ...row, current_structure_note: v };
                       write(['flows', 'core_flows'], next);
                     }}
-                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm"
+                    rows={5}
+                    placeholder="Describe the current flow structure..."
                   />
                 </div>
                 <div>
                   <label className="block text-[11px] text-gray-500 mb-1">Recommended structure</label>
-                  <textarea
-                    rows={2}
+                  <SimpleRichEditor
                     value={String(row.recommended_structure ?? '')}
-                    onChange={e => {
+                    onChange={v => {
                       const next = coreFlows.slice();
-                      next[i] = { ...row, recommended_structure: e.target.value };
+                      next[i] = { ...row, recommended_structure: v };
                       write(['flows', 'core_flows'], next);
                     }}
-                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm"
+                    rows={5}
+                    placeholder="Describe the recommended flow structure..."
                   />
                 </div>
               </div>

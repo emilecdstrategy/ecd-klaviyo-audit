@@ -23,6 +23,15 @@ import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, Selec
 import AnnotationLayer from '../components/audit/AnnotationLayer';
 import { useToast } from '../components/ui/Toast';
 
+function formatCurrencyWithCents(amount: number): string {
+  return new Intl.NumberFormat('en-US', {
+    style: 'currency',
+    currency: 'USD',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(amount || 0);
+}
+
 const SECTION_ICONS: Record<string, React.ElementType> = {
   account_health: BarChart3,
   flows: Layout,
@@ -477,12 +486,6 @@ export default function AuditWorkspace() {
             <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Audit Info</h4>
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between">
-                <span className="text-gray-500">Method</span>
-                <span className="font-medium text-gray-800">
-                  {audit.audit_method === 'api' ? 'API' : audit.audit_method === 'screenshot' ? 'Screenshot' : audit.audit_method}
-                </span>
-              </div>
-              <div className="flex justify-between">
                 <span className="text-gray-500">List size</span>
                 <span className="font-medium text-gray-800">{auditInfoMetrics.list_size.toLocaleString()}</span>
               </div>
@@ -490,7 +493,9 @@ export default function AuditWorkspace() {
                 <span className="text-gray-500">
                   {audit.audit_method === 'api' ? 'Flow $/recipient' : 'AOV'}
                 </span>
-                <span className="font-medium text-gray-800">{formatCurrency(auditInfoMetrics.aov)}</span>
+                <span className="font-medium text-gray-800">
+                  {audit.audit_method === 'api' ? formatCurrencyWithCents(auditInfoMetrics.aov) : formatCurrency(auditInfoMetrics.aov)}
+                </span>
               </div>
               <div className="flex justify-between">
                 <span className="text-gray-500">

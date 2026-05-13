@@ -159,14 +159,8 @@ export default function ExecutiveSummaryLayoutEditor({
       {expanded && (
         <div className="border-t border-gray-50 px-6 py-5 space-y-5">
           <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4">
-            <label className="flex items-start gap-3 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={sectionHidden}
-                onChange={e => writeSectionPatch({ hidden: e.target.checked })}
-                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
-              />
-              <div className="min-w-0 flex-1">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0 flex-1 pr-2">
                 <div className="text-sm font-medium text-gray-800">
                   Hide entire Executive Summary section from the public report
                 </div>
@@ -174,7 +168,16 @@ export default function ExecutiveSummaryLayoutEditor({
                   Removes the hero, snapshot, and overview columns. Later sections renumber automatically.
                 </div>
               </div>
-            </label>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={sectionHidden}
+                onClick={() => writeSectionPatch({ hidden: !sectionHidden })}
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${sectionHidden ? 'bg-brand-primary' : 'bg-gray-200'}`}
+              >
+                <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${sectionHidden ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
+            </div>
           </div>
 
           <div className="rounded-xl border border-gray-100 p-4">
@@ -212,18 +215,21 @@ export default function ExecutiveSummaryLayoutEditor({
                 const hidden = Boolean(bcfg.hidden);
                 return (
                   <div key={block.key} className="rounded-lg border border-gray-100">
-                    <label className="flex items-start gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={!hidden}
-                        onChange={e => writeBlockPatch(block.key, { hidden: !e.target.checked })}
-                        className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
-                      />
-                      <div className="min-w-0 flex-1">
+                    <div className="flex items-start justify-between gap-3 px-3 py-2.5 rounded-lg hover:bg-gray-50">
+                      <div className="min-w-0 flex-1 pr-2">
                         <div className="text-sm font-medium text-gray-800">{block.label}</div>
                         <div className="text-xs text-gray-500 mt-0.5">{block.hint}</div>
                       </div>
-                    </label>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={!hidden}
+                        onClick={() => writeBlockPatch(block.key, { hidden: !hidden })}
+                        className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${!hidden ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                      >
+                        <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${!hidden ? 'translate-x-4' : 'translate-x-0'}`} />
+                      </button>
+                    </div>
                     {!hidden && (
                       <div className="px-3 pb-3 space-y-2">
                         {block.hasTitle && (

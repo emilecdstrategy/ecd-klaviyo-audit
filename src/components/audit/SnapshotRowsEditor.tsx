@@ -23,33 +23,28 @@ interface Row {
   externalId: string;
   is_hidden?: boolean;
   display_name?: string | null;
-  display_notes?: string | null;
   meta?: string;
 }
 
 type RowPatch = {
   is_hidden?: boolean;
   display_name?: string | null;
-  display_notes?: string | null;
 };
 
-const LABELS: Record<Kind, { singular: string; plural: string; notes: string; external: string }> = {
+const LABELS: Record<Kind, { singular: string; plural: string; external: string }> = {
   segment: {
     singular: 'segment',
     plural: 'segments',
-    notes: 'Optional editorial note (rendered beneath the segment name).',
     external: 'Segment ID',
   },
   form: {
     singular: 'signup form',
     plural: 'signup forms',
-    notes: 'Optional editorial note (rendered beneath the form name).',
     external: 'Form ID',
   },
   campaign: {
     singular: 'campaign',
     plural: 'campaigns',
-    notes: 'Optional editorial note (rendered beneath the campaign name).',
     external: 'Campaign ID',
   },
 };
@@ -73,7 +68,6 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
             externalId: s.segment_id,
             is_hidden: s.is_hidden,
             display_name: s.display_name,
-            display_notes: s.display_notes,
             meta: s.created_at_klaviyo ? new Date(s.created_at_klaviyo).toLocaleDateString() : '',
           }));
         } else if (kind === 'form') {
@@ -84,7 +78,6 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
             externalId: f.form_id,
             is_hidden: f.is_hidden,
             display_name: f.display_name,
-            display_notes: f.display_notes,
             meta: f.status,
           }));
         } else {
@@ -95,7 +88,6 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
             externalId: c.campaign_id,
             is_hidden: c.is_hidden,
             display_name: c.display_name,
-            display_notes: c.display_notes,
             meta: [c.status, c.send_channel].filter(Boolean).join(' · '),
           }));
         }
@@ -147,21 +139,18 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
             {labels.singular.slice(1)} rows
           </h3>
           <p className="text-xs text-gray-500 mt-0.5">
-            Hide rows or override their display name / editorial note on the public report. Underlying Klaviyo data stays intact.
+            Hide rows or override their display name on the public report. Underlying Klaviyo data stays intact.
           </p>
         </div>
         <span className="text-[11px] text-gray-400">{rows.length} rows</span>
       </div>
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[820px] text-sm">
+        <table className="w-full min-w-[720px] text-sm">
           <thead className="bg-gray-50">
             <tr>
               <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-16">Show</th>
               <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">{labels.singular}</th>
               <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Display name</th>
-              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide min-w-[240px]">
-                Editorial note
-              </th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -197,15 +186,6 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
                       value={r.display_name ?? r.name}
                       placeholder={r.name}
                       onChange={e => patch(r.id, { display_name: e.target.value || null })}
-                      className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
-                    />
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <textarea
-                      rows={2}
-                      value={r.display_notes ?? r.externalId}
-                      placeholder={labels.notes}
-                      onChange={e => patch(r.id, { display_notes: e.target.value || null })}
                       className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
                     />
                   </td>
