@@ -6,6 +6,7 @@ import AuditSectionEditor from '../components/audit/AuditSectionEditor';
 import FlowPerformanceEditor from '../components/audit/FlowPerformanceEditor';
 import SnapshotRowsEditor from '../components/audit/SnapshotRowsEditor';
 import RevenueSummaryLayoutEditor from '../components/audit/RevenueSummaryLayoutEditor';
+import RevenueAddOnItemsEditor from '../components/audit/RevenueAddOnItemsEditor';
 import ExecutiveSummaryLayoutEditor from '../components/audit/ExecutiveSummaryLayoutEditor';
 import RevenueOpportunityCard from '../components/ui/RevenueOpportunityCard';
 import ShareLinkPanel from '../components/ui/ShareLinkPanel';
@@ -64,8 +65,25 @@ export default function AuditWorkspace() {
   // Hooks must run unconditionally on every render.
   // Compute derived values before any early returns to avoid hook-order crashes.
   const totalRevenue = useMemo(
-    () => sections.reduce((sum, sec) => sum + (Number(sec.revenue_opportunity) || 0), 0),
-    [sections],
+    () => {
+      const sectionRevenue = sections.reduce((sum, sec) => sum + (Number(sec.revenue_opportunity) || 0), 0);
+      const rawLayout = (audit?.layout as Record<string, unknown> | null | undefined) ?? {};
+      const rawItems =
+        (rawLayout.revenue_summary as Record<string, unknown> | undefined)?.blocks &&
+        typeof (rawLayout.revenue_summary as Record<string, unknown>)?.blocks === 'object'
+          ? (((rawLayout.revenue_summary as Record<string, unknown>).blocks as Record<string, unknown>).addOns as Record<string, unknown> | undefined)?.items
+          : undefined;
+      const addOnRevenue = Array.isArray(rawItems)
+        ? rawItems.reduce((sum, item) => {
+          if (!item || typeof item !== 'object') return sum;
+          const hidden = Boolean((item as { is_hidden?: boolean }).is_hidden);
+          if (hidden) return sum;
+          return sum + (Number((item as { revenue_monthly?: number }).revenue_monthly) || 0);
+        }, 0)
+        : 0;
+      return sectionRevenue + addOnRevenue;
+    },
+    [sections, audit?.layout],
   );
   const currentSection = sections.find(s => s.section_key === activeSection);
 
@@ -408,6 +426,7 @@ export default function AuditWorkspace() {
 
               <ExecutiveSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
               <RevenueSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
+              <RevenueAddOnItemsEditor audit={audit} onAuditChange={setAudit} />
             </div>
           ) : currentSection ? (
             <>

@@ -24,7 +24,6 @@ interface Row {
   is_hidden?: boolean;
   display_name?: string | null;
   display_notes?: string | null;
-  display_order?: number | null;
   meta?: string;
 }
 
@@ -32,7 +31,6 @@ type RowPatch = {
   is_hidden?: boolean;
   display_name?: string | null;
   display_notes?: string | null;
-  display_order?: number | null;
 };
 
 const LABELS: Record<Kind, { singular: string; plural: string; notes: string; external: string }> = {
@@ -76,7 +74,6 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
             is_hidden: s.is_hidden,
             display_name: s.display_name,
             display_notes: s.display_notes,
-            display_order: s.display_order,
             meta: s.created_at_klaviyo ? new Date(s.created_at_klaviyo).toLocaleDateString() : '',
           }));
         } else if (kind === 'form') {
@@ -88,7 +85,6 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
             is_hidden: f.is_hidden,
             display_name: f.display_name,
             display_notes: f.display_notes,
-            display_order: f.display_order,
             meta: f.status,
           }));
         } else {
@@ -100,14 +96,10 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
             is_hidden: c.is_hidden,
             display_name: c.display_name,
             display_notes: c.display_notes,
-            display_order: c.display_order,
             meta: [c.status, c.send_channel].filter(Boolean).join(' · '),
           }));
         }
         list.sort((a, b) => {
-          if (typeof a.display_order === 'number' && typeof b.display_order === 'number') {
-            return a.display_order - b.display_order;
-          }
           return (a.name || '').localeCompare(b.name || '');
         });
         if (!cancelled) setRows(list);
@@ -170,7 +162,6 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
               <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide min-w-[240px]">
                 Editorial note
               </th>
-              <th className="px-3 py-2 text-left text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-24">Order</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
@@ -212,21 +203,9 @@ export default function SnapshotRowsEditor({ auditId, kind }: Props) {
                   <td className="px-3 py-2 align-top">
                     <textarea
                       rows={2}
-                      value={r.display_notes ?? ''}
+                      value={r.display_notes ?? r.externalId}
                       placeholder={labels.notes}
                       onChange={e => patch(r.id, { display_notes: e.target.value || null })}
-                      className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
-                    />
-                  </td>
-                  <td className="px-3 py-2 align-top">
-                    <input
-                      type="number"
-                      value={typeof r.display_order === 'number' ? r.display_order : ''}
-                      placeholder="—"
-                      onChange={e => {
-                        const v = e.target.value === '' ? null : Number(e.target.value);
-                        patch(r.id, { display_order: Number.isFinite(v as number) ? (v as number) : null });
-                      }}
                       className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
                     />
                   </td>

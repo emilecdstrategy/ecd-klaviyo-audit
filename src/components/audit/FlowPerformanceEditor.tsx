@@ -3,6 +3,7 @@ import { Eye, EyeOff } from 'lucide-react';
 import type { FlowPerformance } from '../../lib/types';
 import { listFlowPerformance, updateFlowPerformanceRow } from '../../lib/db';
 import { useToast } from '../ui/Toast';
+import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
 
 interface Props {
   auditId: string;
@@ -20,6 +21,65 @@ const RATING_OPTIONS: Array<{ value: '' | 'good' | 'warning' | 'bad' | 'missing'
   { value: 'bad', label: 'Bad', cls: 'text-red-700' },
   { value: 'missing', label: 'Missing', cls: 'text-gray-500' },
 ];
+
+type MetricStatus = 'good' | 'warning' | 'bad' | 'missing';
+
+function metricStatus(actual: number | null, low: number): MetricStatus {
+  if (actual === null) return 'missing';
+  if (actual >= low) return 'good';
+  if (actual >= low * 0.7) return 'warning';
+  return 'bad';
+}
+
+function overallRating(flow: FlowPerformance): MetricStatus {
+  const nonRevenue = isNonRevenueFlow(flow.flow_name);
+  const scores = [
+    metricStatus(flow.actual_open_rate, flow.benchmark_open_rate_low),
+    metricStatus(flow.actual_click_rate, flow.benchmark_click_rate_low),
+    ...(nonRevenue ? [] : [metricStatus(flow.actual_conv_rate, flow.benchmark_conv_rate_low)]),
+  ];
+  const bad = scores.filter(s => s === 'bad').length;
+  const good = scores.filter(s => s === 'good').length;
+  if (bad >= 2) return 'bad';
+  if (good >= 2) return 'good';
+  if (nonRevenue && good >= 1) return 'good';
+  return 'warning';
+}
+
+function buildAssessment(flow: FlowPerformance): string {
+  const nonRevenue = isNonRevenueFlow(flow.flow_name);
+  const parts: string[] = [];
+  const openStatus = metricStatus(flow.actual_open_rate, flow.benchmark_open_rate_low);
+  const clickStatus = metricStatus(flow.actual_click_rate, flow.benchmark_click_rate_low);
+
+  if (openStatus === 'bad' && flow.actual_open_rate !== null) {
+    parts.push(`Open rate ${(flow.actual_open_rate * 100).toFixed(1)}% below ${(flow.benchmark_open_rate_low * 100).toFixed(0)}-${(flow.benchmark_open_rate_high * 100).toFixed(0)}% benchmark`);
+  }
+  if (clickStatus === 'bad' && flow.actual_click_rate !== null) {
+    parts.push(`Click ${(flow.actual_click_rate * 100).toFixed(1)}% vs. ${(flow.benchmark_click_rate_low * 100).toFixed(0)}-${(flow.benchmark_click_rate_high * 100).toFixed(0)}% benchmark`);
+  }
+
+  if (!nonRevenue) {
+    const convStatus = metricStatus(flow.actual_conv_rate, flow.benchmark_conv_rate_low);
+    if (convStatus === 'bad' && flow.actual_conv_rate !== null) {
+      parts.push(`Conv ${(flow.actual_conv_rate * 100).toFixed(2)}% vs. ${(flow.benchmark_conv_rate_low * 100).toFixed(1)}-${(flow.benchmark_conv_rate_high * 100).toFixed(0)}% benchmark`);
+    }
+
+    const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
+    if (flow.recipients_per_month > 50_000 && rpr < 0.02) {
+      parts.push(`Massive volume, tiny conversion. ${flow.recipients_per_month.toLocaleString()} recipients for ${formatCurrency(flow.monthly_revenue_current)}`);
+    }
+  }
+
+  if (parts.length === 0) {
+    if (nonRevenue) return 'Non-revenue flow. Engagement metrics look healthy.';
+    const rating = overallRating(flow);
+    if (rating === 'good') return 'Performing well relative to benchmarks.';
+    return 'Moderate performance, room for improvement.';
+  }
+
+  return parts.slice(0, 2).join('. ') + '.';
+}
 
 export default function FlowPerformanceEditor({ auditId }: Props) {
   const [rows, setRows] = useState<FlowPerformance[] | null>(null);
@@ -139,7 +199,7 @@ export default function FlowPerformanceEditor({ auditId }: Props) {
                   <td className="px-3 py-2 align-top">
                     <textarea
                       rows={2}
-                      value={r.display_assessment ?? ''}
+                      value={r.display_assessment ?? buildAssessment(r)}
                       placeholder="Auto-generated from benchmarks"
                       onChange={e => patch(r.id, { display_assessment: e.target.value || null })}
                       className="w-full px-2 py-1 border border-gray-200 rounded text-sm"
