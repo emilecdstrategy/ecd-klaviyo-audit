@@ -12,7 +12,9 @@ import {
   Pencil,
   X,
   TrendingUp,
-  Info,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -731,13 +733,13 @@ function RevenueOpportunitiesTab() {
   const [savingId, setSavingId] = useState<string | null>(null);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [reorderingId, setReorderingId] = useState<string | null>(null);
 
   const [newEntry, setNewEntry] = useState({
     name: '',
     description: '',
     bulletsText: '',
     defaultRevenue: '0',
-    displayOrder: '0',
     isActive: true,
   });
 
@@ -780,6 +782,11 @@ function RevenueOpportunitiesTab() {
   }, []);
 
   useEffect(() => { reload(); }, [reload]);
+
+  const sortedEntries = useMemo(
+    () => [...entries].sort((a, b) => a.display_order - b.display_order),
+    [entries],
+  );
 
   const saveEntry = async (entry: RevenueOpportunityTemplate) => {
     setError('');
@@ -824,13 +831,14 @@ function RevenueOpportunitiesTab() {
     }
     setCreating(true);
     try {
+      const nextDisplayOrder = entries.reduce((max, e) => Math.max(max, e.display_order || 0), 0) + 10;
       await createRevenueOpportunityTemplate({
         slug: uniqueHandleFromName(name, entries),
         name,
         description: newEntry.description.trim(),
         bullets: sanitizeBullets(textToBullets(newEntry.bulletsText)),
         default_revenue_monthly: Number(newEntry.defaultRevenue || 0),
-        display_order: Number(newEntry.displayOrder || 0),
+        display_order: nextDisplayOrder,
         is_active: newEntry.isActive,
       });
       setNewEntry({
@@ -838,7 +846,6 @@ function RevenueOpportunitiesTab() {
         description: '',
         bulletsText: '',
         defaultRevenue: '0',
-        displayOrder: '0',
         isActive: true,
       });
       await reload();
@@ -846,6 +853,35 @@ function RevenueOpportunitiesTab() {
       setError(e instanceof Error ? e.message : 'Failed to create template');
     } finally {
       setCreating(false);
+    }
+  };
+
+  const moveEntry = async (entryId: string, direction: 'up' | 'down') => {
+    const local = [...sortedEntries];
+    const idx = local.findIndex(e => e.id === entryId);
+    if (idx < 0) return;
+    const target = direction === 'up' ? idx - 1 : idx + 1;
+    if (target < 0 || target >= local.length) return;
+
+    [local[idx], local[target]] = [local[target], local[idx]];
+    const reindexed = local.map((entry, i) => ({ ...entry, display_order: (i + 1) * 10 }));
+    const previousById = new Map(sortedEntries.map(e => [e.id, e.display_order]));
+    const changed = reindexed.filter(e => previousById.get(e.id) !== e.display_order);
+
+    setEntries(reindexed);
+    setReorderingId(entryId);
+    try {
+      await Promise.all(
+        changed.map(entry =>
+          updateRevenueOpportunityTemplate(entry.id, { display_order: entry.display_order }),
+        ),
+      );
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to reorder templates');
+      setEntries(sortedEntries);
+    } finally {
+      setReorderingId(null);
     }
   };
 
@@ -894,25 +930,13 @@ function RevenueOpportunitiesTab() {
             placeholder="Add bullet points here (one per line)"
           />
         </div>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Default Revenue ($/mo)</label>
             <input
               type="number"
               value={newEntry.defaultRevenue}
               onChange={e => setNewEntry(prev => ({ ...prev, defaultRevenue: e.target.value }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-            />
-          </div>
-          <div>
-            <label className="flex items-center gap-1 text-xs font-medium text-gray-500 mb-1">
-              Display Order
-              <TooltipInfo text="Lower number appears first in lists and cards." />
-            </label>
-            <input
-              type="number"
-              value={newEntry.displayOrder}
-              onChange={e => setNewEntry(prev => ({ ...prev, displayOrder: e.target.value }))}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
@@ -947,10 +971,36 @@ function RevenueOpportunitiesTab() {
         ) : entries.length === 0 ? (
           <div className="bg-white rounded-xl p-6 card-shadow text-sm text-gray-500">No templates yet.</div>
         ) : (
-          entries.map(entry => {
+          sortedEntries.map((entry, index) => {
             const bulletsText = bulletsToText(entry.bullets);
             return (
               <div key={entry.id} className="bg-white rounded-xl p-5 card-shadow space-y-3">
+                <div className="flex items-center justify-between">
+                  <div className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500">
+                    <GripVertical className="w-3.5 h-3.5" />
+                    Reorder
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => moveEntry(entry.id, 'up')}
+                      disabled={index === 0 || reorderingId === entry.id}
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 text-gray-500 hover:text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Move up"
+                    >
+                      <ArrowUp className="w-3.5 h-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => moveEntry(entry.id, 'down')}
+                      disabled={index === sortedEntries.length - 1 || reorderingId === entry.id}
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 text-gray-500 hover:text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                      title="Move down"
+                    >
+                      <ArrowDown className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
                   <input
@@ -995,18 +1045,6 @@ function RevenueOpportunitiesTab() {
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                     />
                   </div>
-                  <div>
-                    <label className="flex items-center gap-1 text-xs font-medium text-gray-500 mb-1">
-                      Display Order
-                      <TooltipInfo text="Lower number appears first in lists and cards." />
-                    </label>
-                    <input
-                      type="number"
-                      value={entry.display_order}
-                      onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, display_order: Number(e.target.value || 0) } : p)))}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                    />
-                  </div>
                   <label className="flex items-center gap-2 text-sm text-gray-700 mt-6 cursor-pointer select-none">
                     <button
                       type="button"
@@ -1047,17 +1085,6 @@ function RevenueOpportunitiesTab() {
         )}
       </div>
     </div>
-  );
-}
-
-function TooltipInfo({ text }: { text: string }) {
-  return (
-    <span className="relative inline-flex items-center group">
-      <Info className="w-3.5 h-3.5 text-gray-400 cursor-help" />
-      <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 w-48 -translate-x-1/2 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-normal text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
-        {text}
-      </span>
-    </span>
   );
 }
 
