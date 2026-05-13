@@ -858,11 +858,10 @@ export default function PublicReport() {
                     </div>
                   </div>
                   {item.bullets.length > 0 && (
-                    <ul className="space-y-2">
+                    <ul className="list-disc pl-5 space-y-2 marker:text-brand-primary">
                       {item.bullets.map((bullet, idx) => (
-                        <li key={`${item.template_slug}-bullet-${idx}`} className="flex items-start gap-2 text-sm text-gray-700">
-                          <span className="text-brand-primary mt-0.5">•</span>
-                          <span>{bullet}</span>
+                        <li key={`${item.template_slug}-bullet-${idx}`} className="text-sm leading-relaxed text-gray-700">
+                          {bullet}
                         </li>
                       ))}
                     </ul>
