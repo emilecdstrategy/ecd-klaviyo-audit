@@ -734,6 +734,7 @@ function RevenueOpportunitiesTab() {
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const [reorderingId, setReorderingId] = useState<string | null>(null);
+  const [dragIndex, setDragIndex] = useState<number | null>(null);
 
   const [newEntry, setNewEntry] = useState({
     name: '',
@@ -885,6 +886,29 @@ function RevenueOpportunitiesTab() {
     }
   };
 
+  const reorderEntries = async (nextSortedEntries: RevenueOpportunityTemplate[], actionId?: string) => {
+    const reindexed = nextSortedEntries.map((entry, i) => ({ ...entry, display_order: (i + 1) * 10 }));
+    const previousById = new Map(sortedEntries.map(e => [e.id, e.display_order]));
+    const changed = reindexed.filter(e => previousById.get(e.id) !== e.display_order);
+    if (changed.length === 0) return;
+
+    setEntries(reindexed);
+    setReorderingId(actionId ?? null);
+    try {
+      await Promise.all(
+        changed.map(entry =>
+          updateRevenueOpportunityTemplate(entry.id, { display_order: entry.display_order }),
+        ),
+      );
+      await reload();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Failed to reorder templates');
+      setEntries(sortedEntries);
+    } finally {
+      setReorderingId(null);
+    }
+  };
+
   return (
     <div className="space-y-6 animate-slide-up">
       <div>
@@ -974,11 +998,26 @@ function RevenueOpportunitiesTab() {
           sortedEntries.map((entry, index) => {
             const bulletsText = bulletsToText(entry.bullets);
             return (
-              <div key={entry.id} className="bg-white rounded-xl p-5 card-shadow space-y-3">
+              <div
+                key={entry.id}
+                draggable
+                onDragStart={() => setDragIndex(index)}
+                onDragEnd={() => setDragIndex(null)}
+                onDragOver={e => e.preventDefault()}
+                onDrop={() => {
+                  if (dragIndex === null || dragIndex === index) return;
+                  const next = sortedEntries.slice();
+                  const [moved] = next.splice(dragIndex, 1);
+                  next.splice(index, 0, moved);
+                  setDragIndex(null);
+                  reorderEntries(next, entry.id);
+                }}
+                className={`bg-white rounded-xl p-5 card-shadow space-y-3 transition-colors ${dragIndex === index ? 'ring-2 ring-brand-primary/30 bg-brand-primary/[0.02]' : ''}`}
+              >
                 <div className="flex items-center justify-between">
                   <div className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500">
-                    <GripVertical className="w-3.5 h-3.5" />
-                    Reorder
+                    <GripVertical className="w-3.5 h-3.5 cursor-grab" />
+                    Drag to reorder
                   </div>
                   <div className="flex items-center gap-1">
                     <button
