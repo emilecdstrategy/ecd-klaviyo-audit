@@ -735,13 +735,19 @@ function RevenueOpportunitiesTab() {
   const [newEntry, setNewEntry] = useState({
     name: '',
     description: '',
-    bullets: [''],
+    bulletsText: '',
     defaultRevenue: '0',
     displayOrder: '0',
     isActive: true,
   });
 
   const sanitizeBullets = (raw: string[]) => raw.map(v => v.trim()).filter(Boolean);
+  const textToBullets = (raw: string) =>
+    raw
+      .split('\n')
+      .map(v => v.replace(/^[-*•]\s*/, '').trim())
+      .filter(Boolean);
+  const bulletsToText = (bullets: string[]) => bullets.join('\n');
   const toHandle = (name: string) =>
     name
       .toLowerCase()
@@ -822,7 +828,7 @@ function RevenueOpportunitiesTab() {
         slug: uniqueHandleFromName(name, entries),
         name,
         description: newEntry.description.trim(),
-        bullets: sanitizeBullets(newEntry.bullets),
+        bullets: sanitizeBullets(textToBullets(newEntry.bulletsText)),
         default_revenue_monthly: Number(newEntry.defaultRevenue || 0),
         display_order: Number(newEntry.displayOrder || 0),
         is_active: newEntry.isActive,
@@ -830,7 +836,7 @@ function RevenueOpportunitiesTab() {
       setNewEntry({
         name: '',
         description: '',
-        bullets: [''],
+        bulletsText: '',
         defaultRevenue: '0',
         displayOrder: '0',
         isActive: true,
@@ -881,43 +887,12 @@ function RevenueOpportunitiesTab() {
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Bullets</label>
-          <div className="space-y-2">
-            {newEntry.bullets.map((bullet, idx) => (
-              <div key={`new-bullet-${idx}`} className="rounded-lg border border-gray-100 p-2">
-                <SimpleRichEditor
-                  value={bullet}
-                  onChange={(value) => {
-                    setNewEntry(prev => ({
-                      ...prev,
-                      bullets: prev.bullets.map((b, i) => (i === idx ? value : b)),
-                    }));
-                  }}
-                  rows={2}
-                  placeholder="Describe the outcome/value for this bullet..."
-                />
-                <div className="mt-2">
-                  <button
-                    type="button"
-                    onClick={() => setNewEntry(prev => ({
-                      ...prev,
-                      bullets: prev.bullets.filter((_, i) => i !== idx),
-                    }))}
-                    disabled={newEntry.bullets.length <= 1}
-                    className="text-xs text-red-600 hover:underline disabled:opacity-40 disabled:no-underline"
-                  >
-                    Remove bullet
-                  </button>
-                </div>
-              </div>
-            ))}
-            <button
-              type="button"
-              onClick={() => setNewEntry(prev => ({ ...prev, bullets: [...prev.bullets, ''] }))}
-              className="text-xs font-medium text-brand-primary hover:underline"
-            >
-              + Add bullet
-            </button>
-          </div>
+          <SimpleRichEditor
+            value={newEntry.bulletsText}
+            onChange={(value) => setNewEntry(prev => ({ ...prev, bulletsText: value }))}
+            rows={4}
+            placeholder="Add bullet points here (one per line)"
+          />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
@@ -932,9 +907,7 @@ function RevenueOpportunitiesTab() {
           <div>
             <label className="flex items-center gap-1 text-xs font-medium text-gray-500 mb-1">
               Display Order
-              <span title="Lower number appears first in lists and cards.">
-                <Info className="w-3.5 h-3.5 text-gray-400" />
-              </span>
+              <TooltipInfo text="Lower number appears first in lists and cards." />
             </label>
             <input
               type="number"
@@ -975,6 +948,7 @@ function RevenueOpportunitiesTab() {
           <div className="bg-white rounded-xl p-6 card-shadow text-sm text-gray-500">No templates yet.</div>
         ) : (
           entries.map(entry => {
+            const bulletsText = bulletsToText(entry.bullets);
             return (
               <div key={entry.id} className="bg-white rounded-xl p-5 card-shadow space-y-3">
                 <div>
@@ -1000,47 +974,16 @@ function RevenueOpportunitiesTab() {
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Bullets</label>
-                  <div className="space-y-2">
-                    {entry.bullets.map((bullet, idx) => (
-                      <div key={`${entry.id}-bullet-${idx}`} className="rounded-lg border border-gray-100 p-2">
-                        <SimpleRichEditor
-                          value={bullet}
-                          onChange={(value) => {
-                            setEntries(prev => prev.map(p => (
-                              p.id === entry.id
-                                ? { ...p, bullets: p.bullets.map((b, i) => (i === idx ? value : b)) }
-                                : p
-                            )));
-                          }}
-                          rows={2}
-                          placeholder="Describe the outcome/value for this bullet..."
-                        />
-                        <div className="mt-2">
-                          <button
-                            type="button"
-                            onClick={() => setEntries(prev => prev.map(p => (
-                              p.id === entry.id
-                                ? { ...p, bullets: p.bullets.filter((_, i) => i !== idx) }
-                                : p
-                            )))}
-                            disabled={entry.bullets.length <= 1}
-                            className="text-xs text-red-600 hover:underline disabled:opacity-40 disabled:no-underline"
-                          >
-                            Remove bullet
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                    <button
-                      type="button"
-                      onClick={() => setEntries(prev => prev.map(p => (
-                        p.id === entry.id ? { ...p, bullets: [...p.bullets, ''] } : p
-                      )))}
-                      className="text-xs font-medium text-brand-primary hover:underline"
-                    >
-                      + Add bullet
-                    </button>
-                  </div>
+                  <SimpleRichEditor
+                    value={bulletsText}
+                    onChange={(value) => {
+                      setEntries(prev => prev.map(p => (
+                        p.id === entry.id ? { ...p, bullets: textToBullets(value) } : p
+                      )));
+                    }}
+                    rows={4}
+                    placeholder="Add bullet points here (one per line)"
+                  />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
@@ -1055,9 +998,7 @@ function RevenueOpportunitiesTab() {
                   <div>
                     <label className="flex items-center gap-1 text-xs font-medium text-gray-500 mb-1">
                       Display Order
-                      <span title="Lower number appears first in lists and cards.">
-                        <Info className="w-3.5 h-3.5 text-gray-400" />
-                      </span>
+                      <TooltipInfo text="Lower number appears first in lists and cards." />
                     </label>
                     <input
                       type="number"
@@ -1106,6 +1047,17 @@ function RevenueOpportunitiesTab() {
         )}
       </div>
     </div>
+  );
+}
+
+function TooltipInfo({ text }: { text: string }) {
+  return (
+    <span className="relative inline-flex items-center group">
+      <Info className="w-3.5 h-3.5 text-gray-400 cursor-help" />
+      <span className="pointer-events-none absolute left-1/2 top-full z-20 mt-1.5 w-48 -translate-x-1/2 rounded-md border border-gray-200 bg-white px-2 py-1.5 text-[11px] font-normal text-gray-600 opacity-0 shadow-lg transition-opacity group-hover:opacity-100">
+        {text}
+      </span>
+    </span>
   );
 }
 
