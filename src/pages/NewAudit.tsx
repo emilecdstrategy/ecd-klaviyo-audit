@@ -726,20 +726,23 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               <IndustrySelectWithCustom value={form.industry} onValueChange={v => updateField('industry', v)} />
             </div>
 
-            <label className="flex items-start gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50/60 cursor-pointer">
-              <input
-                type="checkbox"
-                checked={form.clientSellsSubscriptions}
-                onChange={e => setForm(prev => ({ ...prev, clientSellsSubscriptions: e.target.checked }))}
-                className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
-              />
-              <div className="min-w-0">
+            <div className="flex items-start justify-between gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50/60">
+              <div className="min-w-0 pr-2">
                 <p className="text-sm font-medium text-gray-800">Client sells subscriptions</p>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  If checked, the Flows audit will also evaluate a Subscription lifecycle flow with soft matching on flow names.
+                  If enabled, the Flows audit also evaluates a Subscription lifecycle flow using soft matching on flow names.
                 </p>
               </div>
-            </label>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={form.clientSellsSubscriptions}
+                onClick={() => setForm(prev => ({ ...prev, clientSellsSubscriptions: !prev.clientSellsSubscriptions }))}
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${form.clientSellsSubscriptions ? 'bg-brand-primary' : 'bg-gray-200'}`}
+              >
+                <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${form.clientSellsSubscriptions ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
+            </div>
           </div>
         )}
 
@@ -883,31 +886,40 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                     {revenueTemplates.map(template => {
                       const checked = form.selectedAddOnSlugs.includes(template.slug);
                       return (
-                        <label
+                        <div
                           key={template.id}
-                          className="flex items-start gap-3 rounded-lg border border-gray-100 bg-white px-3 py-2.5 cursor-pointer"
+                          className={`rounded-lg border px-3 py-2.5 transition-colors ${
+                            checked
+                              ? 'border-brand-primary/30 bg-brand-primary/5'
+                              : 'border-gray-100 bg-white'
+                          }`}
                         >
-                          <input
-                            type="checkbox"
-                            checked={checked}
-                            onChange={e => {
-                              setForm(prev => {
-                                const current = prev.selectedAddOnSlugs;
-                                const next = e.target.checked
-                                  ? [...current, template.slug]
-                                  : current.filter(slug => slug !== template.slug);
-                                return { ...prev, selectedAddOnSlugs: next };
-                              });
-                            }}
-                            className="mt-0.5 w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
-                          />
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-gray-800">{template.name}</p>
-                            {template.description && (
-                              <p className="text-xs text-gray-500 mt-0.5">{template.description}</p>
-                            )}
+                          <div className="flex items-start justify-between gap-3">
+                            <div className="min-w-0 pr-2">
+                              <p className="text-sm font-medium text-gray-800">{template.name}</p>
+                              {template.description && (
+                                <p className="text-xs text-gray-500 mt-0.5">{template.description}</p>
+                              )}
+                            </div>
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={checked}
+                              onClick={() => {
+                                setForm(prev => {
+                                  const current = prev.selectedAddOnSlugs;
+                                  const next = checked
+                                    ? current.filter(slug => slug !== template.slug)
+                                    : [...current, template.slug];
+                                  return { ...prev, selectedAddOnSlugs: next };
+                                });
+                              }}
+                              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${checked ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                            >
+                              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+                            </button>
                           </div>
-                        </label>
+                        </div>
                       );
                     })}
                   </div>

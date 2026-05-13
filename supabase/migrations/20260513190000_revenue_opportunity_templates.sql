@@ -93,11 +93,11 @@ values
   (
     'klaviyo_sms',
     'Klaviyo SMS',
-    'Launch and optimize Klaviyo SMS to capture incremental lifecycle revenue.',
+    'Launch Klaviyo SMS to unlock incremental lifecycle revenue from high-intent subscribers.',
     '[
-      "Capture SMS consent in high-intent moments (forms, checkout, post-purchase).",
-      "Build SMS lifecycle automations for welcome, cart, and post-purchase retention.",
-      "Use coordinated email + SMS sends to increase conversion without over-messaging."
+      "**Collect compliant SMS consent** at signup, checkout, and post-purchase touchpoints.",
+      "**Launch core SMS automations** for welcome, cart recovery, and post-purchase retention.",
+      "**Coordinate email + SMS messaging** to increase conversion while controlling fatigue."
     ]'::jsonb,
     0,
     10,
@@ -106,11 +106,11 @@ values
   (
     'klaviyo_customer_agent',
     'Klaviyo Customer Agent',
-    'Deploy Klaviyo Customer Agent to improve conversion and support outcomes.',
+    'Deploy Klaviyo Customer Agent to improve shopper conversion and support efficiency.',
     '[
-      "Enable product recommendation and FAQ automation during pre-purchase journeys.",
-      "Route high-intent conversations to human support with clear handoff rules.",
-      "Use conversation insights to improve flows, campaigns, and on-site messaging."
+      "**Automate common pre-purchase questions** with accurate product and policy responses.",
+      "**Escalate high-intent conversations** to human support with clear handoff rules.",
+      "**Use conversation insights** to improve flows, campaigns, and onsite messaging strategy."
     ]'::jsonb,
     0,
     20,

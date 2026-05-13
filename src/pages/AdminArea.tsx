@@ -12,6 +12,7 @@ import {
   Pencil,
   X,
   TrendingUp,
+  Info,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -22,6 +23,7 @@ import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, Selec
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { useToast } from '../components/ui/Toast';
 import { supabase } from '../lib/supabase';
+import SimpleRichEditor from '../components/ui/SimpleRichEditor';
 import {
   listIndustryEmailLibrary,
   createIndustryEmail,
@@ -731,20 +733,32 @@ function RevenueOpportunitiesTab() {
   const [creating, setCreating] = useState(false);
 
   const [newEntry, setNewEntry] = useState({
-    slug: '',
     name: '',
     description: '',
-    bulletsText: '',
+    bullets: [''],
     defaultRevenue: '0',
     displayOrder: '0',
     isActive: true,
   });
 
-  const parseBullets = (raw: string) =>
-    raw
-      .split('\n')
-      .map(v => v.trim())
-      .filter(Boolean);
+  const sanitizeBullets = (raw: string[]) => raw.map(v => v.trim()).filter(Boolean);
+  const toHandle = (name: string) =>
+    name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '_')
+      .replace(/^_+|_+$/g, '');
+  const uniqueHandleFromName = (name: string, rows: RevenueOpportunityTemplate[], currentId?: string) => {
+    const base = toHandle(name) || 'template';
+    const used = new Set(
+      rows
+        .filter(row => row.id !== currentId)
+        .map(row => row.slug),
+    );
+    if (!used.has(base)) return base;
+    let i = 2;
+    while (used.has(`${base}_${i}`)) i += 1;
+    return `${base}_${i}`;
+  };
 
   const reload = useCallback(async () => {
     setError('');
@@ -766,10 +780,10 @@ function RevenueOpportunitiesTab() {
     setSavingId(entry.id);
     try {
       await updateRevenueOpportunityTemplate(entry.id, {
-        slug: entry.slug.trim(),
+        slug: uniqueHandleFromName(entry.name, entries, entry.id),
         name: entry.name.trim(),
         description: entry.description.trim(),
-        bullets: entry.bullets,
+        bullets: sanitizeBullets(entry.bullets),
         default_revenue_monthly: Number(entry.default_revenue_monthly || 0),
         display_order: Number(entry.display_order || 0),
         is_active: Boolean(entry.is_active),
@@ -797,12 +811,7 @@ function RevenueOpportunitiesTab() {
 
   const createEntry = async () => {
     setError('');
-    const slug = newEntry.slug.trim().toLowerCase();
     const name = newEntry.name.trim();
-    if (!slug) {
-      setError('Slug is required');
-      return;
-    }
     if (!name) {
       setError('Name is required');
       return;
@@ -810,19 +819,18 @@ function RevenueOpportunitiesTab() {
     setCreating(true);
     try {
       await createRevenueOpportunityTemplate({
-        slug,
+        slug: uniqueHandleFromName(name, entries),
         name,
         description: newEntry.description.trim(),
-        bullets: parseBullets(newEntry.bulletsText),
+        bullets: sanitizeBullets(newEntry.bullets),
         default_revenue_monthly: Number(newEntry.defaultRevenue || 0),
         display_order: Number(newEntry.displayOrder || 0),
         is_active: newEntry.isActive,
       });
       setNewEntry({
-        slug: '',
         name: '',
         description: '',
-        bulletsText: '',
+        bullets: [''],
         defaultRevenue: '0',
         displayOrder: '0',
         isActive: true,
@@ -848,27 +856,18 @@ function RevenueOpportunitiesTab() {
 
       <div className="bg-white rounded-xl p-5 card-shadow space-y-4">
         <h3 className="text-sm font-semibold text-gray-900">Create New Template</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Slug</label>
-            <input
-              type="text"
-              value={newEntry.slug}
-              onChange={e => setNewEntry(prev => ({ ...prev, slug: e.target.value }))}
-              placeholder="klaviyo_sms"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-            />
-          </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
-            <input
-              type="text"
-              value={newEntry.name}
-              onChange={e => setNewEntry(prev => ({ ...prev, name: e.target.value }))}
-              placeholder="Klaviyo SMS"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-            />
-          </div>
+        <div>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+          <input
+            type="text"
+            value={newEntry.name}
+            onChange={e => setNewEntry(prev => ({ ...prev, name: e.target.value }))}
+            placeholder="Klaviyo SMS"
+            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+          />
+          <p className="text-[11px] text-gray-500 mt-1">
+            Handle is auto-generated from the name.
+          </p>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
@@ -881,14 +880,44 @@ function RevenueOpportunitiesTab() {
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Bullets (one per line)</label>
-          <textarea
-            rows={3}
-            value={newEntry.bulletsText}
-            onChange={e => setNewEntry(prev => ({ ...prev, bulletsText: e.target.value }))}
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-            placeholder="First value bullet&#10;Second value bullet"
-          />
+          <label className="block text-xs font-medium text-gray-500 mb-1">Bullets</label>
+          <div className="space-y-2">
+            {newEntry.bullets.map((bullet, idx) => (
+              <div key={`new-bullet-${idx}`} className="rounded-lg border border-gray-100 p-2">
+                <SimpleRichEditor
+                  value={bullet}
+                  onChange={(value) => {
+                    setNewEntry(prev => ({
+                      ...prev,
+                      bullets: prev.bullets.map((b, i) => (i === idx ? value : b)),
+                    }));
+                  }}
+                  rows={2}
+                  placeholder="Describe the outcome/value for this bullet..."
+                />
+                <div className="mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setNewEntry(prev => ({
+                      ...prev,
+                      bullets: prev.bullets.filter((_, i) => i !== idx),
+                    }))}
+                    disabled={newEntry.bullets.length <= 1}
+                    className="text-xs text-red-600 hover:underline disabled:opacity-40 disabled:no-underline"
+                  >
+                    Remove bullet
+                  </button>
+                </div>
+              </div>
+            ))}
+            <button
+              type="button"
+              onClick={() => setNewEntry(prev => ({ ...prev, bullets: [...prev.bullets, ''] }))}
+              className="text-xs font-medium text-brand-primary hover:underline"
+            >
+              + Add bullet
+            </button>
+          </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
           <div>
@@ -901,7 +930,12 @@ function RevenueOpportunitiesTab() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Display Order</label>
+            <label className="flex items-center gap-1 text-xs font-medium text-gray-500 mb-1">
+              Display Order
+              <span title="Lower number appears first in lists and cards.">
+                <Info className="w-3.5 h-3.5 text-gray-400" />
+              </span>
+            </label>
             <input
               type="number"
               value={newEntry.displayOrder}
@@ -909,13 +943,16 @@ function RevenueOpportunitiesTab() {
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700 mt-6">
-            <input
-              type="checkbox"
-              checked={newEntry.isActive}
-              onChange={e => setNewEntry(prev => ({ ...prev, isActive: e.target.checked }))}
-              className="w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
-            />
+          <label className="flex items-center gap-2 text-sm text-gray-700 mt-6 cursor-pointer select-none">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={newEntry.isActive}
+              onClick={() => setNewEntry(prev => ({ ...prev, isActive: !prev.isActive }))}
+              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${newEntry.isActive ? 'bg-brand-primary' : 'bg-gray-200'}`}
+            >
+              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${newEntry.isActive ? 'translate-x-4' : 'translate-x-0'}`} />
+            </button>
             Active in wizard
           </label>
         </div>
@@ -938,28 +975,19 @@ function RevenueOpportunitiesTab() {
           <div className="bg-white rounded-xl p-6 card-shadow text-sm text-gray-500">No templates yet.</div>
         ) : (
           entries.map(entry => {
-            const bulletsText = entry.bullets.join('\n');
             return (
               <div key={entry.id} className="bg-white rounded-xl p-5 card-shadow space-y-3">
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Slug</label>
-                    <input
-                      type="text"
-                      value={entry.slug}
-                      onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, slug: e.target.value } : p)))}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
-                    <input
-                      type="text"
-                      value={entry.name}
-                      onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, name: e.target.value } : p)))}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                  <input
+                    type="text"
+                    value={entry.name}
+                    onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, name: e.target.value } : p)))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    Handle: <span className="font-mono">{toHandle(entry.name) || 'template'}</span> (auto)
+                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
@@ -971,16 +999,48 @@ function RevenueOpportunitiesTab() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Bullets (one per line)</label>
-                  <textarea
-                    rows={3}
-                    value={bulletsText}
-                    onChange={e => {
-                      const nextBullets = parseBullets(e.target.value);
-                      setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, bullets: nextBullets } : p)));
-                    }}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  />
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Bullets</label>
+                  <div className="space-y-2">
+                    {entry.bullets.map((bullet, idx) => (
+                      <div key={`${entry.id}-bullet-${idx}`} className="rounded-lg border border-gray-100 p-2">
+                        <SimpleRichEditor
+                          value={bullet}
+                          onChange={(value) => {
+                            setEntries(prev => prev.map(p => (
+                              p.id === entry.id
+                                ? { ...p, bullets: p.bullets.map((b, i) => (i === idx ? value : b)) }
+                                : p
+                            )));
+                          }}
+                          rows={2}
+                          placeholder="Describe the outcome/value for this bullet..."
+                        />
+                        <div className="mt-2">
+                          <button
+                            type="button"
+                            onClick={() => setEntries(prev => prev.map(p => (
+                              p.id === entry.id
+                                ? { ...p, bullets: p.bullets.filter((_, i) => i !== idx) }
+                                : p
+                            )))}
+                            disabled={entry.bullets.length <= 1}
+                            className="text-xs text-red-600 hover:underline disabled:opacity-40 disabled:no-underline"
+                          >
+                            Remove bullet
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                    <button
+                      type="button"
+                      onClick={() => setEntries(prev => prev.map(p => (
+                        p.id === entry.id ? { ...p, bullets: [...p.bullets, ''] } : p
+                      )))}
+                      className="text-xs font-medium text-brand-primary hover:underline"
+                    >
+                      + Add bullet
+                    </button>
+                  </div>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
@@ -993,7 +1053,12 @@ function RevenueOpportunitiesTab() {
                     />
                   </div>
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Display Order</label>
+                    <label className="flex items-center gap-1 text-xs font-medium text-gray-500 mb-1">
+                      Display Order
+                      <span title="Lower number appears first in lists and cards.">
+                        <Info className="w-3.5 h-3.5 text-gray-400" />
+                      </span>
+                    </label>
                     <input
                       type="number"
                       value={entry.display_order}
@@ -1001,13 +1066,18 @@ function RevenueOpportunitiesTab() {
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                     />
                   </div>
-                  <label className="flex items-center gap-2 text-sm text-gray-700 mt-6">
-                    <input
-                      type="checkbox"
-                      checked={entry.is_active}
-                      onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, is_active: e.target.checked } : p)))}
-                      className="w-4 h-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/20"
-                    />
+                  <label className="flex items-center gap-2 text-sm text-gray-700 mt-6 cursor-pointer select-none">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={entry.is_active}
+                      onClick={() => setEntries(prev => prev.map(p => (
+                        p.id === entry.id ? { ...p, is_active: !p.is_active } : p
+                      )))}
+                      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${entry.is_active ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${entry.is_active ? 'translate-x-4' : 'translate-x-0'}`} />
+                    </button>
                     Active in wizard
                   </label>
                 </div>
