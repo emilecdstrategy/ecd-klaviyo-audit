@@ -359,7 +359,7 @@ export default function AuditSectionEditor({
 
       {expanded && (
         <div className="border-t border-gray-50">
-          <div className="flex items-center gap-1 px-6 pt-3 border-b border-gray-100 overflow-x-auto">
+          <div className="flex items-center gap-1 px-6 pt-3 border-b border-gray-100 overflow-x-auto overflow-y-hidden">
             {tabs.map(t => (
               <button
                 key={t.key}
