@@ -861,7 +861,7 @@ export default function PublicReport() {
                     <ul className="list-disc pl-5 space-y-2 marker:text-brand-primary">
                       {item.bullets.map((bullet, idx) => (
                         <li key={`${item.template_slug}-bullet-${idx}`} className="text-sm leading-relaxed text-gray-700">
-                          {bullet}
+                          <RichAuditText text={bullet} />
                         </li>
                       ))}
                     </ul>
