@@ -26,6 +26,7 @@ export type ExecutivePayload = {
   strengths?: string[];
   findingsHidden?: boolean[];
   strengthsHidden?: boolean[];
+  timelineHidden?: boolean[];
   timeline?: TimelinePhase[];
 };
 
@@ -48,6 +49,7 @@ function serializeExecutive(payload: ExecutivePayload, fallbackRaw: string): str
     payload.strengths?.length ||
     payload.findingsHidden?.some(Boolean) ||
     payload.strengthsHidden?.some(Boolean) ||
+    payload.timelineHidden?.some(Boolean) ||
     payload.timeline?.length ||
     (payload.text && payload.text !== fallbackRaw)
   ) {
@@ -96,6 +98,7 @@ type ReportEditContextValue = {
   toggleFlowsBlockHidden: (blockKey: string, hidden: boolean) => void;
   toggleFindingHidden: (index: number, hidden: boolean) => void;
   toggleStrengthHidden: (index: number, hidden: boolean) => void;
+  toggleTimelinePhaseHidden: (index: number, hidden: boolean) => void;
   updateSectionBlockField: (
     sectionKey: string,
     blockKey: string,
@@ -127,6 +130,7 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   toggleFlowsBlockHidden: () => {},
   toggleFindingHidden: () => {},
   toggleStrengthHidden: () => {},
+  toggleTimelinePhaseHidden: () => {},
   updateSectionBlockField: () => {},
   updateSectionDetailField: () => {},
   patchSectionBlock: () => {},
@@ -446,6 +450,17 @@ export function ReportEditProvider({
     [getExecPayload, saveExecutive],
   );
 
+  const toggleTimelinePhaseHidden = useCallback(
+    (index: number, hidden: boolean) => {
+      const prev = getExecPayload();
+      const timelineHidden = [...(prev.timelineHidden ?? [])];
+      while (timelineHidden.length <= index) timelineHidden.push(false);
+      timelineHidden[index] = hidden;
+      saveExecutive({ timelineHidden });
+    },
+    [getExecPayload, saveExecutive],
+  );
+
   const patchSectionBlock = useCallback(
     (sectionKey: string, blockKey: string, patch: Record<string, unknown>) => {
       const section = sections.find(s => s.section_key === sectionKey);
@@ -542,6 +557,7 @@ export function ReportEditProvider({
       toggleFlowsBlockHidden,
       toggleFindingHidden,
       toggleStrengthHidden,
+      toggleTimelinePhaseHidden,
       updateSectionBlockField,
       updateSectionDetailField,
       patchSectionBlock,
@@ -567,6 +583,7 @@ export function ReportEditProvider({
       toggleFlowsBlockHidden,
       toggleFindingHidden,
       toggleStrengthHidden,
+      toggleTimelinePhaseHidden,
       updateSectionBlockField,
       updateSectionDetailField,
       patchSectionBlock,

@@ -35,13 +35,6 @@ export const DEFAULT_FLOWS_HEALTH_BENCHMARKS = {
   ],
 } as const;
 
-export const DEFAULT_FLOWS_REVENUE_INSIGHT_CONCENTRATION =
-  'If either of your top two flows breaks, more than half your automation revenue disappears. ' +
-  'Diversify into post-purchase, cross-sell, and winback flows.';
-
-export const DEFAULT_FLOWS_REVENUE_INSIGHT_VOLUME =
-  'These high-volume, low-conversion flows need rebuilding or sunsetting.';
-
 export const DEFAULT_FLOWS_SECTION: FlowsSectionConfig = {
   hidden: false,
   sectionNumber: '03',
@@ -68,10 +61,6 @@ export const DEFAULT_FLOWS_SECTION: FlowsSectionConfig = {
     revenueBreakdown: {
       hidden: false,
       title: 'Revenue Breakdown by Flow',
-      insights: {
-        concentration: DEFAULT_FLOWS_REVENUE_INSIGHT_CONCENTRATION,
-        volume: DEFAULT_FLOWS_REVENUE_INSIGHT_VOLUME,
-      },
     },
     flowTable: {
       hidden: false,

@@ -29,9 +29,9 @@ export interface FlowsHealthBenchmarks {
 }
 
 export interface FlowsRevenueInsights {
-  /** null explicitly hides this callout; undefined falls back to default. */
+  /** @deprecated No longer rendered — kept for legacy config compatibility */
   concentration?: string | null;
-  /** null explicitly hides this callout; undefined falls back to default. */
+  /** @deprecated No longer rendered — kept for legacy config compatibility */
   volume?: string | null;
 }
 

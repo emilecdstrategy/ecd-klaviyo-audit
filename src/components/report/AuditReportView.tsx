@@ -22,7 +22,7 @@ import ReportBlockHeader from './ReportBlockHeader';
 import EditableRichText from './edit/EditableRichText';
 import EditablePlainText from './edit/EditablePlainText';
 import { useReportEdit } from './edit/ReportEditContext';
-import ReportBlockEditChrome from './edit/ReportBlockEditChrome';
+import ReportBlockEditChrome, { ReportHiddenItemStub, ReportItemHideButton } from './edit/ReportBlockEditChrome';
 import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem } from '../../lib/types';
@@ -125,6 +125,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     toggleAuditSectionHidden,
     toggleExecutiveBlockHidden,
     toggleFlowsBlockHidden,
+    toggleTimelinePhaseHidden,
     updateSectionBlockField,
     patchSectionBlock,
   } = useReportEdit();
@@ -194,6 +195,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   let aiTimeline: { phase: string; timeframe: string; label: string; items: string[] }[] = [];
   let findingsHidden: boolean[] = [];
   let strengthsHidden: boolean[] = [];
+  let timelineHidden: boolean[] = [];
   try {
     const parsed = JSON.parse(audit.executive_summary || '');
     if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
@@ -204,6 +206,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       aiTimeline = Array.isArray(parsed.timeline) ? parsed.timeline : [];
       findingsHidden = Array.isArray(parsed.findingsHidden) ? parsed.findingsHidden.map(Boolean) : [];
       strengthsHidden = Array.isArray(parsed.strengthsHidden) ? parsed.strengthsHidden.map(Boolean) : [];
+      timelineHidden = Array.isArray(parsed.timelineHidden) ? parsed.timelineHidden.map(Boolean) : [];
     }
   } catch {
     // plain text — keep as-is
@@ -501,12 +504,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               );
             })()}
 
+            <div className="space-y-6">
             {(isFlowsBlockVisible(flowsCfg, 'healthScore') || editMode) && flowPerformance.length > 0 && (
               <ReportBlockEditChrome
                 label="Overall Flow Health Score"
                 hidden={flowsCfg.blocks.healthScore?.hidden === true}
                 onToggleHidden={h => toggleFlowsBlockHidden('healthScore', h)}
-                className="mb-6"
               >
               <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
                 <ReportFlowHealthScore
@@ -545,7 +548,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             )}
 
             {isFlowsBlockVisible(flowsCfg, 'revenueBreakdown') && flowPerformance.length > 0 && (
-              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+              <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
                 <ReportFlowRevenueBreakdown
                   performance={flowPerformance}
                   title={
@@ -560,22 +563,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       flowsCfg.blocks.revenueBreakdown?.title
                     )
                   }
-                  insights={flowsCfg.blocks.revenueBreakdown?.insights}
-                  editMode={editMode}
-                  onInsightSave={(key, value) =>
-                    patchSectionBlock('flows', 'revenueBreakdown', {
-                      insights: {
-                        ...(flowsCfg.blocks.revenueBreakdown?.insights ?? {}),
-                        [key]: value || undefined,
-                      },
-                    })
-                  }
                 />
               </div>
             )}
 
             {isFlowsBlockVisible(flowsCfg, 'flowTable') && flowPerformance.length > 0 && (
-              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+              <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
                 <ReportBlockHeader
                   icon={
                     <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
@@ -605,6 +598,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 </div>
               </div>
             )}
+            </div>
 
             {isFlowsBlockVisible(flowsCfg, 'inventoryTable') && (
               <ReportInventoryLauncher
@@ -1049,9 +1043,31 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <div className="p-6">
             {aiTimeline.length > 0 ? (
               <div className="space-y-8">
-                {aiTimeline.slice(0, 4).map((p, i) => (
-                  <ImplementationTimelinePhase key={i} phase={p} index={i} />
-                ))}
+                {(() => {
+                  let displayNumber = 0;
+                  return aiTimeline.slice(0, 4).map((p, i) => {
+                    const hidden = Boolean(timelineHidden[i]);
+                    if (!editMode && hidden) return null;
+                    if (editMode && hidden) {
+                      return (
+                        <ReportHiddenItemStub
+                          key={i}
+                          label={`Phase ${String(i + 1).padStart(2, '0')}`}
+                          onRestore={() => toggleTimelinePhaseHidden(i, false)}
+                        />
+                      );
+                    }
+                    displayNumber += 1;
+                    return (
+                      <ImplementationTimelinePhase
+                        key={i}
+                        phase={p}
+                        phaseIndex={i}
+                        displayIndex={displayNumber - 1}
+                      />
+                    );
+                  });
+                })()}
               </div>
             ) : (
               <p className="text-sm text-gray-600 text-center py-8">AI timeline not available for this audit run.</p>
@@ -1255,18 +1271,20 @@ const TIMELINE_ACCENT = ['bg-emerald-500', 'bg-brand-primary', 'bg-amber-500', '
 
 function ImplementationTimelinePhase({
   phase,
-  index,
+  phaseIndex,
+  displayIndex,
 }: {
   phase: { phase: string; timeframe: string; label: string; items: string[] };
-  index: number;
+  phaseIndex: number;
+  displayIndex: number;
 }) {
-  const { updateTimelinePhase, updateTimelineItem } = useReportEdit();
+  const { editMode, updateTimelinePhase, updateTimelineItem, toggleTimelinePhaseHidden } = useReportEdit();
   const [expanded, setExpanded] = useState(false);
   const items = Array.isArray(phase.items) ? phase.items : [];
   const previewCount = 5;
   const many = items.length > previewCount;
   const visibleItems = !many || expanded ? items : items.slice(0, previewCount);
-  const accent = TIMELINE_ACCENT[index] ?? 'bg-slate-400';
+  const accent = TIMELINE_ACCENT[displayIndex] ?? 'bg-slate-400';
 
   return (
     <div className="flex gap-4 sm:gap-5">
@@ -1274,28 +1292,35 @@ function ImplementationTimelinePhase({
         <div
           className={`flex h-11 w-11 items-center justify-center rounded-full text-sm font-bold text-white shadow-sm ${accent}`}
         >
-          {index + 1}
+          {displayIndex + 1}
         </div>
       </div>
       <div className="min-w-0 flex-1 rounded-xl border border-gray-100 bg-white p-4 sm:p-5 card-shadow">
         <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
           <EditablePlainText
             value={phase.phase}
-            onSave={v => updateTimelinePhase(index, 'phase', v)}
+            onSave={v => updateTimelinePhase(phaseIndex, 'phase', v)}
             className="text-xs font-bold uppercase tracking-wide text-brand-primary"
             as="span"
           />
           <EditablePlainText
             value={phase.timeframe}
-            onSave={v => updateTimelinePhase(index, 'timeframe', v)}
+            onSave={v => updateTimelinePhase(phaseIndex, 'timeframe', v)}
             className="text-sm text-gray-600"
             as="span"
           />
+          {editMode && (
+            <ReportItemHideButton
+              hidden={false}
+              onToggleHidden={() => toggleTimelinePhaseHidden(phaseIndex, true)}
+              title="Hide this phase"
+            />
+          )}
         </div>
         <div className="mb-4 text-base font-semibold leading-snug text-gray-900">
           <EditableRichText
             value={phase.label || ''}
-            onSave={v => updateTimelinePhase(index, 'label', v)}
+            onSave={v => updateTimelinePhase(phaseIndex, 'label', v)}
             className="text-base font-semibold leading-snug text-gray-900"
           />
         </div>
@@ -1317,7 +1342,7 @@ function ImplementationTimelinePhase({
               <span className="min-w-0 [&_strong]:font-semibold [&_strong]:text-gray-900 flex-1">
                 <EditableRichText
                   value={item}
-                  onSave={v => updateTimelineItem(index, j, v)}
+                  onSave={v => updateTimelineItem(phaseIndex, j, v)}
                   className="text-sm leading-relaxed text-gray-800"
                 />
               </span>

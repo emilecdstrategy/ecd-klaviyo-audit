@@ -24,17 +24,38 @@ export default function AppPreloader({
     >
       <div className="flex flex-col items-center gap-5 text-center">
         <div className="relative flex h-20 w-20 items-center justify-center">
-          <div className="absolute inset-0 rounded-2xl border-2 border-brand-primary/10" aria-hidden />
-          <div
-            className="absolute inset-0 rounded-2xl border-2 border-transparent border-t-brand-primary animate-spin motion-reduce:animate-none"
+          <svg
+            className="absolute inset-0 h-full w-full animate-spin motion-reduce:animate-none"
+            viewBox="0 0 80 80"
             aria-hidden
-          />
+          >
+            <circle
+              cx="40"
+              cy="40"
+              r="34"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              className="text-brand-primary/15"
+            />
+            <circle
+              cx="40"
+              cy="40"
+              r="34"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="3"
+              strokeLinecap="round"
+              className="text-brand-primary"
+              strokeDasharray="54 160"
+            />
+          </svg>
           <img
             src="/cropped-favicon-192x192.webp"
             alt="ECD Digital Strategy"
-            className="relative h-14 w-14 rounded-xl object-cover shadow-md ring-1 ring-black/5"
-            width={56}
-            height={56}
+            className="relative h-12 w-12 rounded-full object-cover shadow-md ring-2 ring-white"
+            width={48}
+            height={48}
             fetchPriority="high"
             decoding="async"
           />

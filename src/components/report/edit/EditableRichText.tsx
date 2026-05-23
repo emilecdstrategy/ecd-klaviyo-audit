@@ -1,9 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
-import { Bold, Italic } from 'lucide-react';
 import { htmlToMd, mdToHtml } from '../../../lib/audit-markdown';
 import { cn } from '../../../lib/utils';
 import { RichAuditText } from '../../ui/RichAuditText';
+import FloatingFormatToolbar, { useFloatingToolbarPosition } from './FloatingFormatToolbar';
 import { useReportEdit } from './ReportEditContext';
 
 type EditableRichTextProps = {
@@ -27,10 +26,9 @@ export default function EditableRichText({
 }: EditableRichTextProps) {
   const { editMode } = useReportEdit();
   const editorRef = useRef<HTMLDivElement>(null);
-  const toolbarRef = useRef<HTMLDivElement>(null);
   const isInternalUpdate = useRef(false);
   const [focused, setFocused] = useState(false);
-  const [toolbarPos, setToolbarPos] = useState({ top: 0, left: 0 });
+  const toolbarPos = useFloatingToolbarPosition(editorRef, focused);
 
   const canEdit = editMode && Boolean(onSave);
 
@@ -44,16 +42,6 @@ export default function EditableRichText({
       editorRef.current.innerHTML = html;
     }
   }, [value, canEdit]);
-
-  const updateToolbarPosition = useCallback(() => {
-    const el = editorRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    setToolbarPos({
-      top: Math.max(8, rect.top + window.scrollY - 44),
-      left: Math.min(window.innerWidth - 120, rect.left + window.scrollX),
-    });
-  }, []);
 
   const persist = useCallback(() => {
     if (!editorRef.current || !onSave) return;
@@ -78,23 +66,6 @@ export default function EditableRichText({
     );
   }
 
-  const toolbar = focused && createPortal(
-    <div
-      ref={toolbarRef}
-      className="fixed z-[100] flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white px-1 py-1 shadow-lg"
-      style={{ top: toolbarPos.top, left: toolbarPos.left }}
-      onMouseDown={e => e.preventDefault()}
-    >
-      <button type="button" onClick={() => exec('bold')} className="rounded p-1.5 hover:bg-gray-100" title="Bold">
-        <Bold className="h-3.5 w-3.5" />
-      </button>
-      <button type="button" onClick={() => exec('italic')} className="rounded p-1.5 hover:bg-gray-100" title="Italic">
-        <Italic className="h-3.5 w-3.5" />
-      </button>
-    </div>,
-    document.body,
-  );
-
   return (
     <>
       <div
@@ -103,10 +74,7 @@ export default function EditableRichText({
         suppressContentEditableWarning
         role="textbox"
         data-placeholder={placeholder}
-        onFocus={() => {
-          setFocused(true);
-          updateToolbarPosition();
-        }}
+        onFocus={() => setFocused(true)}
         onBlur={() => {
           setFocused(false);
           persist();
@@ -127,7 +95,13 @@ export default function EditableRichText({
           'empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 empty:before:pointer-events-none',
         )}
       />
-      {toolbar}
+      <FloatingFormatToolbar
+        visible={focused}
+        top={toolbarPos.top}
+        left={toolbarPos.left}
+        onBold={() => exec('bold')}
+        onItalic={() => exec('italic')}
+      />
     </>
   );
 }
