@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { Zap, TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X } from 'lucide-react';
+import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X } from 'lucide-react';
 import { SECTION_LABELS } from '../lib/constants';
 import { formatCurrency } from '../lib/revenue-calculator';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
@@ -13,6 +13,12 @@ import ReportAccountSnapshot from '../components/report/ReportAccountSnapshot';
 import ReportSegmentTable from '../components/report/ReportSegmentTable';
 import ReportFormTable from '../components/report/ReportFormTable';
 import ReportCampaignTable from '../components/report/ReportCampaignTable';
+import ReportBrandMark from '../components/report/ReportBrandMark';
+import ReportCover from '../components/report/ReportCover';
+import ReportSectionHeader from '../components/report/ReportSectionHeader';
+import ReportKeyFindings from '../components/report/ReportKeyFindings';
+import ReportStrengthsPanel from '../components/report/ReportStrengthsPanel';
+import ReportTrustFooter from '../components/report/ReportTrustFooter';
 import { RichAuditText } from '../components/ui/RichAuditText';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem } from '../lib/types';
 import { getPublicReportByToken, getPlatformSettings } from '../lib/db';
@@ -318,21 +324,19 @@ export default function PublicReport() {
     sectionRefs.current[id] = el;
   };
 
+  const preparedDateLabel = audit.published_at
+    ? new Date(audit.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+    : audit.created_at
+      ? new Date(audit.created_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })
+      : 'recently';
+
   return (
-    <div className="min-h-screen bg-[#f9f9f9]">
-      <header className="bg-white border-b border-gray-100 sticky top-0 z-50">
-        <div className="max-w-[90rem] mx-auto px-6 py-3.5 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center">
-              <Zap className="w-4 h-4 text-white" />
-            </div>
-            <div>
-              <span className="text-sm font-bold text-gray-900">ECD</span>
-              <span className="text-xs text-gray-400 block -mt-0.5 leading-none">Email Audit Report</span>
-            </div>
-          </div>
+    <div className="min-h-screen bg-brand-surface">
+      <header className="sticky top-0 z-50 border-b border-gray-100/80 bg-white/95 backdrop-blur-sm">
+        <div className="mx-auto flex max-w-[90rem] items-center justify-between px-6 py-3.5">
+          <ReportBrandMark size="md" />
           <div className="text-right">
-            <p className="text-[11px] text-gray-400 uppercase tracking-wide">Prepared for</p>
+            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Prepared for</p>
             <p className="text-sm font-semibold text-gray-900">{client.company_name}</p>
           </div>
         </div>
@@ -376,30 +380,18 @@ export default function PublicReport() {
       <main className="max-w-[90rem] mx-auto px-6 py-10 space-y-16">
         {summarySectionVisible && (
         <section id="summary" ref={setRef('summary')}>
-          <SectionHeader
+          <ReportCover companyName={client.company_name} preparedDate={preparedDateLabel} />
+
+            <ReportSectionHeader
             number={sectionNumbers['summary'] ?? executiveSummaryCfg.sectionNumber ?? '01'}
             label={executiveSummaryCfg.sectionTitle ?? 'Executive Summary'}
           />
 
           {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'findings') && aiFindings.length > 0 && (
-            <div className="bg-white rounded-2xl p-8 border border-gray-100 mb-6">
-              <h3 className="text-lg font-bold text-gray-900 mb-6">
-                {executiveSummaryCfg.blocks.findings?.title ?? 'Key Findings'}
-              </h3>
-              <ol className="space-y-5">
-                {aiFindings.slice(0, 5).map((finding, i) => (
-                  <li key={i} className="flex items-start gap-4">
-                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10 text-sm font-bold text-brand-primary tabular-nums">
-                      {String(i + 1).padStart(2, '0')}
-                    </span>
-                    <RichAuditText
-                      text={finding}
-                      className="text-base text-gray-700 leading-relaxed pt-1.5"
-                    />
-                  </li>
-                ))}
-              </ol>
-            </div>
+            <ReportKeyFindings
+              title={executiveSummaryCfg.blocks.findings?.title ?? 'Key Findings'}
+              findings={aiFindings}
+            />
           )}
 
           {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'hero') && (() => {
@@ -452,34 +444,10 @@ export default function PublicReport() {
             )}
 
           {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'strengths') && (
-          <div className="mb-6">
-            <div className="bg-white rounded-xl p-5 border border-gray-100">
-              <div className="flex items-center gap-2 mb-4">
-                <CheckCircle2 className="w-4 h-4 text-emerald-500" />
-                <h3 className="text-sm font-semibold text-gray-900">
-                  {executiveSummaryCfg.blocks.strengths?.title ?? "What's Working"}
-                </h3>
-              </div>
-              <ul className="space-y-3">
-                {aiStrengths.length > 0 ? aiStrengths.map((s, i) => {
-                  const dashIdx = s.indexOf(' — ');
-                  const bold = stripInlineBoldMarkers(dashIdx > 0 ? s.slice(0, dashIdx) : s);
-                  const rest = dashIdx > 0 ? s.slice(dashIdx + 3) : '';
-                  return (
-                    <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                      <span className="text-emerald-500 mt-0.5 shrink-0">→</span>
-                      <span>
-                        <span className="font-semibold block">{bold}</span>
-                        {rest && <RichAuditText text={rest} className="block text-gray-600 leading-relaxed mt-0.5" />}
-                      </span>
-                    </li>
-                  );
-                }) : (
-                  <li className="text-sm text-gray-500">AI overview not available for this audit run.</li>
-                )}
-              </ul>
-            </div>
-          </div>
+            <ReportStrengthsPanel
+              title={executiveSummaryCfg.blocks.strengths?.title ?? "What's Working"}
+              strengths={aiStrengths}
+            />
           )}
 
         </section>
@@ -487,7 +455,7 @@ export default function PublicReport() {
 
         {healthSectionVisible && (
           <section id="health" ref={setRef('health')}>
-            <SectionHeader
+            <ReportSectionHeader
               number={sectionNumbers['health'] ?? accountHealthCfg.sectionNumber ?? '02'}
               label={accountHealthCfg.sectionTitle ?? 'Account Health Score'}
             />
@@ -499,7 +467,7 @@ export default function PublicReport() {
 
         {flowsSectionVisible && (
           <section id="flows" ref={setRef('flows')}>
-            <SectionHeader
+            <ReportSectionHeader
               number={sectionNumbers['flows'] ?? flowsCfg.sectionNumber ?? '03'}
               label={flowsCfg.sectionTitle ?? 'Flows'}
             />
@@ -594,7 +562,7 @@ export default function PublicReport() {
 
         {segmentsSectionVisible && (
           <section id="segments" ref={setRef('segments')}>
-            <SectionHeader
+            <ReportSectionHeader
               number={sectionNumbers['segments'] ?? segmentationCfg.sectionNumber ?? '04'}
               label={segmentationCfg.sectionTitle ?? 'Segments'}
             />
@@ -654,7 +622,7 @@ export default function PublicReport() {
 
         {formsSectionVisible && (
           <section id="forms" ref={setRef('forms')}>
-            <SectionHeader
+            <ReportSectionHeader
               number={sectionNumbers['forms'] ?? signupFormsCfg.sectionNumber ?? '05'}
               label={signupFormsCfg.sectionTitle ?? 'Signup Forms'}
             />
@@ -714,7 +682,7 @@ export default function PublicReport() {
 
         {campaignsSectionVisible && (
           <section id="campaigns" ref={setRef('campaigns')}>
-            <SectionHeader
+            <ReportSectionHeader
               number={sectionNumbers['campaigns'] ?? campaignsCfg.sectionNumber ?? '06'}
               label={campaignsCfg.sectionTitle ?? 'Campaigns'}
             />
@@ -774,7 +742,7 @@ export default function PublicReport() {
 
         {emailDesignSectionVisible && emailDesign && isEmailDesignBlockVisible(emailDesignCfg, 'comparison') && (
           <section id="email_design" ref={setRef('email_design')}>
-            <SectionHeader
+            <ReportSectionHeader
               number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
               label={emailDesignCfg.sectionTitle ?? 'Email Design'}
             />
@@ -789,7 +757,7 @@ export default function PublicReport() {
 
         {opportunitySectionVisible && (
         <section id="opportunity" ref={setRef('opportunity')}>
-          <SectionHeader
+          <ReportSectionHeader
             number={sectionNumbers['opportunity'] ?? revenueSummaryCfg.sectionNumber ?? '08'}
             label={revenueSummaryCfg.sectionTitle ?? 'Revenue Opportunity'}
           />
@@ -941,32 +909,7 @@ export default function PublicReport() {
         )}
       </main>
 
-      <footer className="bg-white border-t border-gray-100 py-8 mt-16">
-        <div className="max-w-[90rem] mx-auto px-6 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-7 h-7 rounded-lg bg-brand-primary flex items-center justify-center">
-              <Zap className="w-3.5 h-3.5 text-white" />
-            </div>
-            <div>
-              <span className="text-sm font-bold text-gray-900">ECD</span>
-              <span className="text-xs text-gray-400 block -mt-0.5 leading-none">Email Conversion Design</span>
-            </div>
-          </div>
-          <p className="text-xs text-gray-400">
-            Report prepared {audit.published_at ? new Date(audit.published_at).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' }) : 'recently'}
-          </p>
-        </div>
-      </footer>
-    </div>
-  );
-}
-
-function SectionHeader({ number, label }: { number: string; label: string }) {
-  return (
-    <div className="flex items-center gap-3 mb-6">
-      <span className="text-[11px] font-bold text-gray-300 tabular-nums">{number}</span>
-      <div className="w-px h-4 bg-gray-200" />
-      <h2 className="text-lg font-bold text-gray-900">{label}</h2>
+      <ReportTrustFooter preparedDate={preparedDateLabel} />
     </div>
   );
 }

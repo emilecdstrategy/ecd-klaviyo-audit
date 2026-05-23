@@ -1,0 +1,10 @@
+{
+  "mcpServers": {
+    "claude-design-bridge": {
+      "command": "node",
+      "args": [
+        "scripts/run-claude-design-mcp.mjs"
+      ]
+    }
+  }
+}
