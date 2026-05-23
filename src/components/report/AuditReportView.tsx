@@ -1108,6 +1108,18 @@ function SnapshotStatusValue({ tone, children }: { children: ReactNode; tone: ke
   );
 }
 
+function RubricStaticNote({ text }: { text: string }) {
+  const raw = String(text ?? '').trim();
+  if (!raw || raw === 'N/A') {
+    return <p className="text-sm text-gray-400">N/A</p>;
+  }
+  return (
+    <div className="text-sm text-gray-700 leading-relaxed [&_strong]:text-gray-900 [&_strong]:font-semibold">
+      {renderInlineMarkdownBold(raw)}
+    </div>
+  );
+}
+
 function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; collapsedLines?: 3 | 4 | 5 }) {
   const [expanded, setExpanded] = useState(false);
   const [needsToggle, setNeedsToggle] = useState(false);
@@ -1180,10 +1192,12 @@ function EditableRubricNote({
   text,
   onSave,
   collapsedLines = 4,
+  expandable = true,
 }: {
   text: string;
   onSave: (value: string) => void;
   collapsedLines?: number;
+  expandable?: boolean;
 }) {
   const { editMode } = useReportEdit();
   if (editMode) {
@@ -1196,7 +1210,10 @@ function EditableRubricNote({
       />
     );
   }
-  return <RubricExpandableNote text={text || 'N/A'} collapsedLines={collapsedLines} />;
+  if (!expandable) {
+    return <RubricStaticNote text={text || 'N/A'} />;
+  }
+  return <RubricExpandableNote text={text || 'N/A'} collapsedLines={collapsedLines as 3 | 4 | 5} />;
 }
 
 function RubricPanelHeader({
@@ -1458,18 +1475,21 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
             <EditableRubricNote
               text={d.offer_note || ''}
               onSave={v => updateSectionDetailField(sk, ['signup_forms', 'offer_note'], v)}
+              expandable={false}
             />
           </RubricInsightCard>
           <RubricInsightCard label={editableLabel('mobile', 'Mobile optimization')}>
             <EditableRubricNote
               text={d.mobile_optimization_note || ''}
               onSave={v => updateSectionDetailField(sk, ['signup_forms', 'mobile_optimization_note'], v)}
+              expandable={false}
             />
           </RubricInsightCard>
           <RubricInsightCard label={editableLabel('benchmark', 'Benchmark conversion')}>
             <EditableRubricNote
               text={d.benchmark_conversion_note || ''}
               onSave={v => updateSectionDetailField(sk, ['signup_forms', 'benchmark_conversion_note'], v)}
+              expandable={false}
             />
           </RubricInsightCard>
         </div>
