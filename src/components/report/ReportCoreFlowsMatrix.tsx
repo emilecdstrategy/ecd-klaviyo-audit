@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { RichAuditText } from '../ui/RichAuditText';
 import { cn } from '../../lib/utils';
@@ -57,9 +57,17 @@ function FlowRowDetails({ row }: { row: CoreFlowRow }) {
   }
 
   return (
-    <div className="grid gap-4 md:grid-cols-2">
-      {hasCurrent && <FlowNote label="Current" text={current} />}
-      {hasRecommended && <FlowNote label="Recommended" text={recommended} />}
+    <div className="grid gap-4 sm:grid-cols-2">
+      {hasCurrent && (
+        <div className="rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm">
+          <FlowNote label="Current structure" text={current} />
+        </div>
+      )}
+      {hasRecommended && (
+        <div className="rounded-lg border border-brand-primary/15 bg-brand-surface/40 px-4 py-3 shadow-sm">
+          <FlowNote label="Recommended" text={recommended} />
+        </div>
+      )}
     </div>
   );
 }
@@ -94,56 +102,75 @@ export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] })
               const isExpanded = expandedIndex === i;
 
               return (
-                <tr key={i} className="border-b border-gray-50 align-top last:border-b-0">
-                  <td className="px-5 py-3.5">
-                    <RichAuditText
-                      text={row.flow_name || 'N/A'}
-                      className="text-sm font-semibold text-gray-900"
-                    />
-                  </td>
-                  <td className="px-3 py-3.5">
-                    <FlowStatusBadge present={Boolean(row.present)} live={Boolean(row.live)} />
-                  </td>
-                  <td className="px-3 py-3.5 text-center">
-                    <span className="inline-flex min-w-[28px] items-center justify-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
-                      {typeof row.email_count === 'number' ? row.email_count : '—'}
-                    </span>
-                  </td>
-                  <td className="px-5 py-3.5">
-                    {hasNotes ? (
-                      <button
-                        type="button"
-                        onClick={() => setExpandedIndex(isExpanded ? null : i)}
-                        className="inline-flex items-center gap-1 text-xs font-semibold text-brand-primary transition-colors hover:text-brand-primary-dark"
-                      >
-                        {isExpanded ? 'Hide' : 'Details'}
-                        {isExpanded ? (
-                          <ChevronUp className="h-3.5 w-3.5" />
-                        ) : (
-                          <ChevronDown className="h-3.5 w-3.5" />
-                        )}
-                      </button>
-                    ) : (
-                      <span className="text-xs text-gray-300">—</span>
+                <Fragment key={i}>
+                  <tr
+                    className={cn(
+                      'border-b border-gray-50 align-top transition-colors',
+                      isExpanded && 'border-b-0 bg-brand-surface/30',
                     )}
-                  </td>
-                </tr>
+                  >
+                    <td className="px-5 py-3.5">
+                      <RichAuditText
+                        text={row.flow_name || 'N/A'}
+                        className={cn(
+                          'text-sm font-semibold',
+                          isExpanded ? 'text-brand-primary-dark' : 'text-gray-900',
+                        )}
+                      />
+                    </td>
+                    <td className="px-3 py-3.5">
+                      <FlowStatusBadge present={Boolean(row.present)} live={Boolean(row.live)} />
+                    </td>
+                    <td className="px-3 py-3.5 text-center">
+                      <span className="inline-flex min-w-[28px] items-center justify-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
+                        {typeof row.email_count === 'number' ? row.email_count : '—'}
+                      </span>
+                    </td>
+                    <td className="px-5 py-3.5">
+                      {hasNotes ? (
+                        <button
+                          type="button"
+                          aria-expanded={isExpanded}
+                          onClick={() => setExpandedIndex(isExpanded ? null : i)}
+                          className={cn(
+                            'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors',
+                            isExpanded
+                              ? 'bg-brand-primary/10 text-brand-primary-dark'
+                              : 'text-brand-primary hover:bg-brand-surface hover:text-brand-primary-dark',
+                          )}
+                        >
+                          {isExpanded ? 'Hide' : 'Details'}
+                          {isExpanded ? (
+                            <ChevronUp className="h-3.5 w-3.5" />
+                          ) : (
+                            <ChevronDown className="h-3.5 w-3.5" />
+                          )}
+                        </button>
+                      ) : (
+                        <span className="text-xs text-gray-300">—</span>
+                      )}
+                    </td>
+                  </tr>
+                  {isExpanded && (
+                    <tr className="border-b border-gray-100 bg-brand-surface/20">
+                      <td colSpan={4} className="px-5 pb-4 pt-1">
+                        <div
+                          className={cn(
+                            'border-l-2 border-brand-primary/40 pl-4',
+                            'animate-slide-up motion-reduce:animate-none',
+                          )}
+                        >
+                          <FlowRowDetails row={row} />
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
         </table>
       </div>
-
-      {expandedIndex !== null && (
-        <div
-          className={cn(
-            'border-t border-gray-100 bg-gray-50/60 px-5 py-4',
-            'animate-slide-up motion-reduce:animate-none',
-          )}
-        >
-          <FlowRowDetails row={rows[expandedIndex]} />
-        </div>
-      )}
     </div>
   );
 }
