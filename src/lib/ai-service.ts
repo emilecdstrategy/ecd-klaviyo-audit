@@ -1,5 +1,6 @@
 import type { AuditContext, AuditSection, WizardData } from './types';
 import { supabase } from './supabase';
+import { repairSplitFindings } from './findings-normalize';
 import { AI_SCHEMA_VERSION, AUDIT_SECTION_KEYS } from './ai/schema';
 
 // Future: Replace with real OpenAI API calls through a Supabase Edge Function
@@ -191,9 +192,9 @@ export async function runAIAnalysis(
     );
 
     let executiveSummary = top.executiveSummary;
-    let findingsOut = top.findings ?? [];
+    let findingsOut = repairSplitFindings(top.findings ?? []);
     let strengthsOut = top.strengths ?? [];
-    let concernsOut = top.concerns ?? [];
+    let concernsOut = repairSplitFindings(top.concerns ?? []);
     let timelineOut = top.implementationTimeline ?? [];
     let sectionOut: Partial<AuditSection>[] = sections;
 
@@ -223,9 +224,9 @@ export async function runAIAnalysis(
           'client context refinement',
         );
         executiveSummary = refined.executiveSummary;
-        findingsOut = refined.findings ?? findingsOut;
+        findingsOut = repairSplitFindings(refined.findings ?? findingsOut);
         strengthsOut = refined.strengths ?? strengthsOut;
-        concernsOut = refined.concerns ?? concernsOut;
+        concernsOut = repairSplitFindings(refined.concerns ?? concernsOut);
         timelineOut = refined.implementationTimeline ?? timelineOut;
         sectionOut = (refined.sections ?? sectionOut) as Partial<AuditSection>[];
       } catch {

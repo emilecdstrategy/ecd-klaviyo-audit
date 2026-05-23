@@ -1,6 +1,7 @@
-import { useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import type { Audit } from '../../lib/types';
 import { updateAudit } from '../../lib/db';
+import { repairSplitFindings, resolveExecutiveFindings } from '../../lib/findings-normalize';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
 
 type ExecPayload = {
@@ -25,10 +26,8 @@ function parseExecutiveSummary(raw: string): ExecPayload {
 }
 
 function normalizeFindings(findings: string[] | undefined, concerns: string[] | undefined): string[] {
-  const base = Array.isArray(findings) && findings.length > 0
-    ? findings
-    : (Array.isArray(concerns) ? concerns.slice(0, 5) : []);
-  const padded = [...base];
+  const resolved = resolveExecutiveFindings(findings, concerns);
+  const padded = [...resolved];
   while (padded.length < 5) padded.push('');
   return padded.slice(0, 5);
 }
@@ -41,6 +40,7 @@ export default function ExecutiveSummaryFindingsEditor({
   onAuditChange: (next: Audit) => void;
 }) {
   const saveTimer = useRef<number | null>(null);
+  const autoRepaired = useRef(false);
 
   const payload = useMemo(
     () => parseExecutiveSummary(audit.executive_summary || ''),
@@ -52,11 +52,7 @@ export default function ExecutiveSummaryFindingsEditor({
     [payload.findings, payload.concerns],
   );
 
-  const scheduleSave = (nextFindings: string[]) => {
-    const nextPayload = {
-      ...payload,
-      findings: nextFindings,
-    };
+  const persistPayload = (nextPayload: ExecPayload) => {
     const serialized = JSON.stringify(nextPayload);
     onAuditChange({ ...audit, executive_summary: serialized });
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
@@ -67,6 +63,29 @@ export default function ExecutiveSummaryFindingsEditor({
         /* silent */
       }
     }, 500) as unknown as number;
+  };
+
+  useEffect(() => {
+    if (autoRepaired.current) return;
+    const repairedFindings = resolveExecutiveFindings(payload.findings, payload.concerns);
+    const repairedConcerns = repairSplitFindings(payload.concerns ?? []);
+    const needsRepair =
+      JSON.stringify(payload.findings ?? []) !== JSON.stringify(repairedFindings) ||
+      JSON.stringify(payload.concerns ?? []) !== JSON.stringify(repairedConcerns);
+    if (!needsRepair) return;
+    autoRepaired.current = true;
+    persistPayload({
+      ...payload,
+      findings: repairedFindings,
+      concerns: repairedConcerns,
+    });
+  }, [audit.executive_summary, audit.id, payload]);
+
+  const scheduleSave = (nextFindings: string[]) => {
+    persistPayload({
+      ...payload,
+      findings: nextFindings,
+    });
   };
 
   const updateFinding = (index: number, value: string) => {

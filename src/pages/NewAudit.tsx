@@ -14,6 +14,7 @@ import { formatClientListMeta } from '../lib/client-display';
 import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, updateClient, getIndustryEmailByIndustry, upsertAuditEmailDesign, createAnnotation, listRevenueOpportunityTemplates } from '../lib/db';
 import type { Audit, AuditContext, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
+import { resolveExecutiveFindings } from '../lib/findings-normalize';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { supabase } from '../lib/supabase';
@@ -597,7 +598,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       const execPayload = (ai.strengths?.length || ai.concerns?.length || ai.findings?.length || ai.implementationTimeline?.length)
         ? JSON.stringify({
             text: ai.executiveSummary,
-            findings: ai.findings ?? [],
+            findings: resolveExecutiveFindings(ai.findings ?? [], ai.concerns ?? []),
             strengths: ai.strengths ?? [],
             concerns: ai.concerns ?? [],
             timeline: ai.implementationTimeline ?? [],

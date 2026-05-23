@@ -22,6 +22,7 @@ import ReportTrustFooter from '../components/report/ReportTrustFooter';
 import { RichAuditText } from '../components/ui/RichAuditText';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem } from '../lib/types';
 import { getPublicReportByToken, getPlatformSettings } from '../lib/db';
+import { resolveExecutiveFindings } from '../lib/findings-normalize';
 import { cn } from '../lib/utils';
 import {
   extractAccountHealthRawConfig,
@@ -225,9 +226,7 @@ export default function PublicReport() {
   } catch {
     // plain text — keep as-is
   }
-  if (aiFindings.length === 0 && aiConcerns.length > 0) {
-    aiFindings = aiConcerns.slice(0, 5);
-  }
+  aiFindings = resolveExecutiveFindings(aiFindings, aiConcerns);
 
   const stripInlineBoldMarkers = (s: string) => s.replace(/\*\*(.+?)\*\*/g, '$1');
 

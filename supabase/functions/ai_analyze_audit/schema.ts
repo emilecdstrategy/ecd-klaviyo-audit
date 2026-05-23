@@ -1,3 +1,5 @@
+import { repairSplitFindings } from "../_shared/findings-normalize.ts";
+
 export const AI_SCHEMA_VERSION = "2026-03-26.v4";
 
 export const AUDIT_SECTION_KEYS = [
@@ -161,7 +163,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
       type: "array",
       minItems: 5,
       maxItems: 5,
-      items: { type: "string", minLength: 20, maxLength: 400 },
+      items: { type: "string", minLength: 20, maxLength: 600 },
     },
     strengths: {
       type: "array",
@@ -173,7 +175,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
       type: "array",
       minItems: 3,
       maxItems: 7,
-      items: { type: "string", minLength: 20, maxLength: 300 },
+      items: { type: "string", minLength: 20, maxLength: 500 },
     },
     implementationTimeline: {
       type: "array",
@@ -216,7 +218,7 @@ export const AI_TOP_LEVEL_ONLY_SCHEMA = {
       type: "array",
       minItems: 5,
       maxItems: 5,
-      items: { type: "string", minLength: 20, maxLength: 400 },
+      items: { type: "string", minLength: 20, maxLength: 600 },
     },
     strengths: {
       type: "array",
@@ -228,7 +230,7 @@ export const AI_TOP_LEVEL_ONLY_SCHEMA = {
       type: "array",
       minItems: 3,
       maxItems: 7,
-      items: { type: "string", minLength: 20, maxLength: 300 },
+      items: { type: "string", minLength: 20, maxLength: 500 },
     },
     implementationTimeline: {
       type: "array",
@@ -310,14 +312,20 @@ export function validateOutput(
   }
 
   if (errors.length > 0) return { ok: false, errors };
+  const repairedFindings = repairSplitFindings((out.findings ?? []).map((s: string) => s.trim()));
+  const repairedConcerns = repairSplitFindings((out.concerns ?? []).map((s: string) => s.trim()));
+  if (needsTopLevel && repairedFindings.length !== 5) {
+    errors.push(`findings must have exactly 5 items after repair (got ${repairedFindings.length})`);
+    return { ok: false, errors };
+  }
   return {
     ok: true,
     value: {
       schemaVersion: AI_SCHEMA_VERSION,
       executiveSummary: (out.executiveSummary ?? "").trim(),
-      findings: (out.findings ?? []).map((s: string) => s.trim()),
+      findings: repairedFindings,
       strengths: (out.strengths ?? []).map((s: string) => s.trim()),
-      concerns: (out.concerns ?? []).map((s: string) => s.trim()),
+      concerns: repairedConcerns,
       implementationTimeline: (out.implementationTimeline ?? []).map((p) => ({
         phase: p.phase,
         timeframe: p.timeframe,
