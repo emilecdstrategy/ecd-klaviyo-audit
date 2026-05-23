@@ -8,15 +8,15 @@ export default function ReportTrustFooter({ preparedDate }: { preparedDate: stri
         <div className="grid grid-cols-1 gap-10 lg:grid-cols-[1.2fr_1fr] lg:items-start">
           <div>
             <ReportBrandMark size="md" />
-            <p className="mt-4 max-w-md text-sm leading-relaxed text-gray-600">
+            <p className="mt-4 max-w-xl text-sm leading-relaxed text-gray-600">
               ECD Digital Strategy is a revenue-focused e-commerce marketing agency helping DTC brands
               grow through email, SMS, and conversion optimization.
             </p>
             <div className="mt-5">
               <img
-                src="/klaviyo-kpartners-platinum-badge.png"
+                src="/kpartner.webp"
                 alt="Klaviyo K:PARTNERS Elite partner badge"
-                className="h-12 w-auto max-w-[min(100%,280px)] object-contain object-left"
+                className="h-12 w-auto max-w-[min(100%,320px)] object-contain object-left"
                 loading="lazy"
               />
             </div>
