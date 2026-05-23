@@ -17,7 +17,9 @@ export default function ReportBlockEditChrome({
   className?: string;
 }) {
   const { editMode } = useReportEdit();
-  if (!editMode || !onToggleHidden) return <>{children}</>;
+  if (!editMode || !onToggleHidden) {
+    return className ? <div className={className}>{children}</div> : <>{children}</>;
+  }
 
   if (hidden) {
     return (

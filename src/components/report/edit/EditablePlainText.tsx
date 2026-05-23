@@ -1,8 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
-import { htmlToMd, mdToHtml } from '../../../lib/audit-markdown';
+import { hasRichAuditMarkup, htmlToMd, mdToHtml } from '../../../lib/audit-markdown';
+import { wrapSelectionAsEntity } from '../../../lib/entity-editor';
+import type { EntityType } from '../../../lib/entity-tags';
 import { cn } from '../../../lib/utils';
+import { renderInlineMarkdown } from '../../ui/RichAuditText';
 import FloatingFormatToolbar, { useFloatingToolbarPosition } from './FloatingFormatToolbar';
 import { useReportEdit } from './ReportEditContext';
+import { useReportEntities } from './ReportEntityContext';
 
 type EditablePlainTextProps = {
   value: string;
@@ -10,14 +14,11 @@ type EditablePlainTextProps = {
   className?: string;
   as?: 'span' | 'h1' | 'h2' | 'h3' | 'p';
   placeholder?: string;
+  rich?: boolean;
 };
 
 function hasRichMarkup(html: string) {
-  return /<(b|strong|i|em|u)[>\s/]/i.test(html);
-}
-
-function hasMdMarkup(text: string) {
-  return /(\*\*|__|\*|_|~~)/.test(text);
+  return hasRichAuditMarkup(html);
 }
 
 export default function EditablePlainText({
@@ -26,13 +27,15 @@ export default function EditablePlainText({
   className,
   as: Tag = 'span',
   placeholder,
+  rich = false,
 }: EditablePlainTextProps) {
   const { editMode } = useReportEdit();
+  const { entityLookup, autoTagEntities } = useReportEntities();
   const ref = useRef<HTMLElement>(null);
   const [local, setLocal] = useState(value);
   const [focused, setFocused] = useState(false);
   const isInternal = useRef(false);
-  const toolbarPos = useFloatingToolbarPosition(ref, focused);
+  const toolbarPos = useFloatingToolbarPosition(ref, focused && rich);
 
   useEffect(() => {
     if (isInternal.current) {
@@ -41,7 +44,7 @@ export default function EditablePlainText({
     }
     setLocal(value);
     if (ref.current && editMode && onSave) {
-      ref.current.innerHTML = hasMdMarkup(value) ? mdToHtml(value) : (value || '');
+      ref.current.innerHTML = hasRichAuditMarkup(value) ? mdToHtml(value) : (value || '');
     }
   }, [value, editMode, onSave]);
 
@@ -62,7 +65,21 @@ export default function EditablePlainText({
     persist();
   };
 
+  const tagEntity = (type: EntityType) => {
+    if (wrapSelectionAsEntity(ref.current, type)) {
+      ref.current?.focus();
+      persist();
+    }
+  };
+
   if (!canEdit) {
+    if (rich && hasRichAuditMarkup(value)) {
+      return (
+        <Tag className={className}>
+          {renderInlineMarkdown(value, entityLookup, autoTagEntities)}
+        </Tag>
+      );
+    }
     return <Tag className={className}>{value}</Tag>;
   }
 
@@ -88,17 +105,21 @@ export default function EditablePlainText({
           'focus:ring-2 focus:ring-brand-primary/30 focus:ring-offset-1',
           'hover:ring-1 hover:ring-brand-primary/20 hover:ring-offset-1',
           'empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400',
+          rich && '[&_.entity-tag]:pointer-events-none',
         )}
       >
-        {hasMdMarkup(local) ? undefined : local}
+        {hasRichAuditMarkup(local) ? undefined : local}
       </Tag>
-      <FloatingFormatToolbar
-        visible={focused}
-        top={toolbarPos.top}
-        left={toolbarPos.left}
-        onBold={() => exec('bold')}
-        onItalic={() => exec('italic')}
-      />
+      {rich && (
+        <FloatingFormatToolbar
+          visible={focused}
+          top={toolbarPos.top}
+          left={toolbarPos.left}
+          onBold={() => exec('bold')}
+          onItalic={() => exec('italic')}
+          onEntityTag={tagEntity}
+        />
+      )}
     </>
   );
 }

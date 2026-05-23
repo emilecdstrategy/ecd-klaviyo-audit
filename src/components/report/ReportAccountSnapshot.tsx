@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { LucideIcon } from 'lucide-react';
 import {
   Workflow,
@@ -13,7 +14,6 @@ import {
   TrendingUp,
   DollarSign,
 } from 'lucide-react';
-import { cn } from '../../lib/utils';
 import type { FlowPerformance, KlaviyoCampaignSnapshot, KlaviyoFlowSnapshot } from '../../lib/types';
 
 function normalizeReportingDiagnostic(raw?: string | null) {
@@ -68,70 +68,38 @@ function calcWeeklySendFrequency(campaigns: KlaviyoCampaignSnapshot[]) {
   return { recentSent, perWeek };
 }
 
-type MetricTone = 'flows' | 'audience' | 'cadence' | 'deliverability' | 'performance';
-
-const METRIC_TONE: Record<
-  MetricTone,
-  { card: string; iconWrap: string; icon: string; label: string }
-> = {
-  flows: {
-    card: 'border-indigo-100/80 bg-gradient-to-br from-indigo-50/40 to-white',
-    iconWrap: 'bg-indigo-100/80',
-    icon: 'text-indigo-600',
-    label: 'text-indigo-900/55',
-  },
-  audience: {
-    card: 'border-violet-100/80 bg-gradient-to-br from-violet-50/50 to-white',
-    iconWrap: 'bg-brand-primary/10',
-    icon: 'text-brand-primary',
-    label: 'text-brand-navy/55',
-  },
-  cadence: {
-    card: 'border-brand-primary/10 bg-gradient-to-br from-brand-surface to-white',
-    iconWrap: 'bg-brand-primary/10',
-    icon: 'text-brand-primary-dark',
-    label: 'text-gray-500',
-  },
-  deliverability: {
-    card: 'border-slate-200/80 bg-gradient-to-br from-slate-50/70 to-white',
-    iconWrap: 'bg-slate-100',
-    icon: 'text-slate-600',
-    label: 'text-slate-600/70',
-  },
-  performance: {
-    card: 'border-emerald-100/80 bg-gradient-to-br from-emerald-50/35 to-white',
-    iconWrap: 'bg-emerald-100/70',
-    icon: 'text-emerald-700',
-    label: 'text-emerald-900/50',
-  },
-};
-
 function Card({
   label,
   value,
   sub,
   icon: Icon,
-  tone = 'audience',
 }: {
   label: string;
   value: string;
   sub: string;
   icon?: LucideIcon;
-  tone?: MetricTone;
 }) {
-  const palette = METRIC_TONE[tone];
   return (
-    <div className={cn('rounded-xl border px-4 py-4 shadow-sm', palette.card)}>
+    <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 shadow-sm">
       <div className="mb-2 flex items-center gap-2">
         {Icon && (
-          <div className={cn('flex h-7 w-7 shrink-0 items-center justify-center rounded-lg', palette.iconWrap)}>
-            <Icon className={cn('h-3.5 w-3.5', palette.icon)} strokeWidth={2} />
+          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
+            <Icon className="h-3.5 w-3.5 text-brand-primary" strokeWidth={2} />
           </div>
         )}
-        <p className={cn('text-[10px] font-bold uppercase tracking-wider', palette.label)}>{label}</p>
+        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</p>
       </div>
       <p className="text-2xl font-bold tabular-nums tracking-tight text-gray-900">{value}</p>
       <p className="mt-1.5 text-xs leading-snug text-gray-500">{sub}</p>
+    </div>
+  );
+}
+
+function BenchmarkCallout({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <div className="mt-4 rounded-xl border border-gray-100 bg-[#f9f9f9] p-4">
+      <p className="mb-1.5 text-xs font-semibold uppercase tracking-wider text-gray-500">{title}</p>
+      <div className="text-sm leading-relaxed text-gray-700">{children}</div>
     </div>
   );
 }
@@ -183,13 +151,12 @@ export default function ReportAccountSnapshot({
   return (
     <div>
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
-        <Card tone="flows" icon={Workflow} label="Total Flows" value={String(totalFlows)} sub="in Klaviyo account" />
-        <Card tone="flows" icon={Zap} label="Live Flows" value={String(liveFlows)} sub="actively sending" />
-        <Card tone="flows" icon={MousePointerClick} label="Manual Flows" value={String(manualFlows)} sub="require manual trigger" />
-        <Card tone="flows" icon={Send} label="Total Campaigns" value={String(totalCampaigns)} sub="email campaigns in account" />
+        <Card icon={Workflow} label="Total Flows" value={String(totalFlows)} sub="in Klaviyo account" />
+        <Card icon={Zap} label="Live Flows" value={String(liveFlows)} sub="actively sending" />
+        <Card icon={MousePointerClick} label="Manual Flows" value={String(manualFlows)} sub="require manual trigger" />
+        <Card icon={Send} label="Total Campaigns" value={String(totalCampaigns)} sub="email campaigns in account" />
 
         <Card
-          tone="audience"
           icon={Users}
           label="List Size"
           value={formatIntWithTruncFlag(
@@ -207,7 +174,6 @@ export default function ReportAccountSnapshot({
           }
         />
         <Card
-          tone="audience"
           icon={UserCheck}
           label="Active Profiles"
           value={formatIntWithTruncFlag(
@@ -225,7 +191,6 @@ export default function ReportAccountSnapshot({
           }
         />
         <Card
-          tone="audience"
           icon={UserX}
           label="Suppressions"
           value={formatIntWithTruncFlag(
@@ -248,7 +213,6 @@ export default function ReportAccountSnapshot({
           }
         />
         <Card
-          tone="cadence"
           icon={Clock}
           label="Send Frequency"
           value={recentSent > 0 ? `${perWeek.toFixed(perWeek < 1 ? 1 : 0)}/wk` : '—'}
@@ -256,7 +220,6 @@ export default function ReportAccountSnapshot({
         />
 
         <Card
-          tone="deliverability"
           icon={MailX}
           label="Bounce Rate"
           value={accountSnapshot?.bounce_rate_90d != null ? formatRatePct(accountSnapshot.bounce_rate_90d) : 'N/A'}
@@ -267,7 +230,6 @@ export default function ReportAccountSnapshot({
           }
         />
         <Card
-          tone="deliverability"
           icon={ShieldAlert}
           label="Spam Rate"
           value={accountSnapshot?.spam_rate_90d != null ? formatRatePct(accountSnapshot.spam_rate_90d) : 'N/A'}
@@ -278,14 +240,12 @@ export default function ReportAccountSnapshot({
           }
         />
         <Card
-          tone="performance"
           icon={TrendingUp}
           label="Flow Conv. Rate"
           value={hasPerf && weightedConv != null ? formatPct(weightedConv) : 'N/A'}
           sub={hasPerf ? 'weighted average (flows)' : perfUnavailableReason}
         />
         <Card
-          tone="performance"
           icon={DollarSign}
           label="Revenue / Recipient"
           value={hasPerf && revenuePerRecipient != null ? `$${revenuePerRecipient.toFixed(2)}` : 'N/A'}
@@ -293,17 +253,10 @@ export default function ReportAccountSnapshot({
         />
       </div>
 
-      <div className="mt-4 overflow-hidden rounded-xl border border-brand-primary/15 bg-gradient-to-br from-brand-surface via-white to-white">
-        <div className="border-l-4 border-brand-primary px-5 py-4">
-          <p className="mb-2 text-[11px] font-bold uppercase tracking-wider text-brand-primary">
-            Benchmark: Healthy account hygiene
-          </p>
-          <p className="text-sm leading-relaxed text-gray-600">
-            A healthy account typically has consistent sending cadence, low complaint/bounce signals, a clear suppression strategy,
-            and a clean engaged/unengaged segmentation framework. This audit will surface hygiene risks once deliverability indicators are available.
-          </p>
-        </div>
-      </div>
+      <BenchmarkCallout title="Benchmark: Healthy account hygiene">
+        A healthy account typically has consistent sending cadence, low complaint/bounce signals, a clear suppression strategy,
+        and a clean engaged/unengaged segmentation framework. This audit will surface hygiene risks once deliverability indicators are available.
+      </BenchmarkCallout>
     </div>
   );
 }

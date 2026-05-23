@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react';
 import { ChevronDown, ChevronUp, GitBranch } from 'lucide-react';
 import { RichAuditText } from '../ui/RichAuditText';
+import EntityTagChip from '../ui/EntityTagChip';
 import ReportBlockHeader from './ReportBlockHeader';
 import { cn } from '../../lib/utils';
 
@@ -116,13 +117,11 @@ export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] })
                     )}
                   >
                     <td className="px-5 py-3.5">
-                      <RichAuditText
-                        text={row.flow_name || 'N/A'}
-                        className={cn(
-                          'text-sm font-semibold',
-                          isExpanded ? 'text-brand-primary-dark' : 'text-gray-900',
-                        )}
-                      />
+                      {row.flow_name ? (
+                        <EntityTagChip type="flow" name={row.flow_name} />
+                      ) : (
+                        <span className="text-sm font-semibold text-gray-400">N/A</span>
+                      )}
                     </td>
                     <td className="px-3 py-3.5">
                       <FlowStatusBadge present={Boolean(row.present)} live={Boolean(row.live)} />

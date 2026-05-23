@@ -1,6 +1,8 @@
 import { useRef, useCallback, useEffect } from 'react';
-import { Bold, Italic, Underline, List } from 'lucide-react';
+import { Bold, Italic, Send, Underline, List, Users, Workflow } from 'lucide-react';
 import { htmlToMd, mdToHtml } from '../../lib/audit-markdown';
+import { wrapSelectionAsEntity } from '../../lib/entity-editor';
+import { ENTITY_LABELS, type EntityType } from '../../lib/entity-tags';
 
 interface SimpleRichEditorProps {
   value: string;
@@ -8,13 +10,21 @@ interface SimpleRichEditorProps {
   rows?: number;
   placeholder?: string;
   className?: string;
+  entityTags?: boolean;
 }
+
+const ENTITY_BUTTONS: { type: EntityType; icon: typeof Workflow; short: string }[] = [
+  { type: 'flow', icon: Workflow, short: 'Flow' },
+  { type: 'campaign', icon: Send, short: 'Camp.' },
+  { type: 'segment', icon: Users, short: 'Seg.' },
+];
 
 export default function SimpleRichEditor({
   value,
   onChange,
   rows = 4,
   placeholder,
+  entityTags = true,
 }: SimpleRichEditorProps) {
   const editorRef = useRef<HTMLDivElement>(null);
   const isInternalUpdate = useRef(false);
@@ -43,11 +53,18 @@ export default function SimpleRichEditor({
     handleInput();
   }, [handleInput]);
 
+  const tagEntity = useCallback((type: EntityType) => {
+    if (wrapSelectionAsEntity(editorRef.current, type)) {
+      editorRef.current?.focus();
+      handleInput();
+    }
+  }, [handleInput]);
+
   const minH = Math.max(rows * 24, 72);
 
   return (
     <div className="border border-gray-200 rounded-lg overflow-hidden focus-within:border-brand-primary focus-within:ring-1 focus-within:ring-brand-primary/20 transition-colors">
-      <div className="flex items-center gap-0.5 px-2 py-1 bg-gray-50 border-b border-gray-200">
+      <div className="flex items-center gap-0.5 px-2 py-1 bg-gray-50 border-b border-gray-200 flex-wrap">
         <ToolbarBtn onClick={() => exec('bold')} title="Bold (Ctrl+B)">
           <Bold className="w-3.5 h-3.5" />
         </ToolbarBtn>
@@ -61,6 +78,19 @@ export default function SimpleRichEditor({
         <ToolbarBtn onClick={() => exec('insertUnorderedList')} title="Bullet list">
           <List className="w-3.5 h-3.5" />
         </ToolbarBtn>
+        {entityTags && (
+          <>
+            <div className="w-px h-4 bg-gray-200 mx-1" />
+            {ENTITY_BUTTONS.map(({ type, icon: Icon, short }) => (
+              <ToolbarBtn key={type} onClick={() => tagEntity(type)} title={`Tag as ${ENTITY_LABELS[type]}`}>
+                <span className="inline-flex items-center gap-1 text-[10px] font-semibold">
+                  <Icon className="w-3 h-3" />
+                  {short}
+                </span>
+              </ToolbarBtn>
+            ))}
+          </>
+        )}
       </div>
       <div
         ref={editorRef}
@@ -68,7 +98,7 @@ export default function SimpleRichEditor({
         suppressContentEditableWarning
         onInput={handleInput}
         data-placeholder={placeholder}
-        className="px-3 py-2 text-sm text-gray-800 leading-relaxed outline-none [&_strong]:font-semibold [&_em]:italic [&_u]:underline [&_ul]:list-disc [&_ul]:ml-4 [&_li]:mb-0.5 empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400"
+        className="px-3 py-2 text-sm text-gray-800 leading-relaxed outline-none [&_strong]:font-semibold [&_em]:italic [&_u]:underline [&_ul]:list-disc [&_ul]:ml-4 [&_li]:mb-0.5 empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 [&_.entity-tag]:pointer-events-none"
         style={{ minHeight: minH, maxHeight: 400, overflowY: 'auto' }}
       />
     </div>

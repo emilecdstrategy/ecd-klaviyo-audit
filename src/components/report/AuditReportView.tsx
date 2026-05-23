@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
 import { formatCurrency } from '../../lib/revenue-calculator';
@@ -22,6 +22,7 @@ import ReportBlockHeader from './ReportBlockHeader';
 import EditableRichText from './edit/EditableRichText';
 import EditablePlainText from './edit/EditablePlainText';
 import { useReportEdit } from './edit/ReportEditContext';
+import { ReportEntityProvider, useReportEntities } from './edit/ReportEntityContext';
 import ReportBlockEditChrome, { ReportHiddenItemStub, ReportItemHideButton } from './edit/ReportBlockEditChrome';
 import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
@@ -169,16 +170,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     });
     return () => observers.forEach(o => o.disconnect());
   }, [audit]);
-
-  const entityNames = useMemo(() => {
-    const names = new Set<string>();
-    for (const f of flowSnapshots) if (f.name) names.add(f.name);
-    for (const f of flowPerformance) if (f.flow_name) names.add(f.flow_name);
-    for (const s of segmentSnapshots) if (s.name) names.add(s.name);
-    for (const f of formSnapshots) if (f.name) names.add(f.name);
-    for (const c of campaignSnapshots) if (c.name) names.add(c.name);
-    return Array.from(names);
-  }, [flowSnapshots, flowPerformance, segmentSnapshots, formSnapshots, campaignSnapshots]);
 
   const isPreview = audit.status === 'draft' || audit.status === 'in_review';
 
@@ -334,6 +325,13 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       : 'recently';
 
   return (
+    <ReportEntityProvider
+      flowSnapshots={flowSnapshots}
+      flowPerformance={flowPerformance}
+      segmentSnapshots={segmentSnapshots}
+      campaignSnapshots={campaignSnapshots}
+      formSnapshots={formSnapshots}
+    >
     <div className="min-h-screen bg-brand-surface">
       {topBanner}
       {isPreview && !topBanner && (
@@ -498,13 +496,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                     hideCurrentOptimized={!narrativeVisible}
                     hideRubric={!rubricVisible}
                     hideKeyTakeaway
-                    entityNames={entityNames}
                   />
                 </ReportBlockEditChrome>
               );
             })()}
 
-            <div className="space-y-6">
+            <div className="mt-6 space-y-6">
             {(isFlowsBlockVisible(flowsCfg, 'healthScore') || editMode) && flowPerformance.length > 0 && (
               <ReportBlockEditChrome
                 label="Overall Flow Health Score"
@@ -649,7 +646,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                     hideCurrentOptimized={!narrativeVisible}
                     hideRubric={!rubricVisible}
                     hideKeyTakeaway={!narrativeVisible}
-                    entityNames={entityNames}
                   />
                 </div>
               );
@@ -705,7 +701,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                     hideCurrentOptimized={!narrativeVisible}
                     hideRubric={!rubricVisible}
                     hideKeyTakeaway={!narrativeVisible}
-                    entityNames={entityNames}
                   />
                 </div>
               );
@@ -761,7 +756,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                     hideCurrentOptimized={!narrativeVisible}
                     hideRubric={!rubricVisible}
                     hideKeyTakeaway={!narrativeVisible}
-                    entityNames={entityNames}
                   />
                 </div>
               );
@@ -1080,6 +1074,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
       <ReportTrustFooter preparedDate={preparedDateLabel} />
     </div>
+    </ReportEntityProvider>
   );
 }
 
@@ -1092,14 +1087,15 @@ function parseSectionDetails(raw: unknown): Record<string, any> | null {
   return null;
 }
 
-function renderInlineMarkdownBold(text: string) {
+function RubricMarkdownText({ text }: { text: string }) {
+  const { entityLookup, autoTagEntities } = useReportEntities();
   const src = String(text ?? '');
   const parts = src.split('\n');
   return (
     <>
       {parts.map((line, lineIdx) => (
         <span key={`line-${lineIdx}`}>
-          {renderInlineMarkdown(line)}
+          {renderInlineMarkdown(line, entityLookup, autoTagEntities)}
           {lineIdx < parts.length - 1 ? <br /> : null}
         </span>
       ))}
@@ -1131,7 +1127,7 @@ function RubricStaticNote({ text }: { text: string }) {
   }
   return (
     <div className="text-sm text-gray-700 leading-relaxed [&_strong]:text-gray-900 [&_strong]:font-semibold">
-      {renderInlineMarkdownBold(raw)}
+      <RubricMarkdownText text={raw} />
     </div>
   );
 }
@@ -1176,7 +1172,7 @@ function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; coll
           needsToggle && 'transition-[max-height] duration-300 ease-in-out motion-reduce:transition-none',
         )}
       >
-        {renderInlineMarkdownBold(raw)}
+        <RubricMarkdownText text={raw} />
       </div>
       {needsToggle && (
         <button
@@ -1534,7 +1530,6 @@ function ReportSectionBlock({
   hideCurrentOptimized = false,
   hideRubric = false,
   hideKeyTakeaway = false,
-  entityNames,
 }: {
   section: AuditSection;
   index: number;
@@ -1544,7 +1539,6 @@ function ReportSectionBlock({
   hideCurrentOptimized?: boolean;
   hideRubric?: boolean;
   hideKeyTakeaway?: boolean;
-  entityNames?: string[];
 }) {
   const { updateSectionField, editMode } = useReportEdit();
   const sk = section.section_key;
@@ -1646,8 +1640,6 @@ function ReportSectionBlock({
               value={section.human_edited_findings || section.summary_text || ''}
               onSave={v => updateSectionField(sk, 'human_edited_findings', v)}
               className="text-sm text-gray-700 leading-relaxed"
-              boldFlowNames
-              entityNames={entityNames}
               placeholder="Key takeaway for this section…"
             />
           </div>

@@ -1,64 +1,56 @@
-import React from 'react';
+import type { ReactNode } from 'react';
+import { prepareAuditText, type EntityType } from '../../lib/entity-tags';
+import { useReportEntities } from '../report/edit/ReportEntityContext';
+import EntityTagChip from './EntityTagChip';
 
-function escapeRegex(s: string): string {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-}
-
-function autoBoldEntities(text: string, extraNames?: string[]): string {
-  let result = text.replace(/\*\*(.+?)\*\*/g, '$1');
-
-  const names: string[] = [];
-  if (extraNames?.length) {
-    for (const n of extraNames) {
-      const trimmed = n.trim();
-      if (trimmed.length >= 2) names.push(trimmed);
-    }
-  }
-
-  names.sort((a, b) => b.length - a.length);
-
-  for (const name of names) {
-    const regex = new RegExp(`(?<!\\*\\*)\\b(${escapeRegex(name)})\\b(?!\\*\\*)`, 'gi');
-    result = result.replace(regex, '**$1**');
-  }
-  return result;
-}
-
-/** Renders inline **bold** and *italic* markdown markers. */
-export function renderInlineMarkdown(text: string): React.ReactNode[] {
-  const nodes: React.ReactNode[] = [];
-  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
+/** Renders inline **bold**, *italic*, and `type:entity` markers. */
+export function renderInlineMarkdown(
+  text: string,
+  lookup?: Map<string, EntityType>,
+  autoTag = true,
+): ReactNode[] {
+  const processed = lookup?.size ? prepareAuditText(text, lookup, autoTag) : text;
+  const nodes: ReactNode[] = [];
+  const regex = /(`(flow|campaign|segment|form):([^`]+)`|\*\*(.+?)\*\*|\*(.+?)\*)/g;
   let last = 0;
   let match: RegExpExecArray | null;
   let key = 0;
-  while ((match = regex.exec(text)) !== null) {
-    if (match.index > last) nodes.push(text.slice(last, match.index));
-    if (match[2] !== undefined) {
-      nodes.push(<strong key={key++}>{match[2]}</strong>);
-    } else if (match[3] !== undefined) {
-      nodes.push(<em key={key++}>{match[3]}</em>);
+
+  while ((match = regex.exec(processed)) !== null) {
+    if (match.index > last) nodes.push(processed.slice(last, match.index));
+    if (match[2] !== undefined && match[3] !== undefined) {
+      nodes.push(
+        <EntityTagChip key={key++} type={match[2] as EntityType} name={match[3]} />,
+      );
+    } else if (match[4] !== undefined) {
+      nodes.push(<strong key={key++}>{match[4]}</strong>);
+    } else if (match[5] !== undefined) {
+      nodes.push(<em key={key++}>{match[5]}</em>);
     }
     last = regex.lastIndex;
   }
-  if (last < text.length) nodes.push(text.slice(last));
+
+  if (last < processed.length) nodes.push(processed.slice(last));
   return nodes;
 }
 
 export function RichAuditText({
   text,
   className,
-  boldFlowNames = false,
-  entityNames,
+  entityLookup: entityLookupProp,
+  autoTagEntities: autoTagProp,
 }: {
   text: string;
   className?: string;
-  boldFlowNames?: boolean;
-  entityNames?: string[];
+  entityLookup?: Map<string, EntityType>;
+  autoTagEntities?: boolean;
 }) {
-  const processed = boldFlowNames ? autoBoldEntities(text || '', entityNames) : (text || '');
-  const paragraphs = processed
+  const { entityLookup: ctxLookup, autoTagEntities: ctxAutoTag } = useReportEntities();
+  const entityLookup = entityLookupProp ?? ctxLookup;
+  const autoTagEntities = autoTagProp ?? ctxAutoTag;
+  const paragraphs = (text || '')
     .split('\n')
-    .map((p) => p.trim())
+    .map(p => p.trim())
     .filter(Boolean);
 
   if (paragraphs.length === 0) return null;
@@ -67,9 +59,12 @@ export function RichAuditText({
     <div className={className}>
       {paragraphs.map((p, i) => (
         <p key={`${i}-${p.slice(0, 12)}`} className={i > 0 ? 'mt-2' : ''}>
-          {renderInlineMarkdown(p)}
+          {renderInlineMarkdown(p, entityLookup, autoTagEntities)}
         </p>
       ))}
     </div>
   );
 }
+
+// Re-export for backward compatibility — boldFlowNames replaced by entity chips.
+export { prepareAuditText, type EntityType } from '../../lib/entity-tags';

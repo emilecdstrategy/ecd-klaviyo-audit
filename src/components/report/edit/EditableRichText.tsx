@@ -1,17 +1,18 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { htmlToMd, mdToHtml } from '../../../lib/audit-markdown';
+import { wrapSelectionAsEntity } from '../../../lib/entity-editor';
+import type { EntityType } from '../../../lib/entity-tags';
 import { cn } from '../../../lib/utils';
 import { RichAuditText } from '../../ui/RichAuditText';
 import FloatingFormatToolbar, { useFloatingToolbarPosition } from './FloatingFormatToolbar';
 import { useReportEdit } from './ReportEditContext';
+import { useReportEntities } from './ReportEntityContext';
 
 type EditableRichTextProps = {
   value: string;
   onSave?: (value: string) => void;
   className?: string;
   placeholder?: string;
-  boldFlowNames?: boolean;
-  entityNames?: string[];
   singleLine?: boolean;
 };
 
@@ -20,11 +21,10 @@ export default function EditableRichText({
   onSave,
   className,
   placeholder,
-  boldFlowNames,
-  entityNames,
   singleLine,
 }: EditableRichTextProps) {
   const { editMode } = useReportEdit();
+  const { entityLookup, autoTagEntities } = useReportEntities();
   const editorRef = useRef<HTMLDivElement>(null);
   const isInternalUpdate = useRef(false);
   const [focused, setFocused] = useState(false);
@@ -55,13 +55,20 @@ export default function EditableRichText({
     persist();
   };
 
+  const tagEntity = (type: EntityType) => {
+    if (wrapSelectionAsEntity(editorRef.current, type)) {
+      editorRef.current?.focus();
+      persist();
+    }
+  };
+
   if (!canEdit) {
     return (
       <RichAuditText
         text={value}
         className={className}
-        boldFlowNames={boldFlowNames}
-        entityNames={entityNames}
+        entityLookup={entityLookup}
+        autoTagEntities={autoTagEntities}
       />
     );
   }
@@ -93,6 +100,7 @@ export default function EditableRichText({
           'ring-0 focus:ring-2 focus:ring-brand-primary/30 focus:ring-offset-1',
           'hover:ring-1 hover:ring-brand-primary/20 hover:ring-offset-1',
           'empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 empty:before:pointer-events-none',
+          '[&_.entity-tag]:pointer-events-none',
         )}
       />
       <FloatingFormatToolbar
@@ -101,6 +109,7 @@ export default function EditableRichText({
         left={toolbarPos.left}
         onBold={() => exec('bold')}
         onItalic={() => exec('italic')}
+        onEntityTag={tagEntity}
       />
     </>
   );
