@@ -203,8 +203,6 @@ export interface ExecutiveSummarySectionConfig extends BaseSectionConfig {
     findings?: GenericBlockConfig;
     accountSnapshot?: GenericBlockConfig;
     strengths?: GenericBlockConfig;
-    concerns?: GenericBlockConfig;
-    topOpportunities?: GenericBlockConfig;
   };
 }
 

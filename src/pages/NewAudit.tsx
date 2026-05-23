@@ -14,7 +14,6 @@ import { formatClientListMeta } from '../lib/client-display';
 import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, updateClient, getIndustryEmailByIndustry, upsertAuditEmailDesign, createAnnotation, listRevenueOpportunityTemplates } from '../lib/db';
 import type { Audit, AuditContext, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
-import { resolveExecutiveFindings } from '../lib/findings-normalize';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { supabase } from '../lib/supabase';
@@ -595,12 +594,11 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
       const totalOpportunity = ai.sections.reduce((sum, s) => sum + (Number((s as any).revenue_opportunity) || 0), 0);
 
-      const execPayload = (ai.strengths?.length || ai.concerns?.length || ai.findings?.length || ai.implementationTimeline?.length)
+      const execPayload = (ai.strengths?.length || ai.findings?.length || ai.implementationTimeline?.length)
         ? JSON.stringify({
             text: ai.executiveSummary,
-            findings: resolveExecutiveFindings(ai.findings ?? [], ai.concerns ?? []),
+            findings: ai.findings ?? [],
             strengths: ai.strengths ?? [],
-            concerns: ai.concerns ?? [],
             timeline: ai.implementationTimeline ?? [],
           })
         : ai.executiveSummary;

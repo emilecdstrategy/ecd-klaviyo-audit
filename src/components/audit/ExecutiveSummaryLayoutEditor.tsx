@@ -165,7 +165,7 @@ export default function ExecutiveSummaryLayoutEditor({
                   Hide entire Executive Summary section from the public report
                 </div>
                 <div className="text-xs text-gray-500 mt-0.5">
-                  Removes the hero, snapshot, and overview columns. Later sections renumber automatically.
+                  Removes the findings, snapshot, and strengths blocks. Later sections renumber automatically.
                 </div>
               </div>
               <button

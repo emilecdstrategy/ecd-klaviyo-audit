@@ -9,6 +9,7 @@ import RevenueSummaryLayoutEditor from '../components/audit/RevenueSummaryLayout
 import RevenueAddOnItemsEditor from '../components/audit/RevenueAddOnItemsEditor';
 import ExecutiveSummaryLayoutEditor from '../components/audit/ExecutiveSummaryLayoutEditor';
 import ExecutiveSummaryFindingsEditor from '../components/audit/ExecutiveSummaryFindingsEditor';
+import ExecutiveSummaryStrengthsEditor from '../components/audit/ExecutiveSummaryStrengthsEditor';
 import {
   WorkspaceSidebar,
   WorkspaceMobileNav,
@@ -317,41 +318,50 @@ export default function AuditWorkspace() {
           />
 
           {activeSection === 'executive_summary' ? (
-            <div className="space-y-6 animate-slide-up max-w-4xl">
-              <div className="rounded-2xl border border-gray-100 bg-white p-6 card-shadow">
-                <h3 className="text-sm font-semibold text-gray-900 mb-1">Summary narrative</h3>
-                <p className="text-xs text-gray-500 mb-4">
-                  Short intro shown on the report when the hero block is enabled.
-                </p>
-                <SimpleRichEditor
-                  value={(() => {
-                    const raw = audit.executive_summary || '';
-                    try {
-                      const parsed = JSON.parse(raw);
-                      if (parsed && typeof parsed.text === 'string') return parsed.text.replace(/\*\*(.+?)\*\*/g, '$1');
-                    } catch { /* not JSON, use as-is */ }
-                    return raw.replace(/\*\*(.+?)\*\*/g, '$1');
-                  })()}
-                  onChange={(val) => {
-                    let payload = val;
-                    try {
-                      const parsed = JSON.parse(audit.executive_summary || '');
-                      if (parsed && typeof parsed.text === 'string') {
-                        payload = JSON.stringify({ ...parsed, text: val });
-                      }
-                    } catch { /* not JSON, save as plain text */ }
-                    setAudit(prev => prev ? { ...prev, executive_summary: payload } : prev);
-                    if (execSaveTimer.current) window.clearTimeout(execSaveTimer.current);
-                    execSaveTimer.current = window.setTimeout(async () => {
-                      try { await updateAudit(audit.id, { executive_summary: payload }); toast('Summary saved'); } catch { /* silent */ }
-                    }, 800);
-                  }}
-                  rows={5}
-                  placeholder="Enter the executive summary..."
-                />
-              </div>
-
+            <div className="space-y-6 animate-slide-up">
               <ExecutiveSummaryFindingsEditor audit={audit} onAuditChange={setAudit} />
+              <ExecutiveSummaryStrengthsEditor audit={audit} onAuditChange={setAudit} />
+              {(() => {
+                const layout = (audit.layout as Record<string, unknown> | null | undefined) ?? {};
+                const exec = layout.executive_summary as { hidden?: boolean; blocks?: { hero?: { hidden?: boolean } } } | undefined;
+                const sectionHidden = Boolean(exec?.hidden);
+                const heroHidden = exec?.blocks?.hero?.hidden ?? true;
+                if (sectionHidden || heroHidden) return null;
+                return (
+                  <div className="rounded-2xl border border-gray-100 bg-white p-6 card-shadow">
+                    <h3 className="text-sm font-semibold text-gray-900 mb-1">Hero intro fallback</h3>
+                    <p className="text-xs text-gray-500 mb-4">
+                      Used when the optional intro banner is enabled but its intro field is left blank.
+                    </p>
+                    <SimpleRichEditor
+                      value={(() => {
+                        const raw = audit.executive_summary || '';
+                        try {
+                          const parsed = JSON.parse(raw);
+                          if (parsed && typeof parsed.text === 'string') return parsed.text.replace(/\*\*(.+?)\*\*/g, '$1');
+                        } catch { /* not JSON, use as-is */ }
+                        return raw.replace(/\*\*(.+?)\*\*/g, '$1');
+                      })()}
+                      onChange={(val) => {
+                        let payload = val;
+                        try {
+                          const parsed = JSON.parse(audit.executive_summary || '');
+                          if (parsed && typeof parsed === 'object') {
+                            payload = JSON.stringify({ ...parsed, text: val });
+                          }
+                        } catch { /* not JSON, save as plain text */ }
+                        setAudit(prev => prev ? { ...prev, executive_summary: payload } : prev);
+                        if (execSaveTimer.current) window.clearTimeout(execSaveTimer.current);
+                        execSaveTimer.current = window.setTimeout(async () => {
+                          try { await updateAudit(audit.id, { executive_summary: payload }); toast('Intro saved'); } catch { /* silent */ }
+                        }, 800);
+                      }}
+                      rows={3}
+                      placeholder="Short intro paragraph…"
+                    />
+                  </div>
+                );
+              })()}
               <ExecutiveSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
             </div>
           ) : activeSection === 'email_design' ? (
@@ -366,7 +376,7 @@ export default function AuditWorkspace() {
               onSectionUpdate={currentSection ? (updates) => handleSectionUpdate(currentSection.id, updates) : undefined}
             />
           ) : activeSection === 'revenue_summary' ? (
-            <div className="space-y-6 animate-slide-up max-w-4xl">
+            <div className="space-y-6 animate-slide-up">
               <div className="rounded-2xl border border-gray-100 bg-white p-6 card-shadow">
                 <RevenueOpportunityCard amount={totalRevenue} label="Total Estimated Monthly Impact" confidence="high" />
               </div>

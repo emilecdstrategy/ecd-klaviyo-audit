@@ -1,6 +1,6 @@
 import { repairSplitFindings } from "../_shared/findings-normalize.ts";
 
-export const AI_SCHEMA_VERSION = "2026-03-26.v4";
+export const AI_SCHEMA_VERSION = "2026-05-23.v5";
 
 export const AUDIT_SECTION_KEYS = [
   "account_health",
@@ -39,7 +39,6 @@ export type AIOutput = {
   executiveSummary: string;
   findings: string[];
   strengths: string[];
-  concerns: string[];
   implementationTimeline: AITimelinePhase[];
   sections: AISection[];
 };
@@ -155,7 +154,7 @@ const SECTION_ITEM_SCHEMA = {
 export const AI_OUTPUT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["schemaVersion", "executiveSummary", "findings", "strengths", "concerns", "implementationTimeline", "sections"],
+  required: ["schemaVersion", "executiveSummary", "findings", "strengths", "implementationTimeline", "sections"],
   properties: {
     schemaVersion: { type: "string" },
     executiveSummary: { type: "string", minLength: 80, maxLength: 4000 },
@@ -170,12 +169,6 @@ export const AI_OUTPUT_JSON_SCHEMA = {
       minItems: 3,
       maxItems: 7,
       items: { type: "string", minLength: 20, maxLength: 300 },
-    },
-    concerns: {
-      type: "array",
-      minItems: 3,
-      maxItems: 7,
-      items: { type: "string", minLength: 20, maxLength: 500 },
     },
     implementationTimeline: {
       type: "array",
@@ -210,7 +203,7 @@ export const AI_SECTIONS_ONLY_SCHEMA = {
 export const AI_TOP_LEVEL_ONLY_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["schemaVersion", "executiveSummary", "findings", "strengths", "concerns", "implementationTimeline"],
+  required: ["schemaVersion", "executiveSummary", "findings", "strengths", "implementationTimeline"],
   properties: {
     schemaVersion: { type: "string" },
     executiveSummary: { type: "string", minLength: 80, maxLength: 4000 },
@@ -225,12 +218,6 @@ export const AI_TOP_LEVEL_ONLY_SCHEMA = {
       minItems: 3,
       maxItems: 7,
       items: { type: "string", minLength: 20, maxLength: 300 },
-    },
-    concerns: {
-      type: "array",
-      minItems: 3,
-      maxItems: 7,
-      items: { type: "string", minLength: 20, maxLength: 500 },
     },
     implementationTimeline: {
       type: "array",
@@ -278,9 +265,6 @@ export function validateOutput(
     if (!Array.isArray(out.strengths) || out.strengths.length < 3) {
       errors.push("strengths must have at least 3 items");
     }
-    if (!Array.isArray(out.concerns) || out.concerns.length < 3) {
-      errors.push("concerns must have at least 3 items");
-    }
     if (!Array.isArray(out.implementationTimeline) || out.implementationTimeline.length < 4) {
       errors.push("implementationTimeline must have 4 phases");
     }
@@ -313,7 +297,6 @@ export function validateOutput(
 
   if (errors.length > 0) return { ok: false, errors };
   const repairedFindings = repairSplitFindings((out.findings ?? []).map((s: string) => s.trim()));
-  const repairedConcerns = repairSplitFindings((out.concerns ?? []).map((s: string) => s.trim()));
   if (needsTopLevel && repairedFindings.length !== 5) {
     errors.push(`findings must have exactly 5 items after repair (got ${repairedFindings.length})`);
     return { ok: false, errors };
@@ -325,7 +308,6 @@ export function validateOutput(
       executiveSummary: (out.executiveSummary ?? "").trim(),
       findings: repairedFindings,
       strengths: (out.strengths ?? []).map((s: string) => s.trim()),
-      concerns: repairedConcerns,
       implementationTimeline: (out.implementationTimeline ?? []).map((p) => ({
         phase: p.phase,
         timeframe: p.timeframe,

@@ -11,7 +11,6 @@ interface AIAnalysisResult {
   executiveSummary: string;
   findings?: string[];
   strengths?: string[];
-  concerns?: string[];
   implementationTimeline?: { phase: string; timeframe: string; label: string; items: string[] }[];
 }
 
@@ -54,7 +53,6 @@ function hasTopLevelPayload(data: any): boolean {
     Array.isArray(data.findings) &&
     data.findings.length === 5 &&
     Array.isArray(data.strengths) &&
-    Array.isArray(data.concerns) &&
     Array.isArray(data.implementationTimeline),
   );
 }
@@ -194,7 +192,6 @@ export async function runAIAnalysis(
     let executiveSummary = top.executiveSummary;
     let findingsOut = repairSplitFindings(top.findings ?? []);
     let strengthsOut = top.strengths ?? [];
-    let concernsOut = repairSplitFindings(top.concerns ?? []);
     let timelineOut = top.implementationTimeline ?? [];
     let sectionOut: Partial<AuditSection>[] = sections;
 
@@ -205,7 +202,6 @@ export async function runAIAnalysis(
         executiveSummary,
         findings: findingsOut,
         strengths: strengthsOut,
-        concerns: concernsOut,
         implementationTimeline: timelineOut,
         sections: sectionOut.map((s) => ({ ...s })),
       };
@@ -226,7 +222,6 @@ export async function runAIAnalysis(
         executiveSummary = refined.executiveSummary;
         findingsOut = repairSplitFindings(refined.findings ?? findingsOut);
         strengthsOut = refined.strengths ?? strengthsOut;
-        concernsOut = repairSplitFindings(refined.concerns ?? concernsOut);
         timelineOut = refined.implementationTimeline ?? timelineOut;
         sectionOut = (refined.sections ?? sectionOut) as Partial<AuditSection>[];
       } catch {
@@ -242,7 +237,6 @@ export async function runAIAnalysis(
       executiveSummary,
       findings: findingsOut,
       strengths: strengthsOut,
-      concerns: concernsOut,
       implementationTimeline: timelineOut,
       sections: sectionOut,
     };
@@ -274,11 +268,6 @@ export async function runAIAnalysis(
       '**Abandoned cart flow is live**, providing a foundation for automated revenue recovery',
       '**Active campaign program**, showing the team is already investing in email as a channel',
       '**List size supports segmentation**, with enough subscribers to build meaningful audience tiers',
-    ],
-    concerns: [
-      '**Missing browse abandonment flow**, leaving product-view recovery on the table',
-      '**No post-purchase automation**, limiting repeat purchase revenue',
-      '**Broad list sends**, reducing relevance and engagement over time',
     ],
     implementationTimeline: [
       { phase: 'Quick Wins', timeframe: 'Week 1-2', label: 'Activate low-effort fixes', items: ['Review draft flows for quick activation', 'Audit signup form placement'] },

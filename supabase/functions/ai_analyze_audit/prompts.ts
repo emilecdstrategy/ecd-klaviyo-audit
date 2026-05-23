@@ -58,12 +58,12 @@ export function buildAuditSystemPrompt() {
     "Vary your sentence length. Mix short punchy sentences with longer ones. Don't start every sentence the same way.",
     "Be direct. Say 'this is missing' not 'there is an absence of'. Say 'you should add' not 'it would be beneficial to incorporate'.",
     "Use contractions naturally (you're, it's, don't, we'd, that's) like a real person would.",
-    "For strengths/concerns bullets, use a simple dash (-) not an em-dash (—) if you need a separator.",
+    "For strengths bullets, use a simple dash (-) not an em-dash (—) if you need a separator.",
     "",
     "BALANCED TONE — BE HONEST WHEN THINGS ARE GOOD:",
     "If a section is performing well, say so clearly and give it a LOW revenue_opportunity ($0-$500/mo). Not everything needs fixing.",
     "If the account is generally healthy, most sections should have small or zero opportunity. Only flag real, specific gaps.",
-    "Do NOT inflate problems or manufacture concerns to fill space. A well-run account should have a small total opportunity.",
+    "Do NOT inflate problems or manufacture findings to fill space. A well-run account should have a small total opportunity.",
     "Praise strong performance explicitly — clients need to know what's working, not just what's broken.",
     "",
     "REVENUE OPPORTUNITY — STRICT RULES (these are HARD constraints, not suggestions):",
@@ -94,13 +94,10 @@ export function buildAuditSystemPrompt() {
     "NEVER include dollar amounts, monthly revenue figures, 'unlock $X', or revenue opportunity language in findings.",
     "Example findings: '**No active post-purchase flow**, which means repeat purchase revenue is not being captured after the first order', '**45 draft flows sitting idle**, including flows that previously generated revenue'.",
     "",
-    "STRENGTHS and CONCERNS: Return 4-6 items in each array.",
+    "STRENGTHS: Return 3-6 items in the strengths array.",
     "Each item is a single sentence with a bold lead phrase followed by supporting detail.",
     "Format: '**Bold claim**, specific evidence from the data.'",
-    "Each concern MUST be one complete sentence. NEVER split one concern across multiple array items.",
-    "When citing multiple flows, name at most 3 examples then summarize the rest. Keep each concern under 450 characters.",
     "Example strengths: '**Abandoned Cart/Checkout flows** drive 57.5% of all flow revenue ($41,858), which is a strong foundation to build on', '**Browse Abandonment** has a solid 83.6% open rate and $5,034 in revenue, performing well against benchmarks'.",
-    "Example concerns: '**No active post-purchase flow**, which is the biggest gap for repeat purchase revenue right now', '**45 draft flows (47%)** sitting idle, some with past revenue. These are quick wins being left on the table'.",
     "Be specific: use actual flow names, dollar amounts, percentages, and recipient counts from the data.",
     "Do NOT be generic. Every bullet must reference concrete data from this specific Klaviyo account.",
     "Use markdown bold markers in output where helpful (e.g., **Abandoned Cart**, **Welcome Series**, **Campaigns**, **Segments**, **Signup Forms**, dollar values, and key percentages).",
@@ -125,7 +122,7 @@ export function buildAuditSystemPrompt() {
     "IMPORTANT: Winback and Re-engagement flows ARE revenue flows — they aim to drive lapsed customers back to purchase. Do NOT mark them as non-revenue.",
     "Do NOT flag non-revenue flows for low conversion rates or $0 revenue. A Review Request flow with 0% conversion is EXPECTED and correct.",
     "For non-revenue flows, evaluate engagement metrics only (open rate, click rate). Their purpose is customer relationships, not direct sales.",
-    "When discussing strengths/concerns about flows, clearly distinguish between revenue performance and engagement performance.",
+    "When discussing strengths about flows, clearly distinguish between revenue performance and engagement performance.",
     "",
     "SECTION RUBRIC REQUIREMENTS:",
     "For FLOWS, explicitly cover: Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
@@ -314,9 +311,9 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
   const payload: Record<string, unknown> = {
     task:
       mode === "sections_only"
-        ? "Generate ONLY the requested audit sections below. Do NOT include executiveSummary, strengths, concerns, or implementationTimeline."
+        ? "Generate ONLY the requested audit sections below. Do NOT include executiveSummary, findings, strengths, or implementationTimeline."
         : mode === "top_level_only"
-          ? "Generate ONLY top-level findings (executiveSummary, findings, strengths, concerns, implementationTimeline). Do NOT include section objects."
+          ? "Generate ONLY top-level fields (executiveSummary, findings, strengths, implementationTimeline). Do NOT include section objects."
           : "Generate a full audit analysis based on the actual Klaviyo account data provided below.",
     client_info: {
       name: data.clientName || data.companyName,
@@ -368,8 +365,7 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
   if (mode !== "sections_only") {
     payload.required_top_level_fields = {
       findings: "Array of exactly 5 strings. Each is a problem statement ranked by impact. Bold lead phrase plus evidence. No dollar amounts or revenue language.",
-      strengths: "Array of 4-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages. Write naturally, no em-dashes, use commas and plain language.",
-      concerns: "Array of 4-6 strings. Each is a specific issue or gap with bold lead phrase and evidence. Reference actual missing flows, underperforming metrics, inactive flows by name. Write naturally, no em-dashes.",
+      strengths: "Array of 3-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages. Write naturally, no em-dashes, use commas and plain language.",
       implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
     };
   }
@@ -418,7 +414,6 @@ export type RefineBaseline = {
   executiveSummary: string;
   findings: string[];
   strengths: string[];
-  concerns: string[];
   implementationTimeline: Array<{ phase: string; timeframe: string; label: string; items: string[] }>;
   sections: RefineBaselineSection[];
 };
@@ -434,7 +429,7 @@ export function buildRefineSystemPrompt() {
   return [
     "You are refining an existing Klaviyo audit report for a client using NEW context from sales calls, internal notes, and custom instructions.",
     "The baseline audit was generated from Klaviyo data alone and is technically sound.",
-    "Your job: adjust priorities, tone, executive summary, findings, strengths, concerns, implementation timeline, and section narratives so they align with the client's stated goals, constraints, and conversation context.",
+    "Your job: adjust priorities, tone, executive summary, findings, strengths, implementation timeline, and section narratives so they align with the client's stated goals, constraints, and conversation context.",
     "Do NOT invent Klaviyo facts or metrics that are not implied by the baseline. You may reprioritize and rephrase based on client context.",
     "Preserve realistic revenue_opportunity numbers unless context clearly warrants reprioritization. Do not multiply all numbers arbitrarily.",
     "Return only valid JSON matching the full audit schema (all six sections required).",

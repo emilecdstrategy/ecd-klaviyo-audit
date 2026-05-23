@@ -37,7 +37,7 @@ const SECTION_ICONS: Record<WorkspaceSectionKey, LucideIcon> = {
 };
 
 const SECTION_HINTS: Partial<Record<WorkspaceSectionKey, string>> = {
-  executive_summary: 'Key findings, strengths, and report intro',
+  executive_summary: 'Key findings, strengths, and layout',
   account_health: 'Health score categories and overview',
   flows: 'Flow performance, inventory, and rubric',
   segmentation: 'Segments narrative and inventory',

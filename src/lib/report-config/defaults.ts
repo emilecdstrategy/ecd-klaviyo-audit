@@ -276,15 +276,5 @@ export const DEFAULT_EXECUTIVE_SUMMARY_SECTION: ExecutiveSummarySectionConfig = 
       title: "What's Working",
       subtitle: undefined,
     },
-    concerns: {
-      hidden: true,
-      title: 'What Needs Attention',
-      subtitle: undefined,
-    },
-    topOpportunities: {
-      hidden: false,
-      title: 'Top 3 Opportunities',
-      subtitle: undefined,
-    },
   },
 };
