@@ -201,11 +201,14 @@ export default function RevenueAddOnItemsEditor({
                 <div>
                   <label className="block text-[11px] font-medium text-gray-500 mb-1">Revenue ($/mo)</label>
                   <input
-                    type="number"
-                    value={item.revenue_monthly}
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={item.revenue_monthly ? String(item.revenue_monthly) : ''}
                     onChange={e => {
+                      const raw = e.target.value.replace(/[^0-9.]/g, '');
                       const next = addOnItems.slice();
-                      next[index] = { ...item, revenue_monthly: Number(e.target.value || 0) };
+                      next[index] = { ...item, revenue_monthly: raw === '' ? 0 : Number(raw) };
                       writeItems(next);
                     }}
                     className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"

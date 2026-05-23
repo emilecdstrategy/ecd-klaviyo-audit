@@ -253,10 +253,12 @@ export default function EmailDesignEditor({
 export function EmailDesignDrawer({
   open,
   onClose,
+  title = 'Email design & benchmark',
   children,
 }: {
   open: boolean;
   onClose: () => void;
+  title?: string;
   children: ReactNode;
 }) {
   if (!open) return null;
@@ -270,7 +272,7 @@ export function EmailDesignDrawer({
       />
       <div className="relative flex h-full w-full max-w-4xl flex-col bg-white shadow-2xl">
         <div className="flex shrink-0 items-center justify-between border-b border-gray-100 px-5 py-3">
-          <h3 className="text-sm font-semibold text-gray-900">Email design & benchmark</h3>
+          <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
           <button
             type="button"
             onClick={onClose}

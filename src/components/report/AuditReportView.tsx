@@ -24,7 +24,7 @@ import EditableRichText from './edit/EditableRichText';
 import EditablePlainText from './edit/EditablePlainText';
 import { useReportEdit } from './edit/ReportEditContext';
 import ReportBlockEditChrome from './edit/ReportBlockEditChrome';
-import ReportSectionEditChrome, { emailDesignAction } from './edit/ReportSectionEditChrome';
+import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem } from '../../lib/types';
 import { getPlatformSettings } from '../../lib/db';
@@ -73,6 +73,7 @@ export type AuditReportViewProps = {
   data: AuditReportBundle;
   topBanner?: ReactNode;
   onManageEmailDesign?: () => void;
+  onManageRevenueOpportunities?: () => void;
 };
 
 function ReportSectionShell({
@@ -118,7 +119,7 @@ function ReportSectionShell({
   );
 }
 
-export default function AuditReportView({ data, topBanner, onManageEmailDesign }: AuditReportViewProps) {
+export default function AuditReportView({ data, topBanner, onManageEmailDesign, onManageRevenueOpportunities }: AuditReportViewProps) {
   const {
     editMode,
     updateLayoutTitle,
@@ -865,6 +866,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
           hidden={sectionHiddenFlags.opportunity}
           onToggleHidden={h => toggleLayoutSectionHidden('revenue_summary', h)}
           available={sectionDataAvailable.opportunity}
+          actions={onManageRevenueOpportunities ? [revenueOpportunitiesAction(onManageRevenueOpportunities)] : undefined}
         >
           <ReportSectionHeader
             number={sectionNumbers['opportunity'] ?? revenueSummaryCfg.sectionNumber ?? '08'}
@@ -968,6 +970,19 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
             </div>
             </div>
           </div>
+          )}
+
+          {revenueSummaryCfg.blocks.addOns && revenueSummaryCfg.blocks.addOns.hidden !== true && visibleAddOnItems.length === 0 && editMode && onManageRevenueOpportunities && (
+            <div className="mb-6 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-6 py-10 text-center">
+              <p className="text-sm text-gray-600">No revenue add-ons selected for this audit yet.</p>
+              <button
+                type="button"
+                onClick={onManageRevenueOpportunities}
+                className="mt-3 text-sm font-medium text-brand-primary hover:underline"
+              >
+                Add opportunities from templates
+              </button>
+            </div>
           )}
 
           {revenueSummaryCfg.blocks.totalBanner && revenueSummaryCfg.blocks.totalBanner.hidden !== true && (

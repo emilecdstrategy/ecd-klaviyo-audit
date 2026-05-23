@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { Eye, EyeOff, Palette, type LucideIcon } from 'lucide-react';
+import { Eye, EyeOff, Palette, TrendingUp, type LucideIcon } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { useReportEdit } from './ReportEditContext';
 
@@ -84,6 +84,15 @@ export function emailDesignAction(onManage: () => void): ActionButton {
   return {
     icon: Palette,
     label: 'Edit email design',
+    onClick: onManage,
+    variant: 'primary',
+  };
+}
+
+export function revenueOpportunitiesAction(onManage: () => void): ActionButton {
+  return {
+    icon: TrendingUp,
+    label: 'Manage opportunities',
     onClick: onManage,
     variant: 'primary',
   };

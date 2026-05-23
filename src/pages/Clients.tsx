@@ -3,6 +3,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { Users, Plus, Search, ArrowRight, Globe, Calendar } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import EmptyState from '../components/ui/EmptyState';
+import SiteFavicon from '../components/ui/SiteFavicon';
 import { SkeletonClientCards } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
 import { listAudits, listClients } from '../lib/db';
@@ -176,11 +177,14 @@ export default function Clients() {
                   className="bg-white rounded-xl p-5 card-shadow hover:card-shadow-hover transition-all text-left group"
                 >
                   <div className="flex items-start justify-between mb-4">
-                    <div>
-                      <h3 className="text-sm font-semibold text-gray-900 group-hover:text-brand-primary transition-colors">
-                        {client.company_name}
-                      </h3>
-                      <p className="text-xs text-gray-500 mt-0.5">{client.industry}</p>
+                    <div className="flex items-start gap-3 min-w-0">
+                      <SiteFavicon url={client.website_url} />
+                      <div className="min-w-0">
+                        <h3 className="text-sm font-semibold text-gray-900 group-hover:text-brand-primary transition-colors truncate">
+                          {client.company_name}
+                        </h3>
+                        <p className="text-xs text-gray-500 mt-0.5">{client.industry}</p>
+                      </div>
                     </div>
                     <div className="flex items-center gap-2">
                       {hasRole('admin') && (

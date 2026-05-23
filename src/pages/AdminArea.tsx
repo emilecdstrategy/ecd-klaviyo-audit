@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   Users,
-  Settings,
   Key,
   Shield,
   Trash2,
@@ -45,7 +44,7 @@ const TABS = [
   { id: 'users', label: 'Users', icon: Users },
   { id: 'email_library', label: 'Email Library', icon: ImageIcon },
   { id: 'revenue_opportunities', label: 'Revenue Opportunities', icon: TrendingUp },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { id: 'settings', label: 'API Connection', icon: Key },
 ];
 
 /** Flip to true to show the Audit Templates & Export Options placeholder cards in Settings again. */
@@ -66,7 +65,7 @@ export default function AdminArea() {
   if (!hasRole('admin')) {
     return (
       <div>
-        <TopBar title="Admin" />
+        <TopBar title="Settings" />
         <div className="p-8 text-center">
           <Shield className="w-12 h-12 text-gray-200 mx-auto mb-3" />
           <h2 className="text-lg font-semibold text-gray-900 mb-1">Access Restricted</h2>
@@ -78,7 +77,7 @@ export default function AdminArea() {
 
   return (
     <div>
-      <TopBar title="Admin" subtitle="Manage users and platform settings" />
+      <TopBar title="Settings" subtitle="Manage users and platform settings" />
 
       <div className="p-8 animate-fade-in">
         <div className="flex gap-2 mb-6 border-b border-gray-100 pb-3">
@@ -740,7 +739,7 @@ function RevenueOpportunitiesTab() {
     name: '',
     description: '',
     bulletsText: '',
-    defaultRevenue: '0',
+    defaultRevenue: '',
     isActive: true,
   });
 
@@ -846,7 +845,7 @@ function RevenueOpportunitiesTab() {
         name: '',
         description: '',
         bulletsText: '',
-        defaultRevenue: '0',
+        defaultRevenue: '',
         isActive: true,
       });
       await reload();
@@ -931,9 +930,6 @@ function RevenueOpportunitiesTab() {
             placeholder="Klaviyo SMS"
             className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
           />
-          <p className="text-[11px] text-gray-500 mt-1">
-            Handle is auto-generated from the name.
-          </p>
         </div>
         <div>
           <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
@@ -958,9 +954,11 @@ function RevenueOpportunitiesTab() {
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Default Revenue ($/mo)</label>
             <input
-              type="number"
+              type="text"
+              inputMode="decimal"
+              placeholder="0"
               value={newEntry.defaultRevenue}
-              onChange={e => setNewEntry(prev => ({ ...prev, defaultRevenue: e.target.value }))}
+              onChange={e => setNewEntry(prev => ({ ...prev, defaultRevenue: e.target.value.replace(/[^0-9.]/g, '') }))}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
@@ -1048,9 +1046,6 @@ function RevenueOpportunitiesTab() {
                     onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, name: e.target.value } : p)))}
                     className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                   />
-                  <p className="text-[11px] text-gray-500 mt-1">
-                    Handle: <span className="font-mono">{toHandle(entry.name) || 'template'}</span> (auto)
-                  </p>
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
@@ -1078,9 +1073,16 @@ function RevenueOpportunitiesTab() {
                   <div>
                     <label className="block text-xs font-medium text-gray-500 mb-1">Default Revenue ($/mo)</label>
                     <input
-                      type="number"
-                      value={entry.default_revenue_monthly}
-                      onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, default_revenue_monthly: Number(e.target.value || 0) } : p)))}
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={entry.default_revenue_monthly ? String(entry.default_revenue_monthly) : ''}
+                      onChange={e => {
+                        const raw = e.target.value.replace(/[^0-9.]/g, '');
+                        setEntries(prev => prev.map(p => (
+                          p.id === entry.id ? { ...p, default_revenue_monthly: raw === '' ? 0 : Number(raw) } : p
+                        )));
+                      }}
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                     />
                   </div>

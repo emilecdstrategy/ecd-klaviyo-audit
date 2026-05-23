@@ -5,6 +5,7 @@ import TopBar from '../components/layout/TopBar';
 import AuditReportView from '../components/report/AuditReportView';
 import { ReportEditProvider, useReportEdit } from '../components/report/edit/ReportEditContext';
 import EmailDesignEditor, { EmailDesignDrawer } from '../components/audit/EmailDesignEditor';
+import RevenueAddOnItemsEditor from '../components/audit/RevenueAddOnItemsEditor';
 import WorkspacePublishBar from '../components/audit/WorkspacePublishBar';
 import { mergeReportBundle, type AuditReportBundle } from '../hooks/useAuditReportData';
 import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
@@ -53,6 +54,7 @@ export default function AuditWorkspace() {
   const [emailDesign, setEmailDesign] = useState<AuditEmailDesign | null>(null);
   const [emailLibrary, setEmailLibrary] = useState<IndustryEmailLibrary[]>([]);
   const [emailDesignDrawerOpen, setEmailDesignDrawerOpen] = useState(false);
+  const [revenueDrawerOpen, setRevenueDrawerOpen] = useState(false);
 
   const saveTimers = useRef<Record<string, number>>({});
   const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
@@ -259,6 +261,7 @@ export default function AuditWorkspace() {
             <AuditReportView
               data={mergedReportData}
               onManageEmailDesign={() => setEmailDesignDrawerOpen(true)}
+              onManageRevenueOpportunities={() => setRevenueDrawerOpen(true)}
             />
           )}
         </div>
@@ -287,6 +290,14 @@ export default function AuditWorkspace() {
                 : undefined
             }
           />
+        </EmailDesignDrawer>
+
+        <EmailDesignDrawer
+          open={revenueDrawerOpen}
+          onClose={() => setRevenueDrawerOpen(false)}
+          title="Revenue opportunities"
+        >
+          <RevenueAddOnItemsEditor audit={audit} onAuditChange={setAudit} />
         </EmailDesignDrawer>
       </div>
     </ReportEditProvider>

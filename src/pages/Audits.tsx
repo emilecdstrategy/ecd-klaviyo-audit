@@ -10,6 +10,7 @@ import {
 import { useState } from 'react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
+import SiteFavicon from '../components/ui/SiteFavicon';
 import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
@@ -216,7 +217,10 @@ export default function Audits() {
                       className="hover:bg-gray-50/50 cursor-pointer transition-colors"
                     >
                       <td className="px-6 py-4">
-                        <p className="text-sm font-medium text-gray-900">{audit.title}</p>
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <SiteFavicon url={client?.website_url} />
+                          <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-sm text-gray-600">
                         {client?.company_name || 'Unknown'}
