@@ -7,7 +7,6 @@ import ReportFlowTable from './ReportFlowTable';
 import ReportFlowInventoryTable from './ReportFlowInventoryTable';
 import ReportFlowHealthScore from './ReportFlowHealthScore';
 import ReportFlowRevenueBreakdown from './ReportFlowRevenueBreakdown';
-import ReportHealthScore from './ReportHealthScore';
 import ReportAccountSnapshot from './ReportAccountSnapshot';
 import ReportSegmentTable from './ReportSegmentTable';
 import ReportFormTable from './ReportFormTable';
@@ -32,21 +31,18 @@ import { resolveExecutiveFindings } from '../../lib/findings-normalize';
 import { cn } from '../../lib/utils';
 import type { AuditReportBundle } from '../../hooks/useAuditReportData';
 import {
-  extractAccountHealthRawConfig,
   extractCampaignsRawConfig,
   extractEmailDesignRawConfig,
   extractExecutiveSummaryRawConfig,
   extractFlowsRawConfig,
   extractSegmentationRawConfig,
   extractSignupFormsRawConfig,
-  isAccountHealthBlockVisible,
   isCampaignsBlockVisible,
   isEmailDesignBlockVisible,
   isExecutiveSummaryBlockVisible,
   isFlowsBlockVisible,
   isSegmentationBlockVisible,
   isSignupFormsBlockVisible,
-  resolveAccountHealthConfig,
   resolveCampaignsConfig,
   resolveEmailDesignConfig,
   resolveExecutiveSummaryConfig,
@@ -60,7 +56,6 @@ import type { RevenueSummarySectionConfig } from '../../lib/report-config/types'
 
 const NAV_ITEMS = [
   { id: 'summary', label: 'Summary' },
-  { id: 'health', label: 'Health Score' },
   { id: 'flows', label: 'Flows' },
   { id: 'segments', label: 'Segments' },
   { id: 'forms', label: 'Signup Forms' },
@@ -132,7 +127,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     toggleAuditSectionHidden,
     toggleExecutiveBlockHidden,
     toggleFlowsBlockHidden,
-    toggleSectionBlockHidden,
     updateSectionBlockField,
   } = useReportEdit();
   const [activeSection, setActiveSection] = useState('summary');
@@ -149,7 +143,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     segmentSnapshots,
     formSnapshots,
     campaignSnapshots,
-    healthScores,
     emailDesign,
     reportingDiagnostic,
     accountSnapshot,
@@ -224,10 +217,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   const flowsSectionRow = reportSections.find(s => s.section_key === 'flows');
   const flowsCfg = resolveFlowsConfig(extractFlowsRawConfig(pickConfig('flows')));
 
-  const accountHealthCfg = resolveAccountHealthConfig(
-    extractAccountHealthRawConfig(pickConfig('account_health')),
-  );
-
   const segmentationSectionRow = reportSections.find(s => s.section_key === 'segmentation');
   const segmentationCfg = resolveSegmentationConfig(
     extractSegmentationRawConfig(pickConfig('segmentation')),
@@ -279,7 +268,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
   const sectionHiddenFlags: Record<string, boolean> = {
     summary: Boolean(executiveSummaryCfg.hidden),
-    health: Boolean(accountHealthCfg.hidden),
     flows: Boolean(flowsCfg.hidden),
     segments: Boolean(segmentationCfg.hidden),
     forms: Boolean(signupFormsCfg.hidden),
@@ -290,7 +278,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
   const sectionDataAvailable: Record<string, boolean> = {
     summary: true,
-    health: healthScores.length > 0 || editMode,
     flows: flowsDataAvailable,
     segments: segmentSnapshots.length > 0,
     forms: formSnapshots.length > 0,
@@ -301,7 +288,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
   const sectionVisibility: Record<string, boolean> = {
     summary: !sectionHiddenFlags.summary,
-    health: healthScores.length > 0 && !sectionHiddenFlags.health,
     flows: flowsDataAvailable && !sectionHiddenFlags.flows,
     segments: segmentSnapshots.length > 0 && !sectionHiddenFlags.segments,
     forms: formSnapshots.length > 0 && !sectionHiddenFlags.forms,
@@ -516,29 +502,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             />
           )}
 
-        </ReportSectionShell>
-
-        <ReportSectionShell
-          id="health"
-          setRef={setRef}
-          label={accountHealthCfg.sectionTitle ?? 'Account Health Score'}
-          hidden={sectionHiddenFlags.health}
-          onToggleHidden={h => toggleAuditSectionHidden('account_health', h)}
-          available={sectionDataAvailable.health}
-        >
-            <ReportSectionHeader
-              number={sectionNumbers['health'] ?? accountHealthCfg.sectionNumber ?? '02'}
-              label={accountHealthCfg.sectionTitle ?? 'Account Health Score'}
-            />
-            {(isAccountHealthBlockVisible(accountHealthCfg, 'healthScoreTable') || editMode) && (
-              <ReportBlockEditChrome
-                label="Health Score Table"
-                hidden={accountHealthCfg.blocks.healthScoreTable?.hidden === true}
-                onToggleHidden={h => toggleSectionBlockHidden('account_health', 'healthScoreTable', h)}
-              >
-                <ReportHealthScore scores={healthScores} />
-              </ReportBlockEditChrome>
-            )}
         </ReportSectionShell>
 
         <ReportSectionShell

@@ -95,7 +95,7 @@ export const DEFAULT_FLOWS_SECTION: FlowsSectionConfig = {
 // -----------------------------------------------------------------------------
 
 export const DEFAULT_ACCOUNT_HEALTH_SECTION: AccountHealthSectionConfig = {
-  hidden: false,
+  hidden: true,
   sectionNumber: '02',
   sectionTitle: 'Account Health Score',
   sectionSubtitle: undefined,
