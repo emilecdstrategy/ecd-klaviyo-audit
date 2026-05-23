@@ -7,8 +7,8 @@ export default function ReportBlockHeader({
   titleClassName = 'text-base font-bold text-gray-900',
 }: {
   icon: ReactNode;
-  title: string;
-  subtitle?: string;
+  title: ReactNode;
+  subtitle?: ReactNode;
   titleClassName?: string;
 }) {
   return (

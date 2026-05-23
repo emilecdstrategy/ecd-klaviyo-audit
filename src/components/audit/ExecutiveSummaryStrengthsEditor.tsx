@@ -85,7 +85,7 @@ export default function ExecutiveSummaryStrengthsEditor({
               {index >= 3 && <span className="text-gray-400 font-normal"> (optional)</span>}
             </label>
             <SimpleRichEditor
-              value={strength.replace(/\*\*(.+?)\*\*/g, '$1')}
+              value={strength}
               onChange={val => updateStrength(index, val)}
               rows={2}
               placeholder="Describe something the account is doing well…"

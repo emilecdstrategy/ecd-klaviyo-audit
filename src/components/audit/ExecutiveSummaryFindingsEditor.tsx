@@ -103,7 +103,7 @@ export default function ExecutiveSummaryFindingsEditor({
               Finding {String(index + 1).padStart(2, '0')}
             </label>
             <SimpleRichEditor
-              value={finding.replace(/\*\*(.+?)\*\*/g, '$1')}
+              value={finding}
               onChange={val => updateFinding(index, val)}
               rows={2}
               placeholder="Describe a specific problem or gap in this account…"

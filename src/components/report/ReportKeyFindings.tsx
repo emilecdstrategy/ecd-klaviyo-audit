@@ -1,5 +1,7 @@
 import { AlertCircle } from 'lucide-react';
-import { RichAuditText } from '../ui/RichAuditText';
+import EditableRichText from './edit/EditableRichText';
+import EditablePlainText from './edit/EditablePlainText';
+import { useReportEdit } from './edit/ReportEditContext';
 import ReportBlockHeader from './ReportBlockHeader';
 
 export default function ReportKeyFindings({
@@ -9,6 +11,9 @@ export default function ReportKeyFindings({
   title: string;
   findings: string[];
 }) {
+  const { updateFinding, updateBlockTitle } = useReportEdit();
+  const displayFindings = findings.length > 0 ? findings : ['', '', '', '', ''];
+
   return (
     <div className="mb-8 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       <ReportBlockHeader
@@ -17,13 +22,20 @@ export default function ReportKeyFindings({
             <AlertCircle className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
           </div>
         }
-        title={title}
+        title={
+          <EditablePlainText
+            value={title}
+            onSave={v => updateBlockTitle('executive_summary', 'findings', 'title', v)}
+            className="text-lg font-bold text-gray-900"
+            as="span"
+          />
+        }
         subtitle="Priority gaps identified in your Klaviyo account"
         titleClassName="text-lg font-bold text-gray-900"
       />
 
       <ol className="divide-y divide-gray-100">
-        {findings.slice(0, 5).map((finding, i) => (
+        {displayFindings.slice(0, 5).map((finding, i) => (
           <li
             key={i}
             className="grid grid-cols-[2rem_minmax(0,1fr)] items-start gap-x-4 px-6 py-5 sm:grid-cols-[2.25rem_minmax(0,1fr)] sm:gap-x-5 sm:py-6"
@@ -34,9 +46,11 @@ export default function ReportKeyFindings({
             >
               {String(i + 1).padStart(2, '0')}
             </span>
-            <RichAuditText
-              text={finding}
+            <EditableRichText
+              value={finding}
+              onSave={v => updateFinding(i, v)}
               className="min-w-0 text-base leading-relaxed text-gray-700"
+              placeholder="Describe a specific problem or gap…"
             />
           </li>
         ))}

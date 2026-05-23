@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { Mail, ExternalLink, Maximize2, X as XIcon, Check, Palette } from 'lucide-react';
+import { Mail, ExternalLink, Maximize2, X as XIcon, Check, Palette, PenLine, Settings2 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import AuditSectionEditor from '../components/audit/AuditSectionEditor';
 import FlowPerformanceEditor from '../components/audit/FlowPerformanceEditor';
@@ -10,6 +10,9 @@ import RevenueAddOnItemsEditor from '../components/audit/RevenueAddOnItemsEditor
 import ExecutiveSummaryLayoutEditor from '../components/audit/ExecutiveSummaryLayoutEditor';
 import ExecutiveSummaryFindingsEditor from '../components/audit/ExecutiveSummaryFindingsEditor';
 import ExecutiveSummaryStrengthsEditor from '../components/audit/ExecutiveSummaryStrengthsEditor';
+import AuditReportView from '../components/report/AuditReportView';
+import { ReportEditProvider, useReportEdit } from '../components/report/edit/ReportEditContext';
+import { mergeReportBundle, type AuditReportBundle } from '../hooks/useAuditReportData';
 import {
   WorkspaceSidebar,
   WorkspaceMobileNav,
@@ -23,7 +26,7 @@ import { SECTION_LABELS, CONFIDENCE_LABELS } from '../lib/constants';
 import { formatCurrency } from '../lib/revenue-calculator';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, AuditAsset, Client } from '../lib/types';
-import { createAnnotation, deleteAnnotation, getAudit, getClient, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAudit, updateAuditStatus, updateAuditSection, getAuditEmailDesign, upsertAuditEmailDesign, listIndustryEmailLibrary, getPlatformSettings } from '../lib/db';
+import { createAnnotation, deleteAnnotation, getAudit, getClient, getPublicReportByToken, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAudit, updateAuditStatus, updateAuditSection, getAuditEmailDesign, upsertAuditEmailDesign, listIndustryEmailLibrary, getPlatformSettings } from '../lib/db';
 import { supabase } from '../lib/supabase';
 import SimpleRichEditor from '../components/ui/SimpleRichEditor';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -37,6 +40,35 @@ function formatCurrencyWithCents(amount: number): string {
     minimumFractionDigits: 2,
     maximumFractionDigits: 2,
   }).format(amount || 0);
+}
+
+type WorkspaceMode = 'report' | 'advanced';
+
+function EditModeBanner({ onAdvanced }: { onAdvanced: () => void }) {
+  const { saveStatus } = useReportEdit();
+  return (
+    <div className="sticky top-0 z-50 border-b border-brand-primary/20 bg-brand-primary/5 px-4 py-2.5">
+      <div className="mx-auto flex max-w-[90rem] flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 text-sm text-gray-800">
+          <PenLine className="h-4 w-4 text-brand-primary" />
+          <span>
+            <strong>Edit on report</strong> — click any highlighted text to edit. Changes save automatically.
+          </span>
+          {saveStatus === 'saving' && <span className="text-xs text-gray-500">Saving…</span>}
+          {saveStatus === 'saved' && <span className="text-xs text-emerald-600">Saved</span>}
+          {saveStatus === 'error' && <span className="text-xs text-red-600">Save failed</span>}
+        </div>
+        <button
+          type="button"
+          onClick={onAdvanced}
+          className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
+        >
+          <Settings2 className="h-3.5 w-3.5" />
+          Advanced settings
+        </button>
+      </div>
+    </div>
+  );
 }
 
 export default function AuditWorkspace() {
@@ -61,6 +93,9 @@ export default function AuditWorkspace() {
   const execSaveTimer = useRef<number>(0);
   const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
   const [scopeWarnings, setScopeWarnings] = useState<string[]>([]);
+  const [workspaceMode, setWorkspaceMode] = useState<WorkspaceMode>('report');
+  const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
+  const [reportLoading, setReportLoading] = useState(false);
   /** Rollup-derived KPIs when audit row still has zeros (older API audits). */
   const [kpiFromSnapshot, setKpiFromSnapshot] = useState<{
     list_size: number | null;
@@ -203,6 +238,28 @@ export default function AuditWorkspace() {
     return () => { cancelled = true; };
   }, [audit?.id, audit?.audit_method]);
 
+  useEffect(() => {
+    if (!audit?.public_share_token || workspaceMode !== 'report') return;
+    let cancelled = false;
+    (async () => {
+      try {
+        setReportLoading(true);
+        const report = await getPublicReportByToken(audit.public_share_token);
+        if (!cancelled && report) setReportBundle(report as AuditReportBundle);
+      } catch {
+        if (!cancelled) setReportBundle(null);
+      } finally {
+        if (!cancelled) setReportLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [audit?.public_share_token, workspaceMode]);
+
+  const mergedReportData = useMemo(() => {
+    if (!reportBundle || !audit || !client) return null;
+    return mergeReportBundle(reportBundle, audit, sections, annotations);
+  }, [reportBundle, audit, client, sections, annotations]);
+
   if (loading) {
     return (
       <div>
@@ -270,17 +327,41 @@ export default function AuditWorkspace() {
         title={audit.title}
         subtitle={client?.company_name}
         actions={
-          audit.public_share_token ? (
-            <a
-              href={`/report/${audit.public_share_token}`}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-            >
-              <ExternalLink className="w-4 h-4" />
-              View Report
-            </a>
-          ) : undefined
+          <div className="flex items-center gap-2">
+            <div className="flex rounded-lg border border-gray-200 bg-white p-0.5">
+              <button
+                type="button"
+                onClick={() => setWorkspaceMode('report')}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  workspaceMode === 'report' ? 'bg-brand-primary text-white' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <PenLine className="h-3.5 w-3.5" />
+                Edit on report
+              </button>
+              <button
+                type="button"
+                onClick={() => setWorkspaceMode('advanced')}
+                className={`flex items-center gap-1.5 rounded-md px-3 py-1.5 text-xs font-medium transition-colors ${
+                  workspaceMode === 'advanced' ? 'bg-brand-primary text-white' : 'text-gray-600 hover:text-gray-900'
+                }`}
+              >
+                <Settings2 className="h-3.5 w-3.5" />
+                Advanced
+              </button>
+            </div>
+            {audit.public_share_token ? (
+              <a
+                href={`/report/${audit.public_share_token}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <ExternalLink className="w-4 h-4" />
+                View Report
+              </a>
+            ) : null}
+          </div>
         }
       />
 
@@ -291,6 +372,42 @@ export default function AuditWorkspace() {
         </div>
       )}
 
+      {workspaceMode === 'report' ? (
+        <ReportEditProvider
+          editMode
+          audit={audit}
+          sections={sections}
+          onAuditChange={setAudit}
+          onSectionsChange={setSections}
+        >
+          <EditModeBanner onAdvanced={() => setWorkspaceMode('advanced')} />
+          <div className="flex">
+            <div className="min-w-0 flex-1">
+              {reportLoading && (
+                <div className="p-12 text-center text-sm text-gray-500">Loading report preview…</div>
+              )}
+              {!reportLoading && mergedReportData && (
+                <AuditReportView data={mergedReportData} />
+              )}
+              {!reportLoading && !mergedReportData && (
+                <div className="p-12 text-center text-sm text-gray-500">
+                  Could not load report data. Switch to Advanced settings or publish the audit first.
+                </div>
+              )}
+            </div>
+            <div className="hidden w-[320px] shrink-0 border-l border-gray-100 bg-gray-50/80 p-4 xl:block">
+              <ShareLinkPanel
+                shareToken={audit.public_share_token}
+                onPublish={handlePublish}
+                isPublished={audit.status === 'published'}
+                publishDisabled={audit.audit_method === 'api' && audit.status !== 'published' && Boolean(publishBlockedReason)}
+                publishDisabledReason={publishBlockedReason || undefined}
+              />
+            </div>
+          </div>
+        </ReportEditProvider>
+      ) : (
+      <>
       <WorkspaceMobileNav activeSection={activeSection} onSelect={setActiveSection} />
 
       <div className="flex h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)]">
@@ -488,6 +605,8 @@ export default function AuditWorkspace() {
           </div>
         </div>
       </div>
+      </>
+      )}
     </div>
   );
 }
