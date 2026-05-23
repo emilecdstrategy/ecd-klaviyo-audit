@@ -324,7 +324,16 @@ export default function ClientDetail() {
                             <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-600" />
                           </button>
                         )}
-                        <ExternalLink className="w-3.5 h-3.5 text-gray-300" />
+                        <a
+                          href={`/audits/${audit.id}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          className="p-1.5 rounded hover:bg-gray-100 transition-colors inline-flex"
+                          title="Open audit in new tab"
+                        >
+                          <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
+                        </a>
                       </div>
                     </div>
                   ))}

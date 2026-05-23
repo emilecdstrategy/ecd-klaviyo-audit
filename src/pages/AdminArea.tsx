@@ -109,8 +109,7 @@ export default function AdminArea() {
 function UsersTab() {
   const { user: currentUser } = useAuth();
   const [users, setUsers] = useState<AdminUserRow[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviting, setInviting] = useState(false);
@@ -129,17 +128,16 @@ function UsersTab() {
   const reload = async () => {
     setError('');
     try {
-      setRefreshing(true);
-      const { data, error } = await supabase.functions.invoke('admin_users', {
-        body: { action: 'list' },
-      });
+      const { data, error } = await supabase
+        .from('profiles')
+        .select('id, email, name, role, created_at')
+        .order('created_at', { ascending: true });
       if (error) throw error;
-      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to load users');
-      setUsers((data.users ?? []) as AdminUserRow[]);
+      setUsers((data ?? []) as AdminUserRow[]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load users');
     } finally {
-      setRefreshing(false);
+      setLoading(false);
     }
   };
 
@@ -178,7 +176,7 @@ function UsersTab() {
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Invite failed');
       setInviteEmail('');
-      await reload();
+      void reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Invite failed');
     } finally {
@@ -217,7 +215,7 @@ function UsersTab() {
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to remove user');
       setRemoveConfirmUser(null);
-      await reload();
+      setUsers(u => u.filter(x => x.id !== userId));
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to remove user');
     } finally {
@@ -290,10 +288,10 @@ function UsersTab() {
       )}
 
       <div className="divide-y divide-gray-50">
-        {refreshing && (
-          <div className="px-6 py-3 text-xs text-gray-400">Refreshing users…</div>
-        )}
-        {sorted.map(user => (
+        {loading && sorted.length === 0 ? (
+          <div className="px-6 py-8 text-sm text-gray-400">Loading users…</div>
+        ) : (
+          sorted.map(user => (
           <div key={user.id} className="flex items-center justify-between px-6 py-4 gap-4">
             <div className="flex items-center gap-3">
               <div className="w-9 h-9 rounded-full gradient-bg flex items-center justify-center text-white text-xs font-bold">
@@ -342,7 +340,8 @@ function UsersTab() {
               )}
             </div>
           </div>
-        ))}
+          ))
+        )}
       </div>
     </div>
   );
@@ -987,7 +986,7 @@ function RevenueOpportunitiesTab() {
         </div>
       </div>
 
-      <div className="space-y-3">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
         {loading ? (
           <div className="bg-white rounded-xl p-6 card-shadow text-sm text-gray-500">Loading templates...</div>
         ) : entries.length === 0 ? (
@@ -1203,7 +1202,7 @@ function SettingsTab() {
         ) : status?.configured && !editing ? (
           <>
             <div className="flex items-center gap-3 rounded-lg border border-emerald-100 bg-emerald-50 px-4 py-3">
-              <div className="flex-1">
+              <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-emerald-800">API key is configured</p>
                 <p className="text-xs text-emerald-600 mt-0.5">
                   {status.updated_at ? `Last updated ${new Date(status.updated_at).toLocaleString()}` : 'Stored encrypted and used server-side only.'}
@@ -1212,8 +1211,9 @@ function SettingsTab() {
               <button
                 type="button"
                 onClick={() => { setEditing(true); setSuccess(''); setError(''); }}
-                className="px-3 py-1.5 text-sm font-medium text-brand-primary border border-brand-primary/30 rounded-lg hover:bg-brand-primary/5 transition-colors"
+                className="shrink-0 inline-flex items-center gap-1.5 px-3.5 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-200 rounded-lg shadow-sm hover:bg-gray-50 hover:border-gray-300 transition-colors"
               >
+                <Pencil className="w-3.5 h-3.5 text-gray-500" />
                 Edit Key
               </button>
             </div>
