@@ -378,7 +378,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
           onToggleHidden={h => toggleLayoutSectionHidden('executive_summary', h)}
           available={sectionDataAvailable.summary}
         >
-          <ReportCover companyName={client.company_name} preparedDate={preparedDateLabel} />
+          <ReportCover
+            companyName={client.company_name}
+            preparedDate={preparedDateLabel}
+            websiteUrl={client.website_url}
+          />
 
             <ReportSectionHeader
             number={sectionNumbers['summary'] ?? executiveSummaryCfg.sectionNumber ?? '01'}

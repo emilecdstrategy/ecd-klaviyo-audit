@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
+import SiteFavicon from '../components/ui/SiteFavicon';
 import { SkeletonClientDetail } from '../components/ui/Skeleton';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { useAuth } from '../contexts/AuthContext';
@@ -142,6 +143,7 @@ export default function ClientDetail() {
       <TopBar
         title={client.company_name}
         subtitle={client.website_url || ' '}
+        leadingIcon={<SiteFavicon url={client.website_url} size="md" />}
         actions={
           <button
             onClick={() => navigate('/audits/new', { state: { clientId: client.id, backgroundLocation: location } })}
@@ -225,7 +227,10 @@ export default function ClientDetail() {
               <div className="grid grid-cols-2 gap-4">
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Company</p>
-                  <p className="text-sm text-gray-900">{client.company_name}</p>
+                  <div className="flex items-center gap-2">
+                    <SiteFavicon url={client.website_url} />
+                    <p className="text-sm text-gray-900">{client.company_name}</p>
+                  </div>
                 </div>
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">ESP Platform</p>
@@ -291,11 +296,14 @@ export default function ClientDetail() {
                       onClick={() => navigate(`/audits/${audit.id}`)}
                       className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/50 transition-colors text-left cursor-pointer"
                     >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">
-                          {new Date(audit.created_at).toLocaleDateString()} &middot; {audit.audit_method === 'api' ? 'API Connected' : 'Screenshot Based'}
-                        </p>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <SiteFavicon url={client.website_url} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {new Date(audit.created_at).toLocaleDateString()} &middot; {audit.audit_method === 'api' ? 'API Connected' : 'Screenshot Based'}
+                          </p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-3 shrink-0 ml-4">
                         <span className="text-sm font-semibold text-emerald-700">

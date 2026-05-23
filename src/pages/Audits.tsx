@@ -222,8 +222,11 @@ export default function Audits() {
                           <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
                         </div>
                       </td>
-                      <td className="px-6 py-4 text-sm text-gray-600">
-                        {client?.company_name || 'Unknown'}
+                      <td className="px-6 py-4">
+                        <div className="flex items-center gap-2.5 min-w-0">
+                          <SiteFavicon url={client?.website_url} />
+                          <span className="text-sm text-gray-600 truncate">{client?.company_name || 'Unknown'}</span>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-xs font-medium text-gray-500">

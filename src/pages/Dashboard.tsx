@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ClipboardCheck,
-  Users,
   TrendingUp,
   FileText,
   Plus,
@@ -14,6 +13,7 @@ import TopBar from '../components/layout/TopBar';
 import KPICard from '../components/ui/KPICard';
 import StatusBadge from '../components/ui/StatusBadge';
 import { SkeletonKPICards, SkeletonListCard } from '../components/ui/Skeleton';
+import SiteFavicon from '../components/ui/SiteFavicon';
 import { formatCurrency } from '../lib/revenue-calculator';
 import { listAudits, listClients } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
@@ -108,9 +108,12 @@ export default function Dashboard() {
                       onClick={() => navigate(`/audits/${audit.id}`)}
                       className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/50 transition-colors text-left"
                     >
-                      <div className="min-w-0">
-                        <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
-                        <p className="text-xs text-gray-500 mt-0.5">{client?.company_name || 'Unknown'}</p>
+                      <div className="flex items-center gap-3 min-w-0">
+                        <SiteFavicon url={client?.website_url} />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">{client?.company_name || 'Unknown'}</p>
+                        </div>
                       </div>
                       <div className="flex items-center gap-4 shrink-0 ml-4">
                         <span className="text-sm font-semibold text-emerald-700">
@@ -144,9 +147,7 @@ export default function Dashboard() {
                       className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/50 transition-colors text-left"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <div className="w-9 h-9 rounded-lg bg-gray-100 flex items-center justify-center shrink-0">
-                          <Users className="w-4 h-4 text-gray-400" />
-                        </div>
+                        <SiteFavicon url={client.website_url} />
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{client.company_name}</p>
                           <p className="text-xs text-gray-500">{client.website_url || '—'}</p>

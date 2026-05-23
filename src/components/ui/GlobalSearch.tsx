@@ -3,6 +3,7 @@ import { Search, FileText, Users } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import { formatClientListMeta } from '../../lib/client-display';
 import { searchAudits, searchClients } from '../../lib/db';
+import SiteFavicon from './SiteFavicon';
 import type { Audit, Client } from '../../lib/types';
 
 type Result =
@@ -37,6 +38,8 @@ export default function GlobalSearch() {
     audits.forEach(a => r.push({ type: 'audit', item: a }));
     return r;
   }, [clients, audits]);
+
+  const clientById = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +147,7 @@ export default function GlobalSearch() {
                         active={active}
                         title={c.company_name}
                         subtitle={formatClientListMeta(c)}
+                        leading={<SiteFavicon url={c.website_url} />}
                         onClick={() => onPick({ type: 'client', item: c })}
                         onMouseEnter={() => setActiveIndex(absoluteIndex)}
                       />
@@ -163,12 +167,14 @@ export default function GlobalSearch() {
                     const ranLabel = ranAt ? ranAt.toLocaleDateString() : '';
                     const statusLabel = a.status.replace('_', ' ');
                     const subtitle = ranLabel ? `${statusLabel} • ${ranLabel}` : statusLabel;
+                    const auditClient = clientById.get(a.client_id);
                     return (
                       <Row
                         key={a.id}
                         active={active}
                         title={a.title}
                         subtitle={subtitle}
+                        leading={<SiteFavicon url={auditClient?.website_url} />}
                         onClick={() => onPick({ type: 'audit', item: a })}
                         onMouseEnter={() => setActiveIndex(absoluteIndex)}
                       />
@@ -207,12 +213,14 @@ function Section({
 function Row({
   title,
   subtitle,
+  leading,
   active,
   onClick,
   onMouseEnter,
 }: {
   title: string;
   subtitle?: string;
+  leading?: React.ReactNode;
   active: boolean;
   onClick: () => void;
   onMouseEnter: () => void;
@@ -221,11 +229,12 @@ function Row({
     <button
       onClick={onClick}
       onMouseEnter={onMouseEnter}
-      className={`w-full cursor-pointer text-left px-4 py-2.5 flex items-start justify-between gap-3 ${
+      className={`w-full cursor-pointer text-left px-4 py-2.5 flex items-start gap-2.5 ${
         active ? 'bg-brand-primary/5' : 'hover:bg-gray-50'
       }`}
     >
-      <div className="min-w-0">
+      {leading ? <div className="mt-0.5 shrink-0">{leading}</div> : null}
+      <div className="min-w-0 flex-1">
         <div className="text-sm font-medium text-gray-900 truncate">{title}</div>
         {subtitle && <div className="text-xs text-gray-500 truncate mt-0.5">{subtitle}</div>}
       </div>

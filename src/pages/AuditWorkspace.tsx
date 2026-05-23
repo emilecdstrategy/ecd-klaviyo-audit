@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
+import SiteFavicon from '../components/ui/SiteFavicon';
 import AuditReportView from '../components/report/AuditReportView';
 import { ReportEditProvider } from '../components/report/edit/ReportEditContext';
 import EmailDesignEditor, { EmailDesignDrawer } from '../components/audit/EmailDesignEditor';
@@ -230,6 +231,7 @@ export default function AuditWorkspace() {
         <TopBar
           title={audit.title}
           subtitle={client?.company_name}
+          leadingIcon={client ? <SiteFavicon url={client.website_url} size="md" /> : undefined}
           actions={
             <div className="flex items-center gap-3">
               {audit.public_share_token ? (

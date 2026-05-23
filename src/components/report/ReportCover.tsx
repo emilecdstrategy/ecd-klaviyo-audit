@@ -1,11 +1,14 @@
 import ReportBrandMark from './ReportBrandMark';
+import SiteFavicon from '../ui/SiteFavicon';
 
 export default function ReportCover({
   companyName,
   preparedDate,
+  websiteUrl,
 }: {
   companyName: string;
   preparedDate: string;
+  websiteUrl?: string | null;
 }) {
   return (
     <div className="relative mb-10 overflow-hidden rounded-3xl text-white shadow-xl shadow-brand-primary/15 ring-1 ring-white/10">
@@ -41,8 +44,9 @@ export default function ReportCover({
           <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/60 mb-3">
             Prepared for
           </p>
-          <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
-            {companyName}
+          <h1 className="flex items-center gap-3 sm:gap-4 text-3xl font-extrabold tracking-tight sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
+            <SiteFavicon url={websiteUrl} size="lg" variant="onDark" className="mt-0.5 sm:mt-1" />
+            <span>{companyName}</span>
           </h1>
           <p className="mt-4 text-base leading-relaxed text-white/80 sm:text-lg max-w-2xl">
             A strategic review of your Klaviyo account. What&apos;s working, what needs attention,

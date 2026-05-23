@@ -15,6 +15,7 @@ import { createAudit, createAuditSections, createClient, ensureClientCreator, li
 import type { Audit, AuditContext, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
+import SiteFavicon from '../components/ui/SiteFavicon';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { supabase } from '../lib/supabase';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
@@ -691,11 +692,14 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                       textValue={c.company_name}
                       className="items-start py-2.5 pl-8 pr-3"
                     >
-                      <div className="flex flex-col gap-0.5 pr-1">
-                        <SelectItemText className="font-medium leading-snug text-gray-900">
-                          {c.company_name}
-                        </SelectItemText>
-                        <span className="text-[11px] leading-snug text-gray-500">{formatClientListMeta(c)}</span>
+                      <div className="flex items-start gap-2.5 pr-1">
+                        <SiteFavicon url={c.website_url} className="mt-0.5" />
+                        <div className="flex flex-col gap-0.5 min-w-0">
+                          <SelectItemText className="font-medium leading-snug text-gray-900">
+                            {c.company_name}
+                          </SelectItemText>
+                          <span className="text-[11px] leading-snug text-gray-500">{formatClientListMeta(c)}</span>
+                        </div>
                       </div>
                     </SelectItem>
                   ))}
