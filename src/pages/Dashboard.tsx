@@ -109,7 +109,7 @@ export default function Dashboard() {
                       className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/50 transition-colors text-left"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <SiteFavicon url={client?.website_url} />
+                        <SiteFavicon url={client?.website_url} size="md" />
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
                           <p className="text-xs text-gray-500 mt-0.5">{client?.company_name || 'Unknown'}</p>
@@ -147,7 +147,7 @@ export default function Dashboard() {
                       className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/50 transition-colors text-left"
                     >
                       <div className="flex items-center gap-3 min-w-0">
-                        <SiteFavicon url={client.website_url} />
+                        <SiteFavicon url={client.website_url} size="md" />
                         <div className="min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{client.company_name}</p>
                           <p className="text-xs text-gray-500">{client.website_url || '—'}</p>
