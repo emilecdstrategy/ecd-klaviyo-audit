@@ -56,7 +56,7 @@ export default function ReportSectionEditChrome({
             title={action.label}
             className={cn(
               'flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white/95 text-gray-700 shadow-sm backdrop-blur-sm hover:border-brand-primary/30 hover:text-brand-primary transition-colors',
-              action.variant === 'primary' ? 'px-3 py-1.5 text-xs font-semibold' : 'h-9 w-9 justify-center',
+              action.variant === 'primary' ? 'h-9 px-3 text-xs font-semibold' : 'h-9 w-9 justify-center',
             )}
           >
             <action.icon className="h-4 w-4" />

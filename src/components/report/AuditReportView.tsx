@@ -119,8 +119,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     editMode,
     updateLayoutTitle,
     updateBlockTitle,
-    updateExecText,
-    updateHeroLayout,
     updateAddOnField,
     updateAddOnBullet,
     toggleLayoutSectionHidden,
@@ -128,6 +126,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     toggleExecutiveBlockHidden,
     toggleFlowsBlockHidden,
     updateSectionBlockField,
+    patchSectionBlock,
   } = useReportEdit();
   const [activeSection, setActiveSection] = useState('summary');
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -400,59 +399,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             />
           )}
 
-          {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'hero') || editMode) && (() => {
-            const hero = executiveSummaryCfg.blocks.hero;
-            const eyebrow = hero?.eyebrow;
-            const headline = hero?.headline;
-            const intro = hero?.intro;
-            const defaultHeadline = `Klaviyo audit overview for ${client.company_name}`;
-            const defaultIntro = toOneOrTwoSentences(execText?.split('\n')[0] || '');
-            const showHeadline = headline !== null;
-            const showIntro = intro !== null;
-            if (!showHeadline && !showIntro && !eyebrow && eyebrow !== undefined) return null;
-            if (!showHeadline && !showIntro && eyebrow === undefined && !defaultIntro && !editMode) return null;
-            return (
-              <ReportBlockEditChrome
-                label="Hero intro"
-                hidden={executiveSummaryCfg.blocks.hero?.hidden === true}
-                onToggleHidden={h => toggleExecutiveBlockHidden('hero', h)}
-              >
-              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">
-                {eyebrow !== null && (
-                  <EditablePlainText
-                    value={eyebrow ?? `Klaviyo Email Audit — ${client.company_name}`}
-                    onSave={v => updateHeroLayout('eyebrow', v)}
-                    className="text-xs font-semibold text-brand-primary uppercase tracking-widest mb-3"
-                    as="p"
-                  />
-                )}
-                {showHeadline && (
-                  <EditablePlainText
-                    value={typeof headline === 'string' && headline.length > 0 ? headline : defaultHeadline}
-                    onSave={v => updateHeroLayout('headline', v)}
-                    className="text-3xl lg:text-4xl font-extrabold text-gray-900 leading-tight mb-5"
-                    as="h1"
-                  />
-                )}
-                {showIntro && (
-                  <EditableRichText
-                    value={typeof intro === 'string' && intro.length > 0 ? intro : defaultIntro}
-                    onSave={v => {
-                      if (typeof intro === 'string' && intro.length > 0) {
-                        updateHeroLayout('intro', v);
-                      } else {
-                        updateExecText(v);
-                      }
-                    }}
-                    className="text-base text-gray-600 leading-relaxed"
-                    placeholder="Short intro paragraph…"
-                  />
-                )}
-              </div>
-              </ReportBlockEditChrome>
-            );
-          })()}
-
           {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'accountSnapshot') || editMode) &&
             (flowSnapshots.length > 0 || campaignSnapshots.length > 0 || editMode) && (
               <ReportBlockEditChrome
@@ -567,8 +513,31 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                   snapshots={flowSnapshots as any}
                   performance={flowPerformance}
                   segmentCount={segmentSnapshots.length}
-                  title={flowsCfg.blocks.healthScore?.title}
-                  subtitle={flowsCfg.blocks.healthScore?.subtitle}
+                  title={
+                    editMode ? (
+                      <EditablePlainText
+                        value={flowsCfg.blocks.healthScore?.title ?? 'Overall Flow Health Score'}
+                        onSave={v => updateSectionBlockField('flows', 'healthScore', 'title', v)}
+                        className="text-lg font-bold text-gray-900"
+                        as="span"
+                      />
+                    ) : (
+                      flowsCfg.blocks.healthScore?.title ?? 'Overall Flow Health Score'
+                    )
+                  }
+                  subtitle={
+                    editMode ? (
+                      <EditablePlainText
+                        value={flowsCfg.blocks.healthScore?.subtitle ?? ''}
+                        onSave={v => updateSectionBlockField('flows', 'healthScore', 'subtitle', v)}
+                        className="text-sm text-gray-500"
+                        as="span"
+                        placeholder="Optional subtitle…"
+                      />
+                    ) : (
+                      flowsCfg.blocks.healthScore?.subtitle
+                    )
+                  }
                   benchmarks={flowsCfg.blocks.healthScore?.benchmarks}
                 />
               </div>
@@ -579,8 +548,28 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
                 <ReportFlowRevenueBreakdown
                   performance={flowPerformance}
-                  title={flowsCfg.blocks.revenueBreakdown?.title}
+                  title={
+                    editMode ? (
+                      <EditablePlainText
+                        value={flowsCfg.blocks.revenueBreakdown?.title ?? 'Revenue Breakdown by Flow'}
+                        onSave={v => updateSectionBlockField('flows', 'revenueBreakdown', 'title', v)}
+                        className="text-lg font-bold text-gray-900"
+                        as="span"
+                      />
+                    ) : (
+                      flowsCfg.blocks.revenueBreakdown?.title
+                    )
+                  }
                   insights={flowsCfg.blocks.revenueBreakdown?.insights}
+                  editMode={editMode}
+                  onInsightSave={(key, value) =>
+                    patchSectionBlock('flows', 'revenueBreakdown', {
+                      insights: {
+                        ...(flowsCfg.blocks.revenueBreakdown?.insights ?? {}),
+                        [key]: value || undefined,
+                      },
+                    })
+                  }
                 />
               </div>
             )}
@@ -593,7 +582,18 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       <Activity className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
                     </div>
                   }
-                  title={flowsCfg.blocks.flowTable?.title ?? 'Flow Performance Details'}
+                  title={
+                    editMode ? (
+                      <EditablePlainText
+                        value={flowsCfg.blocks.flowTable?.title ?? 'Flow Performance Details'}
+                        onSave={v => updateSectionBlockField('flows', 'flowTable', 'title', v)}
+                        className="text-base font-bold text-gray-900"
+                        as="span"
+                      />
+                    ) : (
+                      flowsCfg.blocks.flowTable?.title ?? 'Flow Performance Details'
+                    )
+                  }
                 />
                 <div className="p-6">
                   <ReportFlowTable
@@ -808,6 +808,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 sections={reportSections}
                 subtitleOverride={emailDesignCfg.blocks.comparison?.subtitle}
                 benchmarkTitle={emailDesignCfg.blocks.comparison?.title}
+                clientTitle={(emailDesignCfg.blocks.comparison as { clientTitle?: string } | undefined)?.clientTitle}
               />
             </>
           ) : editMode ? (
@@ -1066,14 +1067,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   );
 }
 
-function toOneOrTwoSentences(text: string) {
-  const t = (text ?? '').trim();
-  if (!t) return '';
-  const normalized = t.replace(/\s+/g, ' ');
-  const parts = normalized.split(/(?<=[.!?])\s+/).filter(Boolean);
-  return parts.slice(0, 2).join(' ');
-}
-
 function parseSectionDetails(raw: unknown): Record<string, any> | null {
   if (!raw) return null;
   if (typeof raw === 'object') return raw as Record<string, any>;
@@ -1170,17 +1163,75 @@ function RubricExpandableNote({ text, collapsedLines = 4 }: { text: string; coll
   );
 }
 
-function RubricInsightCard({ label, children }: { label: string; children: ReactNode }) {
+function RubricInsightCard({ label, children }: { label: ReactNode; children: ReactNode }) {
   return (
     <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
       <div className="gradient-bg px-5 py-2.5">
-        <p className="text-[13px] font-bold uppercase tracking-wider text-white text-center">{label}</p>
+        <div className="text-[13px] font-bold uppercase tracking-wider text-white text-center">{label}</div>
       </div>
       <div className="px-5 pt-4 pb-5">
         {children}
       </div>
     </div>
   );
+}
+
+function EditableRubricNote({
+  text,
+  onSave,
+  collapsedLines = 4,
+}: {
+  text: string;
+  onSave: (value: string) => void;
+  collapsedLines?: number;
+}) {
+  const { editMode } = useReportEdit();
+  if (editMode) {
+    return (
+      <EditableRichText
+        value={text || ''}
+        onSave={onSave}
+        className="text-sm text-gray-700 leading-relaxed [&_strong]:text-gray-900 [&_strong]:font-semibold"
+        placeholder="Enter notes…"
+      />
+    );
+  }
+  return <RubricExpandableNote text={text || 'N/A'} collapsedLines={collapsedLines} />;
+}
+
+function RubricPanelHeader({
+  title,
+  onSave,
+}: {
+  title: string;
+  onSave?: (value: string) => void;
+}) {
+  const { editMode } = useReportEdit();
+  const headerClass = 'text-[13px] font-bold uppercase tracking-wider text-white text-center';
+  if (editMode && onSave) {
+    return (
+      <div className="gradient-bg px-5 py-2.5">
+        <EditablePlainText
+          value={title}
+          onSave={onSave}
+          className={headerClass}
+          as="p"
+        />
+      </div>
+    );
+  }
+  return (
+    <div className="gradient-bg px-5 py-2.5">
+      <p className={headerClass}>{title}</p>
+    </div>
+  );
+}
+
+function rubricBlockConfig(section: AuditSection): Record<string, unknown> {
+  const root = (section.section_config ?? {}) as Record<string, unknown>;
+  const sectionCfg = (root[section.section_key] ?? {}) as Record<string, unknown>;
+  const blocks = (sectionCfg.blocks ?? {}) as Record<string, unknown>;
+  return (blocks.rubric ?? {}) as Record<string, unknown>;
 }
 
 const TIMELINE_ACCENT = ['bg-emerald-500', 'bg-brand-primary', 'bg-amber-500', 'bg-slate-400'] as const;
@@ -1271,7 +1322,30 @@ function ImplementationTimelinePhase({
 }
 
 function SectionRubricDetails({ section }: { section: AuditSection }) {
+  const { editMode, updateSectionDetailField, patchSectionBlock } = useReportEdit();
   const details = parseSectionDetails((section as any).section_details);
+  const sk = section.section_key;
+  const rubricCfg = rubricBlockConfig(section);
+  const fieldLabels = (rubricCfg.fieldLabels ?? {}) as Record<string, string>;
+
+  const saveFieldLabel = (key: string, fallback: string, value: string) => {
+    patchSectionBlock(sk, 'rubric', {
+      fieldLabels: { ...fieldLabels, [key]: value || fallback },
+    });
+  };
+
+  const editableLabel = (key: string, fallback: string) =>
+    editMode ? (
+      <EditablePlainText
+        value={(fieldLabels[key] as string | undefined) ?? fallback}
+        onSave={v => saveFieldLabel(key, fallback, v)}
+        className="text-[13px] font-bold uppercase tracking-wider text-white text-center"
+        as="span"
+      />
+    ) : (
+      (fieldLabels[key] as string | undefined) ?? fallback
+    );
+
   if (!details) return null;
 
   if (section.section_key === 'flows') {
@@ -1284,12 +1358,15 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
     const d = details?.segmentation;
     if (!d) return null;
     const blastRisk = Boolean(d.sends_to_full_list);
+    const snapshotTitle = (rubricCfg.snapshotPanelTitle as string | undefined) ?? 'Segmentation snapshot';
+    const benchmarkTitle = (rubricCfg.benchmarkPanelTitle as string | undefined) ?? 'ECD benchmark';
     return (
       <div className="mb-4 space-y-3">
         <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
-          <div className="gradient-bg px-5 py-2.5">
-            <p className="text-[13px] font-bold uppercase tracking-wider text-white text-center">Segmentation snapshot</p>
-          </div>
+          <RubricPanelHeader
+            title={snapshotTitle}
+            onSave={v => patchSectionBlock(sk, 'rubric', { snapshotPanelTitle: v || undefined })}
+          />
           <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
             <div className="flex min-h-[88px] flex-col items-start gap-2 px-5 py-4">
               <span className="text-sm font-medium text-gray-700 leading-snug">Full-list sends</span>
@@ -1312,11 +1389,15 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
           </div>
         </div>
         <div className="rounded-xl border border-gray-100 overflow-hidden card-shadow" style={{ backgroundColor: '#f9f9f9' }}>
-          <div className="gradient-bg px-5 py-2.5">
-            <p className="text-[13px] font-bold uppercase tracking-wider text-white text-center">ECD benchmark</p>
-          </div>
+          <RubricPanelHeader
+            title={benchmarkTitle}
+            onSave={v => patchSectionBlock(sk, 'rubric', { benchmarkPanelTitle: v || undefined })}
+          />
           <div className="px-5 pt-4 pb-5">
-            <RubricExpandableNote text={d.benchmark_architecture_note || 'N/A'} collapsedLines={4} />
+            <EditableRubricNote
+              text={d.benchmark_architecture_note || ''}
+              onSave={v => updateSectionDetailField(sk, ['segmentation', 'benchmark_architecture_note'], v)}
+            />
           </div>
         </div>
       </div>
@@ -1327,16 +1408,19 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
     const d = details?.campaigns;
     if (!d) return null;
     const items = [
-      { label: 'Cadence', value: d.send_frequency_consistency },
-      { label: 'Targeting quality', value: d.segmented_vs_blast_note },
-      { label: 'Subject / preview hygiene', value: d.subject_preview_hygiene_note },
-      { label: 'Campaign type mix', value: d.campaign_type_mix_note },
+      { key: 'cadence', label: 'Cadence', field: 'send_frequency_consistency' as const },
+      { key: 'targeting', label: 'Targeting quality', field: 'segmented_vs_blast_note' as const },
+      { key: 'subject', label: 'Subject / preview hygiene', field: 'subject_preview_hygiene_note' as const },
+      { key: 'mix', label: 'Campaign type mix', field: 'campaign_type_mix_note' as const },
     ];
     return (
       <div className="mb-4 grid grid-cols-1 md:grid-cols-2 gap-3">
-        {items.map(({ label, value }) => (
-          <RubricInsightCard key={label} label={label}>
-            <RubricExpandableNote text={value || 'N/A'} collapsedLines={4} />
+        {items.map(({ key, label, field }) => (
+          <RubricInsightCard key={key} label={editableLabel(key, label)}>
+            <EditableRubricNote
+              text={d[field] || ''}
+              onSave={v => updateSectionDetailField(sk, ['campaigns', field], v)}
+            />
           </RubricInsightCard>
         ))}
       </div>
@@ -1346,12 +1430,14 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
   if (section.section_key === 'signup_forms') {
     const d = details?.signup_forms;
     if (!d) return null;
+    const formCoverageTitle = (rubricCfg.formCoverageTitle as string | undefined) ?? 'Form coverage';
     return (
       <div className="mb-4 space-y-3">
         <div className="rounded-xl border border-gray-100 bg-white overflow-hidden card-shadow">
-          <div className="gradient-bg px-5 py-2.5">
-            <p className="text-[13px] font-bold uppercase tracking-wider text-white text-center">Form coverage</p>
-          </div>
+          <RubricPanelHeader
+            title={formCoverageTitle}
+            onSave={v => patchSectionBlock(sk, 'rubric', { formCoverageTitle: v || undefined })}
+          />
           <div className="grid grid-cols-1 sm:grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
             <div className="flex flex-col items-start gap-2 px-5 py-4">
               <span className="text-sm font-medium text-gray-700">Popup</span>
@@ -1368,14 +1454,23 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
           </div>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-          <RubricInsightCard label="Offer quality">
-            <RubricExpandableNote text={d.offer_note || 'N/A'} collapsedLines={4} />
+          <RubricInsightCard label={editableLabel('offer', 'Offer quality')}>
+            <EditableRubricNote
+              text={d.offer_note || ''}
+              onSave={v => updateSectionDetailField(sk, ['signup_forms', 'offer_note'], v)}
+            />
           </RubricInsightCard>
-          <RubricInsightCard label="Mobile optimization">
-            <RubricExpandableNote text={d.mobile_optimization_note || 'N/A'} collapsedLines={4} />
+          <RubricInsightCard label={editableLabel('mobile', 'Mobile optimization')}>
+            <EditableRubricNote
+              text={d.mobile_optimization_note || ''}
+              onSave={v => updateSectionDetailField(sk, ['signup_forms', 'mobile_optimization_note'], v)}
+            />
           </RubricInsightCard>
-          <RubricInsightCard label="Benchmark conversion">
-            <RubricExpandableNote text={d.benchmark_conversion_note || 'N/A'} collapsedLines={4} />
+          <RubricInsightCard label={editableLabel('benchmark', 'Benchmark conversion')}>
+            <EditableRubricNote
+              text={d.benchmark_conversion_note || ''}
+              onSave={v => updateSectionDetailField(sk, ['signup_forms', 'benchmark_conversion_note'], v)}
+            />
           </RubricInsightCard>
         </div>
       </div>
@@ -1523,12 +1618,14 @@ function EmailDesignSection({
   sections,
   subtitleOverride,
   benchmarkTitle,
+  clientTitle,
 }: {
   emailDesign: AuditEmailDesign;
   annotations: import('../lib/types').Annotation[];
   sections: AuditSection[];
   subtitleOverride?: string;
   benchmarkTitle?: string;
+  clientTitle?: string;
 }) {
   const { updateSectionBlockField } = useReportEdit();
   const [fullscreen, setFullscreen] = useState(false);
@@ -1550,6 +1647,7 @@ function EmailDesignSection({
           annotations={annotations}
           sections={sections}
           benchmarkTitle={benchmarkTitle}
+          clientTitle={clientTitle}
           fullscreen={fullscreen}
           onFullscreenChange={setFullscreen}
         />
@@ -1575,6 +1673,7 @@ function EmailDesignComparison({
   annotations,
   sections,
   benchmarkTitle,
+  clientTitle,
   fullscreen,
   onFullscreenChange,
 }: {
@@ -1582,6 +1681,7 @@ function EmailDesignComparison({
   annotations: import('../lib/types').Annotation[];
   sections: AuditSection[];
   benchmarkTitle?: string;
+  clientTitle?: string;
   fullscreen: boolean;
   onFullscreenChange: (open: boolean) => void;
 }) {
@@ -1598,7 +1698,7 @@ function EmailDesignComparison({
   const edSection = sections.find(s => s.section_key === 'email_design');
   const sectionAnns = edSection ? annotations.filter(a => a.audit_section_id === edSection.id) : [];
   const ecdExample = emailDesign.ecd_example;
-  const { updateSectionBlockField } = useReportEdit();
+  const { updateSectionBlockField, patchSectionBlock } = useReportEdit();
 
   const comparisonGrid = (maxH?: number) => (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_1px_1fr] gap-0">
@@ -1607,7 +1707,12 @@ function EmailDesignComparison({
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-red-500" />
             <h4 className="text-sm font-semibold text-gray-800">
-              Client's Email
+              <EditablePlainText
+                value={clientTitle ?? "Client's Email"}
+                onSave={v => patchSectionBlock('email_design', 'comparison', { clientTitle: v || undefined })}
+                className="text-sm font-semibold text-gray-800"
+                as="span"
+              />
               {emailDesign.client_campaign_name && (
                 <span className="ml-1 text-xs font-normal text-gray-400">({emailDesign.client_campaign_name})</span>
               )}

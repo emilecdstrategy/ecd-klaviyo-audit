@@ -64,7 +64,6 @@ type ReportEditContextValue = {
   updateFinding: (index: number, value: string) => void;
   updateStrength: (index: number, value: string) => void;
   updateExecText: (value: string) => void;
-  updateHeroLayout: (field: 'eyebrow' | 'headline' | 'intro', value: string) => void;
   updateSectionField: (
     sectionKey: string,
     field: 'current_state_notes' | 'optimized_state_notes' | 'current_state_title' | 'optimized_state_title' | 'human_edited_findings' | 'summary_text',
@@ -103,6 +102,8 @@ type ReportEditContextValue = {
     field: 'title' | 'subtitle' | 'currentTitle' | 'optimizedTitle',
     value: string,
   ) => void;
+  updateSectionDetailField: (sectionKey: string, path: string[], value: string) => void;
+  patchSectionBlock: (sectionKey: string, blockKey: string, patch: Record<string, unknown>) => void;
 };
 
 const ReportEditContext = createContext<ReportEditContextValue>({
@@ -111,7 +112,6 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateFinding: () => {},
   updateStrength: () => {},
   updateExecText: () => {},
-  updateHeroLayout: () => {},
   updateSectionField: () => {},
   updateLayoutTitle: () => {},
   updateBlockTitle: () => {},
@@ -128,6 +128,8 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   toggleFindingHidden: () => {},
   toggleStrengthHidden: () => {},
   updateSectionBlockField: () => {},
+  updateSectionDetailField: () => {},
+  patchSectionBlock: () => {},
 });
 
 export function useReportEdit() {
@@ -212,23 +214,6 @@ export function ReportEditProvider({
   const updateExecText = useCallback(
     (value: string) => saveExecutive({ text: value }),
     [saveExecutive],
-  );
-
-  const updateHeroLayout = useCallback(
-    (field: 'eyebrow' | 'headline' | 'intro', value: string) => {
-      const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
-      const exec = { ...((layout.executive_summary as Record<string, unknown>) ?? {}) };
-      const blocks = { ...((exec.blocks as Record<string, unknown>) ?? {}) };
-      const hero = { ...((blocks.hero as Record<string, unknown>) ?? {}), [field]: value || undefined };
-      blocks.hero = hero;
-      exec.blocks = blocks;
-      layout.executive_summary = exec;
-      onAuditChange({ ...audit, layout });
-      schedule('layout-hero', async () => {
-        await updateAudit(audit.id, { layout });
-      });
-    },
-    [audit, onAuditChange, schedule],
   );
 
   const updateSectionField = useCallback(
@@ -461,6 +446,26 @@ export function ReportEditProvider({
     [getExecPayload, saveExecutive],
   );
 
+  const patchSectionBlock = useCallback(
+    (sectionKey: string, blockKey: string, patch: Record<string, unknown>) => {
+      const section = sections.find(s => s.section_key === sectionKey);
+      if (!section) return;
+      const sectionConfig = (section.section_config as Record<string, unknown> | null | undefined) ?? {};
+      const nextConfig =
+        sectionKey === 'flows'
+          ? writeFlowsBlockPatch(sectionConfig, blockKey, patch)
+          : writeGenericBlockPatch(sectionConfig, sectionKey, blockKey, patch);
+      const nextSections = sections.map(s =>
+        s.id === section.id ? { ...s, section_config: nextConfig } : s,
+      );
+      onSectionsChange(nextSections);
+      schedule(`section-block-patch-${section.id}-${blockKey}`, async () => {
+        await updateAuditSection(section.id, { section_config: nextConfig });
+      });
+    },
+    [sections, onSectionsChange, schedule],
+  );
+
   const updateSectionBlockField = useCallback(
     (
       sectionKey: string,
@@ -468,19 +473,48 @@ export function ReportEditProvider({
       field: 'title' | 'subtitle' | 'currentTitle' | 'optimizedTitle',
       value: string,
     ) => {
+      patchSectionBlock(sectionKey, blockKey, { [field]: value || undefined });
+    },
+    [patchSectionBlock],
+  );
+
+  const updateSectionDetailField = useCallback(
+    (sectionKey: string, path: string[], value: string) => {
       const section = sections.find(s => s.section_key === sectionKey);
-      if (!section) return;
-      const sectionConfig = (section.section_config as Record<string, unknown> | null | undefined) ?? {};
-      const nextConfig =
-        sectionKey === 'flows'
-          ? writeFlowsBlockPatch(sectionConfig, blockKey, { [field]: value || undefined })
-          : writeGenericBlockPatch(sectionConfig, sectionKey, blockKey, { [field]: value || undefined });
+      if (!section || path.length === 0) return;
+      const raw = section.section_details;
+      const details: Record<string, unknown> =
+        raw && typeof raw === 'object' && !Array.isArray(raw)
+          ? { ...(raw as Record<string, unknown>) }
+          : typeof raw === 'string'
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(raw);
+                  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                    ? { ...(parsed as Record<string, unknown>) }
+                    : {};
+                } catch {
+                  return {};
+                }
+              })()
+            : {};
+      let cursor: Record<string, unknown> = details;
+      for (let i = 0; i < path.length - 1; i++) {
+        const key = path[i];
+        const next =
+          cursor[key] && typeof cursor[key] === 'object' && !Array.isArray(cursor[key])
+            ? { ...(cursor[key] as Record<string, unknown>) }
+            : {};
+        cursor[key] = next;
+        cursor = next;
+      }
+      cursor[path[path.length - 1]] = value;
       const nextSections = sections.map(s =>
-        s.id === section.id ? { ...s, section_config: nextConfig } : s,
+        s.id === section.id ? { ...s, section_details: details } : s,
       );
       onSectionsChange(nextSections);
-      schedule(`section-block-field-${section.id}-${blockKey}-${field}`, async () => {
-        await updateAuditSection(section.id, { section_config: nextConfig });
+      schedule(`section-detail-${section.id}-${path.join('.')}`, async () => {
+        await updateAuditSection(section.id, { section_details: details });
       });
     },
     [sections, onSectionsChange, schedule],
@@ -493,7 +527,6 @@ export function ReportEditProvider({
       updateFinding,
       updateStrength,
       updateExecText,
-      updateHeroLayout,
       updateSectionField,
       updateLayoutTitle,
       updateBlockTitle,
@@ -510,6 +543,8 @@ export function ReportEditProvider({
       toggleFindingHidden,
       toggleStrengthHidden,
       updateSectionBlockField,
+      updateSectionDetailField,
+      patchSectionBlock,
     }),
     [
       editMode,
@@ -517,7 +552,6 @@ export function ReportEditProvider({
       updateFinding,
       updateStrength,
       updateExecText,
-      updateHeroLayout,
       updateSectionField,
       updateLayoutTitle,
       updateBlockTitle,
@@ -534,6 +568,8 @@ export function ReportEditProvider({
       toggleFindingHidden,
       toggleStrengthHidden,
       updateSectionBlockField,
+      updateSectionDetailField,
+      patchSectionBlock,
     ],
   );
 

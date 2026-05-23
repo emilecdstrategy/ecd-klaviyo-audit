@@ -1,11 +1,15 @@
+import type { ReactNode } from 'react';
 import type { FlowPerformance } from '../../lib/types';
 import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
 import type { FlowsRevenueInsights } from '../../lib/report-config/types';
+import EditableRichText from './edit/EditableRichText';
 
 interface Props {
   performance: FlowPerformance[];
-  title?: string;
+  title?: ReactNode;
   insights?: FlowsRevenueInsights;
+  editMode?: boolean;
+  onInsightSave?: (key: 'concentration' | 'volume', value: string) => void;
 }
 
 const BAR_COLORS = [
@@ -34,7 +38,13 @@ const TEXT_COLORS = [
   'text-lime-700',
 ];
 
-export default function ReportFlowRevenueBreakdown({ performance, title, insights }: Props) {
+export default function ReportFlowRevenueBreakdown({
+  performance,
+  title,
+  insights,
+  editMode,
+  onInsightSave,
+}: Props) {
   const visiblePerformance = performance.filter(f => !f.is_hidden);
   const sorted = [...visiblePerformance].sort((a, b) => b.monthly_revenue_current - a.monthly_revenue_current);
   const totalRevenue = sorted.reduce((s, f) => s + f.monthly_revenue_current, 0);
@@ -64,8 +74,8 @@ export default function ReportFlowRevenueBreakdown({ performance, title, insight
   const volumeCopy = insights?.volume === undefined
     ? `${highVolumeFlows.slice(0, 2).map(f => f.flow_name).join(' and ')} sent ${highVolumeFlows.reduce((s, f) => s + f.recipients_per_month, 0).toLocaleString()}+ emails but generated only ${formatCurrency(highVolumeFlows.reduce((s, f) => s + f.monthly_revenue_current, 0))}. These flows need rebuilding or sunsetting.`
     : insights.volume;
-  const showConcentration = concentrationRisk && concentrationCopy !== null;
-  const showVolume = highVolumeFlows.length > 0 && volumeCopy !== null;
+  const showConcentration = editMode || (concentrationRisk && concentrationCopy !== null);
+  const showVolume = editMode || (highVolumeFlows.length > 0 && volumeCopy !== null);
 
   return (
     <div>
@@ -157,7 +167,16 @@ export default function ReportFlowRevenueBreakdown({ performance, title, insight
             <div className="bg-amber-50 border border-amber-100 rounded-xl px-4 py-3">
               <p className="text-sm text-gray-800">
                 <span className="font-bold text-amber-800">Revenue Concentration Risk:</span>{' '}
-                {concentrationCopy}
+                {editMode && onInsightSave ? (
+                  <EditableRichText
+                    value={typeof concentrationCopy === 'string' ? concentrationCopy : ''}
+                    onSave={v => onInsightSave('concentration', v)}
+                    className="inline text-sm text-gray-800"
+                    placeholder="Concentration risk insight…"
+                  />
+                ) : (
+                  concentrationCopy
+                )}
               </p>
             </div>
           )}
@@ -165,7 +184,16 @@ export default function ReportFlowRevenueBreakdown({ performance, title, insight
             <div className="bg-red-50 border border-red-100 rounded-xl px-4 py-3">
               <p className="text-sm text-gray-800">
                 <span className="font-bold text-red-700">Volume vs. Value Mismatch:</span>{' '}
-                {volumeCopy}
+                {editMode && onInsightSave ? (
+                  <EditableRichText
+                    value={typeof volumeCopy === 'string' ? volumeCopy : ''}
+                    onSave={v => onInsightSave('volume', v)}
+                    className="inline text-sm text-gray-800"
+                    placeholder="Volume vs. value insight…"
+                  />
+                ) : (
+                  volumeCopy
+                )}
               </p>
             </div>
           )}

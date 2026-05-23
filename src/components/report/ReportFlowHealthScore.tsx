@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
 import { isNonRevenueFlow } from '../../lib/revenue-calculator';
 import type { FlowsHealthBenchmarks } from '../../lib/report-config/types';
@@ -6,8 +7,8 @@ interface Props {
   snapshots: KlaviyoFlowSnapshot[];
   performance: FlowPerformance[];
   segmentCount?: number;
-  title?: string;
-  subtitle?: string;
+  title?: ReactNode;
+  subtitle?: ReactNode;
   benchmarks?: FlowsHealthBenchmarks;
 }
 
@@ -235,8 +236,8 @@ export default function ReportFlowHealthScore({
 
   return (
     <div>
-      <h3 className="text-lg font-bold text-gray-900 mb-1">{title}</h3>
-      {subtitle && <p className="text-sm text-gray-500 mb-4">{subtitle}</p>}
+      <h3 className="text-lg font-bold text-gray-900 mb-1">{title ?? 'Overall Flow Health Score'}</h3>
+      {subtitle ? <p className="text-sm text-gray-500 mb-4">{subtitle}</p> : null}
       {!subtitle && <div className="mb-5" />}
       <div className="flex flex-col lg:flex-row gap-8 items-start">
         <div className="flex flex-col items-center shrink-0">

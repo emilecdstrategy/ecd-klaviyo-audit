@@ -37,36 +37,57 @@ export default function WorkspacePublishBar({
     setTimeout(() => setCopied(false), 2000);
   };
 
+  const statusControl = (
+    <div className="flex shrink-0 items-center gap-2">
+      <span className="text-sm text-gray-600">Status</span>
+      <Select value={audit.status} onValueChange={v => onStatusChange(v as Audit['status'])}>
+        <SelectTrigger className="h-10 w-[10.5rem] text-sm">
+          <SelectValue>{statusLabel}</SelectValue>
+        </SelectTrigger>
+        <SelectContent>
+          {STATUS_OPTIONS.map(opt => (
+            <SelectItem key={opt.value} value={opt.value}>
+              <SelectItemText>{opt.label}</SelectItemText>
+            </SelectItem>
+          ))}
+        </SelectContent>
+      </Select>
+    </div>
+  );
+
   return (
     <div className="fixed bottom-0 left-[68px] right-0 z-40 border-t border-gray-200 bg-white shadow-[0_-4px_24px_rgba(0,0,0,0.08)]">
-      <div className="mx-auto flex max-w-[90rem] flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-center sm:justify-between sm:gap-6">
+      <div className="mx-auto flex max-w-[90rem] flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-gray-900">Shareable report</p>
           {isPublished && shareUrl ? (
-            <div className="mt-1.5 flex min-w-0 items-stretch overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
-              <input
-                readOnly
-                value={shareUrl}
-                aria-label="Shareable report link"
-                className="min-w-0 flex-1 truncate border-0 bg-transparent px-3 py-2.5 text-sm text-gray-700 focus:outline-none focus:ring-0"
-              />
-              <button
-                type="button"
-                onClick={handleCopy}
-                className="inline-flex shrink-0 items-center gap-2 border-l border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
-                {copied ? 'Copied' : 'Copy link'}
-              </button>
-              <a
-                href={shareUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="inline-flex shrink-0 items-center gap-2 border-l border-gray-200 bg-white px-4 py-2.5 text-sm font-medium text-gray-700 hover:bg-gray-50"
-              >
-                <ExternalLink className="h-4 w-4" />
-                Open
-              </a>
+            <div className="mt-1.5 flex flex-wrap items-center gap-3">
+              <div className="flex h-10 min-w-0 flex-1 items-stretch overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+                <input
+                  readOnly
+                  value={shareUrl}
+                  aria-label="Shareable report link"
+                  className="min-w-0 flex-1 truncate border-0 bg-transparent px-3 text-sm text-gray-700 focus:outline-none focus:ring-0"
+                />
+                <button
+                  type="button"
+                  onClick={handleCopy}
+                  className="inline-flex shrink-0 items-center gap-2 border-l border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  {copied ? <Check className="h-4 w-4 text-emerald-600" /> : <Copy className="h-4 w-4" />}
+                  {copied ? 'Copied' : 'Copy link'}
+                </button>
+                <a
+                  href={shareUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex shrink-0 items-center gap-2 border-l border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <ExternalLink className="h-4 w-4" />
+                  Open
+                </a>
+              </div>
+              {statusControl}
             </div>
           ) : (
             <p className="mt-1 text-sm text-gray-500">Publish to generate a client-facing link.</p>
@@ -74,21 +95,7 @@ export default function WorkspacePublishBar({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-3">
-          <div className="flex items-center gap-2">
-            <span className="text-sm text-gray-600">Status</span>
-            <Select value={audit.status} onValueChange={v => onStatusChange(v as Audit['status'])}>
-              <SelectTrigger className="h-10 w-[10.5rem] text-sm">
-                <SelectValue>{statusLabel}</SelectValue>
-              </SelectTrigger>
-              <SelectContent>
-                {STATUS_OPTIONS.map(opt => (
-                  <SelectItem key={opt.value} value={opt.value}>
-                    <SelectItemText>{opt.label}</SelectItemText>
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          {!(isPublished && shareUrl) && statusControl}
 
           {!isPublished && (
             <button
@@ -96,7 +103,7 @@ export default function WorkspacePublishBar({
               onClick={onPublish}
               disabled={publishDisabled}
               title={publishDisabledReason}
-              className="inline-flex items-center rounded-lg gradient-bg px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
+              className="inline-flex h-10 items-center rounded-lg gradient-bg px-5 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
             >
               Publish report
             </button>
