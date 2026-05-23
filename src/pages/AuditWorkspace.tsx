@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { FileText, BarChart3, LayoutGrid as Layout, Target, Mail, Palette, FormInput, DollarSign, ExternalLink, Maximize2, X as XIcon, Check } from 'lucide-react';
+import { Mail, ExternalLink, Maximize2, X as XIcon, Check, Palette } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import AuditSectionEditor from '../components/audit/AuditSectionEditor';
 import FlowPerformanceEditor from '../components/audit/FlowPerformanceEditor';
@@ -9,11 +9,16 @@ import RevenueSummaryLayoutEditor from '../components/audit/RevenueSummaryLayout
 import RevenueAddOnItemsEditor from '../components/audit/RevenueAddOnItemsEditor';
 import ExecutiveSummaryLayoutEditor from '../components/audit/ExecutiveSummaryLayoutEditor';
 import ExecutiveSummaryFindingsEditor from '../components/audit/ExecutiveSummaryFindingsEditor';
+import {
+  WorkspaceSidebar,
+  WorkspaceMobileNav,
+  WorkspaceSectionHeader,
+  type WorkspaceSectionKey,
+} from '../components/audit/WorkspaceNav';
 import RevenueOpportunityCard from '../components/ui/RevenueOpportunityCard';
 import ShareLinkPanel from '../components/ui/ShareLinkPanel';
-import StatusBadge from '../components/ui/StatusBadge';
 import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
-import { SECTION_KEYS, SECTION_LABELS, CONFIDENCE_LABELS } from '../lib/constants';
+import { SECTION_LABELS, CONFIDENCE_LABELS } from '../lib/constants';
 import { formatCurrency } from '../lib/revenue-calculator';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, AuditAsset, Client } from '../lib/types';
@@ -33,16 +38,6 @@ function formatCurrencyWithCents(amount: number): string {
   }).format(amount || 0);
 }
 
-const SECTION_ICONS: Record<string, React.ElementType> = {
-  account_health: BarChart3,
-  flows: Layout,
-  segmentation: Target,
-  campaigns: Mail,
-  email_design: Palette,
-  signup_forms: FormInput,
-  revenue_summary: DollarSign,
-};
-
 export default function AuditWorkspace() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -56,7 +51,7 @@ export default function AuditWorkspace() {
 
   const [sections, setSections] = useState<AuditSection[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
-  const [activeSection, setActiveSection] = useState<string>(SECTION_KEYS[0]);
+  const [activeSection, setActiveSection] = useState<WorkspaceSectionKey>('executive_summary');
 
   const [emailDesign, setEmailDesign] = useState<AuditEmailDesign | null>(null);
   const [emailLibrary, setEmailLibrary] = useState<IndustryEmailLibrary[]>([]);
@@ -95,7 +90,9 @@ export default function AuditWorkspace() {
     },
     [sections, audit?.layout],
   );
-  const currentSection = sections.find(s => s.section_key === activeSection);
+  const currentSection = activeSection === 'executive_summary'
+    ? undefined
+    : sections.find(s => s.section_key === activeSection);
 
   const auditInfoMetrics = useMemo(() => {
     if (!audit) return { list_size: 0, aov: 0, monthly_traffic: 0 };
@@ -293,67 +290,71 @@ export default function AuditWorkspace() {
         </div>
       )}
 
-      <div className="flex h-[calc(100vh-64px)]">
-        <div className="hidden lg:block w-56 bg-white border-r border-gray-100 p-3 overflow-y-auto shrink-0">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 px-3 mb-2">
-            Audit Sections
-          </p>
-          {SECTION_KEYS.map(key => {
-            const Icon = SECTION_ICONS[key] || FileText;
-            const section = sections.find(s => s.section_key === key);
-            const isActive = activeSection === key;
-            return (
-              <button
-                key={key}
-                onClick={() => setActiveSection(key)}
-                className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-lg text-sm text-left transition-all mb-0.5 ${
-                  isActive
-                    ? 'bg-brand-primary/10 text-brand-primary font-medium'
-                    : 'text-gray-600 hover:bg-gray-50'
-                }`}
-              >
-                <Icon className="w-4 h-4 shrink-0" />
-                <span className="truncate text-xs">{SECTION_LABELS[key]}</span>
-                {section && section.status === 'approved' && (
-                  <div className="w-1.5 h-1.5 rounded-full bg-emerald-500 shrink-0 ml-auto" />
-                )}
-              </button>
-            );
-          })}
+      <WorkspaceMobileNav activeSection={activeSection} onSelect={setActiveSection} />
 
-          <div className="mt-4 pt-4 border-t border-gray-100 space-y-3">
-            <div className="px-3">
-              <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Status</p>
-              <Select
-                value={audit.status}
-                onValueChange={async (v) => {
-                  const newStatus = v as Audit['status'];
-                  try {
-                    const updated = await updateAuditStatus(audit.id, newStatus);
-                    setAudit(updated);
-                    toast('Status updated');
-                  } catch (e) {
-                    console.error('Failed to update status:', e);
-                  }
-                }}
-              >
-                <SelectTrigger className="h-8 text-xs w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="draft"><SelectItemText>Draft</SelectItemText></SelectItem>
-                  <SelectItem value="in_review"><SelectItemText>In Review</SelectItemText></SelectItem>
-                  <SelectItem value="viewer_only"><SelectItemText>Viewer Only</SelectItemText></SelectItem>
-                  <SelectItem value="published"><SelectItemText>Published</SelectItemText></SelectItem>
-                </SelectContent>
-              </Select>
+      <div className="flex h-[calc(100vh-64px)] lg:h-[calc(100vh-64px)]">
+        <WorkspaceSidebar
+          activeSection={activeSection}
+          onSelect={setActiveSection}
+          sections={sections}
+          audit={audit}
+          totalRevenue={totalRevenue}
+          onStatusChange={async (newStatus) => {
+            try {
+              const updated = await updateAuditStatus(audit.id, newStatus);
+              setAudit(updated);
+              toast('Status updated');
+            } catch (e) {
+              console.error('Failed to update status:', e);
+            }
+          }}
+        />
+
+        <div className="flex-1 overflow-y-auto p-5 sm:p-6 lg:p-8">
+          <WorkspaceSectionHeader
+            sectionKey={activeSection}
+            section={currentSection ?? null}
+          />
+
+          {activeSection === 'executive_summary' ? (
+            <div className="space-y-6 animate-slide-up max-w-4xl">
+              <div className="rounded-2xl border border-gray-100 bg-white p-6 card-shadow">
+                <h3 className="text-sm font-semibold text-gray-900 mb-1">Summary narrative</h3>
+                <p className="text-xs text-gray-500 mb-4">
+                  Short intro shown on the report when the hero block is enabled.
+                </p>
+                <SimpleRichEditor
+                  value={(() => {
+                    const raw = audit.executive_summary || '';
+                    try {
+                      const parsed = JSON.parse(raw);
+                      if (parsed && typeof parsed.text === 'string') return parsed.text.replace(/\*\*(.+?)\*\*/g, '$1');
+                    } catch { /* not JSON, use as-is */ }
+                    return raw.replace(/\*\*(.+?)\*\*/g, '$1');
+                  })()}
+                  onChange={(val) => {
+                    let payload = val;
+                    try {
+                      const parsed = JSON.parse(audit.executive_summary || '');
+                      if (parsed && typeof parsed.text === 'string') {
+                        payload = JSON.stringify({ ...parsed, text: val });
+                      }
+                    } catch { /* not JSON, save as plain text */ }
+                    setAudit(prev => prev ? { ...prev, executive_summary: payload } : prev);
+                    if (execSaveTimer.current) window.clearTimeout(execSaveTimer.current);
+                    execSaveTimer.current = window.setTimeout(async () => {
+                      try { await updateAudit(audit.id, { executive_summary: payload }); toast('Summary saved'); } catch { /* silent */ }
+                    }, 800);
+                  }}
+                  rows={5}
+                  placeholder="Enter the executive summary..."
+                />
+              </div>
+
+              <ExecutiveSummaryFindingsEditor audit={audit} onAuditChange={setAudit} />
+              <ExecutiveSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
             </div>
-            <RevenueOpportunityCard amount={totalRevenue} compact />
-          </div>
-        </div>
-
-        <div className="flex-1 overflow-y-auto p-6 space-y-4">
-          {activeSection === 'email_design' ? (
+          ) : activeSection === 'email_design' ? (
             <EmailDesignEditor
               audit={audit}
               emailDesign={emailDesign}
@@ -365,14 +366,13 @@ export default function AuditWorkspace() {
               onSectionUpdate={currentSection ? (updates) => handleSectionUpdate(currentSection.id, updates) : undefined}
             />
           ) : activeSection === 'revenue_summary' ? (
-            <div className="space-y-6 animate-slide-up">
-              <div className="bg-white rounded-xl p-6 card-shadow">
-                <h2 className="text-lg font-semibold text-gray-900 mb-4">Revenue Opportunity Summary</h2>
+            <div className="space-y-6 animate-slide-up max-w-4xl">
+              <div className="rounded-2xl border border-gray-100 bg-white p-6 card-shadow">
                 <RevenueOpportunityCard amount={totalRevenue} label="Total Estimated Monthly Impact" confidence="high" />
               </div>
 
-              <div className="bg-white rounded-xl p-6 card-shadow">
-                <h3 className="text-sm font-semibold text-gray-900 mb-4">Breakdown by Section</h3>
+              <div className="rounded-2xl border border-gray-100 bg-white p-6 card-shadow">
+                <h3 className="text-sm font-semibold text-gray-900 mb-4">Breakdown by section</h3>
                 <div className="space-y-3">
                   {sections
                     .filter(s => s.revenue_opportunity > 0)
@@ -404,39 +404,6 @@ export default function AuditWorkspace() {
                 </div>
               </div>
 
-              <div className="bg-white rounded-xl p-6 card-shadow">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Executive Summary</h3>
-                <SimpleRichEditor
-                  value={(() => {
-                    const raw = audit.executive_summary || '';
-                    try {
-                      const parsed = JSON.parse(raw);
-                      if (parsed && typeof parsed.text === 'string') return parsed.text.replace(/\*\*(.+?)\*\*/g, '$1');
-                    } catch { /* not JSON, use as-is */ }
-                    return raw.replace(/\*\*(.+?)\*\*/g, '$1');
-                  })()}
-                  onChange={(val) => {
-                    let payload = val;
-                    try {
-                      const parsed = JSON.parse(audit.executive_summary || '');
-                      if (parsed && typeof parsed.text === 'string') {
-                        payload = JSON.stringify({ ...parsed, text: val });
-                      }
-                    } catch { /* not JSON, save as plain text */ }
-                    setAudit(prev => prev ? { ...prev, executive_summary: payload } : prev);
-                    if (execSaveTimer.current) window.clearTimeout(execSaveTimer.current);
-                    execSaveTimer.current = window.setTimeout(async () => {
-                      try { await updateAudit(audit.id, { executive_summary: payload }); toast('Summary saved'); } catch { /* silent */ }
-                    }, 800);
-                  }}
-                  rows={5}
-                  placeholder="Enter the executive summary..."
-                />
-              </div>
-
-              <ExecutiveSummaryFindingsEditor audit={audit} onAuditChange={setAudit} />
-
-              <ExecutiveSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
               <RevenueSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
               <RevenueAddOnItemsEditor audit={audit} onAuditChange={setAudit} />
             </div>
@@ -460,15 +427,16 @@ export default function AuditWorkspace() {
               )}
             </>
           ) : (
-            <div className="bg-white rounded-xl p-8 card-shadow text-center">
-              <p className="text-sm text-gray-500">
-                No data for this section yet. Run AI analysis to generate findings.
+            <div className="rounded-2xl border border-dashed border-gray-200 bg-white p-10 card-shadow text-center max-w-lg">
+              <p className="text-sm font-medium text-gray-700">No section data yet</p>
+              <p className="mt-2 text-sm text-gray-500">
+                Run AI analysis from the audit wizard to populate this section.
               </p>
             </div>
           )}
         </div>
 
-        <div className={`${activeSection === 'email_design' ? 'hidden' : 'hidden xl:block'} w-[360px] 2xl:w-[420px] bg-white border-l border-gray-100 p-4 overflow-y-auto shrink-0 space-y-4`}>
+        <div className={`${activeSection === 'email_design' ? 'hidden' : 'hidden lg:block'} w-[320px] xl:w-[360px] bg-gray-50/80 border-l border-gray-100 p-4 overflow-y-auto shrink-0 space-y-4`}>
           <ShareLinkPanel
             shareToken={audit.public_share_token}
             onPublish={handlePublish}
@@ -485,8 +453,8 @@ export default function AuditWorkspace() {
             />
           )}
 
-          <div className="bg-white rounded-xl p-4 border border-gray-100">
-            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Audit Info</h4>
+          <div className="rounded-2xl border border-gray-100 bg-white p-4">
+            <h4 className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">Audit metrics</h4>
             <div className="space-y-2.5 text-xs">
               <div className="flex justify-between">
                 <span className="text-gray-500">List size</span>
