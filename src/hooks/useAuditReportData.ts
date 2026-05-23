@@ -88,11 +88,13 @@ export function mergeReportBundle(
   audit: Audit,
   sections: AuditSection[],
   annotations: Annotation[],
+  emailDesign?: AuditEmailDesign | null,
 ): AuditReportBundle {
   return {
     ...bundle,
     audit,
     sections: sections.length > 0 ? sections : bundle.sections,
     annotations,
+    ...(emailDesign !== undefined ? { emailDesign } : {}),
   };
 }

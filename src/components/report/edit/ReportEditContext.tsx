@@ -10,6 +10,7 @@ import {
 import type { Audit, AuditSection } from '../../../lib/types';
 import { updateAudit, updateAuditSection } from '../../../lib/db';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
+import { writeFlowsConfigPatch, writeGenericConfigPatch } from '../../../lib/report-config/section-hide';
 
 export type TimelinePhase = {
   phase: string;
@@ -83,6 +84,8 @@ type ReportEditContextValue = {
     value: string,
   ) => void;
   updateAddOnBullet: (itemKey: string, bulletIndex: number, value: string) => void;
+  toggleLayoutSectionHidden: (layoutKey: 'executive_summary' | 'revenue_summary', hidden: boolean) => void;
+  toggleAuditSectionHidden: (sectionKey: string, hidden: boolean) => void;
 };
 
 const ReportEditContext = createContext<ReportEditContextValue>({
@@ -99,6 +102,8 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateTimelineItem: () => {},
   updateAddOnField: () => {},
   updateAddOnBullet: () => {},
+  toggleLayoutSectionHidden: () => {},
+  toggleAuditSectionHidden: () => {},
 });
 
 export function useReportEdit() {
@@ -325,6 +330,33 @@ export function ReportEditProvider({
     [audit, onAuditChange, schedule],
   );
 
+  const toggleLayoutSectionHidden = useCallback(
+    (layoutKey: 'executive_summary' | 'revenue_summary', hidden: boolean) => {
+      patchLayout(layoutKey, section => ({ ...section, hidden: hidden || undefined }));
+    },
+    [patchLayout],
+  );
+
+  const toggleAuditSectionHidden = useCallback(
+    (sectionKey: string, hidden: boolean) => {
+      const section = sections.find(s => s.section_key === sectionKey);
+      if (!section) return;
+      const sectionConfig = (section.section_config as Record<string, unknown> | null | undefined) ?? {};
+      const nextConfig =
+        sectionKey === 'flows'
+          ? writeFlowsConfigPatch(sectionConfig, { hidden: hidden || undefined })
+          : writeGenericConfigPatch(sectionConfig, sectionKey, { hidden: hidden || undefined });
+      const nextSections = sections.map(s =>
+        s.id === section.id ? { ...s, section_config: nextConfig } : s,
+      );
+      onSectionsChange(nextSections);
+      schedule(`section-hidden-${section.id}`, async () => {
+        await updateAuditSection(section.id, { section_config: nextConfig });
+      });
+    },
+    [sections, onSectionsChange, schedule],
+  );
+
   const value = useMemo(
     () => ({
       editMode,
@@ -340,6 +372,8 @@ export function ReportEditProvider({
       updateTimelineItem,
       updateAddOnField,
       updateAddOnBullet,
+      toggleLayoutSectionHidden,
+      toggleAuditSectionHidden,
     }),
     [
       editMode,
@@ -355,6 +389,8 @@ export function ReportEditProvider({
       updateTimelineItem,
       updateAddOnField,
       updateAddOnBullet,
+      toggleLayoutSectionHidden,
+      toggleAuditSectionHidden,
     ],
   );
 

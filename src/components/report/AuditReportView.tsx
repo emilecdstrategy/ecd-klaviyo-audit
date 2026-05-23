@@ -23,6 +23,7 @@ import ReportBlockHeader from './ReportBlockHeader';
 import EditableRichText from './edit/EditableRichText';
 import EditablePlainText from './edit/EditablePlainText';
 import { useReportEdit } from './edit/ReportEditContext';
+import ReportSectionEditChrome, { emailDesignAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem } from '../../lib/types';
 import { getPlatformSettings } from '../../lib/db';
@@ -70,10 +71,64 @@ const NAV_ITEMS = [
 export type AuditReportViewProps = {
   data: AuditReportBundle;
   topBanner?: ReactNode;
+  onManageEmailDesign?: () => void;
 };
 
-export default function AuditReportView({ data, topBanner }: AuditReportViewProps) {
-  const { updateLayoutTitle, updateBlockTitle, updateExecText, updateHeroLayout, updateAddOnField, updateAddOnBullet } = useReportEdit();
+function ReportSectionShell({
+  id,
+  setRef,
+  label,
+  hidden,
+  onToggleHidden,
+  available,
+  actions,
+  children,
+}: {
+  id: string;
+  setRef: (id: string) => (el: HTMLElement | null) => void;
+  label: string;
+  hidden: boolean;
+  onToggleHidden: (hidden: boolean) => void;
+  available: boolean;
+  actions?: ReturnType<typeof emailDesignAction>[];
+  children: ReactNode;
+}) {
+  const { editMode } = useReportEdit();
+  if (!available && !editMode) return null;
+  if (!editMode) {
+    if (hidden) return null;
+    return (
+      <section id={id} ref={setRef(id)} className="relative">
+        {children}
+      </section>
+    );
+  }
+  return (
+    <section id={id} ref={setRef(id)} className="relative">
+      <ReportSectionEditChrome
+        label={label}
+        hidden={hidden}
+        onToggleHidden={onToggleHidden}
+        actions={actions}
+      >
+        {!hidden ? children : null}
+      </ReportSectionEditChrome>
+    </section>
+  );
+}
+
+export default function AuditReportView({ data, topBanner, onManageEmailDesign }: AuditReportViewProps) {
+  const {
+    editMode,
+    updateLayoutTitle,
+    updateBlockTitle,
+    updateExecText,
+    updateHeroLayout,
+    updateAddOnField,
+    updateAddOnBullet,
+    toggleLayoutSectionHidden,
+    toggleAuditSectionHidden,
+  } = useReportEdit();
   const [activeSection, setActiveSection] = useState('summary');
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
@@ -209,38 +264,66 @@ export default function AuditReportView({ data, topBanner }: AuditReportViewProp
   );
 
   const flowsDataAvailable = flowSnapshots.length > 0 || flowPerformance.length > 0;
-  const flowsSectionVisible = flowsDataAvailable && !flowsCfg.hidden;
-  const healthSectionVisible = healthScores.length > 0 && !accountHealthCfg.hidden;
-  const segmentsSectionVisible = segmentSnapshots.length > 0 && !segmentationCfg.hidden;
-  const formsSectionVisible = formSnapshots.length > 0 && !signupFormsCfg.hidden;
-  const campaignsSectionVisible = campaignSnapshots.length > 0 && !campaignsCfg.hidden;
-  const emailDesignSectionVisible =
-    Boolean(emailDesign?.client_email_html || emailDesign?.ecd_example) && !emailDesignCfg.hidden;
-  const opportunitySectionVisible = !revenueSummaryCfg.hidden;
-  const summarySectionVisible = !executiveSummaryCfg.hidden;
+  const emailDesignDataAvailable =
+    Boolean(emailDesign?.client_email_html || emailDesign?.ecd_example) || editMode;
+
+  const sectionHiddenFlags: Record<string, boolean> = {
+    summary: Boolean(executiveSummaryCfg.hidden),
+    health: Boolean(accountHealthCfg.hidden),
+    flows: Boolean(flowsCfg.hidden),
+    segments: Boolean(segmentationCfg.hidden),
+    forms: Boolean(signupFormsCfg.hidden),
+    campaigns: Boolean(campaignsCfg.hidden),
+    email_design: Boolean(emailDesignCfg.hidden),
+    opportunity: Boolean(revenueSummaryCfg.hidden),
+  };
+
+  const sectionDataAvailable: Record<string, boolean> = {
+    summary: true,
+    health: healthScores.length > 0,
+    flows: flowsDataAvailable,
+    segments: segmentSnapshots.length > 0,
+    forms: formSnapshots.length > 0,
+    campaigns: campaignSnapshots.length > 0,
+    email_design: emailDesignDataAvailable,
+    opportunity: true,
+  };
 
   const sectionVisibility: Record<string, boolean> = {
-    summary: summarySectionVisible,
-    health: healthSectionVisible,
-    flows: flowsSectionVisible,
-    segments: segmentsSectionVisible,
-    forms: formsSectionVisible,
-    campaigns: campaignsSectionVisible,
-    email_design: emailDesignSectionVisible,
-    opportunity: opportunitySectionVisible,
+    summary: !sectionHiddenFlags.summary,
+    health: healthScores.length > 0 && !sectionHiddenFlags.health,
+    flows: flowsDataAvailable && !sectionHiddenFlags.flows,
+    segments: segmentSnapshots.length > 0 && !sectionHiddenFlags.segments,
+    forms: formSnapshots.length > 0 && !sectionHiddenFlags.forms,
+    campaigns: campaignSnapshots.length > 0 && !sectionHiddenFlags.campaigns,
+    email_design: emailDesignDataAvailable && !sectionHiddenFlags.email_design,
+    opportunity: !sectionHiddenFlags.opportunity,
   };
+
+  const navSectionIds = NAV_ITEMS.filter(item => {
+    if (!sectionDataAvailable[item.id]) return false;
+    if (editMode) return true;
+    return sectionVisibility[item.id];
+  });
 
   const sectionNumbers: Record<string, string> = {};
   {
     let n = 1;
-    for (const item of NAV_ITEMS) {
+    for (const item of navSectionIds) {
+      if (sectionHiddenFlags[item.id] && editMode) {
+        sectionNumbers[item.id] = '—';
+        continue;
+      }
       if (!sectionVisibility[item.id]) continue;
       sectionNumbers[item.id] = String(n).padStart(2, '0');
       n += 1;
     }
   }
 
-  const visibleNavItems = NAV_ITEMS.filter(n => sectionVisibility[n.id]);
+  const visibleNavItems = navSectionIds.map(item => ({
+    ...item,
+    isHidden: sectionHiddenFlags[item.id],
+  }));
 
   const setRef = (id: string) => (el: HTMLElement | null) => {
     sectionRefs.current[id] = el;
@@ -281,9 +364,9 @@ export default function AuditReportView({ data, topBanner }: AuditReportViewProp
                   activeSection === item.id
                     ? 'border-brand-primary text-brand-primary'
                     : 'border-transparent text-gray-500 hover:text-gray-800'
-                }`}
+                } ${item.isHidden ? 'opacity-50' : ''}`}
               >
-                {item.label}
+                {item.label}{item.isHidden ? ' (hidden)' : ''}
               </a>
             ))}
           </nav>
@@ -291,8 +374,14 @@ export default function AuditReportView({ data, topBanner }: AuditReportViewProp
       </div>
 
       <main className="max-w-[90rem] mx-auto px-6 py-10 space-y-16">
-        {summarySectionVisible && (
-        <section id="summary" ref={setRef('summary')}>
+        <ReportSectionShell
+          id="summary"
+          setRef={setRef}
+          label={executiveSummaryCfg.sectionTitle ?? 'Executive Summary'}
+          hidden={sectionHiddenFlags.summary}
+          onToggleHidden={h => toggleLayoutSectionHidden('executive_summary', h)}
+          available={sectionDataAvailable.summary}
+        >
           <ReportCover companyName={client.company_name} preparedDate={preparedDateLabel} />
 
             <ReportSectionHeader
@@ -386,11 +475,16 @@ export default function AuditReportView({ data, topBanner }: AuditReportViewProp
             />
           )}
 
-        </section>
-        )}
+        </ReportSectionShell>
 
-        {healthSectionVisible && (
-          <section id="health" ref={setRef('health')}>
+        <ReportSectionShell
+          id="health"
+          setRef={setRef}
+          label={accountHealthCfg.sectionTitle ?? 'Account Health Score'}
+          hidden={sectionHiddenFlags.health}
+          onToggleHidden={h => toggleAuditSectionHidden('account_health', h)}
+          available={sectionDataAvailable.health}
+        >
             <ReportSectionHeader
               number={sectionNumbers['health'] ?? accountHealthCfg.sectionNumber ?? '02'}
               label={accountHealthCfg.sectionTitle ?? 'Account Health Score'}
@@ -398,11 +492,16 @@ export default function AuditReportView({ data, topBanner }: AuditReportViewProp
             {isAccountHealthBlockVisible(accountHealthCfg, 'healthScoreTable') && (
               <ReportHealthScore scores={healthScores} />
             )}
-          </section>
-        )}
+        </ReportSectionShell>
 
-        {flowsSectionVisible && (
-          <section id="flows" ref={setRef('flows')}>
+        <ReportSectionShell
+          id="flows"
+          setRef={setRef}
+          label={flowsCfg.sectionTitle ?? 'Flows'}
+          hidden={sectionHiddenFlags.flows}
+          onToggleHidden={h => toggleAuditSectionHidden('flows', h)}
+          available={sectionDataAvailable.flows}
+        >
             <ReportSectionHeader
               number={sectionNumbers['flows'] ?? flowsCfg.sectionNumber ?? '03'}
               label={flowsCfg.sectionTitle ?? 'Flows'}
@@ -492,11 +591,16 @@ export default function AuditReportView({ data, topBanner }: AuditReportViewProp
                 <ReportFlowInventoryTable flows={flowSnapshots as any} scrollable />
               </ReportInventoryLauncher>
             )}
-          </section>
-        )}
+        </ReportSectionShell>
 
-        {segmentsSectionVisible && (
-          <section id="segments" ref={setRef('segments')}>
+        <ReportSectionShell
+          id="segments"
+          setRef={setRef}
+          label={segmentationCfg.sectionTitle ?? 'Segments'}
+          hidden={sectionHiddenFlags.segments}
+          onToggleHidden={h => toggleAuditSectionHidden('segmentation', h)}
+          available={sectionDataAvailable.segments}
+        >
             <ReportSectionHeader
               number={sectionNumbers['segments'] ?? segmentationCfg.sectionNumber ?? '04'}
               label={segmentationCfg.sectionTitle ?? 'Segments'}
@@ -543,11 +647,16 @@ export default function AuditReportView({ data, topBanner }: AuditReportViewProp
                 <ReportSegmentTable segments={segmentSnapshots as any} scrollable />
               </ReportInventoryLauncher>
             )}
-          </section>
-        )}
+        </ReportSectionShell>
 
-        {formsSectionVisible && (
-          <section id="forms" ref={setRef('forms')}>
+        <ReportSectionShell
+          id="forms"
+          setRef={setRef}
+          label={signupFormsCfg.sectionTitle ?? 'Signup Forms'}
+          hidden={sectionHiddenFlags.forms}
+          onToggleHidden={h => toggleAuditSectionHidden('signup_forms', h)}
+          available={sectionDataAvailable.forms}
+        >
             <ReportSectionHeader
               number={sectionNumbers['forms'] ?? signupFormsCfg.sectionNumber ?? '05'}
               label={signupFormsCfg.sectionTitle ?? 'Signup Forms'}
@@ -594,11 +703,16 @@ export default function AuditReportView({ data, topBanner }: AuditReportViewProp
                 <ReportFormTable forms={formSnapshots as any} scrollable />
               </ReportInventoryLauncher>
             )}
-          </section>
-        )}
+        </ReportSectionShell>
 
-        {campaignsSectionVisible && (
-          <section id="campaigns" ref={setRef('campaigns')}>
+        <ReportSectionShell
+          id="campaigns"
+          setRef={setRef}
+          label={campaignsCfg.sectionTitle ?? 'Campaigns'}
+          hidden={sectionHiddenFlags.campaigns}
+          onToggleHidden={h => toggleAuditSectionHidden('campaigns', h)}
+          available={sectionDataAvailable.campaigns}
+        >
             <ReportSectionHeader
               number={sectionNumbers['campaigns'] ?? campaignsCfg.sectionNumber ?? '06'}
               label={campaignsCfg.sectionTitle ?? 'Campaigns'}
@@ -645,26 +759,54 @@ export default function AuditReportView({ data, topBanner }: AuditReportViewProp
                 <ReportCampaignTable campaigns={campaignSnapshots as any} scrollable />
               </ReportInventoryLauncher>
             )}
-          </section>
-        )}
+        </ReportSectionShell>
 
-        {emailDesignSectionVisible && emailDesign && isEmailDesignBlockVisible(emailDesignCfg, 'comparison') && (
-          <section id="email_design" ref={setRef('email_design')}>
-            <ReportSectionHeader
-              number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
-              label={emailDesignCfg.sectionTitle ?? 'Email Design'}
-            />
-            <EmailDesignSection
-              emailDesign={emailDesign}
-              annotations={annotations}
-              sections={reportSections}
-              subtitleOverride={emailDesignCfg.blocks.comparison?.subtitle}
-            />
-          </section>
-        )}
+        <ReportSectionShell
+          id="email_design"
+          setRef={setRef}
+          label={emailDesignCfg.sectionTitle ?? 'Email Design'}
+          hidden={sectionHiddenFlags.email_design}
+          onToggleHidden={h => toggleAuditSectionHidden('email_design', h)}
+          available={sectionDataAvailable.email_design}
+          actions={onManageEmailDesign ? [emailDesignAction(onManageEmailDesign)] : undefined}
+        >
+          {emailDesign && isEmailDesignBlockVisible(emailDesignCfg, 'comparison') ? (
+            <>
+              <ReportSectionHeader
+                number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
+                label={emailDesignCfg.sectionTitle ?? 'Email Design'}
+              />
+              <EmailDesignSection
+                emailDesign={emailDesign}
+                annotations={annotations}
+                sections={reportSections}
+                subtitleOverride={emailDesignCfg.blocks.comparison?.subtitle}
+              />
+            </>
+          ) : editMode ? (
+            <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-6 py-10 text-center">
+              <p className="text-sm text-gray-600">No email design data yet.</p>
+              {onManageEmailDesign && (
+                <button
+                  type="button"
+                  onClick={onManageEmailDesign}
+                  className="mt-3 text-sm font-medium text-brand-primary hover:underline"
+                >
+                  Assign benchmark & add annotations
+                </button>
+              )}
+            </div>
+          ) : null}
+        </ReportSectionShell>
 
-        {opportunitySectionVisible && (
-        <section id="opportunity" ref={setRef('opportunity')}>
+        <ReportSectionShell
+          id="opportunity"
+          setRef={setRef}
+          label={revenueSummaryCfg.sectionTitle ?? 'Revenue Opportunity'}
+          hidden={sectionHiddenFlags.opportunity}
+          onToggleHidden={h => toggleLayoutSectionHidden('revenue_summary', h)}
+          available={sectionDataAvailable.opportunity}
+        >
           <ReportSectionHeader
             number={sectionNumbers['opportunity'] ?? revenueSummaryCfg.sectionNumber ?? '08'}
             label={revenueSummaryCfg.sectionTitle ?? 'Revenue Opportunity'}
@@ -875,8 +1017,7 @@ export default function AuditReportView({ data, topBanner }: AuditReportViewProp
             </div>
           </div>
           )}
-        </section>
-        )}
+        </ReportSectionShell>
       </main>
 
       <ReportTrustFooter preparedDate={preparedDateLabel} />
