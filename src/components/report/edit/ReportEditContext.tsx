@@ -10,7 +10,7 @@ import {
 import type { Audit, AuditSection } from '../../../lib/types';
 import { updateAudit, updateAuditSection } from '../../../lib/db';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
-import { writeFlowsConfigPatch, writeGenericConfigPatch } from '../../../lib/report-config/section-hide';
+import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
 export type TimelinePhase = {
   phase: string;
@@ -23,6 +23,8 @@ export type ExecutivePayload = {
   text?: string;
   findings?: string[];
   strengths?: string[];
+  findingsHidden?: boolean[];
+  strengthsHidden?: boolean[];
   timeline?: TimelinePhase[];
 };
 
@@ -43,6 +45,8 @@ function serializeExecutive(payload: ExecutivePayload, fallbackRaw: string): str
   if (
     payload.findings?.length ||
     payload.strengths?.length ||
+    payload.findingsHidden?.some(Boolean) ||
+    payload.strengthsHidden?.some(Boolean) ||
     payload.timeline?.length ||
     (payload.text && payload.text !== fallbackRaw)
   ) {
@@ -86,6 +90,18 @@ type ReportEditContextValue = {
   updateAddOnBullet: (itemKey: string, bulletIndex: number, value: string) => void;
   toggleLayoutSectionHidden: (layoutKey: 'executive_summary' | 'revenue_summary', hidden: boolean) => void;
   toggleAuditSectionHidden: (sectionKey: string, hidden: boolean) => void;
+  toggleExecutiveBlockHidden: (blockKey: string, hidden: boolean) => void;
+  toggleRevenueBlockHidden: (blockKey: string, hidden: boolean) => void;
+  toggleSectionBlockHidden: (sectionKey: string, blockKey: string, hidden: boolean) => void;
+  toggleFlowsBlockHidden: (blockKey: string, hidden: boolean) => void;
+  toggleFindingHidden: (index: number, hidden: boolean) => void;
+  toggleStrengthHidden: (index: number, hidden: boolean) => void;
+  updateSectionBlockField: (
+    sectionKey: string,
+    blockKey: string,
+    field: 'title' | 'subtitle' | 'currentTitle' | 'optimizedTitle',
+    value: string,
+  ) => void;
 };
 
 const ReportEditContext = createContext<ReportEditContextValue>({
@@ -104,6 +120,13 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateAddOnBullet: () => {},
   toggleLayoutSectionHidden: () => {},
   toggleAuditSectionHidden: () => {},
+  toggleExecutiveBlockHidden: () => {},
+  toggleRevenueBlockHidden: () => {},
+  toggleSectionBlockHidden: () => {},
+  toggleFlowsBlockHidden: () => {},
+  toggleFindingHidden: () => {},
+  toggleStrengthHidden: () => {},
+  updateSectionBlockField: () => {},
 });
 
 export function useReportEdit() {
@@ -357,6 +380,108 @@ export function ReportEditProvider({
     [sections, onSectionsChange, schedule],
   );
 
+  const toggleExecutiveBlockHidden = useCallback(
+    (blockKey: string, hidden: boolean) => {
+      const layout = writeExecutiveBlockPatch(
+        (audit.layout as Record<string, unknown>) ?? {},
+        blockKey,
+        { hidden: hidden || undefined },
+      );
+      onAuditChange({ ...audit, layout });
+      schedule(`layout-exec-block-${blockKey}`, async () => {
+        await updateAudit(audit.id, { layout });
+      });
+    },
+    [audit, onAuditChange, schedule],
+  );
+
+  const toggleRevenueBlockHidden = useCallback(
+    (blockKey: string, hidden: boolean) => {
+      const layout = writeRevenueBlockPatch(
+        (audit.layout as Record<string, unknown>) ?? {},
+        blockKey,
+        { hidden: hidden || undefined },
+      );
+      onAuditChange({ ...audit, layout });
+      schedule(`layout-rev-block-${blockKey}`, async () => {
+        await updateAudit(audit.id, { layout });
+      });
+    },
+    [audit, onAuditChange, schedule],
+  );
+
+  const toggleSectionBlockHidden = useCallback(
+    (sectionKey: string, blockKey: string, hidden: boolean) => {
+      const section = sections.find(s => s.section_key === sectionKey);
+      if (!section) return;
+      const sectionConfig = (section.section_config as Record<string, unknown> | null | undefined) ?? {};
+      const nextConfig =
+        sectionKey === 'flows'
+          ? writeFlowsBlockPatch(sectionConfig, blockKey, { hidden: hidden || undefined })
+          : writeGenericBlockPatch(sectionConfig, sectionKey, blockKey, { hidden: hidden || undefined });
+      const nextSections = sections.map(s =>
+        s.id === section.id ? { ...s, section_config: nextConfig } : s,
+      );
+      onSectionsChange(nextSections);
+      schedule(`section-block-${section.id}-${blockKey}`, async () => {
+        await updateAuditSection(section.id, { section_config: nextConfig });
+      });
+    },
+    [sections, onSectionsChange, schedule],
+  );
+
+  const toggleFlowsBlockHidden = useCallback(
+    (blockKey: string, hidden: boolean) => toggleSectionBlockHidden('flows', blockKey, hidden),
+    [toggleSectionBlockHidden],
+  );
+
+  const toggleFindingHidden = useCallback(
+    (index: number, hidden: boolean) => {
+      const prev = getExecPayload();
+      const findingsHidden = [...(prev.findingsHidden ?? [])];
+      while (findingsHidden.length <= index) findingsHidden.push(false);
+      findingsHidden[index] = hidden;
+      saveExecutive({ findingsHidden });
+    },
+    [getExecPayload, saveExecutive],
+  );
+
+  const toggleStrengthHidden = useCallback(
+    (index: number, hidden: boolean) => {
+      const prev = getExecPayload();
+      const strengthsHidden = [...(prev.strengthsHidden ?? [])];
+      while (strengthsHidden.length <= index) strengthsHidden.push(false);
+      strengthsHidden[index] = hidden;
+      saveExecutive({ strengthsHidden });
+    },
+    [getExecPayload, saveExecutive],
+  );
+
+  const updateSectionBlockField = useCallback(
+    (
+      sectionKey: string,
+      blockKey: string,
+      field: 'title' | 'subtitle' | 'currentTitle' | 'optimizedTitle',
+      value: string,
+    ) => {
+      const section = sections.find(s => s.section_key === sectionKey);
+      if (!section) return;
+      const sectionConfig = (section.section_config as Record<string, unknown> | null | undefined) ?? {};
+      const nextConfig =
+        sectionKey === 'flows'
+          ? writeFlowsBlockPatch(sectionConfig, blockKey, { [field]: value || undefined })
+          : writeGenericBlockPatch(sectionConfig, sectionKey, blockKey, { [field]: value || undefined });
+      const nextSections = sections.map(s =>
+        s.id === section.id ? { ...s, section_config: nextConfig } : s,
+      );
+      onSectionsChange(nextSections);
+      schedule(`section-block-field-${section.id}-${blockKey}-${field}`, async () => {
+        await updateAuditSection(section.id, { section_config: nextConfig });
+      });
+    },
+    [sections, onSectionsChange, schedule],
+  );
+
   const value = useMemo(
     () => ({
       editMode,
@@ -374,6 +499,13 @@ export function ReportEditProvider({
       updateAddOnBullet,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,
+      toggleExecutiveBlockHidden,
+      toggleRevenueBlockHidden,
+      toggleSectionBlockHidden,
+      toggleFlowsBlockHidden,
+      toggleFindingHidden,
+      toggleStrengthHidden,
+      updateSectionBlockField,
     }),
     [
       editMode,
@@ -391,6 +523,13 @@ export function ReportEditProvider({
       updateAddOnBullet,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,
+      toggleExecutiveBlockHidden,
+      toggleRevenueBlockHidden,
+      toggleSectionBlockHidden,
+      toggleFlowsBlockHidden,
+      toggleFindingHidden,
+      toggleStrengthHidden,
+      updateSectionBlockField,
     ],
   );
 

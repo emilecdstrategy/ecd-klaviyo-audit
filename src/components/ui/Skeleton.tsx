@@ -130,20 +130,20 @@ export function SkeletonClientDetail() {
 
 export function SkeletonAuditWorkspace() {
   return (
-    <div className="flex h-[calc(100vh-64px)]">
-      <div className="hidden lg:block w-56 bg-white border-r border-gray-100 p-3">
-        <Skeleton className="h-3 w-24 mb-3 mx-3" />
-        {Array.from({ length: 8 }).map((_, i) => (
-          <Skeleton key={i} className="h-9 w-full rounded-lg mb-1" />
-        ))}
-      </div>
-      <div className="flex-1 p-6 space-y-4">
-        <Skeleton className="h-6 w-48 mb-2" />
-        <Skeleton className="h-4 w-64 mb-6" />
-        <div className="grid grid-cols-2 gap-6">
-          <Skeleton className="h-64 w-full rounded-xl" />
-          <Skeleton className="h-64 w-full rounded-xl" />
+    <div className="min-h-[calc(100vh-64px)] bg-brand-surface pb-24">
+      <div className="sticky top-0 z-40 border-b border-gray-100 bg-white">
+        <div className="mx-auto flex max-w-[90rem] gap-4 px-6 py-3">
+          {Array.from({ length: 7 }).map((_, i) => (
+            <Skeleton key={i} className="h-4 w-20" />
+          ))}
         </div>
+      </div>
+      <div className="mx-auto max-w-[90rem] space-y-8 px-6 py-10">
+        <Skeleton className="h-48 w-full rounded-2xl" />
+        <Skeleton className="h-10 w-64" />
+        <Skeleton className="h-72 w-full rounded-2xl" />
+        <Skeleton className="h-96 w-full rounded-2xl" />
+        <Skeleton className="h-64 w-full rounded-2xl" />
       </div>
     </div>
   );

@@ -15,6 +15,7 @@ import type {
   Recommendation,
 } from '../lib/types';
 import type { HealthScoreItem } from '../lib/types';
+import { deriveAccountHealthScores, resolveHealthScores } from '../lib/account-health-scores';
 
 export type AuditReportBundle = {
   audit: Audit;
@@ -90,11 +91,21 @@ export function mergeReportBundle(
   annotations: Annotation[],
   emailDesign?: AuditEmailDesign | null,
 ): AuditReportBundle {
+  const mergedSections = sections.length > 0 ? sections : bundle.sections;
+  const derivedHealth = deriveAccountHealthScores({
+    sections: mergedSections,
+    flowSnapshots: bundle.flowSnapshots,
+    segmentSnapshots: bundle.segmentSnapshots,
+    campaignSnapshots: bundle.campaignSnapshots,
+    formSnapshots: bundle.formSnapshots,
+    accountSnapshot: bundle.accountSnapshot,
+  });
   return {
     ...bundle,
     audit,
-    sections: sections.length > 0 ? sections : bundle.sections,
+    sections: mergedSections,
     annotations,
+    healthScores: resolveHealthScores(bundle.healthScores, derivedHealth),
     ...(emailDesign !== undefined ? { emailDesign } : {}),
   };
 }

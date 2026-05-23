@@ -7,6 +7,7 @@ type ActionButton = {
   icon: LucideIcon;
   label: string;
   onClick: () => void;
+  variant?: 'icon' | 'primary';
 };
 
 export default function ReportSectionEditChrome({
@@ -53,9 +54,13 @@ export default function ReportSectionEditChrome({
             type="button"
             onClick={action.onClick}
             title={action.label}
-            className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white/95 text-gray-600 shadow-sm backdrop-blur-sm hover:border-brand-primary/30 hover:text-brand-primary transition-colors"
+            className={cn(
+              'flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white/95 text-gray-700 shadow-sm backdrop-blur-sm hover:border-brand-primary/30 hover:text-brand-primary transition-colors',
+              action.variant === 'primary' ? 'px-3 py-1.5 text-xs font-semibold' : 'h-9 w-9 justify-center',
+            )}
           >
             <action.icon className="h-4 w-4" />
+            {action.variant === 'primary' ? <span>{action.label}</span> : null}
           </button>
         ))}
         <button
@@ -76,5 +81,10 @@ export default function ReportSectionEditChrome({
 }
 
 export function emailDesignAction(onManage: () => void): ActionButton {
-  return { icon: Palette, label: 'Edit email design & benchmark', onClick: onManage };
+  return {
+    icon: Palette,
+    label: 'Edit email design',
+    onClick: onManage,
+    variant: 'primary',
+  };
 }

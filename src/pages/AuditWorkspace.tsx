@@ -5,12 +5,24 @@ import TopBar from '../components/layout/TopBar';
 import AuditReportView from '../components/report/AuditReportView';
 import { ReportEditProvider, useReportEdit } from '../components/report/edit/ReportEditContext';
 import EmailDesignEditor, { EmailDesignDrawer } from '../components/audit/EmailDesignEditor';
+import WorkspacePublishBar from '../components/audit/WorkspacePublishBar';
 import { mergeReportBundle, type AuditReportBundle } from '../hooks/useAuditReportData';
-import ShareLinkPanel from '../components/ui/ShareLinkPanel';
 import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, AuditAsset, Client } from '../lib/types';
-import { getAudit, getClient, getPublicReportByToken, listAnnotationsForAuditSections, listAssets, listAuditSections, publishAudit, updateAuditSection, getAuditEmailDesign, listIndustryEmailLibrary } from '../lib/db';
+import {
+  getAudit,
+  getClient,
+  getAuditReportBundleById,
+  listAnnotationsForAuditSections,
+  listAssets,
+  listAuditSections,
+  publishAudit,
+  updateAuditStatus,
+  updateAuditSection,
+  getAuditEmailDesign,
+  listIndustryEmailLibrary,
+} from '../lib/db';
 import { supabase } from '../lib/supabase';
 import { useToast } from '../components/ui/Toast';
 
@@ -76,7 +88,6 @@ export default function AuditWorkspace() {
         setEmailDesign(ed);
         setEmailLibrary(lib);
 
-        // Check Klaviyo scope warnings for API audits
         if (a.audit_method === 'api') {
           try {
             const { data: conn } = await supabase
@@ -105,13 +116,19 @@ export default function AuditWorkspace() {
   }, [id]);
 
   useEffect(() => {
-    if (!audit?.public_share_token) return;
+    if (!audit?.id) return;
     let cancelled = false;
     (async () => {
       try {
         setReportLoading(true);
-        const report = await getPublicReportByToken(audit.public_share_token);
-        if (!cancelled && report) setReportBundle(report as AuditReportBundle);
+        const report = await getAuditReportBundleById(audit.id);
+        if (!cancelled && report) {
+          setReportBundle({
+            ...report,
+            audit,
+            client: client ?? report.client,
+          } as AuditReportBundle);
+        }
       } catch {
         if (!cancelled) setReportBundle(null);
       } finally {
@@ -119,7 +136,7 @@ export default function AuditWorkspace() {
       }
     })();
     return () => { cancelled = true; };
-  }, [audit?.public_share_token]);
+  }, [audit?.id, client]);
 
   const mergedReportData = useMemo(() => {
     if (!reportBundle || !audit || !client) return null;
@@ -171,7 +188,7 @@ export default function AuditWorkspace() {
         await updateAuditSection(sectionId, updates);
         toast('Changes saved');
       } catch {
-        // keep UI responsive; errors surface on next reload
+        // keep UI responsive
       }
     }, 400);
   };
@@ -182,8 +199,20 @@ export default function AuditWorkspace() {
       const updated = await publishAudit(audit.id);
       setAudit(updated);
       setPublishBlockedReason('');
+      const report = await getAuditReportBundleById(audit.id);
+      if (report) setReportBundle({ ...report, audit: updated, client: client ?? report.client });
     } catch (e) {
       setPublishBlockedReason(e instanceof Error ? e.message : 'Failed to publish. Please try again.');
+    }
+  };
+
+  const handleStatusChange = async (newStatus: Audit['status']) => {
+    try {
+      const updated = await updateAuditStatus(audit.id, newStatus);
+      setAudit(updated);
+      toast('Status updated');
+    } catch (e) {
+      console.error('Failed to update status:', e);
     }
   };
 
@@ -195,7 +224,7 @@ export default function AuditWorkspace() {
       onAuditChange={setAudit}
       onSectionsChange={setSections}
     >
-      <div>
+      <div className="pb-24">
         <TopBar
           title={audit.title}
           subtitle={client?.company_name}
@@ -224,33 +253,24 @@ export default function AuditWorkspace() {
           </div>
         )}
 
-        <div className="flex">
-          <div className="min-w-0 flex-1">
-            {reportLoading && (
-              <div className="p-12 text-center text-sm text-gray-500">Loading report preview…</div>
-            )}
-            {!reportLoading && mergedReportData && (
-              <AuditReportView
-                data={mergedReportData}
-                onManageEmailDesign={() => setEmailDesignDrawerOpen(true)}
-              />
-            )}
-            {!reportLoading && !mergedReportData && (
-              <div className="p-12 text-center text-sm text-gray-500">
-                Could not load report data. Publish the audit first to preview the client report.
-              </div>
-            )}
-          </div>
-          <div className="hidden w-[320px] shrink-0 border-l border-gray-100 bg-gray-50/80 p-4 xl:block">
-            <ShareLinkPanel
-              shareToken={audit.public_share_token}
-              onPublish={handlePublish}
-              isPublished={audit.status === 'published'}
-              publishDisabled={audit.audit_method === 'api' && audit.status !== 'published' && Boolean(publishBlockedReason)}
-              publishDisabledReason={publishBlockedReason || undefined}
+        <div className="min-w-0">
+          {(reportLoading || !mergedReportData) && <SkeletonAuditWorkspace />}
+          {!reportLoading && mergedReportData && (
+            <AuditReportView
+              data={mergedReportData}
+              onManageEmailDesign={() => setEmailDesignDrawerOpen(true)}
             />
-          </div>
+          )}
         </div>
+
+        <WorkspacePublishBar
+          audit={audit}
+          shareToken={audit.public_share_token}
+          onPublish={handlePublish}
+          onStatusChange={handleStatusChange}
+          publishDisabled={audit.audit_method === 'api' && audit.status !== 'published' && Boolean(publishBlockedReason)}
+          publishDisabledReason={publishBlockedReason || undefined}
+        />
 
         <EmailDesignDrawer open={emailDesignDrawerOpen} onClose={() => setEmailDesignDrawerOpen(false)}>
           <EmailDesignEditor

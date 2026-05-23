@@ -23,6 +23,7 @@ import ReportBlockHeader from './ReportBlockHeader';
 import EditableRichText from './edit/EditableRichText';
 import EditablePlainText from './edit/EditablePlainText';
 import { useReportEdit } from './edit/ReportEditContext';
+import ReportBlockEditChrome from './edit/ReportBlockEditChrome';
 import ReportSectionEditChrome, { emailDesignAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem } from '../../lib/types';
@@ -128,6 +129,10 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
     updateAddOnBullet,
     toggleLayoutSectionHidden,
     toggleAuditSectionHidden,
+    toggleExecutiveBlockHidden,
+    toggleFlowsBlockHidden,
+    toggleSectionBlockHidden,
+    updateSectionBlockField,
   } = useReportEdit();
   const [activeSection, setActiveSection] = useState('summary');
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
@@ -194,14 +199,18 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
   let aiStrengths: string[] = [];
   let aiConcerns: string[] = [];
   let aiTimeline: { phase: string; timeframe: string; label: string; items: string[] }[] = [];
+  let findingsHidden: boolean[] = [];
+  let strengthsHidden: boolean[] = [];
   try {
-    const parsed = JSON.parse(execText);
-    if (parsed && typeof parsed.text === 'string') {
-      execText = parsed.text;
+    const parsed = JSON.parse(audit.executive_summary || '');
+    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+      if (typeof parsed.text === 'string') execText = parsed.text;
       aiFindings = Array.isArray(parsed.findings) ? parsed.findings : [];
       aiStrengths = Array.isArray(parsed.strengths) ? parsed.strengths : [];
       aiConcerns = Array.isArray(parsed.concerns) ? parsed.concerns : [];
       aiTimeline = Array.isArray(parsed.timeline) ? parsed.timeline : [];
+      findingsHidden = Array.isArray(parsed.findingsHidden) ? parsed.findingsHidden.map(Boolean) : [];
+      strengthsHidden = Array.isArray(parsed.strengthsHidden) ? parsed.strengthsHidden.map(Boolean) : [];
     }
   } catch {
     // plain text — keep as-is
@@ -280,7 +289,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
 
   const sectionDataAvailable: Record<string, boolean> = {
     summary: true,
-    health: healthScores.length > 0,
+    health: healthScores.length > 0 || editMode,
     flows: flowsDataAvailable,
     segments: segmentSnapshots.length > 0,
     forms: formSnapshots.length > 0,
@@ -390,14 +399,17 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
             onSaveLabel={v => updateLayoutTitle('executive_summary', 'sectionTitle', v)}
           />
 
-          {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'findings') && (
+          {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'findings') || editMode) && (
             <ReportKeyFindings
               title={executiveSummaryCfg.blocks.findings?.title ?? 'Key Findings'}
+              subtitle={executiveSummaryCfg.blocks.findings?.subtitle}
               findings={aiFindings}
+              findingsHidden={findingsHidden}
+              blockHidden={executiveSummaryCfg.blocks.findings?.hidden === true}
             />
           )}
 
-          {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'hero') && (() => {
+          {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'hero') || editMode) && (() => {
             const hero = executiveSummaryCfg.blocks.hero;
             const eyebrow = hero?.eyebrow;
             const headline = hero?.headline;
@@ -407,8 +419,13 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
             const showHeadline = headline !== null;
             const showIntro = intro !== null;
             if (!showHeadline && !showIntro && !eyebrow && eyebrow !== undefined) return null;
-            if (!showHeadline && !showIntro && eyebrow === undefined && !defaultIntro) return null;
+            if (!showHeadline && !showIntro && eyebrow === undefined && !defaultIntro && !editMode) return null;
             return (
+              <ReportBlockEditChrome
+                label="Hero intro"
+                hidden={executiveSummaryCfg.blocks.hero?.hidden === true}
+                onToggleHidden={h => toggleExecutiveBlockHidden('hero', h)}
+              >
               <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">
                 {eyebrow !== null && (
                   <EditablePlainText
@@ -441,11 +458,17 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
                   />
                 )}
               </div>
+              </ReportBlockEditChrome>
             );
           })()}
 
-          {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'accountSnapshot') &&
-            (flowSnapshots.length > 0 || campaignSnapshots.length > 0) && (
+          {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'accountSnapshot') || editMode) &&
+            (flowSnapshots.length > 0 || campaignSnapshots.length > 0 || editMode) && (
+              <ReportBlockEditChrome
+                label="Account Snapshot"
+                hidden={executiveSummaryCfg.blocks.accountSnapshot?.hidden === true}
+                onToggleHidden={h => toggleExecutiveBlockHidden('accountSnapshot', h)}
+              >
               <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
                 <ReportBlockHeader
                   icon={
@@ -453,8 +476,22 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
                       <LayoutDashboard className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
                     </div>
                   }
-                  title={executiveSummaryCfg.blocks.accountSnapshot?.title ?? 'Account Snapshot'}
-                  subtitle="Live metrics pulled from Klaviyo at the time of this audit"
+                  title={
+                    <EditablePlainText
+                      value={executiveSummaryCfg.blocks.accountSnapshot?.title ?? 'Account Snapshot'}
+                      onSave={v => updateBlockTitle('executive_summary', 'accountSnapshot', 'title', v)}
+                      className="text-base font-bold text-gray-900"
+                      as="span"
+                    />
+                  }
+                  subtitle={
+                    <EditablePlainText
+                      value={executiveSummaryCfg.blocks.accountSnapshot?.subtitle ?? 'Live metrics pulled from Klaviyo at the time of this audit'}
+                      onSave={v => updateBlockTitle('executive_summary', 'accountSnapshot', 'subtitle', v)}
+                      className="text-sm text-gray-500"
+                      as="span"
+                    />
+                  }
                 />
                 <div className="p-6">
                   <ReportAccountSnapshot
@@ -466,12 +503,15 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
                 />
                 </div>
               </div>
+              </ReportBlockEditChrome>
             )}
 
-          {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'strengths') && (
+          {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'strengths') || editMode) && (
             <ReportStrengthsPanel
               title={executiveSummaryCfg.blocks.strengths?.title ?? "What's Working"}
               strengths={aiStrengths.length > 0 ? aiStrengths : ['', '', '']}
+              strengthsHidden={strengthsHidden}
+              blockHidden={executiveSummaryCfg.blocks.strengths?.hidden === true}
             />
           )}
 
@@ -489,8 +529,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
               number={sectionNumbers['health'] ?? accountHealthCfg.sectionNumber ?? '02'}
               label={accountHealthCfg.sectionTitle ?? 'Account Health Score'}
             />
-            {isAccountHealthBlockVisible(accountHealthCfg, 'healthScoreTable') && (
-              <ReportHealthScore scores={healthScores} />
+            {(isAccountHealthBlockVisible(accountHealthCfg, 'healthScoreTable') || editMode) && (
+              <ReportBlockEditChrome
+                label="Health Score Table"
+                hidden={accountHealthCfg.blocks.healthScoreTable?.hidden === true}
+                onToggleHidden={h => toggleSectionBlockHidden('account_health', 'healthScoreTable', h)}
+              >
+                <ReportHealthScore scores={healthScores} />
+              </ReportBlockEditChrome>
             )}
         </ReportSectionShell>
 
@@ -507,7 +553,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
               label={flowsCfg.sectionTitle ?? 'Flows'}
             />
 
-            {(isFlowsBlockVisible(flowsCfg, 'narrative') || isFlowsBlockVisible(flowsCfg, 'rubric')) && (() => {
+            {((isFlowsBlockVisible(flowsCfg, 'narrative') || isFlowsBlockVisible(flowsCfg, 'rubric')) || editMode) && (() => {
               const flowsSection = flowsSectionRow;
               const idx = flowsSection ? reportSections.findIndex(s => s.id === flowsSection.id) : -1;
               if (!flowsSection) return null;
@@ -520,7 +566,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
                 optimized_state_title: narrativeCfg?.optimizedTitle ?? flowsSection.optimized_state_title,
               };
               return (
-                <div className="mb-6">
+                <ReportBlockEditChrome
+                  label="Current & optimized state"
+                  hidden={!narrativeVisible && !rubricVisible && (narrativeCfg?.hidden === true || flowsCfg.blocks.rubric?.hidden === true)}
+                  onToggleHidden={h => toggleFlowsBlockHidden('narrative', h)}
+                  className="mb-6"
+                >
                   <ReportSectionBlock
                     section={sectionForBlock}
                     index={idx < 0 ? 0 : idx}
@@ -532,12 +583,18 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
                     hideKeyTakeaway
                     entityNames={entityNames}
                   />
-                </div>
+                </ReportBlockEditChrome>
               );
             })()}
 
-            {isFlowsBlockVisible(flowsCfg, 'healthScore') && flowPerformance.length > 0 && (
-              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+            {(isFlowsBlockVisible(flowsCfg, 'healthScore') || editMode) && flowPerformance.length > 0 && (
+              <ReportBlockEditChrome
+                label="Overall Flow Health Score"
+                hidden={flowsCfg.blocks.healthScore?.hidden === true}
+                onToggleHidden={h => toggleFlowsBlockHidden('healthScore', h)}
+                className="mb-6"
+              >
+              <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
                 <ReportFlowHealthScore
                   snapshots={flowSnapshots as any}
                   performance={flowPerformance}
@@ -547,6 +604,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
                   benchmarks={flowsCfg.blocks.healthScore?.benchmarks}
                 />
               </div>
+              </ReportBlockEditChrome>
             )}
 
             {isFlowsBlockVisible(flowsCfg, 'revenueBreakdown') && flowPerformance.length > 0 && (
@@ -781,6 +839,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign }
                 annotations={annotations}
                 sections={reportSections}
                 subtitleOverride={emailDesignCfg.blocks.comparison?.subtitle}
+                benchmarkTitle={emailDesignCfg.blocks.comparison?.title}
               />
             </>
           ) : editMode ? (
@@ -1476,14 +1535,31 @@ function ReportSectionBlock({
   );
 }
 
-function EmailDesignSection({ emailDesign, annotations, sections, subtitleOverride }: { emailDesign: AuditEmailDesign; annotations: import('../lib/types').Annotation[]; sections: AuditSection[]; subtitleOverride?: string }) {
+function EmailDesignSection({
+  emailDesign,
+  annotations,
+  sections,
+  subtitleOverride,
+  benchmarkTitle,
+}: {
+  emailDesign: AuditEmailDesign;
+  annotations: import('../lib/types').Annotation[];
+  sections: AuditSection[];
+  subtitleOverride?: string;
+  benchmarkTitle?: string;
+}) {
+  const { updateSectionBlockField } = useReportEdit();
   const [fullscreen, setFullscreen] = useState(false);
+  const defaultSubtitle = 'Side-by-side comparison of a recent campaign email and an ECD-designed benchmark for your industry.';
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between gap-4">
-        <p className="text-sm text-gray-500">
-          {subtitleOverride ?? 'Side-by-side comparison of a recent campaign email and an ECD-designed benchmark for your industry.'}
-        </p>
+        <EditablePlainText
+          value={subtitleOverride ?? defaultSubtitle}
+          onSave={v => updateSectionBlockField('email_design', 'comparison', 'subtitle', v)}
+          className="text-sm text-gray-500 flex-1"
+          as="p"
+        />
         <EmailDesignFullscreenBtn onClick={() => setFullscreen(true)} />
       </div>
       <div className="p-6">
@@ -1491,6 +1567,7 @@ function EmailDesignSection({ emailDesign, annotations, sections, subtitleOverri
           emailDesign={emailDesign}
           annotations={annotations}
           sections={sections}
+          benchmarkTitle={benchmarkTitle}
           fullscreen={fullscreen}
           onFullscreenChange={setFullscreen}
         />
@@ -1515,12 +1592,14 @@ function EmailDesignComparison({
   emailDesign,
   annotations,
   sections,
+  benchmarkTitle,
   fullscreen,
   onFullscreenChange,
 }: {
   emailDesign: AuditEmailDesign;
   annotations: import('../lib/types').Annotation[];
   sections: AuditSection[];
+  benchmarkTitle?: string;
   fullscreen: boolean;
   onFullscreenChange: (open: boolean) => void;
 }) {
@@ -1537,6 +1616,7 @@ function EmailDesignComparison({
   const edSection = sections.find(s => s.section_key === 'email_design');
   const sectionAnns = edSection ? annotations.filter(a => a.audit_section_id === edSection.id) : [];
   const ecdExample = emailDesign.ecd_example;
+  const { updateSectionBlockField } = useReportEdit();
 
   const comparisonGrid = (maxH?: number) => (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_1px_1fr] gap-0">
@@ -1569,7 +1649,12 @@ function EmailDesignComparison({
         <div className="min-w-0 space-y-3 px-4">
           <div className="flex items-center gap-2">
             <div className="w-2 h-2 rounded-full bg-emerald-500" />
-            <h4 className="text-sm font-semibold text-gray-800">ECD Benchmark</h4>
+            <EditablePlainText
+              value={benchmarkTitle ?? 'ECD Benchmark'}
+              onSave={v => updateSectionBlockField('email_design', 'comparison', 'title', v)}
+              className="text-sm font-semibold text-gray-800"
+              as="h4"
+            />
           </div>
           <AnnotationLayer
             imageUrl={ecdExample.content_type === 'image' ? (ecdExample.image_url ?? undefined) : undefined}

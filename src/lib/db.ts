@@ -331,6 +331,101 @@ export async function deleteAnnotation(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function fetchAuditReportBundleForAudit(audit: Audit): Promise<{
+  audit: Audit;
+  client: Client;
+  sections: AuditSection[];
+  assets: AuditAsset[];
+  annotations: Annotation[];
+  flowPerformance: FlowPerformance[];
+  flowSnapshots: KlaviyoFlowSnapshot[];
+  segmentSnapshots: KlaviyoSegmentSnapshot[];
+  formSnapshots: KlaviyoFormSnapshot[];
+  campaignSnapshots: KlaviyoCampaignSnapshot[];
+  healthScores: HealthScoreItem[];
+  recommendations: Recommendation[];
+  emailDesign: AuditEmailDesign | null;
+  reportingDiagnostic?: string | null;
+  accountSnapshot?: {
+    email_subscribed_profiles_count: number | null;
+    active_profiles_90d_count: number | null;
+    suppressed_profiles_count: number | null;
+    bounce_rate_90d: number | null;
+    spam_rate_90d: number | null;
+    active_profiles_definition?: string | null;
+    computed_at?: string | null;
+    email_subscribed_profiles_truncated?: boolean | null;
+    active_profiles_90d_truncated?: boolean | null;
+    suppressed_profiles_truncated?: boolean | null;
+    deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
+  } | null;
+} | null> {
+  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, scores, recs, rollups, emailDesignRes] = await Promise.all([
+    supabase.from('clients').select('*').eq('id', audit.client_id).maybeSingle(),
+    supabase.from('audit_sections').select('*').eq('audit_id', audit.id),
+    supabase.from('audit_assets').select('*').eq('audit_id', audit.id),
+    supabase.from('flow_performance').select('*').eq('audit_id', audit.id),
+    supabase.from('klaviyo_flow_snapshots').select('*').eq('audit_id', audit.id),
+    supabase.from('klaviyo_segment_snapshots').select('*').eq('audit_id', audit.id),
+    supabase.from('klaviyo_form_snapshots').select('*').eq('audit_id', audit.id),
+    supabase.from('klaviyo_campaign_snapshots').select('*').eq('audit_id', audit.id),
+    supabase.from('health_scores').select('*').eq('audit_id', audit.id),
+    supabase.from('recommendations').select('*').eq('audit_id', audit.id).order('sort_order', { ascending: true }),
+    supabase.from('klaviyo_reporting_rollups').select('timeframe_key, computed').eq('audit_id', audit.id),
+    supabase.from('audit_email_design').select('*, ecd_example:industry_email_library(*)').eq('audit_id', audit.id).maybeSingle(),
+  ]);
+
+  if (client.error) throw client.error;
+  if (sections.error) throw sections.error;
+  if (assets.error) throw assets.error;
+  if (flows.error) throw flows.error;
+  if (flowSnaps.error) throw flowSnaps.error;
+  if (segSnaps.error) throw segSnaps.error;
+  if (formSnaps.error) throw formSnaps.error;
+  if (campSnaps.error) throw campSnaps.error;
+  if (scores.error) throw scores.error;
+  if (recs.error) throw recs.error;
+  if (rollups.error) throw rollups.error;
+  if (!client.data) return null;
+
+  const allSections = (sections.data ?? []) as AuditSection[];
+  const sectionIds = allSections.map(s => s.id);
+  const annotations = await listAnnotationsForAuditSections(sectionIds);
+
+  const reportingDiagnostic = ((rollups.data ?? []) as any[])
+    .find((r: any) => r.timeframe_key === 'last_30_days')?.computed?.reporting_errors?.[0]?.message
+    ?? null;
+
+  const accountSnapshot = ((rollups.data ?? []) as any[])
+    .find((r: any) => r.timeframe_key === 'last_30_days')?.computed?.account_snapshot
+    ?? null;
+
+  return {
+    audit,
+    client: client.data as Client,
+    sections: allSections,
+    assets: (assets.data ?? []) as AuditAsset[],
+    annotations,
+    flowPerformance: (flows.data ?? []) as FlowPerformance[],
+    flowSnapshots: (flowSnaps.data ?? []) as KlaviyoFlowSnapshot[],
+    segmentSnapshots: (segSnaps.data ?? []) as KlaviyoSegmentSnapshot[],
+    formSnapshots: (formSnaps.data ?? []) as KlaviyoFormSnapshot[],
+    campaignSnapshots: (campSnaps.data ?? []) as KlaviyoCampaignSnapshot[],
+    healthScores: (scores.data ?? []) as HealthScoreItem[],
+    recommendations: (recs.data ?? []) as Recommendation[],
+    emailDesign: (emailDesignRes.data ?? null) as AuditEmailDesign | null,
+    reportingDiagnostic,
+    accountSnapshot,
+  };
+}
+
+export async function getAuditReportBundleById(auditId: string): Promise<Awaited<ReturnType<typeof fetchAuditReportBundleForAudit>>> {
+  const { data: audit, error } = await supabase.from('audits').select('*').eq('id', auditId).maybeSingle();
+  if (error) throw error;
+  if (!audit) return null;
+  return fetchAuditReportBundleForAudit(audit as Audit);
+}
+
 export async function getPublicReportByToken(token: string): Promise<{
   audit: Audit;
   client: Client;
@@ -379,66 +474,18 @@ export async function getPublicReportByToken(token: string): Promise<{
   if (auditErr) throw auditErr;
   if (!audit) return null;
 
-  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, scores, recs, rollups, emailDesignRes] = await Promise.all([
-    supabase.from('clients').select('*').eq('id', (audit as any).client_id).maybeSingle(),
-    supabase.from('audit_sections').select('*').eq('audit_id', (audit as any).id),
-    supabase.from('audit_assets').select('*').eq('audit_id', (audit as any).id),
-    supabase.from('flow_performance').select('*').eq('audit_id', (audit as any).id),
-    supabase.from('klaviyo_flow_snapshots').select('*').eq('audit_id', (audit as any).id),
-    supabase.from('klaviyo_segment_snapshots').select('*').eq('audit_id', (audit as any).id),
-    supabase.from('klaviyo_form_snapshots').select('*').eq('audit_id', (audit as any).id),
-    supabase.from('klaviyo_campaign_snapshots').select('*').eq('audit_id', (audit as any).id),
-    supabase.from('health_scores').select('*').eq('audit_id', (audit as any).id),
-    supabase.from('recommendations').select('*').eq('audit_id', (audit as any).id).order('sort_order', { ascending: true }),
-    supabase.from('klaviyo_reporting_rollups').select('timeframe_key, computed').eq('audit_id', (audit as any).id),
-    supabase.from('audit_email_design').select('*, ecd_example:industry_email_library(*)').eq('audit_id', (audit as any).id).maybeSingle(),
-  ]);
+  const bundle = await fetchAuditReportBundleForAudit(audit as Audit);
+  if (!bundle) return null;
 
-  if (client.error) throw client.error;
-  if (sections.error) throw sections.error;
-  if (assets.error) throw assets.error;
-  if (flows.error) throw flows.error;
-  if (flowSnaps.error) throw flowSnaps.error;
-  if (segSnaps.error) throw segSnaps.error;
-  if (formSnaps.error) throw formSnaps.error;
-  if (campSnaps.error) throw campSnaps.error;
-  if (scores.error) throw scores.error;
-  if (recs.error) throw recs.error;
-  if (rollups.error) throw rollups.error;
-  // emailDesignRes errors are non-critical
-  if (!client.data) return null;
-
-  const allSections = (sections.data ?? []) as AuditSection[];
-  const visibleSections = allSections.filter(s => (s as any).status === 'approved');
-  const finalSections = visibleSections.length > 0 ? visibleSections : allSections;
-
-  const sectionIds = finalSections.map(s => (s as any).id);
+  const visibleSections = bundle.sections.filter(s => s.status === 'approved');
+  const finalSections = visibleSections.length > 0 ? visibleSections : bundle.sections;
+  const sectionIds = finalSections.map(s => s.id);
   const annotations = await listAnnotationsForAuditSections(sectionIds);
 
-  const reportingDiagnostic = ((rollups.data ?? []) as any[])
-    .find((r: any) => r.timeframe_key === 'last_30_days')?.computed?.reporting_errors?.[0]?.message
-    ?? null;
-
-  const accountSnapshot = ((rollups.data ?? []) as any[])
-    .find((r: any) => r.timeframe_key === 'last_30_days')?.computed?.account_snapshot
-    ?? null;
-
   return {
-    audit: audit as Audit,
-    client: client.data as Client,
+    ...bundle,
     sections: finalSections,
-    assets: (assets.data ?? []) as AuditAsset[],
     annotations,
-    flowPerformance: (flows.data ?? []) as FlowPerformance[],
-    flowSnapshots: (flowSnaps.data ?? []) as KlaviyoFlowSnapshot[],
-    segmentSnapshots: (segSnaps.data ?? []) as KlaviyoSegmentSnapshot[],
-    formSnapshots: (formSnaps.data ?? []) as KlaviyoFormSnapshot[],
-    campaignSnapshots: (campSnaps.data ?? []) as KlaviyoCampaignSnapshot[],
-    healthScores: (scores.data ?? []) as HealthScoreItem[],
-    recommendations: (recs.data ?? []) as Recommendation[],
-    emailDesign: (emailDesignRes.data ?? null) as AuditEmailDesign | null,
-    reportingDiagnostic,
-    accountSnapshot,
   };
 }
 
