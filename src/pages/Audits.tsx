@@ -27,7 +27,7 @@ export default function Audits() {
   const location = useLocation();
   const { hasRole } = useAuth();
   const [search, setSearch] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string>('');
+  const [statusFilter, setStatusFilter] = useState('__all__');
 
   const [audits, setAudits] = useState<Audit[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -156,10 +156,10 @@ export default function Audits() {
             <div className="min-w-[160px]">
               <Select value={statusFilter} onValueChange={v => setStatusFilter(v)}>
                 <SelectTrigger className="pl-9">
-                  <SelectValue placeholder="All Status" />
+                  <SelectValue placeholder="All" />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="__all__"><SelectItemText>All Status</SelectItemText></SelectItem>
+                  <SelectItem value="__all__"><SelectItemText>All</SelectItemText></SelectItem>
                   <SelectItem value="draft"><SelectItemText>Draft</SelectItemText></SelectItem>
                   <SelectItem value="in_review"><SelectItemText>In Review</SelectItemText></SelectItem>
                   <SelectItem value="viewer_only"><SelectItemText>Viewer Only</SelectItemText></SelectItem>
@@ -177,7 +177,7 @@ export default function Audits() {
         )}
 
         {loading ? (
-          <SkeletonTable rows={5} cols={7} />
+          <SkeletonTable rows={5} cols={6} />
         ) : filtered.length === 0 ? (
           <EmptyState
             icon={ClipboardCheck}
@@ -200,7 +200,6 @@ export default function Audits() {
                 <tr className="bg-gray-50">
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Audit</th>
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Client</th>
-                  <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Method</th>
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Revenue Opp.</th>
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Status</th>
                   <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Date</th>
@@ -227,11 +226,6 @@ export default function Audits() {
                           <SiteFavicon url={client?.website_url} />
                           <span className="text-sm text-gray-600 truncate">{client?.company_name || 'Unknown'}</span>
                         </div>
-                      </td>
-                      <td className="px-6 py-4">
-                        <span className="text-xs font-medium text-gray-500">
-                          {audit.audit_method === 'api' ? 'API' : audit.audit_method === 'screenshot' ? 'Screenshot' : audit.audit_method}
-                        </span>
                       </td>
                       <td className="px-6 py-4">
                         <span className="text-sm font-semibold text-emerald-700">
