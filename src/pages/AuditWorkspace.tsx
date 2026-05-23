@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import AuditReportView from '../components/report/AuditReportView';
-import { ReportEditProvider, useReportEdit } from '../components/report/edit/ReportEditContext';
+import { ReportEditProvider } from '../components/report/edit/ReportEditContext';
 import EmailDesignEditor, { EmailDesignDrawer } from '../components/audit/EmailDesignEditor';
 import RevenueAddOnItemsEditor from '../components/audit/RevenueAddOnItemsEditor';
 import WorkspacePublishBar from '../components/audit/WorkspacePublishBar';
@@ -188,11 +188,11 @@ export default function AuditWorkspace() {
     saveTimers.current[sectionId] = window.setTimeout(async () => {
       try {
         await updateAuditSection(sectionId, updates);
-        toast('Changes saved');
+        scheduleSavedToast(toast);
       } catch {
         // keep UI responsive
       }
-    }, 400);
+    }, 800);
   };
 
   const handlePublish = async () => {
@@ -232,7 +232,6 @@ export default function AuditWorkspace() {
           subtitle={client?.company_name}
           actions={
             <div className="flex items-center gap-3">
-              <WorkspaceSaveStatus />
               {audit.public_share_token ? (
                 <a
                   href={`/report/${audit.public_share_token}`}

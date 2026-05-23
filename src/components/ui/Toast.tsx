@@ -8,6 +8,17 @@ interface Toast {
 
 const ToastContext = createContext<(message: string) => void>(() => {});
 
+let savedToastTimer: ReturnType<typeof setTimeout> | null = null;
+
+/** Coalesced "Saved" toast — appears ~500ms after the last successful save in a burst. */
+export function scheduleSavedToast(showToast: (message: string) => void, delayMs = 500) {
+  if (savedToastTimer) clearTimeout(savedToastTimer);
+  savedToastTimer = setTimeout(() => {
+    showToast('Saved');
+    savedToastTimer = null;
+  }, delayMs);
+}
+
 export function useToast() {
   return useContext(ToastContext);
 }
@@ -21,19 +32,19 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setToasts(prev => [...prev, { id, message }]);
     setTimeout(() => {
       setToasts(prev => prev.filter(t => t.id !== id));
-    }, 2000);
+    }, 2200);
   }, []);
 
   return (
     <ToastContext.Provider value={showToast}>
       {children}
-      <div className="fixed bottom-6 right-6 z-[9999] flex flex-col gap-2 pointer-events-none">
+      <div className="fixed bottom-24 right-5 z-[9999] flex flex-col items-end gap-1.5 pointer-events-none">
         {toasts.map(t => (
           <div
             key={t.id}
-            className="flex items-center gap-2 bg-gray-900 text-white text-sm font-medium pl-3 pr-4 py-2.5 rounded-lg shadow-lg animate-slide-up pointer-events-auto"
+            className="flex items-center gap-1.5 rounded-md border border-gray-200/80 bg-white/95 px-2.5 py-1.5 text-xs font-medium text-gray-600 shadow-sm backdrop-blur-sm animate-slide-up pointer-events-auto"
           >
-            <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            <Check className="h-3 w-3 shrink-0 text-emerald-500" strokeWidth={2.5} />
             {t.message}
           </div>
         ))}

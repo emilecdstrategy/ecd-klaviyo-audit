@@ -9,6 +9,7 @@ import {
 } from 'react';
 import type { Audit, AuditSection } from '../../../lib/types';
 import { updateAudit, updateAuditSection } from '../../../lib/db';
+import { scheduleSavedToast, useToast } from '../../ui/Toast';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
@@ -150,6 +151,7 @@ export function ReportEditProvider({
 }) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const timers = useRef<Record<string, number>>({});
+  const toast = useToast();
 
   const schedule = useCallback((key: string, fn: () => Promise<void>) => {
     if (timers.current[key]) window.clearTimeout(timers.current[key]);
@@ -158,12 +160,14 @@ export function ReportEditProvider({
       try {
         await fn();
         setSaveStatus('saved');
-        window.setTimeout(() => setSaveStatus(s => (s === 'saved' ? 'idle' : s)), 2000);
+        scheduleSavedToast(toast);
+        window.setTimeout(() => setSaveStatus(s => (s === 'saved' ? 'idle' : s)), 2500);
       } catch {
         setSaveStatus('error');
+        toast('Could not save');
       }
-    }, 500) as unknown as number;
-  }, []);
+    }, 800) as unknown as number;
+  }, [toast]);
 
   const getExecPayload = useCallback(
     () => parseExecutiveSummary(audit.executive_summary || ''),

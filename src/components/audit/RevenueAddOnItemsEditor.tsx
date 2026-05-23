@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, GripVertical, Plus } from 'lucide-react';
 import type { Audit, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../../lib/types';
 import { listRevenueOpportunityTemplates, updateAudit } from '../../lib/db';
+import { scheduleSavedToast, useToast } from '../ui/Toast';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 
@@ -43,6 +44,7 @@ export default function RevenueAddOnItemsEditor({
   const [selectedTemplateSlug, setSelectedTemplateSlug] = useState('');
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const saveTimer = useRef<number | null>(null);
+  const toast = useToast();
 
   const layout = useMemo(
     () => ((audit.layout as Record<string, unknown> | null | undefined) ?? {}),
@@ -111,10 +113,11 @@ export default function RevenueAddOnItemsEditor({
     saveTimer.current = window.setTimeout(async () => {
       try {
         await updateAudit(audit.id, { layout: nextLayout });
+        scheduleSavedToast(toast);
       } catch {
-        // silent
+        toast('Could not save');
       }
-    }, 450) as unknown as number;
+    }, 800) as unknown as number;
   };
 
   const moveItem = (index: number, direction: -1 | 1) => {
