@@ -1,12 +1,6 @@
 import { ExternalLink } from 'lucide-react';
 import ReportBrandMark from './ReportBrandMark';
 
-const TRUST_BULLETS = [
-  'Klaviyo Platinum partner expertise',
-  'Clear next steps, not generic checklists',
-  'Revenue-focused lifecycle strategy',
-];
-
 export default function ReportTrustFooter({ preparedDate }: { preparedDate: string }) {
   return (
     <footer className="mt-16 border-t border-gray-200 bg-white">
@@ -18,14 +12,14 @@ export default function ReportTrustFooter({ preparedDate }: { preparedDate: stri
               ECD Digital Strategy is a revenue-focused e-commerce marketing agency helping DTC brands
               grow through email, SMS, and conversion optimization.
             </p>
-            <ul className="mt-5 space-y-2">
-              {TRUST_BULLETS.map(item => (
-                <li key={item} className="flex items-start gap-2 text-sm text-gray-700">
-                  <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-brand-primary" aria-hidden />
-                  {item}
-                </li>
-              ))}
-            </ul>
+            <div className="mt-5">
+              <img
+                src="/klaviyo-kpartners-platinum-badge.png"
+                alt="Klaviyo K:PARTNERS Elite partner badge"
+                className="h-12 w-auto max-w-[min(100%,280px)] object-contain object-left"
+                loading="lazy"
+              />
+            </div>
           </div>
 
           <div className="rounded-2xl border border-brand-primary/15 bg-brand-surface p-6">

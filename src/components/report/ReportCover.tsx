@@ -20,32 +20,34 @@ export default function ReportCover({
         aria-hidden
       />
 
-      <div className="relative px-8 py-10 sm:px-12 sm:py-14 lg:px-16 lg:py-16">
-        <ReportBrandMark size="lg" inverted subtitle="Klaviyo Email Audit Report" />
+      <div className="relative px-8 py-8 sm:px-12 sm:py-10 lg:px-14 lg:py-12">
+        <div className="flex flex-col gap-6 sm:flex-row sm:items-start sm:justify-between sm:gap-8">
+          <ReportBrandMark size="lg" inverted subtitle="Klaviyo Email Audit Report" />
 
-        <div className="mt-10 max-w-3xl">
+          <div className="flex flex-wrap items-center gap-x-6 gap-y-3 text-sm sm:shrink-0 sm:justify-end sm:text-right">
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/50">Report date</p>
+              <p className="mt-0.5 font-medium text-white/90">{preparedDate}</p>
+            </div>
+            <div className="hidden h-8 w-px bg-white/15 sm:block" aria-hidden />
+            <div>
+              <p className="text-[10px] font-semibold uppercase tracking-wider text-white/50">Deliverable</p>
+              <p className="mt-0.5 font-medium text-white/90">Klaviyo Lifecycle Audit</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="mt-8 max-w-3xl">
           <p className="text-[11px] font-bold uppercase tracking-[0.22em] text-white/60 mb-3">
             Prepared for
           </p>
           <h1 className="text-3xl font-extrabold tracking-tight sm:text-4xl lg:text-[2.75rem] lg:leading-[1.1]">
             {companyName}
           </h1>
-          <p className="mt-5 text-base leading-relaxed text-white/80 sm:text-lg max-w-2xl">
-            A strategic review of your Klaviyo account — what&apos;s working, what needs attention,
+          <p className="mt-4 text-base leading-relaxed text-white/80 sm:text-lg max-w-2xl">
+            A strategic review of your Klaviyo account. What&apos;s working, what needs attention,
             and where revenue is being left on the table.
           </p>
-        </div>
-
-        <div className="mt-10 flex flex-wrap items-center gap-6 border-t border-white/15 pt-6 text-sm">
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/50">Report date</p>
-            <p className="mt-0.5 font-medium text-white/90">{preparedDate}</p>
-          </div>
-          <div className="hidden h-8 w-px bg-white/15 sm:block" aria-hidden />
-          <div>
-            <p className="text-[10px] font-semibold uppercase tracking-wider text-white/50">Deliverable</p>
-            <p className="mt-0.5 font-medium text-white/90">Klaviyo Lifecycle Audit</p>
-          </div>
         </div>
       </div>
     </div>
