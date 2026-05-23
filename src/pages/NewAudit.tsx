@@ -594,8 +594,14 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
       const totalOpportunity = ai.sections.reduce((sum, s) => sum + (Number((s as any).revenue_opportunity) || 0), 0);
 
-      const execPayload = (ai.strengths?.length || ai.concerns?.length || ai.implementationTimeline?.length)
-        ? JSON.stringify({ text: ai.executiveSummary, strengths: ai.strengths ?? [], concerns: ai.concerns ?? [], timeline: ai.implementationTimeline ?? [] })
+      const execPayload = (ai.strengths?.length || ai.concerns?.length || ai.findings?.length || ai.implementationTimeline?.length)
+        ? JSON.stringify({
+            text: ai.executiveSummary,
+            findings: ai.findings ?? [],
+            strengths: ai.strengths ?? [],
+            concerns: ai.concerns ?? [],
+            timeline: ai.implementationTimeline ?? [],
+          })
         : ai.executiveSummary;
 
       await updateAudit(audit.id, {

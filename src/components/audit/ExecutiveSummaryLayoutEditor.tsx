@@ -75,9 +75,15 @@ export default function ExecutiveSummaryLayoutEditor({
     extras?: Array<{ key: 'headline' | 'intro' | 'eyebrow'; label: string; hint?: string; textarea?: boolean }>;
   }[] = [
     {
+      key: 'findings',
+      label: 'Key Findings list',
+      hint: 'Five numbered problem statements shown first in the Executive Summary. Edit the text in the Key Findings panel above.',
+      hasTitle: true,
+    },
+    {
       key: 'hero',
-      label: 'Hero headline + intro',
-      hint: '"X could unlock $Y/month" banner with the intro paragraph underneath.',
+      label: 'Optional intro banner',
+      hint: 'Optional eyebrow, headline, and intro paragraph. Hidden by default. Does not show revenue figures.',
       hasTitle: false,
       extras: [
         {
@@ -88,7 +94,7 @@ export default function ExecutiveSummaryLayoutEditor({
         {
           key: 'headline',
           label: 'Headline',
-          hint: 'Leave blank to auto-generate. Type [hide] to remove.',
+          hint: 'Leave blank for a neutral default. Type [hide] to remove.',
           textarea: true,
         },
         {
@@ -108,13 +114,7 @@ export default function ExecutiveSummaryLayoutEditor({
     {
       key: 'strengths',
       label: "What's Working column",
-      hint: 'Left-hand column of AI-generated strengths.',
-      hasTitle: true,
-    },
-    {
-      key: 'concerns',
-      label: 'What Needs Attention column',
-      hint: 'Right-hand column of AI-generated concerns.',
+      hint: 'AI-generated strengths shown below the findings.',
       hasTitle: true,
     },
   ];

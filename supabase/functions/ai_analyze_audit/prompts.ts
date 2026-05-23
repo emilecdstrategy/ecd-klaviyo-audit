@@ -82,7 +82,14 @@ export function buildAuditSystemPrompt() {
     "Don't inflate numbers to look impressive, but don't undersell real gaps either. A missing Abandoned Cart flow on a $50,000/mo account is easily worth $10,000-$15,000/mo, not $1,200/mo.",
     "Reference specific flow names, campaign names, segment names, and form names from the data.",
     "Do not use placeholders, hedging, or vague generic statements.",
-    "EXECUTIVE SUMMARY: Keep the top executiveSummary text to 1-2 sentences max (no long paragraphs).",
+    "EXECUTIVE SUMMARY: Keep the top executiveSummary text to 1-2 sentences max (no long paragraphs). Do NOT include dollar amounts or revenue promises in executiveSummary.",
+    "",
+    "FINDINGS: Return exactly 5 strings in the findings array. These are the numbered problem statements shown first on the client report.",
+    "Each finding is a specific gap or issue with a bold lead phrase and supporting evidence from the data.",
+    "Format: '**Bold problem**, specific evidence from the account.'",
+    "Rank by business impact (most critical first).",
+    "NEVER include dollar amounts, monthly revenue figures, 'unlock $X', or revenue opportunity language in findings.",
+    "Example findings: '**No active post-purchase flow**, which means repeat purchase revenue is not being captured after the first order', '**45 draft flows sitting idle**, including flows that previously generated revenue'.",
     "",
     "STRENGTHS and CONCERNS: Return 4-6 items in each array.",
     "Each item is a single sentence with a bold lead phrase followed by supporting detail.",
@@ -301,7 +308,7 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
       mode === "sections_only"
         ? "Generate ONLY the requested audit sections below. Do NOT include executiveSummary, strengths, concerns, or implementationTimeline."
         : mode === "top_level_only"
-          ? "Generate ONLY top-level findings (executiveSummary, strengths, concerns, implementationTimeline). Do NOT include section objects."
+          ? "Generate ONLY top-level findings (executiveSummary, findings, strengths, concerns, implementationTimeline). Do NOT include section objects."
           : "Generate a full audit analysis based on the actual Klaviyo account data provided below.",
     client_info: {
       name: data.clientName || data.companyName,
@@ -352,6 +359,7 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
 
   if (mode !== "sections_only") {
     payload.required_top_level_fields = {
+      findings: "Array of exactly 5 strings. Each is a problem statement ranked by impact. Bold lead phrase plus evidence. No dollar amounts or revenue language.",
       strengths: "Array of 4-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages. Write naturally, no em-dashes, use commas and plain language.",
       concerns: "Array of 4-6 strings. Each is a specific issue or gap with bold lead phrase and evidence. Reference actual missing flows, underperforming metrics, inactive flows by name. Write naturally, no em-dashes.",
       implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
@@ -400,6 +408,7 @@ export type RefineBaseline = {
   companyName?: string;
   clientName?: string;
   executiveSummary: string;
+  findings: string[];
   strengths: string[];
   concerns: string[];
   implementationTimeline: Array<{ phase: string; timeframe: string; label: string; items: string[] }>;
@@ -417,7 +426,7 @@ export function buildRefineSystemPrompt() {
   return [
     "You are refining an existing Klaviyo audit report for a client using NEW context from sales calls, internal notes, and custom instructions.",
     "The baseline audit was generated from Klaviyo data alone and is technically sound.",
-    "Your job: adjust priorities, tone, executive summary, strengths, concerns, implementation timeline, and section narratives so they align with the client's stated goals, constraints, and conversation context.",
+    "Your job: adjust priorities, tone, executive summary, findings, strengths, concerns, implementation timeline, and section narratives so they align with the client's stated goals, constraints, and conversation context.",
     "Do NOT invent Klaviyo facts or metrics that are not implied by the baseline. You may reprioritize and rephrase based on client context.",
     "Preserve realistic revenue_opportunity numbers unless context clearly warrants reprioritization. Do not multiply all numbers arbitrarily.",
     "Return only valid JSON matching the full audit schema (all six sections required).",

@@ -8,6 +8,7 @@ import { AI_SCHEMA_VERSION, AUDIT_SECTION_KEYS } from './ai/schema';
 interface AIAnalysisResult {
   sections: Partial<AuditSection>[];
   executiveSummary: string;
+  findings?: string[];
   strengths?: string[];
   concerns?: string[];
   implementationTimeline?: { phase: string; timeframe: string; label: string; items: string[] }[];
@@ -49,6 +50,8 @@ function hasTopLevelPayload(data: any): boolean {
     data &&
     data.schemaVersion === AI_SCHEMA_VERSION &&
     typeof data.executiveSummary === 'string' &&
+    Array.isArray(data.findings) &&
+    data.findings.length === 5 &&
     Array.isArray(data.strengths) &&
     Array.isArray(data.concerns) &&
     Array.isArray(data.implementationTimeline),
@@ -188,6 +191,7 @@ export async function runAIAnalysis(
     );
 
     let executiveSummary = top.executiveSummary;
+    let findingsOut = top.findings ?? [];
     let strengthsOut = top.strengths ?? [];
     let concernsOut = top.concerns ?? [];
     let timelineOut = top.implementationTimeline ?? [];
@@ -198,6 +202,7 @@ export async function runAIAnalysis(
         companyName: wizardData.companyName,
         clientName: wizardData.clientName,
         executiveSummary,
+        findings: findingsOut,
         strengths: strengthsOut,
         concerns: concernsOut,
         implementationTimeline: timelineOut,
@@ -218,6 +223,7 @@ export async function runAIAnalysis(
           'client context refinement',
         );
         executiveSummary = refined.executiveSummary;
+        findingsOut = refined.findings ?? findingsOut;
         strengthsOut = refined.strengths ?? strengthsOut;
         concernsOut = refined.concerns ?? concernsOut;
         timelineOut = refined.implementationTimeline ?? timelineOut;
@@ -233,6 +239,7 @@ export async function runAIAnalysis(
 
     return {
       executiveSummary,
+      findings: findingsOut,
       strengths: strengthsOut,
       concerns: concernsOut,
       implementationTimeline: timelineOut,
@@ -251,10 +258,33 @@ export async function runAIAnalysis(
   // Explicitly gated development fallback only.
   await new Promise(r => setTimeout(r, 3000));
 
-  const { industry, listSize, aov } = wizardData;
+  const { industry, listSize } = wizardData;
 
   return {
-    executiveSummary: `Based on our analysis of your ${industry} Klaviyo account with ${listSize.toLocaleString()} subscribers, we've identified several high-impact opportunities to improve email revenue performance. Your current setup has meaningful gaps in automated flow coverage, segmentation depth, and signup form optimization. Implementing our recommended changes could unlock an estimated $${Math.round(listSize * aov * 0.02).toLocaleString()}/month in additional revenue.`,
+    executiveSummary: `Based on our analysis of your ${industry} Klaviyo account with ${listSize.toLocaleString()} subscribers, we've identified several high-impact gaps in automated flow coverage, segmentation depth, and signup form optimization that are limiting email performance.`,
+    findings: [
+      '**Missing browse abandonment flow**, so shoppers who view products but do not purchase are not being recovered automatically',
+      '**No post-purchase sequence**, which means repeat purchase and cross-sell opportunities are not being captured after the first order',
+      '**Minimal segmentation in use**, with campaigns going to broad lists instead of engaged or high-value audiences',
+      '**Inconsistent campaign cadence**, with long gaps between sends and limited content variety beyond promotions',
+      '**Basic signup forms only**, with no exit-intent trigger or multi-step flow to capture more subscribers on site',
+    ],
+    strengths: [
+      '**Abandoned cart flow is live**, providing a foundation for automated revenue recovery',
+      '**Active campaign program**, showing the team is already investing in email as a channel',
+      '**List size supports segmentation**, with enough subscribers to build meaningful audience tiers',
+    ],
+    concerns: [
+      '**Missing browse abandonment flow**, leaving product-view recovery on the table',
+      '**No post-purchase automation**, limiting repeat purchase revenue',
+      '**Broad list sends**, reducing relevance and engagement over time',
+    ],
+    implementationTimeline: [
+      { phase: 'Quick Wins', timeframe: 'Week 1-2', label: 'Activate low-effort fixes', items: ['Review draft flows for quick activation', 'Audit signup form placement'] },
+      { phase: 'Core Flows', timeframe: 'Week 3-6', label: 'Build revenue flows', items: ['Launch browse abandonment', 'Build post-purchase sequence'] },
+      { phase: 'Strategic', timeframe: 'Month 2-3', label: 'Segmentation and testing', items: ['Create engagement tiers', 'Establish campaign testing cadence'] },
+      { phase: 'Long-Term', timeframe: 'Month 3+', label: 'Advanced personalization', items: ['RFM-based targeting', 'Dynamic content blocks'] },
+    ],
     sections: [
       {
         section_key: 'account_health',

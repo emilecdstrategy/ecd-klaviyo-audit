@@ -200,6 +200,7 @@ export interface ExecutiveSummarySectionConfig extends BaseSectionConfig {
       /** Override the leading eyebrow tag ("Klaviyo Email Audit — X"). Null hides it. */
       eyebrow?: string | null;
     };
+    findings?: GenericBlockConfig;
     accountSnapshot?: GenericBlockConfig;
     strengths?: GenericBlockConfig;
     concerns?: GenericBlockConfig;

@@ -203,6 +203,7 @@ export default function PublicReport() {
   const reportSections = sections.filter(s => s.section_key !== 'revenue_summary' && s.status !== 'draft');
 
   let execText = audit.executive_summary || '';
+  let aiFindings: string[] = [];
   let aiStrengths: string[] = [];
   let aiConcerns: string[] = [];
   let aiTimeline: { phase: string; timeframe: string; label: string; items: string[] }[] = [];
@@ -210,12 +211,16 @@ export default function PublicReport() {
     const parsed = JSON.parse(execText);
     if (parsed && typeof parsed.text === 'string') {
       execText = parsed.text;
+      aiFindings = Array.isArray(parsed.findings) ? parsed.findings : [];
       aiStrengths = Array.isArray(parsed.strengths) ? parsed.strengths : [];
       aiConcerns = Array.isArray(parsed.concerns) ? parsed.concerns : [];
       aiTimeline = Array.isArray(parsed.timeline) ? parsed.timeline : [];
     }
   } catch {
     // plain text — keep as-is
+  }
+  if (aiFindings.length === 0 && aiConcerns.length > 0) {
+    aiFindings = aiConcerns.slice(0, 5);
   }
 
   const stripInlineBoldMarkers = (s: string) => s.replace(/\*\*(.+?)\*\*/g, '$1');
@@ -376,19 +381,38 @@ export default function PublicReport() {
             label={executiveSummaryCfg.sectionTitle ?? 'Executive Summary'}
           />
 
+          {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'findings') && aiFindings.length > 0 && (
+            <div className="bg-white rounded-2xl p-8 border border-gray-100 mb-6">
+              <h3 className="text-lg font-bold text-gray-900 mb-6">
+                {executiveSummaryCfg.blocks.findings?.title ?? 'Key Findings'}
+              </h3>
+              <ol className="space-y-5">
+                {aiFindings.slice(0, 5).map((finding, i) => (
+                  <li key={i} className="flex items-start gap-4">
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10 text-sm font-bold text-brand-primary tabular-nums">
+                      {String(i + 1).padStart(2, '0')}
+                    </span>
+                    <RichAuditText
+                      text={finding}
+                      className="text-base text-gray-700 leading-relaxed pt-1.5"
+                    />
+                  </li>
+                ))}
+              </ol>
+            </div>
+          )}
+
           {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'hero') && (() => {
             const hero = executiveSummaryCfg.blocks.hero;
             const eyebrow = hero?.eyebrow;
             const headline = hero?.headline;
             const intro = hero?.intro;
-            const defaultHeadline = (
-              <>
-                {client.company_name} could unlock{' '}
-                <span className="text-brand-primary">{formatCurrency(totalRevenue)}/month</span>{' '}
-                in additional email revenue.
-              </>
-            );
+            const defaultHeadline = `Klaviyo audit overview for ${client.company_name}`;
             const defaultIntro = toOneOrTwoSentences(execText?.split('\n')[0] || '');
+            const showHeadline = headline !== null;
+            const showIntro = intro !== null;
+            if (!showHeadline && !showIntro && !eyebrow && eyebrow !== undefined) return null;
+            if (!showHeadline && !showIntro && eyebrow === undefined && !defaultIntro) return null;
             return (
               <div className="bg-white rounded-2xl p-8 border border-gray-100 mb-6">
                 {eyebrow !== null && (
@@ -396,12 +420,12 @@ export default function PublicReport() {
                     {eyebrow ?? `Klaviyo Email Audit — ${client.company_name}`}
                   </p>
                 )}
-                {headline !== null && (
+                {showHeadline && (
                   <h1 className="text-3xl lg:text-4xl font-extrabold text-gray-900 leading-tight mb-5">
                     {typeof headline === 'string' && headline.length > 0 ? headline : defaultHeadline}
                   </h1>
                 )}
-                {intro !== null && (
+                {showIntro && (
                   <RichAuditText
                     text={typeof intro === 'string' && intro.length > 0 ? intro : defaultIntro}
                     className="text-base text-gray-600 leading-relaxed"
@@ -427,15 +451,8 @@ export default function PublicReport() {
               </div>
             )}
 
-          {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'strengths') ||
-            isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'concerns')) && (
-          <div className={`grid grid-cols-1 ${
-            isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'strengths') &&
-            isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'concerns')
-              ? 'lg:grid-cols-2'
-              : ''
-          } gap-5 mb-6`}>
-            {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'strengths') && (
+          {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'strengths') && (
+          <div className="mb-6">
             <div className="bg-white rounded-xl p-5 border border-gray-100">
               <div className="flex items-center gap-2 mb-4">
                 <CheckCircle2 className="w-4 h-4 text-emerald-500" />
@@ -462,35 +479,6 @@ export default function PublicReport() {
                 )}
               </ul>
             </div>
-            )}
-            {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'concerns') && (
-            <div className="bg-white rounded-xl p-5 border border-gray-100">
-              <div className="flex items-center gap-2 mb-4">
-                <AlertTriangle className="w-4 h-4 text-red-400" />
-                <h3 className="text-sm font-semibold text-gray-900">
-                  {executiveSummaryCfg.blocks.concerns?.title ?? 'What Needs Attention'}
-                </h3>
-              </div>
-              <ul className="space-y-3">
-                {aiConcerns.length > 0 ? aiConcerns.map((s, i) => {
-                  const dashIdx = s.indexOf(' — ');
-                  const bold = stripInlineBoldMarkers(dashIdx > 0 ? s.slice(0, dashIdx) : s);
-                  const rest = dashIdx > 0 ? s.slice(dashIdx + 3) : '';
-                  return (
-                    <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                      <span className="text-red-400 mt-0.5 shrink-0">→</span>
-                      <span>
-                        <span className="font-semibold block">{bold}</span>
-                        {rest && <RichAuditText text={rest} className="block text-gray-600 leading-relaxed mt-0.5" />}
-                      </span>
-                    </li>
-                  );
-                }) : (
-                  <li className="text-sm text-gray-500">AI overview not available for this audit run.</li>
-                )}
-              </ul>
-            </div>
-            )}
           </div>
           )}
 

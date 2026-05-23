@@ -256,10 +256,15 @@ export const DEFAULT_EXECUTIVE_SUMMARY_SECTION: ExecutiveSummarySectionConfig = 
   sectionSubtitle: undefined,
   blocks: {
     hero: {
-      hidden: false,
+      hidden: true,
       headline: undefined,
       intro: undefined,
       eyebrow: undefined,
+    },
+    findings: {
+      hidden: false,
+      title: 'Key Findings',
+      subtitle: undefined,
     },
     accountSnapshot: {
       hidden: false,
@@ -272,7 +277,7 @@ export const DEFAULT_EXECUTIVE_SUMMARY_SECTION: ExecutiveSummarySectionConfig = 
       subtitle: undefined,
     },
     concerns: {
-      hidden: false,
+      hidden: true,
       title: 'What Needs Attention',
       subtitle: undefined,
     },

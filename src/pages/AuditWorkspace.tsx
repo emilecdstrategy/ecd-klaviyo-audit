@@ -8,6 +8,7 @@ import SnapshotRowsEditor from '../components/audit/SnapshotRowsEditor';
 import RevenueSummaryLayoutEditor from '../components/audit/RevenueSummaryLayoutEditor';
 import RevenueAddOnItemsEditor from '../components/audit/RevenueAddOnItemsEditor';
 import ExecutiveSummaryLayoutEditor from '../components/audit/ExecutiveSummaryLayoutEditor';
+import ExecutiveSummaryFindingsEditor from '../components/audit/ExecutiveSummaryFindingsEditor';
 import RevenueOpportunityCard from '../components/ui/RevenueOpportunityCard';
 import ShareLinkPanel from '../components/ui/ShareLinkPanel';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -432,6 +433,8 @@ export default function AuditWorkspace() {
                   placeholder="Enter the executive summary..."
                 />
               </div>
+
+              <ExecutiveSummaryFindingsEditor audit={audit} onAuditChange={setAudit} />
 
               <ExecutiveSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
               <RevenueSummaryLayoutEditor audit={audit} onAuditChange={setAudit} />
