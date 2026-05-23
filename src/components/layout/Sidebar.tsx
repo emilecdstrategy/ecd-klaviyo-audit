@@ -4,7 +4,6 @@ import {
   Users,
   ClipboardCheck,
   Settings,
-  Zap,
   LogOut,
   ChevronLeft,
   ChevronRight,
@@ -24,8 +23,14 @@ const NAV_ITEMS = [
 ];
 
 const ADMIN_ITEMS = [
-  { to: '/admin', icon: Settings, label: 'Settings' },
+  { to: '/admin', icon: Settings, label: 'Settings', prefetch: () => import('../../pages/AdminArea') },
 ];
+
+const NAV_PREFETCH: Record<string, () => Promise<unknown>> = {
+  '/': () => import('../../pages/Dashboard'),
+  '/clients': () => import('../../pages/Clients'),
+  '/audits': () => import('../../pages/Audits'),
+};
 
 export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }: SidebarProps) {
   const [collapsedState, setCollapsedState] = useState(false);
@@ -80,9 +85,13 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
         className="flex items-center gap-2.5 px-4 h-16 border-b border-gray-100 shrink-0 hover:bg-gray-50 transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand-primary/30 focus-visible:ring-inset"
         aria-label="Go to Dashboard"
       >
-        <div className="w-8 h-8 rounded-lg bg-brand-primary flex items-center justify-center shrink-0">
-          <Zap className="w-4 h-4 text-white" />
-        </div>
+        <img
+          src="/cropped-favicon-192x192.webp"
+          alt=""
+          className="h-8 w-8 rounded-lg object-cover shadow-sm ring-1 ring-black/5 shrink-0"
+          width={32}
+          height={32}
+        />
         {!collapsed && (
           <div className="overflow-hidden">
             <span className="font-bold text-sm text-gray-900 whitespace-nowrap">ECD Audit</span>
@@ -93,7 +102,13 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
 
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
         {NAV_ITEMS.map(item => (
-          <NavLink key={item.to} to={item.to} end={item.to === '/'} className={linkClass}>
+          <NavLink
+            key={item.to}
+            to={item.to}
+            end={item.to === '/'}
+            className={linkClass}
+            onMouseEnter={() => { void NAV_PREFETCH[item.to]?.(); }}
+          >
             <item.icon className="w-[18px] h-[18px] shrink-0" />
             {!collapsed && <span>{item.label}</span>}
           </NavLink>
@@ -105,7 +120,12 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
               {!collapsed && <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-300">Settings</span>}
             </div>
             {ADMIN_ITEMS.map(item => (
-              <NavLink key={item.to} to={item.to} className={linkClass}>
+              <NavLink
+                key={item.to}
+                to={item.to}
+                className={linkClass}
+                onMouseEnter={() => { void item.prefetch?.(); }}
+              >
                 <item.icon className="w-[18px] h-[18px] shrink-0" />
                 {!collapsed && <span>{item.label}</span>}
               </NavLink>

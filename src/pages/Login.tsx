@@ -1,6 +1,7 @@
 import { useState } from 'react';
-import { Zap, ArrowRight, Mail } from 'lucide-react';
+import { ArrowRight, Mail } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
+import ReportBrandMark from '../components/report/ReportBrandMark';
 
 export default function Login() {
   const { sendMagicLink, authError } = useAuth();
@@ -27,14 +28,8 @@ export default function Login() {
     <div className="min-h-screen bg-white flex">
       <div className="flex-1 flex items-center justify-center p-8">
         <div className="w-full max-w-md">
-          <div className="flex items-center gap-3 mb-8">
-            <div className="w-10 h-10 rounded-xl gradient-bg flex items-center justify-center">
-              <Zap className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <h1 className="text-xl font-bold text-gray-900">ECD Audit Dashboard</h1>
-              <p className="text-sm text-gray-500">Klaviyo Audit Platform</p>
-            </div>
+          <div className="mb-8">
+            <ReportBrandMark size="md" subtitle="Klaviyo Audit Platform" />
           </div>
 
           <h2 className="text-2xl font-bold text-gray-900 mb-2">Sign in</h2>

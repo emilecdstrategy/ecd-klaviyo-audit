@@ -1,5 +1,6 @@
 import { useParams } from 'react-router-dom';
 import AuditReportView from '../components/report/AuditReportView';
+import AppPreloader from '../components/ui/AppPreloader';
 import { useAuditReportData } from '../hooks/useAuditReportData';
 
 export default function PublicReport() {
@@ -7,13 +8,7 @@ export default function PublicReport() {
   const { loading, loadError, data } = useAuditReportData(token);
 
   if (loading) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <p className="text-gray-500">Loading report...</p>
-        </div>
-      </div>
-    );
+    return <AppPreloader message="Loading report…" />;
   }
 
   if (loadError) {

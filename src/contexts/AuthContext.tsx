@@ -1,6 +1,7 @@
-import { createContext, useContext, useState, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useRef, type ReactNode } from 'react';
 import { supabase } from '../lib/supabase';
 import type { Profile, UserRole } from '../lib/types';
+import { clearCachedProfile, readCachedProfile, writeCachedProfile } from '../lib/profile-cache';
 
 interface AuthState {
   user: Profile | null;
@@ -13,97 +14,100 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
-export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<Profile | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [authError, setAuthError] = useState('');
+const PROFILE_COLUMNS = 'id,name,email,role,created_at';
+const ADMIN_DOMAIN = 'ecdigitalstrategy.com';
 
-  const ADMIN_DOMAIN = 'ecdigitalstrategy.com';
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const cachedProfile = readCachedProfile();
+  const [user, setUser] = useState<Profile | null>(cachedProfile);
+  const [isLoading, setIsLoading] = useState(!cachedProfile);
+  const [authError, setAuthError] = useState('');
+  const handlingUserId = useRef<string | null>(null);
 
   useEffect(() => {
     let isMounted = true;
 
     const handleSessionUser = async (sessionUser: { id: string; email?: string | null }) => {
+      if (handlingUserId.current === sessionUser.id) return;
+      handlingUserId.current = sessionUser.id;
+
       const email = (sessionUser.email ?? '').toLowerCase().trim();
 
-      const { data: existing, error: profileErr } = await supabase
-        .from('profiles')
-        .select('*')
-        .eq('id', sessionUser.id)
-        .maybeSingle();
+      try {
+        const { data: existing, error: profileErr } = await supabase
+          .from('profiles')
+          .select(PROFILE_COLUMNS)
+          .eq('id', sessionUser.id)
+          .maybeSingle();
 
-      if (!isMounted) return;
-      if (profileErr) {
-        setAuthError(profileErr.message);
-        return;
-      }
-
-      if (existing) {
-        setUser(existing);
-        setAuthError('');
-        return;
-      }
-
-      const isEcdEmail = email.endsWith(`@${ADMIN_DOMAIN}`);
-      if (!isEcdEmail) {
-        setAuthError('Your account has not been set up yet. Please contact the ECD team.');
-        await supabase.auth.signOut();
         if (!isMounted) return;
-        setUser(null);
-        return;
+        if (profileErr) {
+          setAuthError(profileErr.message);
+          return;
+        }
+
+        if (existing) {
+          setUser(existing);
+          writeCachedProfile(existing);
+          setAuthError('');
+          return;
+        }
+
+        const isEcdEmail = email.endsWith(`@${ADMIN_DOMAIN}`);
+        if (!isEcdEmail) {
+          setAuthError('Your account has not been set up yet. Please contact the ECD team.');
+          await supabase.auth.signOut();
+          if (!isMounted) return;
+          setUser(null);
+          clearCachedProfile();
+          return;
+        }
+
+        const defaultName = (email.split('@')[0] || '').replace(/\./g, ' ').trim();
+        const { data: created, error: insertErr } = await supabase
+          .from('profiles')
+          .insert({
+            id: sessionUser.id,
+            name: defaultName,
+            email,
+            role: 'admin',
+          })
+          .select(PROFILE_COLUMNS)
+          .single();
+
+        if (!isMounted) return;
+        if (insertErr) {
+          setAuthError(insertErr.message);
+          return;
+        }
+
+        setUser(created);
+        writeCachedProfile(created);
+        setAuthError('');
+      } finally {
+        if (handlingUserId.current === sessionUser.id) {
+          handlingUserId.current = null;
+        }
       }
-
-      const defaultName = (email.split('@')[0] || '').replace(/\./g, ' ').trim();
-      const { data: created, error: insertErr } = await supabase
-        .from('profiles')
-        .insert({
-          id: sessionUser.id,
-          name: defaultName,
-          email,
-          role: 'admin',
-        })
-        .select('*')
-        .single();
-
-      if (!isMounted) return;
-      if (insertErr) {
-        setAuthError(insertErr.message);
-        return;
-      }
-
-      setUser(created);
-      setAuthError('');
     };
 
-    const init = async () => {
-      const { data, error } = await supabase.auth.getSession();
-      if (!isMounted) return;
-
-      if (error) setAuthError(error.message);
-
-      const sessionUser = data.session?.user
-        ? { id: data.session.user.id, email: data.session.user.email }
-        : null;
-
-      if (sessionUser) {
-        await handleSessionUser(sessionUser);
-      }
-      if (isMounted) setIsLoading(false);
-    };
-
-    void init();
-
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, session) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       if (session?.user) {
         void handleSessionUser({ id: session.user.id, email: session.user.email });
       } else {
+        handlingUserId.current = null;
         setUser(null);
+        clearCachedProfile();
+      }
+
+      if (event === 'INITIAL_SESSION' && isMounted) {
+        setIsLoading(false);
       }
     });
 
     return () => {
       isMounted = false;
-      sub.subscription.unsubscribe();
+      subscription.unsubscribe();
     };
   }, []);
 
@@ -124,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const signOut = async () => {
     await supabase.auth.signOut();
     setUser(null);
+    clearCachedProfile();
   };
 
   const hasRole = (role: UserRole | UserRole[]) => {

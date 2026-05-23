@@ -1,6 +1,8 @@
+import { Suspense } from 'react';
 import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { useEffect, useMemo, useState } from 'react';
+import AppPreloader from '../ui/AppPreloader';
 
 const AUDIT_WORKSPACE_PATH = /^\/audits\/[^/]+$/;
 
@@ -18,7 +20,9 @@ export default function AppShell() {
       <Sidebar collapsed={collapsed} onCollapsedChange={setCollapsed} />
       <div className={`${collapsed ? 'ml-[68px]' : 'ml-[240px]'} flex flex-col min-h-screen transition-[margin] duration-300`}>
         <main className="flex-1">
-          <Outlet />
+          <Suspense fallback={<AppPreloader compact />}>
+            <Outlet />
+          </Suspense>
         </main>
       </div>
     </div>
