@@ -26,7 +26,7 @@ export default function ReportHealthScore({ scores }: ReportHealthScoreProps) {
   const badCount = scores.filter(s => s.status === 'bad').length;
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+    <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="grid grid-cols-1 lg:grid-cols-3 divide-y lg:divide-y-0 lg:divide-x divide-gray-100">
         <div className="p-8 flex flex-col items-center justify-center">
           <svg width="120" height="120" viewBox="0 0 100 100" className="mb-4">

@@ -1,6 +1,7 @@
 import { Fragment, useState } from 'react';
-import { ChevronDown, ChevronUp } from 'lucide-react';
+import { ChevronDown, ChevronUp, GitBranch } from 'lucide-react';
 import { RichAuditText } from '../ui/RichAuditText';
+import ReportBlockHeader from './ReportBlockHeader';
 import { cn } from '../../lib/utils';
 
 export type CoreFlowRow = {
@@ -78,11 +79,16 @@ export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] })
   if (!rows.length) return null;
 
   return (
-    <div className="mb-4 overflow-hidden rounded-xl border border-gray-100 bg-white">
-      <div className="border-b border-gray-100 bg-gradient-to-r from-brand-surface to-white px-5 py-3">
-        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Core Flows Matrix</p>
-        <p className="mt-0.5 text-sm text-gray-500">Quick status check — expand a row for structure notes.</p>
-      </div>
+    <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+      <ReportBlockHeader
+        icon={
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
+            <GitBranch className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
+          </div>
+        }
+        title="Core Flows Matrix"
+        subtitle="Quick status check — expand a row for structure notes."
+      />
 
       <div className="overflow-x-auto">
         <table className="w-full min-w-[520px] text-sm">

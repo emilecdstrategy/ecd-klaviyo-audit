@@ -1,6 +1,6 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode } from 'react';
 import { useParams } from 'react-router-dom';
-import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X } from 'lucide-react';
+import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays } from 'lucide-react';
 import { SECTION_LABELS } from '../lib/constants';
 import { formatCurrency } from '../lib/revenue-calculator';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
@@ -20,6 +20,7 @@ import ReportSectionHeader from '../components/report/ReportSectionHeader';
 import ReportKeyFindings from '../components/report/ReportKeyFindings';
 import ReportStrengthsPanel from '../components/report/ReportStrengthsPanel';
 import ReportTrustFooter from '../components/report/ReportTrustFooter';
+import ReportBlockHeader from '../components/report/ReportBlockHeader';
 import { RichAuditText } from '../components/ui/RichAuditText';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem } from '../lib/types';
 import { getPublicReportByToken, getPlatformSettings } from '../lib/db';
@@ -396,7 +397,7 @@ export default function PublicReport() {
             if (!showHeadline && !showIntro && !eyebrow && eyebrow !== undefined) return null;
             if (!showHeadline && !showIntro && eyebrow === undefined && !defaultIntro) return null;
             return (
-              <div className="bg-white rounded-2xl p-8 border border-gray-100 mb-6">
+              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">
                 {eyebrow !== null && (
                   <p className="text-xs font-semibold text-brand-primary uppercase tracking-widest mb-3">
                     {eyebrow ?? `Klaviyo Email Audit — ${client.company_name}`}
@@ -419,17 +420,25 @@ export default function PublicReport() {
 
           {isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'accountSnapshot') &&
             (flowSnapshots.length > 0 || campaignSnapshots.length > 0) && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
-                <h3 className="text-lg font-bold text-gray-900 mb-4">
-                  {executiveSummaryCfg.blocks.accountSnapshot?.title ?? 'Account Snapshot'}
-                </h3>
-                <ReportAccountSnapshot
+              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+                <ReportBlockHeader
+                  icon={
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
+                      <LayoutDashboard className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
+                    </div>
+                  }
+                  title={executiveSummaryCfg.blocks.accountSnapshot?.title ?? 'Account Snapshot'}
+                  subtitle="Live metrics pulled from Klaviyo at the time of this audit"
+                />
+                <div className="p-6">
+                  <ReportAccountSnapshot
                   flowSnapshots={flowSnapshots as any}
                   flowPerformance={flowPerformance}
                   campaignSnapshots={campaignSnapshots as any}
                   reportingDiagnostic={reportingDiagnostic}
                   accountSnapshot={accountSnapshot}
                 />
+                </div>
               </div>
             )}
 
@@ -492,7 +501,7 @@ export default function PublicReport() {
             })()}
 
             {isFlowsBlockVisible(flowsCfg, 'healthScore') && flowPerformance.length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
+              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
                 <ReportFlowHealthScore
                   snapshots={flowSnapshots as any}
                   performance={flowPerformance}
@@ -505,7 +514,7 @@ export default function PublicReport() {
             )}
 
             {isFlowsBlockVisible(flowsCfg, 'revenueBreakdown') && flowPerformance.length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6 p-6">
+              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
                 <ReportFlowRevenueBreakdown
                   performance={flowPerformance}
                   title={flowsCfg.blocks.revenueBreakdown?.title}
@@ -515,12 +524,15 @@ export default function PublicReport() {
             )}
 
             {isFlowsBlockVisible(flowsCfg, 'flowTable') && flowPerformance.length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mb-6">
-                <div className="px-6 py-4 border-b border-gray-50">
-                  <h3 className="text-lg font-bold text-gray-900">
-                    {flowsCfg.blocks.flowTable?.title ?? 'Flow Performance Details'}
-                  </h3>
-                </div>
+              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+                <ReportBlockHeader
+                  icon={
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
+                      <Activity className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
+                    </div>
+                  }
+                  title={flowsCfg.blocks.flowTable?.title ?? 'Flow Performance Details'}
+                />
                 <div className="p-6">
                   <ReportFlowTable
                     flows={flowPerformance}
@@ -532,20 +544,16 @@ export default function PublicReport() {
               </div>
             )}
 
-            {isFlowsBlockVisible(flowsCfg, 'inventoryTable') && flowSnapshots.length > 0 && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                <div className="px-6 py-4 border-b border-gray-50">
-                  <h3 className="text-lg font-bold text-gray-900">
-                    {flowsCfg.blocks.inventoryTable?.title ?? 'Full Flow Inventory'}
-                  </h3>
-                  <p className="text-sm text-gray-500 mt-1">
-                    All flows pulled from Klaviyo ({flowSnapshots.length} total).
-                  </p>
-                </div>
-                <div className="p-6">
-                  <ReportFlowInventoryTable flows={flowSnapshots as any} />
-                </div>
-              </div>
+            {isFlowsBlockVisible(flowsCfg, 'inventoryTable') && (
+              <ReportInventoryLauncher
+                title={flowsCfg.blocks.inventoryTable?.title ?? 'Full Flow Inventory'}
+                count={flowSnapshots.filter((f: { is_hidden?: boolean }) => !f.is_hidden).length}
+                countLabel="flows"
+                modalTitle={flowsCfg.blocks.inventoryTable?.title ?? 'Full Flow Inventory'}
+                modalSubtitle="Complete inventory of flows pulled directly from Klaviyo for this audit."
+              >
+                <ReportFlowInventoryTable flows={flowSnapshots as any} scrollable />
+              </ReportInventoryLauncher>
             )}
           </section>
         )}
@@ -726,8 +734,8 @@ export default function PublicReport() {
           />
 
           {revenueSummaryCfg.blocks.metrics && revenueSummaryCfg.blocks.metrics.hidden !== true && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 mb-6">
-            <div className="bg-white rounded-xl p-6 border border-gray-100">
+          <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
+            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
               <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Current Email Revenue</p>
               <p className="text-3xl font-bold text-gray-400 mb-1">
                 {currentFlowMonthlyRevenue > 0 ? formatCurrency(currentFlowMonthlyRevenue) : 'N/A'}<span className="text-base font-normal">{currentFlowMonthlyRevenue > 0 ? '/mo' : ''}</span>
@@ -736,7 +744,7 @@ export default function PublicReport() {
                 {currentFlowMonthlyRevenue > 0 ? 'Based on Klaviyo flow reporting data' : 'Not available for this audit (missing metrics scope)'}
               </p>
             </div>
-            <div className="bg-white rounded-xl p-6 border border-brand-primary/20 relative overflow-hidden">
+            <div className="relative overflow-hidden rounded-2xl border border-brand-primary/20 bg-white p-6 shadow-sm">
               <div className="absolute top-0 right-0 w-24 h-24 bg-brand-primary/5 rounded-bl-full" />
               <p className="text-xs font-semibold text-brand-primary uppercase tracking-wider mb-2">Potential Email Revenue</p>
               <p className="text-3xl font-bold text-gray-900 mb-1">
@@ -750,15 +758,17 @@ export default function PublicReport() {
           {/* Breakdown by Area hidden */}
 
           {revenueSummaryCfg.blocks.addOns && revenueSummaryCfg.blocks.addOns.hidden !== true && visibleAddOnItems.length > 0 && (
-          <div className="bg-white rounded-xl p-6 border border-gray-100 mb-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-1">
-              {revenueSummaryCfg.blocks.addOns.title ?? 'Recommended Klaviyo Add-Ons'}
-            </h3>
-            {(revenueSummaryCfg.blocks.addOns.subtitle ?? '').trim() !== '' && (
-              <p className="text-sm text-gray-600 mb-6">
-                {revenueSummaryCfg.blocks.addOns.subtitle}
-              </p>
-            )}
+          <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <ReportBlockHeader
+              icon={
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
+                  <BarChart3 className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
+                </div>
+              }
+              title={revenueSummaryCfg.blocks.addOns.title ?? 'Recommended Klaviyo Add-Ons'}
+              subtitle={(revenueSummaryCfg.blocks.addOns.subtitle ?? '').trim() || undefined}
+            />
+            <div className="p-6">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               {visibleAddOnItems.map((item) => (
                 <div key={`${item.template_slug}-${item.display_order}`} className="rounded-xl border border-gray-100 p-5 bg-gray-50/40">
@@ -787,6 +797,7 @@ export default function PublicReport() {
                   )}
                 </div>
               ))}
+            </div>
             </div>
           </div>
           )}
@@ -850,13 +861,17 @@ export default function PublicReport() {
           )}
 
           {revenueSummaryCfg.blocks.timeline && revenueSummaryCfg.blocks.timeline.hidden !== true && (
-          <div className="bg-white rounded-xl p-6 border border-gray-100 mt-6">
-            <h3 className="text-base font-semibold text-gray-900 mb-1">
-              {revenueSummaryCfg.blocks.timeline?.title ?? 'Implementation Timeline'}
-            </h3>
-            <p className="text-sm text-gray-600 mb-6">
-              {revenueSummaryCfg.blocks.timeline?.subtitle ?? 'Suggested rollout order — work through each phase before moving to the next.'}
-            </p>
+          <div className="mt-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+            <ReportBlockHeader
+              icon={
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
+                  <CalendarDays className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
+                </div>
+              }
+              title={revenueSummaryCfg.blocks.timeline?.title ?? 'Implementation Timeline'}
+              subtitle={revenueSummaryCfg.blocks.timeline?.subtitle ?? 'Suggested rollout order — work through each phase before moving to the next.'}
+            />
+            <div className="p-6">
             {aiTimeline.length > 0 ? (
               <div className="space-y-8">
                 {aiTimeline.slice(0, 4).map((p, i) => (
@@ -866,6 +881,7 @@ export default function PublicReport() {
             ) : (
               <p className="text-sm text-gray-600 text-center py-8">AI timeline not available for this audit run.</p>
             )}
+            </div>
           </div>
           )}
         </section>
@@ -1216,7 +1232,7 @@ function ReportSectionBlock({
   const sectionAnnotations = annotations.filter(a => a.audit_section_id === section.id);
 
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+    <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       {!hideHeader && (
         <div className="px-6 py-5 border-b border-gray-50 flex items-start justify-between gap-4">
           <div className="flex items-center gap-3">
@@ -1298,7 +1314,7 @@ function ReportSectionBlock({
 function EmailDesignSection({ emailDesign, annotations, sections, subtitleOverride }: { emailDesign: AuditEmailDesign; annotations: import('../lib/types').Annotation[]; sections: AuditSection[]; subtitleOverride?: string }) {
   const [fullscreen, setFullscreen] = useState(false);
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+    <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
       <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between gap-4">
         <p className="text-sm text-gray-500">
           {subtitleOverride ?? 'Side-by-side comparison of a recent campaign email and an ECD-designed benchmark for your industry.'}

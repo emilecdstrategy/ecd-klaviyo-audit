@@ -30,7 +30,7 @@ export default function ReportInventoryLauncher({
 
   return (
     <>
-      <div className="rounded-2xl border border-gray-100 bg-gradient-to-br from-brand-surface/80 to-white p-6 shadow-sm">
+      <div className="mb-6 rounded-2xl border border-gray-100 bg-gradient-to-br from-brand-surface/80 to-white p-6 shadow-sm">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex min-w-0 items-start gap-3">
             <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-brand-primary/10">

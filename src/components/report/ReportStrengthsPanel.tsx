@@ -20,7 +20,7 @@ export default function ReportStrengthsPanel({
   strengths: string[];
 }) {
   return (
-    <div className="mb-8 overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/80 to-white">
+    <div className="mb-8 overflow-hidden rounded-2xl border border-emerald-100 bg-gradient-to-br from-emerald-50/80 to-white shadow-sm">
       <div className="flex items-center gap-2.5 border-b border-emerald-100/80 px-6 py-4">
         <CheckCircle2 className="h-5 w-5 text-emerald-600" strokeWidth={2.25} />
         <h3 className="text-base font-bold text-gray-900">{title}</h3>
