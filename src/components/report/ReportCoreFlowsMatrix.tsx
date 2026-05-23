@@ -1,0 +1,149 @@
+import { useState } from 'react';
+import { ChevronDown, ChevronUp } from 'lucide-react';
+import { RichAuditText } from '../ui/RichAuditText';
+import { cn } from '../../lib/utils';
+
+export type CoreFlowRow = {
+  flow_name?: string;
+  present?: boolean;
+  live?: boolean;
+  email_count?: number | null;
+  current_structure_note?: string;
+  recommended_structure?: string;
+};
+
+function FlowStatusBadge({ present, live }: { present: boolean; live: boolean }) {
+  if (!present) {
+    return (
+      <span className="inline-flex items-center rounded-full border border-rose-200 bg-rose-50 px-2.5 py-0.5 text-[11px] font-semibold text-rose-700">
+        Missing
+      </span>
+    );
+  }
+  if (!live) {
+    return (
+      <span className="inline-flex items-center rounded-full border border-amber-200 bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700">
+        Draft
+      </span>
+    );
+  }
+  return (
+    <span className="inline-flex items-center rounded-full border border-emerald-200 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700">
+      Live
+    </span>
+  );
+}
+
+function FlowNote({ label, text }: { label: string; text: string }) {
+  const trimmed = String(text ?? '').trim();
+  if (!trimmed || trimmed === 'N/A') return null;
+
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
+      <RichAuditText text={trimmed} className="text-sm leading-relaxed text-gray-700" />
+    </div>
+  );
+}
+
+function FlowRowDetails({ row }: { row: CoreFlowRow }) {
+  const current = String(row.current_structure_note ?? '').trim();
+  const recommended = String(row.recommended_structure ?? '').trim();
+  const hasCurrent = Boolean(current && current !== 'N/A');
+  const hasRecommended = Boolean(recommended && recommended !== 'N/A');
+
+  if (!hasCurrent && !hasRecommended) {
+    return <p className="text-sm text-gray-400">No structure notes for this flow.</p>;
+  }
+
+  return (
+    <div className="grid gap-4 md:grid-cols-2">
+      {hasCurrent && <FlowNote label="Current" text={current} />}
+      {hasRecommended && <FlowNote label="Recommended" text={recommended} />}
+    </div>
+  );
+}
+
+export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] }) {
+  const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
+
+  if (!rows.length) return null;
+
+  return (
+    <div className="mb-4 overflow-hidden rounded-xl border border-gray-100 bg-white">
+      <div className="border-b border-gray-100 bg-gradient-to-r from-brand-surface to-white px-5 py-3">
+        <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">Core Flows Matrix</p>
+        <p className="mt-0.5 text-sm text-gray-500">Quick status check — expand a row for structure notes.</p>
+      </div>
+
+      <div className="overflow-x-auto">
+        <table className="w-full min-w-[520px] text-sm">
+          <thead>
+            <tr className="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
+              <th className="px-5 py-3">Flow</th>
+              <th className="px-3 py-3">Status</th>
+              <th className="px-3 py-3 text-center">Emails</th>
+              <th className="px-5 py-3 w-24" />
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, i) => {
+              const hasNotes =
+                Boolean(String(row.current_structure_note ?? '').trim()) ||
+                Boolean(String(row.recommended_structure ?? '').trim());
+              const isExpanded = expandedIndex === i;
+
+              return (
+                <tr key={i} className="border-b border-gray-50 align-top last:border-b-0">
+                  <td className="px-5 py-3.5">
+                    <RichAuditText
+                      text={row.flow_name || 'N/A'}
+                      className="text-sm font-semibold text-gray-900"
+                    />
+                  </td>
+                  <td className="px-3 py-3.5">
+                    <FlowStatusBadge present={Boolean(row.present)} live={Boolean(row.live)} />
+                  </td>
+                  <td className="px-3 py-3.5 text-center">
+                    <span className="inline-flex min-w-[28px] items-center justify-center rounded-full border border-gray-200 bg-gray-50 px-2 py-0.5 text-[11px] font-semibold text-gray-700">
+                      {typeof row.email_count === 'number' ? row.email_count : '—'}
+                    </span>
+                  </td>
+                  <td className="px-5 py-3.5">
+                    {hasNotes ? (
+                      <button
+                        type="button"
+                        onClick={() => setExpandedIndex(isExpanded ? null : i)}
+                        className="inline-flex items-center gap-1 text-xs font-semibold text-brand-primary transition-colors hover:text-brand-primary-dark"
+                      >
+                        {isExpanded ? 'Hide' : 'Details'}
+                        {isExpanded ? (
+                          <ChevronUp className="h-3.5 w-3.5" />
+                        ) : (
+                          <ChevronDown className="h-3.5 w-3.5" />
+                        )}
+                      </button>
+                    ) : (
+                      <span className="text-xs text-gray-300">—</span>
+                    )}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+
+      {expandedIndex !== null && (
+        <div
+          className={cn(
+            'border-t border-gray-100 bg-gray-50/60 px-5 py-4',
+            'animate-slide-up motion-reduce:animate-none',
+          )}
+        >
+          <FlowRowDetails row={rows[expandedIndex]} />
+        </div>
+      )}
+    </div>
+  );
+}

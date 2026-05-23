@@ -19,7 +19,13 @@ function StatusBadge({ status }: { status: string }) {
 
 const COLLAPSED_COUNT = 5;
 
-export default function ReportFormTable({ forms }: { forms: KlaviyoFormSnapshot[] }) {
+export default function ReportFormTable({
+  forms,
+  scrollable = false,
+}: {
+  forms: KlaviyoFormSnapshot[];
+  scrollable?: boolean;
+}) {
   const rows = [...forms]
     .filter(f => !f.is_hidden)
     .sort((a, b) => {
@@ -31,7 +37,7 @@ export default function ReportFormTable({ forms }: { forms: KlaviyoFormSnapshot[
       return ((a.display_name ?? a.name) || '').localeCompare((b.display_name ?? b.name) || '');
     });
   const [expanded, setExpanded] = useState(false);
-  const needsExpand = rows.length > COLLAPSED_COUNT;
+  const needsExpand = !scrollable && rows.length > COLLAPSED_COUNT;
   const { wrapRef, maxHeight } = useExpandableTableClip(rows.length, expanded, COLLAPSED_COUNT);
 
   return (
@@ -39,7 +45,7 @@ export default function ReportFormTable({ forms }: { forms: KlaviyoFormSnapshot[
       <div
         ref={needsExpand ? wrapRef : undefined}
         className={cn(
-          '-mx-6 overflow-x-auto overflow-y-hidden px-6',
+          scrollable ? 'overflow-x-auto' : '-mx-6 overflow-x-auto overflow-y-hidden px-6',
           needsExpand && 'transition-[max-height] duration-300 ease-out motion-reduce:transition-none',
         )}
         style={needsExpand ? { maxHeight } : undefined}

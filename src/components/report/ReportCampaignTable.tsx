@@ -21,7 +21,13 @@ function StatusBadge({ status }: { status: string }) {
 
 const COLLAPSED_COUNT = 2;
 
-export default function ReportCampaignTable({ campaigns }: { campaigns: KlaviyoCampaignSnapshot[] }) {
+export default function ReportCampaignTable({
+  campaigns,
+  scrollable = false,
+}: {
+  campaigns: KlaviyoCampaignSnapshot[];
+  scrollable?: boolean;
+}) {
   const rows = [...campaigns]
     .filter(c => !c.is_hidden)
     .sort((a, b) => {
@@ -33,7 +39,7 @@ export default function ReportCampaignTable({ campaigns }: { campaigns: KlaviyoC
       return (b.updated_at_klaviyo || '').localeCompare(a.updated_at_klaviyo || '');
     });
   const [expanded, setExpanded] = useState(false);
-  const needsExpand = rows.length > COLLAPSED_COUNT;
+  const needsExpand = !scrollable && rows.length > COLLAPSED_COUNT;
   const { wrapRef, maxHeight } = useExpandableTableClip(rows.length, expanded, COLLAPSED_COUNT);
 
   return (
@@ -41,7 +47,7 @@ export default function ReportCampaignTable({ campaigns }: { campaigns: KlaviyoC
       <div
         ref={needsExpand ? wrapRef : undefined}
         className={cn(
-          '-mx-6 overflow-x-auto overflow-y-hidden px-6',
+          scrollable ? 'overflow-x-auto' : '-mx-6 overflow-x-auto overflow-y-hidden px-6',
           needsExpand && 'transition-[max-height] duration-300 ease-out motion-reduce:transition-none',
         )}
         style={needsExpand ? { maxHeight } : undefined}

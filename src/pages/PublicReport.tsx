@@ -13,7 +13,8 @@ import ReportAccountSnapshot from '../components/report/ReportAccountSnapshot';
 import ReportSegmentTable from '../components/report/ReportSegmentTable';
 import ReportFormTable from '../components/report/ReportFormTable';
 import ReportCampaignTable from '../components/report/ReportCampaignTable';
-import ReportBrandMark from '../components/report/ReportBrandMark';
+import ReportInventoryLauncher from '../components/report/ReportInventoryLauncher';
+import ReportCoreFlowsMatrix from '../components/report/ReportCoreFlowsMatrix';
 import ReportCover from '../components/report/ReportCover';
 import ReportSectionHeader from '../components/report/ReportSectionHeader';
 import ReportKeyFindings from '../components/report/ReportKeyFindings';
@@ -331,23 +332,13 @@ export default function PublicReport() {
 
   return (
     <div className="min-h-screen bg-brand-surface">
-      <header className="sticky top-0 z-50 border-b border-gray-100/80 bg-white/95 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[90rem] items-center justify-between px-6 py-3.5">
-          <ReportBrandMark size="md" />
-          <div className="text-right">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Prepared for</p>
-            <p className="text-sm font-semibold text-gray-900">{client.company_name}</p>
-          </div>
-        </div>
-      </header>
-
       {isPreview && (
         <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 text-center">
           <span className="text-sm font-medium text-amber-800">Preview Mode — This report is not published yet and is only visible to team members.</span>
         </div>
       )}
 
-      <div className={`bg-white border-b border-gray-100 sticky ${isPreview ? 'top-[97px]' : 'top-[57px]'} z-40`}>
+      <div className="sticky top-0 z-40 border-b border-gray-100 bg-white">
         <div className="max-w-[90rem] mx-auto px-6">
           <nav className="flex overflow-x-auto">
             {visibleNavItems.map(item => (
@@ -359,7 +350,7 @@ export default function PublicReport() {
                   setActiveSection(item.id);
                   const el = sectionRefs.current[item.id] ?? document.getElementById(item.id);
                   if (!el) return;
-                  const headerOffset = isPreview ? 145 : 105;
+                  const headerOffset = isPreview ? 90 : 52;
                   const top = el.getBoundingClientRect().top + window.scrollY - headerOffset;
                   window.scrollTo({ top, behavior: 'smooth' });
                 }}
@@ -596,25 +587,16 @@ export default function PublicReport() {
             })()}
 
             {isSegmentationBlockVisible(segmentationCfg, 'segmentTable') && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                {(segmentationCfg.blocks.segmentTable?.title || segmentationCfg.blocks.segmentTable?.subtitle) && (
-                  <div className="px-6 py-4 border-b border-gray-50">
-                    {segmentationCfg.blocks.segmentTable?.title && (
-                      <h3 className="text-lg font-bold text-gray-900">
-                        {segmentationCfg.blocks.segmentTable.title}
-                      </h3>
-                    )}
-                    {segmentationCfg.blocks.segmentTable?.subtitle && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        {segmentationCfg.blocks.segmentTable.subtitle}
-                      </p>
-                    )}
-                  </div>
-                )}
-                <div className="p-6">
-                  <ReportSegmentTable segments={segmentSnapshots as any} />
-                </div>
-              </div>
+              <ReportInventoryLauncher
+                title={segmentationCfg.blocks.segmentTable?.title ?? 'Segment inventory'}
+                subtitle={segmentationCfg.blocks.segmentTable?.subtitle}
+                count={segmentSnapshots.filter((s: { is_hidden?: boolean }) => !s.is_hidden).length}
+                countLabel="segments"
+                modalTitle={segmentationCfg.blocks.segmentTable?.title ?? 'Segment inventory'}
+                modalSubtitle="Inventory of segments pulled directly from Klaviyo for this audit."
+              >
+                <ReportSegmentTable segments={segmentSnapshots as any} scrollable />
+              </ReportInventoryLauncher>
             )}
           </section>
         )}
@@ -656,25 +638,16 @@ export default function PublicReport() {
             })()}
 
             {isSignupFormsBlockVisible(signupFormsCfg, 'formTable') && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                {(signupFormsCfg.blocks.formTable?.title || signupFormsCfg.blocks.formTable?.subtitle) && (
-                  <div className="px-6 py-4 border-b border-gray-50">
-                    {signupFormsCfg.blocks.formTable?.title && (
-                      <h3 className="text-lg font-bold text-gray-900">
-                        {signupFormsCfg.blocks.formTable.title}
-                      </h3>
-                    )}
-                    {signupFormsCfg.blocks.formTable?.subtitle && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        {signupFormsCfg.blocks.formTable.subtitle}
-                      </p>
-                    )}
-                  </div>
-                )}
-                <div className="p-6">
-                  <ReportFormTable forms={formSnapshots as any} />
-                </div>
-              </div>
+              <ReportInventoryLauncher
+                title={signupFormsCfg.blocks.formTable?.title ?? 'Signup form inventory'}
+                subtitle={signupFormsCfg.blocks.formTable?.subtitle}
+                count={formSnapshots.filter((f: { is_hidden?: boolean }) => !f.is_hidden).length}
+                countLabel="forms"
+                modalTitle={signupFormsCfg.blocks.formTable?.title ?? 'Signup form inventory'}
+                modalSubtitle="Inventory of signup forms pulled directly from Klaviyo for this audit."
+              >
+                <ReportFormTable forms={formSnapshots as any} scrollable />
+              </ReportInventoryLauncher>
             )}
           </section>
         )}
@@ -716,25 +689,16 @@ export default function PublicReport() {
             })()}
 
             {isCampaignsBlockVisible(campaignsCfg, 'campaignTable') && (
-              <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-                {(campaignsCfg.blocks.campaignTable?.title || campaignsCfg.blocks.campaignTable?.subtitle) && (
-                  <div className="px-6 py-4 border-b border-gray-50">
-                    {campaignsCfg.blocks.campaignTable?.title && (
-                      <h3 className="text-lg font-bold text-gray-900">
-                        {campaignsCfg.blocks.campaignTable.title}
-                      </h3>
-                    )}
-                    {campaignsCfg.blocks.campaignTable?.subtitle && (
-                      <p className="text-sm text-gray-500 mt-1">
-                        {campaignsCfg.blocks.campaignTable.subtitle}
-                      </p>
-                    )}
-                  </div>
-                )}
-                <div className="p-6">
-                  <ReportCampaignTable campaigns={campaignSnapshots as any} />
-                </div>
-              </div>
+              <ReportInventoryLauncher
+                title={campaignsCfg.blocks.campaignTable?.title ?? 'Campaign inventory'}
+                subtitle={campaignsCfg.blocks.campaignTable?.subtitle}
+                count={campaignSnapshots.filter((c: { is_hidden?: boolean }) => !c.is_hidden).length}
+                countLabel="campaigns"
+                modalTitle={campaignsCfg.blocks.campaignTable?.title ?? 'Campaign inventory'}
+                modalSubtitle="Inventory of campaigns pulled directly from Klaviyo for this audit."
+              >
+                <ReportCampaignTable campaigns={campaignSnapshots as any} scrollable />
+              </ReportInventoryLauncher>
             )}
           </section>
         )}
@@ -958,20 +922,6 @@ function renderInlineMarkdownBold(text: string) {
   );
 }
 
-function YesNoPill({ value }: { value: boolean }) {
-  return (
-    <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] font-semibold ${
-        value
-          ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
-          : 'bg-rose-50 text-rose-700 border-rose-200'
-      }`}
-    >
-      {value ? 'Yes' : 'No'}
-    </span>
-  );
-}
-
 const snapshotDotTone = {
   good: 'bg-emerald-500',
   warn: 'bg-amber-500',
@@ -1132,34 +1082,7 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
   if (section.section_key === 'flows') {
     const rows = details?.flows?.core_flows;
     if (!Array.isArray(rows) || rows.length === 0) return null;
-    return (
-      <div className="bg-white border border-gray-100 rounded-xl p-4 mb-4 overflow-x-auto">
-        <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Core Flows Matrix</p>
-        <table className="w-full text-xs">
-          <thead className="text-gray-500">
-            <tr>
-              <th className="text-left py-1.5 pr-2">Flow</th><th className="text-left py-1.5 pr-2">Present</th><th className="text-left py-1.5 pr-2">Live</th><th className="text-left py-1.5 pr-2">Emails</th><th className="text-left py-1.5 pr-2">Current</th><th className="text-left py-1.5">Recommended</th>
-            </tr>
-          </thead>
-          <tbody>
-            {rows.map((r: any, i: number) => (
-              <tr key={i} className="border-t border-gray-100 text-gray-700 align-top">
-                <td className="py-2 pr-2 font-medium">{renderInlineMarkdownBold(r.flow_name || 'N/A')}</td>
-                <td className="py-2 pr-2"><YesNoPill value={Boolean(r.present)} /></td>
-                <td className="py-2 pr-2"><YesNoPill value={Boolean(r.live)} /></td>
-                <td className="py-2 pr-2">
-                  <span className="inline-flex items-center justify-center rounded-full border px-2 py-0.5 text-[11px] font-semibold bg-gray-50 text-gray-700 border-gray-200 min-w-[28px]">
-                    {typeof r.email_count === 'number' ? r.email_count : 'N/A'}
-                  </span>
-                </td>
-                <td className="py-2 pr-2">{renderInlineMarkdownBold(r.current_structure_note || 'N/A')}</td>
-                <td className="py-2">{renderInlineMarkdownBold(r.recommended_structure || 'N/A')}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    );
+    return <ReportCoreFlowsMatrix rows={rows} />;
   }
 
   if (section.section_key === 'segmentation') {

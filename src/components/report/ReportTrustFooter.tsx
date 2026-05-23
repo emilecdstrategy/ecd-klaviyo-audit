@@ -34,7 +34,7 @@ export default function ReportTrustFooter({ preparedDate }: { preparedDate: stri
               Book a strategy call with our team to prioritize fixes and scale Klaviyo revenue.
             </p>
             <a
-              href="https://www.ecdigitalstrategy.com"
+              href="https://www.ecdigitalstrategy.com/book-your-free-audit/"
               target="_blank"
               rel="noopener noreferrer"
               className="mt-5 inline-flex items-center gap-2 rounded-xl bg-brand-primary px-5 py-2.5 text-sm font-semibold text-white shadow-sm shadow-brand-primary/25 transition-colors hover:bg-brand-primary-dark"

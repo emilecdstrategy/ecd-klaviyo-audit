@@ -129,8 +129,8 @@ export const DEFAULT_SEGMENTATION_SECTION: SegmentationSectionConfig = {
     },
     segmentTable: {
       hidden: false,
-      title: undefined,
-      subtitle: 'Inventory of segments pulled directly from Klaviyo for this audit.',
+      title: 'Segment inventory',
+      subtitle: 'Reference list from Klaviyo — open if you need the full breakdown.',
     },
   },
 };
@@ -156,8 +156,8 @@ export const DEFAULT_SIGNUP_FORMS_SECTION: SignupFormsSectionConfig = {
     },
     formTable: {
       hidden: false,
-      title: undefined,
-      subtitle: 'Inventory of signup forms pulled directly from Klaviyo for this audit.',
+      title: 'Signup form inventory',
+      subtitle: 'Reference list from Klaviyo — open if you need the full breakdown.',
     },
   },
 };
@@ -183,8 +183,8 @@ export const DEFAULT_CAMPAIGNS_SECTION: CampaignsSectionConfig = {
     },
     campaignTable: {
       hidden: false,
-      title: undefined,
-      subtitle: 'Inventory of campaigns pulled directly from Klaviyo for this audit.',
+      title: 'Campaign inventory',
+      subtitle: 'Reference list from Klaviyo — open if you need the full breakdown.',
     },
   },
 };

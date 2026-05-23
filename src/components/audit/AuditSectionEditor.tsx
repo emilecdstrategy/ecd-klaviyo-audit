@@ -1199,7 +1199,7 @@ function RubricTab({
               </div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-2">
                 <div>
-                  <label className="block text-[11px] text-gray-500 mb-1">Current structure</label>
+                  <label className="block text-[11px] text-gray-500 mb-1">Current structure (short phrase)</label>
                   <SimpleRichEditor
                     value={String(row.current_structure_note ?? '')}
                     onChange={v => {
@@ -1207,12 +1207,12 @@ function RubricTab({
                       next[i] = { ...row, current_structure_note: v };
                       write(['flows', 'core_flows'], next);
                     }}
-                    rows={5}
-                    placeholder="Describe the current flow structure..."
+                    rows={2}
+                    placeholder="e.g. 3 emails, no SMS, weak CTA on email 2"
                   />
                 </div>
                 <div>
-                  <label className="block text-[11px] text-gray-500 mb-1">Recommended structure</label>
+                  <label className="block text-[11px] text-gray-500 mb-1">Recommended structure (short phrase)</label>
                   <SimpleRichEditor
                     value={String(row.recommended_structure ?? '')}
                     onChange={v => {
@@ -1220,8 +1220,8 @@ function RubricTab({
                       next[i] = { ...row, recommended_structure: v };
                       write(['flows', 'core_flows'], next);
                     }}
-                    rows={5}
-                    placeholder="Describe the recommended flow structure..."
+                    rows={2}
+                    placeholder="e.g. 4 emails + SMS, offer in email 3"
                   />
                 </div>
               </div>
