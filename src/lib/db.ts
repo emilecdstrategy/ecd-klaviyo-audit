@@ -32,7 +32,7 @@ const FORM_SNAPSHOT_SELECT =
 const CAMPAIGN_SNAPSHOT_SELECT =
   'id, audit_id, client_id, campaign_id, name, status, send_channel, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order';
 
-const AUDIT_LIST_SELECT = '*, audit_sections(section_key, revenue_opportunity, section_config)';
+const AUDIT_LIST_SELECT = '*, audit_sections(audit_id, section_key, revenue_opportunity, section_config)';
 
 type AuditSectionRevenueRow = {
   audit_id: string;
@@ -73,9 +73,11 @@ async function fetchRevenueSectionsForAudits(auditIds: string[]): Promise<AuditS
 function mapAuditsWithEmbeddedSections(rows: unknown[]): Audit[] {
   return rows.map(row => {
     const { audit_sections, ...audit } = row as Audit & { audit_sections?: AuditSectionRevenueRow[] };
-    const revenueSections = (audit_sections ?? []).filter(section =>
-      (REVENUE_OPPORTUNITY_SECTION_KEYS as readonly string[]).includes(section.section_key),
-    );
+    const revenueSections = (audit_sections ?? [])
+      .filter(section =>
+        (REVENUE_OPPORTUNITY_SECTION_KEYS as readonly string[]).includes(section.section_key),
+      )
+      .map(section => ({ ...section, audit_id: section.audit_id ?? audit.id }));
     return attachComputedRevenueOpportunity([audit as Audit], revenueSections)[0];
   });
 }

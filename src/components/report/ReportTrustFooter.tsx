@@ -16,7 +16,7 @@ export default function ReportTrustFooter({ preparedDate }: { preparedDate: stri
               <img
                 src="/kpartner.webp"
                 alt="Klaviyo K:PARTNERS Elite partner badge"
-                className="h-12 w-auto max-w-[min(100%,320px)] object-contain object-left"
+                className="h-14 w-auto max-w-[min(100%,360px)] object-contain object-left"
                 loading="lazy"
               />
             </div>
