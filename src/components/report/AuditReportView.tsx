@@ -253,9 +253,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     .map(key => sections.find(s => s.section_key === key))
     .filter((s): s is AuditSection => !!s)
     .filter(s => editMode || s.revenue_opportunity > 0);
-  const revenueBreakdownAddOns = visibleAddOnItems.filter(
-    item => editMode || (Number(item.revenue_monthly) || 0) > 0,
+  const addOnTotalRevenue = visibleAddOnItems.reduce(
+    (sum, item) => sum + (Number(item.revenue_monthly) || 0),
+    0,
   );
+  const hasAddOnBreakdown = visibleAddOnItems.length > 0 && (editMode || addOnTotalRevenue > 0);
   const totalRevenue = computeAuditTotalRevenueOpportunity(sections, auditLayout);
 
   const executiveSummaryCfg = resolveExecutiveSummaryConfig(
@@ -992,11 +994,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
               {editMode && (
                 <p className="mb-6 text-xs font-medium text-white/60">
-                  Edit each section&apos;s $/mo below — add-on amounts are included in the total and editable here too.
+                  Edit each section&apos;s $/mo below — add-on amounts roll up into one total and are editable in the add-ons section above.
                 </p>
               )}
 
-              {(revenueBreakdownSections.length > 0 || revenueBreakdownAddOns.length > 0 || editMode) && (
+              {(revenueBreakdownSections.length > 0 || hasAddOnBreakdown || editMode) && (
                 <div className="mx-auto mb-10 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {revenueBreakdownSections.map(s => (
                     <div
@@ -1015,26 +1017,17 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       <p className="mt-0.5 text-xs text-white/50">per month</p>
                     </div>
                   ))}
-                  {revenueBreakdownAddOns.map(item => {
-                    const itemKey = `${item.template_slug}-${item.display_order}`;
-                    return (
-                      <div
-                        key={itemKey}
-                        className="group min-w-0 overflow-hidden rounded-2xl border border-white/20 bg-white/10 p-4 text-left shadow-lg shadow-black/10 backdrop-blur-md transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/15"
-                      >
-                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">
-                          {item.name}
-                        </p>
-                        <EditableCurrency
-                          value={item.revenue_monthly || 0}
-                          onSave={v => updateAddOnRevenue(itemKey, v)}
-                          variant="on-dark"
-                          className="text-xl font-bold tabular-nums text-white sm:text-2xl"
-                        />
-                        <p className="mt-0.5 text-xs text-white/50">add-on · per month</p>
-                      </div>
-                    );
-                  })}
+                  {hasAddOnBreakdown && (
+                    <div className="group min-w-0 overflow-hidden rounded-2xl border border-white/20 bg-white/10 p-4 text-left shadow-lg shadow-black/10 backdrop-blur-md transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/15">
+                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                        Add-ons
+                      </p>
+                      <p className="text-xl font-bold tabular-nums text-white sm:text-2xl">
+                        {formatCurrency(addOnTotalRevenue)}
+                      </p>
+                      <p className="mt-0.5 text-xs text-white/50">add-ons · per month</p>
+                    </div>
+                  )}
                 </div>
               )}
 

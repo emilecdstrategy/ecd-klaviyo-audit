@@ -31,6 +31,9 @@ export default function WorkspacePublishBar({
   const isViewerOnly = audit.status === 'viewer_only';
   const hasShareLink = Boolean(shareUrl) && (isPublished || isViewerOnly);
   const statusLabel = STATUS_OPTIONS.find(opt => opt.value === audit.status)?.label ?? audit.status;
+  const shareUrlInputWidthCh = shareUrl
+    ? Math.min(Math.max(shareUrl.length, 28), 44)
+    : 28;
 
   const handleCopy = () => {
     if (!shareUrl) return;
@@ -69,12 +72,13 @@ export default function WorkspacePublishBar({
                   Viewer Only — link works for signed-in viewer accounts (not public anonymous access).
                 </p>
               )}
-              <div className="flex h-10 min-w-0 flex-1 items-stretch overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
+              <div className="inline-flex h-10 max-w-full items-stretch overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
                 <input
                   readOnly
                   value={shareUrl}
                   aria-label="Shareable report link"
-                  className="min-w-0 flex-1 truncate border-0 bg-transparent px-3 text-sm text-gray-700 focus:outline-none focus:ring-0"
+                  style={{ width: `${shareUrlInputWidthCh}ch` }}
+                  className="min-w-0 max-w-full truncate border-0 bg-transparent px-3 text-sm text-gray-700 focus:outline-none focus:ring-0"
                 />
                 <button
                   type="button"
