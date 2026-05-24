@@ -38,6 +38,7 @@ export type KlaviyoContext = {
     monthly_revenue_current?: number;
     email_message_count?: number | null;
   }>;
+  campaigns_truncated?: boolean;
 };
 
 export function buildAuditSystemPrompt() {
@@ -170,14 +171,20 @@ function summarizeFlows(flows: KlaviyoContext["flows"]): string {
   return lines.join("\n");
 }
 
-function summarizeCampaigns(campaigns: KlaviyoContext["campaigns"]): string {
+function summarizeCampaigns(
+  campaigns: KlaviyoContext["campaigns"],
+  campaignsTruncated?: boolean,
+): string {
   if (!campaigns?.length) return "No campaigns found in the account.";
   const byStatus: Record<string, number> = {};
   for (const c of campaigns) {
     const s = (c.status || "unknown").toLowerCase();
     byStatus[s] = (byStatus[s] ?? 0) + 1;
   }
-  const lines = [`Total campaigns: ${campaigns.length}`];
+  const totalLabel = campaignsTruncated || campaigns.length > 500
+    ? "Total campaigns: 500+ (partial scan — account may have more)"
+    : `Total campaigns: ${campaigns.length}`;
+  const lines = [totalLabel];
   for (const [status, count] of Object.entries(byStatus)) {
     lines.push(`  ${status}: ${count}`);
   }
@@ -281,7 +288,7 @@ function buildScopedKlaviyoData(klaviyo: KlaviyoContext, requestedKeys: readonly
     scoped.flow_performance = summarizeFlowPerformance(klaviyo.flowPerformance);
   }
   if (needsAll || needs.has("campaigns") || needs.has("account_health")) {
-    scoped.campaigns_summary = summarizeCampaigns(klaviyo.campaigns?.slice(0, 30));
+    scoped.campaigns_summary = summarizeCampaigns(klaviyo.campaigns?.slice(0, 30), klaviyo.campaigns_truncated);
   }
   if (needsAll || needs.has("segmentation") || needs.has("account_health")) {
     scoped.segments_summary = summarizeSegments(klaviyo.segments);
@@ -303,10 +310,13 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
   let klaviyoSection: Record<string, unknown> | null = null;
   if (klaviyo) {
     if (mode === "top_level_only") {
+      const campaignCount = klaviyo.campaigns?.length ?? 0;
+      const campaignsCapped = klaviyo.campaigns_truncated || campaignCount > 500;
       klaviyoSection = {
         account: klaviyo.account ?? null,
         flow_count: klaviyo.flows?.length ?? 0,
-        campaign_count: klaviyo.campaigns?.length ?? 0,
+        campaign_count: campaignsCapped ? "500+" : campaignCount,
+        campaigns_truncated: campaignsCapped,
         segment_count: klaviyo.segments?.length ?? 0,
         form_count: klaviyo.forms?.length ?? 0,
         top_flows: (klaviyo.flowPerformance ?? [])
@@ -357,6 +367,12 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
         ? {
           audience_list_metrics:
             "This run did not include a full Klaviyo profile scan. Do NOT state specific total profile counts, subscribed counts, suppressed counts, or active-profile counts. Infer scale only from flows, campaigns, segments, and performance metrics provided. If asked about list size in narrative, say it was not measured in this pass and point to flow/campaign reach instead.",
+        }
+        : {}),
+      ...(klaviyo?.campaigns_truncated
+        ? {
+          campaign_total_count:
+            "Campaign inventory was partially scanned (500+ email campaigns in account). Do NOT state an exact total campaign count such as 600. Say 500+ or 'hundreds of campaigns' when referencing account scale.",
         }
         : {}),
     },

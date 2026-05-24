@@ -38,7 +38,9 @@ const KLAVIYO_BASE = "https://a.klaviyo.com";
 const DEFAULT_REVISION = "2024-10-15";
 /** Flow-id cap for values-reports filter. Flamingo Estate has >50 flows. */
 const MAX_REPORT_IDS = 100;
-const MAX_CAMPAIGN_PAGES = 6;
+/** 5 pages × 100 = 500 email campaigns max per snapshot. */
+const MAX_CAMPAIGN_PAGES = 5;
+const CAMPAIGN_SNAPSHOT_CAP = 500;
 const MAX_LIST_SEGMENT_PAGES = 5;
 const METRICS_MAX_PAGES = 5;
 /** Skip optional email HTML fetch if less than this many ms remain before deadline. */
@@ -190,17 +192,22 @@ async function fetchWithRetry(fn: () => Promise<{ ok: boolean; status: number; b
 async function klaviyoPaged(apiKey: string, revision: string, path: string, maxPages = 10) {
   const out: any[] = [];
   let next = path;
+  let truncated = false;
   for (let i = 0; i < maxPages && next; i++) {
     const res = await fetchWithRetry(() => klaviyoFetch(apiKey, revision, next), 3);
-    if (!res.ok) return { ok: false as const, status: res.status, body: res.body, items: out };
+    if (!res.ok) return { ok: false as const, status: res.status, body: res.body, items: out, truncated: false };
     const items = res.body?.data ?? [];
     out.push(...items);
     const nextUrl: string | null = res.body?.links?.next ?? null;
     if (!nextUrl) break;
+    if (i === maxPages - 1) {
+      truncated = true;
+      break;
+    }
     const u = new URL(nextUrl);
     next = `${u.pathname}${u.search}`;
   }
-  return { ok: true as const, status: 200, items: out };
+  return { ok: true as const, status: 200, items: out, truncated };
 }
 
 // ---------------------------------------------------------------------------
@@ -926,7 +933,8 @@ async function runStageConfig(params: {
     }
 
     if (campaigns.ok) {
-      const rows = campaigns.items.map((c: any) => ({
+      const campaignItems = campaigns.items.slice(0, CAMPAIGN_SNAPSHOT_CAP);
+      const rows = campaignItems.map((c: any) => ({
         audit_id: params.auditId,
         client_id: params.clientId,
         campaign_id: c.id,
@@ -942,7 +950,7 @@ async function runStageConfig(params: {
       // Best-effort: grab HTML of most recent sent campaign for email-design comparison.
       try {
         if (deadlineAtMs - Date.now() >= MIN_SLACK_MS_EMAIL_HTML) {
-          const sentCampaigns = campaigns.items
+          const sentCampaigns = campaignItems
             .filter((c: any) => (c.attributes?.status ?? "").toLowerCase() === "sent")
             .sort((a: any, b: any) => {
               const da = a.attributes?.updated_at || a.attributes?.created_at || "";
@@ -1104,6 +1112,10 @@ async function runStageConfig(params: {
       }).eq("client_id", params.clientId);
     }
 
+    const campaignsTruncated = campaigns.ok
+      ? (campaigns.truncated || campaigns.items.length > CAMPAIGN_SNAPSHOT_CAP)
+      : null;
+
     const since90 = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000).toISOString();
 
     // Seed reporting rollup shell (counts only); stage 2 fills in report data.
@@ -1119,6 +1131,7 @@ async function runStageConfig(params: {
       email_subscribed_profiles_truncated: null as boolean | null,
       active_profiles_90d_truncated: null as boolean | null,
       suppressed_profiles_truncated: null as boolean | null,
+      campaigns_truncated: campaignsTruncated,
       profile_scan_status: (params.profileScan === "full" ? "pending" : "skipped") as "pending" | "skipped",
       computed_at: new Date().toISOString(),
     };

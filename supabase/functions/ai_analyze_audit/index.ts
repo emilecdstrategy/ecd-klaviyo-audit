@@ -230,23 +230,30 @@ async function fetchKlaviyoContext(auditId: string, clientId: string): Promise<K
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
-  const [connRes, flowsRes, campaignsRes, segmentsRes, formsRes, perfRes] = await Promise.all([
+  const [connRes, flowsRes, campaignsRes, segmentsRes, formsRes, perfRes, rollupsRes] = await Promise.all([
     sb.from("klaviyo_connections").select("account_name, timezone, website_url").eq("client_id", clientId).maybeSingle(),
     sb.from("klaviyo_flow_snapshots").select("name, status, trigger_type").eq("audit_id", auditId),
     sb.from("klaviyo_campaign_snapshots").select("name, status, send_channel, created_at_klaviyo, updated_at_klaviyo").eq("audit_id", auditId),
     sb.from("klaviyo_segment_snapshots").select("name, created_at_klaviyo, updated_at_klaviyo").eq("audit_id", auditId),
     sb.from("klaviyo_form_snapshots").select("name, status").eq("audit_id", auditId),
     sb.from("flow_performance").select("flow_name, flow_status, recipients_per_month, actual_open_rate, actual_click_rate, actual_conv_rate, monthly_revenue_current, email_message_count").eq("audit_id", auditId),
+    sb.from("klaviyo_reporting_rollups").select("timeframe_key, computed").eq("audit_id", auditId).eq("timeframe_key", "last_30_days").maybeSingle(),
   ]);
 
   const hasData = (flowsRes.data?.length ?? 0) > 0 || (campaignsRes.data?.length ?? 0) > 0 ||
                   (segmentsRes.data?.length ?? 0) > 0 || (formsRes.data?.length ?? 0) > 0;
   if (!hasData) return null;
 
+  const campaignCount = campaignsRes.data?.length ?? 0;
+  const rollupTruncated = (rollupsRes.data?.computed as { account_snapshot?: { campaigns_truncated?: boolean } } | null)
+    ?.account_snapshot?.campaigns_truncated;
+  const campaignsTruncated = rollupTruncated === true || campaignCount > 500;
+
   return {
     account: connRes.data ? { name: connRes.data.account_name, timezone: connRes.data.timezone, website_url: connRes.data.website_url } : undefined,
     flows: (flowsRes.data ?? []).map((f: any) => ({ name: f.name, status: f.status, trigger_type: f.trigger_type })),
     campaigns: (campaignsRes.data ?? []).map((c: any) => ({ name: c.name, status: c.status, send_channel: c.send_channel, created_at: c.created_at_klaviyo, updated_at: c.updated_at_klaviyo })),
+    campaigns_truncated: campaignsTruncated,
     segments: (segmentsRes.data ?? []).map((s: any) => ({ name: s.name, created: s.created_at_klaviyo, updated: s.updated_at_klaviyo })),
     forms: (formsRes.data ?? []).map((f: any) => ({ name: f.name, status: f.status })),
     flowPerformance: (perfRes.data ?? []).map((fp: any) => ({

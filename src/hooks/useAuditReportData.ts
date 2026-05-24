@@ -42,6 +42,7 @@ export type AuditReportBundle = {
     email_subscribed_profiles_truncated?: boolean | null;
     active_profiles_90d_truncated?: boolean | null;
     suppressed_profiles_truncated?: boolean | null;
+    campaigns_truncated?: boolean | null;
     deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
   } | null;
 };

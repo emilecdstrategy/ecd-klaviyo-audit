@@ -15,6 +15,7 @@ import {
   DollarSign,
 } from 'lucide-react';
 import type { FlowPerformance, KlaviyoCampaignSnapshot, KlaviyoFlowSnapshot } from '../../lib/types';
+import { CAMPAIGN_SNAPSHOT_CAP, campaignTotalSubtext, formatCampaignTotalDisplay } from '../../lib/campaign-count';
 
 function normalizeReportingDiagnostic(raw?: string | null) {
   const msg = (raw ?? '').trim();
@@ -130,6 +131,7 @@ export default function ReportAccountSnapshot({
     email_subscribed_profiles_truncated?: boolean | null;
     active_profiles_90d_truncated?: boolean | null;
     suppressed_profiles_truncated?: boolean | null;
+    campaigns_truncated?: boolean | null;
     deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
     profile_scan_status?: 'pending' | 'complete' | 'failed' | 'skipped' | null;
   } | null;
@@ -137,6 +139,9 @@ export default function ReportAccountSnapshot({
   const totalFlows = flowSnapshots.length;
   const liveFlows = flowSnapshots.filter((f) => f.status?.toLowerCase() === 'live' || f.status?.toLowerCase() === 'manual').length;
   const totalCampaigns = campaignSnapshots.length;
+  const campaignsTruncated = accountSnapshot?.campaigns_truncated ?? totalCampaigns > CAMPAIGN_SNAPSHOT_CAP;
+  const totalCampaignsDisplay = formatCampaignTotalDisplay(totalCampaigns, campaignsTruncated);
+  const totalCampaignsSub = campaignTotalSubtext(totalCampaigns, campaignsTruncated);
   const manualFlows = flowSnapshots.filter((f) => f.status?.toLowerCase() === 'manual' || f.trigger_type === 'Unconfigured').length;
 
   const hasPerf = flowPerformance.length > 0;
@@ -157,7 +162,7 @@ export default function ReportAccountSnapshot({
         <Card icon={Workflow} label="Total Flows" value={String(totalFlows)} sub="in Klaviyo account" />
         <Card icon={Zap} label="Live Flows" value={String(liveFlows)} sub="actively sending" />
         <Card icon={MousePointerClick} label="Manual Flows" value={String(manualFlows)} sub="require manual trigger" />
-        <Card icon={Send} label="Total Campaigns" value={String(totalCampaigns)} sub="email campaigns in account" />
+        <Card icon={Send} label="Total Campaigns" value={totalCampaignsDisplay} sub={totalCampaignsSub} />
 
         <Card
           icon={Users}
