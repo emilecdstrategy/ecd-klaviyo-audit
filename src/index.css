@@ -51,22 +51,38 @@
 
   .entity-tag {
     @apply inline-flex items-center rounded-md border px-1.5 py-px text-[0.85em] font-medium leading-snug align-baseline mx-0.5 whitespace-nowrap;
+    background-color: var(--entity-tag-bg);
+    border-color: var(--entity-tag-border);
+    color: var(--entity-tag-text);
   }
 
-  .entity-tag--flow {
-    @apply bg-indigo-50/90 text-indigo-800 border-indigo-100/90;
+  :root,
+  [data-entity-highlight='purple'] {
+    --entity-tag-bg: #eef2ffe6;
+    --entity-tag-border: #e0e7ffe6;
+    --entity-tag-text: rgb(55 48 163);
   }
 
-  .entity-tag--campaign {
-    @apply bg-sky-50/90 text-sky-900 border-sky-100/90;
+  [data-entity-highlight='yellow'] {
+    --entity-tag-bg: #fffbebe6;
+    --entity-tag-border: #fef3c7e6;
+    --entity-tag-text: rgb(120 53 15);
   }
 
-  .entity-tag--segment {
-    @apply bg-violet-50/90 text-violet-800 border-violet-100/90;
+  [data-entity-highlight='emerald'] {
+    --entity-tag-bg: #ecfdf5e6;
+    --entity-tag-border: #d1fae5e6;
+    --entity-tag-text: rgb(6 95 70);
   }
 
-  .entity-tag--form {
-    @apply bg-amber-50/90 text-amber-900 border-amber-100/90;
+  [data-entity-highlight='disabled'] {
+    --entity-tag-bg: transparent;
+    --entity-tag-border: transparent;
+    --entity-tag-text: inherit;
+  }
+
+  [data-entity-highlight='disabled'] .entity-tag {
+    @apply font-normal px-0 py-0 mx-0 rounded-none border-0;
   }
 
   .animate-fade-in {

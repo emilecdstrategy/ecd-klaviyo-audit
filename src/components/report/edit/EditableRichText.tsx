@@ -1,12 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { htmlToMd, mdToHtml } from '../../../lib/audit-markdown';
-import { wrapSelectionAsEntity } from '../../../lib/entity-editor';
-import type { EntityType } from '../../../lib/entity-tags';
+import { htmlToMd, auditTextToEditorHtml } from '../../../lib/audit-markdown';
+import { wrapSelectionAsHighlight } from '../../../lib/entity-editor';
 import { cn } from '../../../lib/utils';
 import { RichAuditText } from '../../ui/RichAuditText';
 import FloatingFormatToolbar, { useFloatingToolbarPosition } from './FloatingFormatToolbar';
 import { useReportEdit } from './ReportEditContext';
 import { useReportEntities } from './ReportEntityContext';
+import { usePlatformSettings } from '../../../contexts/PlatformSettingsContext';
 
 type EditableRichTextProps = {
   value: string;
@@ -25,6 +25,7 @@ export default function EditableRichText({
 }: EditableRichTextProps) {
   const { editMode } = useReportEdit();
   const { entityLookup, autoTagEntities } = useReportEntities();
+  const { entityHighlightsEnabled } = usePlatformSettings();
   const editorRef = useRef<HTMLDivElement>(null);
   const isInternalUpdate = useRef(false);
   const [focused, setFocused] = useState(false);
@@ -37,11 +38,11 @@ export default function EditableRichText({
       isInternalUpdate.current = false;
       return;
     }
-    const html = mdToHtml(value || '');
+    const html = auditTextToEditorHtml(value || '', entityLookup, autoTagEntities, entityHighlightsEnabled);
     if (editorRef.current.innerHTML !== html) {
       editorRef.current.innerHTML = html;
     }
-  }, [value, canEdit]);
+  }, [value, canEdit, entityLookup, autoTagEntities, entityHighlightsEnabled]);
 
   const persist = useCallback(() => {
     if (!editorRef.current || !onSave) return;
@@ -55,8 +56,8 @@ export default function EditableRichText({
     persist();
   };
 
-  const tagEntity = (type: EntityType) => {
-    if (wrapSelectionAsEntity(editorRef.current, type)) {
+  const highlightSelection = () => {
+    if (wrapSelectionAsHighlight(editorRef.current, entityLookup)) {
       editorRef.current?.focus();
       persist();
     }
@@ -109,7 +110,7 @@ export default function EditableRichText({
         left={toolbarPos.left}
         onBold={() => exec('bold')}
         onItalic={() => exec('italic')}
-        onEntityTag={tagEntity}
+        onHighlight={entityHighlightsEnabled ? highlightSelection : undefined}
       />
     </>
   );

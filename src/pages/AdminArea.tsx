@@ -39,6 +39,14 @@ import {
   deleteRevenueOpportunityTemplate,
 } from '../lib/db';
 import type { IndustryEmailLibrary, RevenueOpportunityTemplate } from '../lib/types';
+import {
+  ENTITY_HIGHLIGHT_DESCRIPTIONS,
+  ENTITY_HIGHLIGHT_LABELS,
+  ENTITY_HIGHLIGHT_STYLES,
+  ENTITY_HIGHLIGHT_SWATCHES,
+  type EntityHighlightStyle,
+} from '../lib/entity-highlight-styles';
+import { usePlatformSettings } from '../contexts/PlatformSettingsContext';
 
 const TABS = [
   { id: 'users', label: 'Users', icon: Users },
@@ -349,6 +357,7 @@ function UsersTab() {
 
 function EmailLibraryTab() {
   const toast = useToast();
+  const { refreshSettings } = usePlatformSettings();
   const [entries, setEntries] = useState<IndustryEmailLibrary[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
@@ -367,6 +376,7 @@ function EmailLibraryTab() {
 
   const [globalAnnotationSize, setGlobalAnnotationSize] = useState<'sm' | 'md' | 'lg'>('md');
   const [globalAnnotationsExpanded, setGlobalAnnotationsExpanded] = useState(false);
+  const [entityHighlightStyle, setEntityHighlightStyle] = useState<EntityHighlightStyle>('purple');
   const [globalSettingsLoaded, setGlobalSettingsLoaded] = useState(false);
 
   const reload = useCallback(async () => {
@@ -376,6 +386,7 @@ function EmailLibraryTab() {
       setEntries(data);
       setGlobalAnnotationSize(settings.annotation_size);
       setGlobalAnnotationsExpanded(settings.annotations_expanded);
+      setEntityHighlightStyle(settings.entity_highlight_style);
       setGlobalSettingsLoaded(true);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to load');
@@ -394,6 +405,17 @@ function EmailLibraryTab() {
   const saveGlobalAnnotationsExpanded = async (v: boolean) => {
     setGlobalAnnotationsExpanded(v);
     try { await updatePlatformSettings({ annotations_expanded: v }); toast(v ? 'Labels always visible' : 'Labels show on hover'); } catch { /* ignore */ }
+  };
+
+  const saveEntityHighlightStyle = async (v: EntityHighlightStyle) => {
+    setEntityHighlightStyle(v);
+    try {
+      await updatePlatformSettings({ entity_highlight_style: v });
+      await refreshSettings();
+      toast(v === 'disabled' ? 'Asset highlighting disabled' : `${ENTITY_HIGHLIGHT_LABELS[v]} highlight saved`);
+    } catch {
+      toast('Could not save highlight style');
+    }
   };
 
   const resetForm = () => {
@@ -514,33 +536,83 @@ function EmailLibraryTab() {
       </div>
 
       {globalSettingsLoaded && (
-        <div className="bg-white rounded-xl px-5 py-4 card-shadow flex items-center gap-6">
-          <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide shrink-0">Annotation Settings</span>
-          <div className="flex items-center gap-2">
-            <label className="text-xs font-medium text-gray-600 shrink-0">Size</label>
-            <Select value={globalAnnotationSize} onValueChange={v => saveGlobalAnnotationSize(v as 'sm' | 'md' | 'lg')}>
-              <SelectTrigger className="h-8 w-[140px] text-xs">
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="sm"><SelectItemText>Small</SelectItemText></SelectItem>
-                <SelectItem value="md"><SelectItemText>Medium</SelectItemText></SelectItem>
-                <SelectItem value="lg"><SelectItemText>Large</SelectItemText></SelectItem>
-              </SelectContent>
-            </Select>
+        <div className="bg-white rounded-xl px-5 py-4 card-shadow space-y-4">
+          <div className="flex flex-wrap items-center gap-6">
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide shrink-0">Annotation Settings</span>
+            <div className="flex items-center gap-2">
+              <label className="text-xs font-medium text-gray-600 shrink-0">Size</label>
+              <Select value={globalAnnotationSize} onValueChange={v => saveGlobalAnnotationSize(v as 'sm' | 'md' | 'lg')}>
+                <SelectTrigger className="h-8 w-[140px] text-xs">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="sm"><SelectItemText>Small</SelectItemText></SelectItem>
+                  <SelectItem value="md"><SelectItemText>Medium</SelectItemText></SelectItem>
+                  <SelectItem value="lg"><SelectItemText>Large</SelectItemText></SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={globalAnnotationsExpanded}
+                onClick={() => saveGlobalAnnotationsExpanded(!globalAnnotationsExpanded)}
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${globalAnnotationsExpanded ? 'bg-brand-primary' : 'bg-gray-200'}`}
+              >
+                <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${globalAnnotationsExpanded ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
+              <span className="text-xs font-medium text-gray-600">Always show labels</span>
+            </label>
           </div>
-          <label className="flex items-center gap-2 cursor-pointer select-none">
-            <button
-              type="button"
-              role="switch"
-              aria-checked={globalAnnotationsExpanded}
-              onClick={() => saveGlobalAnnotationsExpanded(!globalAnnotationsExpanded)}
-              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${globalAnnotationsExpanded ? 'bg-brand-primary' : 'bg-gray-200'}`}
-            >
-              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${globalAnnotationsExpanded ? 'translate-x-4' : 'translate-x-0'}`} />
-            </button>
-            <span className="text-xs font-medium text-gray-600">Always show labels</span>
-          </label>
+
+          <div className="border-t border-gray-100 pt-4">
+            <div className="mb-3">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Klaviyo Asset Highlights</p>
+              <p className="text-xs text-gray-500 mt-1">
+                Controls how flow, segment, and campaign names appear in audit reports.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2">
+              {ENTITY_HIGHLIGHT_STYLES.map(style => {
+                const selected = entityHighlightStyle === style;
+                const swatch = style === 'disabled' ? null : ENTITY_HIGHLIGHT_SWATCHES[style];
+                return (
+                  <button
+                    key={style}
+                    type="button"
+                    onClick={() => saveEntityHighlightStyle(style)}
+                    className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-left transition-colors ${
+                      selected
+                        ? 'border-brand-primary bg-brand-primary/5 ring-1 ring-brand-primary/20'
+                        : 'border-gray-200 hover:border-gray-300 hover:bg-gray-50'
+                    }`}
+                  >
+                    {swatch ? (
+                      <span
+                        className="inline-flex shrink-0 rounded-md border px-2 py-0.5 text-[11px] font-medium"
+                        style={{
+                          backgroundColor: swatch.bg,
+                          borderColor: swatch.border,
+                          color: swatch.text,
+                        }}
+                      >
+                        Example
+                      </span>
+                    ) : (
+                      <span className="inline-flex shrink-0 rounded-md border border-dashed border-gray-300 px-2 py-0.5 text-[11px] font-medium text-gray-500">
+                        Plain text
+                      </span>
+                    )}
+                    <span>
+                      <span className="block text-xs font-semibold text-gray-900">{ENTITY_HIGHLIGHT_LABELS[style]}</span>
+                      <span className="block text-[11px] text-gray-500 max-w-[180px]">{ENTITY_HIGHLIGHT_DESCRIPTIONS[style]}</span>
+                    </span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
         </div>
       )}
 

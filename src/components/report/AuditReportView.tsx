@@ -21,8 +21,10 @@ import ReportTrustFooter from './ReportTrustFooter';
 import ReportBlockHeader from './ReportBlockHeader';
 import EditableRichText from './edit/EditableRichText';
 import EditablePlainText from './edit/EditablePlainText';
+import EditableCurrency from './edit/EditableCurrency';
 import { useReportEdit } from './edit/ReportEditContext';
 import { ReportEntityProvider, useReportEntities } from './edit/ReportEntityContext';
+import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
 import ReportBlockEditChrome, { ReportHiddenItemStub, ReportItemHideButton } from './edit/ReportBlockEditChrome';
 import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
@@ -121,7 +123,9 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     updateLayoutTitle,
     updateBlockTitle,
     updateAddOnField,
+    updateAddOnRevenue,
     updateAddOnBullet,
+    updateSectionRevenueOpportunity,
     toggleLayoutSectionHidden,
     toggleAuditSectionHidden,
     toggleExecutiveBlockHidden,
@@ -902,9 +906,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       />
                     </div>
                     <div className="text-right shrink-0">
-                      <p className="text-sm font-semibold text-emerald-700 tabular-nums">
-                        {formatCurrency(item.revenue_monthly || 0)}
-                      </p>
+                      <EditableCurrency
+                        value={item.revenue_monthly || 0}
+                        onSave={v => updateAddOnRevenue(itemKey, v)}
+                        className="text-sm font-semibold text-emerald-700 tabular-nums"
+                      />
                       <p className="text-[11px] text-emerald-600">/mo</p>
                     </div>
                   </div>
@@ -989,9 +995,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">
                         {SECTION_LABELS[s.section_key]}
                       </p>
-                      <p className="text-xl font-bold tabular-nums text-white sm:text-2xl">
-                        {formatCurrency(s.revenue_opportunity)}
-                      </p>
+                      <EditableCurrency
+                        value={s.revenue_opportunity}
+                        onSave={v => updateSectionRevenueOpportunity(s.section_key, v)}
+                        className="text-xl font-bold tabular-nums text-white sm:text-2xl"
+                        inputClassName="text-xl font-bold text-white sm:text-2xl"
+                      />
                       <p className="mt-0.5 text-xs text-white/50">per month</p>
                     </div>
                   ))}
@@ -1089,13 +1098,14 @@ function parseSectionDetails(raw: unknown): Record<string, any> | null {
 
 function RubricMarkdownText({ text }: { text: string }) {
   const { entityLookup, autoTagEntities } = useReportEntities();
+  const { entityHighlightsEnabled } = usePlatformSettings();
   const src = String(text ?? '');
   const parts = src.split('\n');
   return (
     <>
       {parts.map((line, lineIdx) => (
         <span key={`line-${lineIdx}`}>
-          {renderInlineMarkdown(line, entityLookup, autoTagEntities)}
+          {renderInlineMarkdown(line, entityLookup, autoTagEntities, entityHighlightsEnabled)}
           {lineIdx < parts.length - 1 ? <br /> : null}
         </span>
       ))}
@@ -1540,7 +1550,7 @@ function ReportSectionBlock({
   hideRubric?: boolean;
   hideKeyTakeaway?: boolean;
 }) {
-  const { updateSectionField, editMode } = useReportEdit();
+  const { updateSectionField, updateSectionRevenueOpportunity, editMode } = useReportEdit();
   const sk = section.section_key;
   const currentAsset = assets.find(a => a.section_key === section.section_key && a.side === 'current');
   const optimizedAsset = assets.find(a => a.section_key === section.section_key && a.side === 'optimized');
@@ -1557,7 +1567,13 @@ function ReportSectionBlock({
           {section.revenue_opportunity > 0 && (
             <div className="flex items-center gap-2 shrink-0">
               <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
-              <span className="text-sm font-semibold text-emerald-700">{formatCurrency(section.revenue_opportunity)}/mo</span>
+              <EditableCurrency
+                value={section.revenue_opportunity}
+                onSave={v => updateSectionRevenueOpportunity(sk, v)}
+                className="text-sm font-semibold text-emerald-700"
+                suffix="/mo"
+                suffixClassName="text-sm font-semibold text-emerald-700"
+              />
               <span className={`text-[10px] font-semibold px-2 py-0.5 rounded-full ${
                 section.confidence === 'high' ? 'bg-emerald-50 text-emerald-600' :
                 section.confidence === 'medium' ? 'bg-blue-50 text-blue-600' : 'bg-amber-50 text-amber-600'

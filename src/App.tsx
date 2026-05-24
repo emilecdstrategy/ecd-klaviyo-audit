@@ -6,6 +6,7 @@ import Login from './pages/Login';
 import Modal from './components/ui/Modal';
 import AppPreloader from './components/ui/AppPreloader';
 import { ToastProvider } from './components/ui/Toast';
+import { PlatformSettingsProvider } from './contexts/PlatformSettingsContext';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Clients = lazy(() => import('./pages/Clients'));
@@ -128,7 +129,9 @@ export default function App() {
     <BrowserRouter>
       <AuthProvider>
         <ToastProvider>
-          <AppRoutes />
+          <PlatformSettingsProvider>
+            <AppRoutes />
+          </PlatformSettingsProvider>
         </ToastProvider>
       </AuthProvider>
     </BrowserRouter>

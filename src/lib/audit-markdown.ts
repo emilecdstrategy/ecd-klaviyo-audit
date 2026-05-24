@@ -1,6 +1,6 @@
 /** Markdown-lite format used across audit copy: **bold**, *italic*, `type:entity`, newlines. */
 
-import { ENTITY_CHIP_CLASS, type EntityType } from './entity-tags';
+import { ENTITY_CHIP_CLASS, prepareAuditText, stripEntityMarkers, type EntityType } from './entity-tags';
 
 const ENTITY_TYPES = ['flow', 'campaign', 'segment', 'form'] as const;
 
@@ -25,6 +25,22 @@ export function mdToHtml(md: string): string {
     .replace(/\n/g, '<br>');
 
   return html;
+}
+
+export function auditTextToEditorHtml(
+  text: string,
+  lookup?: Map<string, EntityType>,
+  autoTag = true,
+  highlightsEnabled = true,
+): string {
+  if (!highlightsEnabled) {
+    const plain = lookup?.size
+      ? stripEntityMarkers(prepareAuditText(text || '', lookup, false))
+      : stripEntityMarkers(text || '');
+    return mdToHtml(plain);
+  }
+  const processed = lookup?.size ? prepareAuditText(text || '', lookup, autoTag) : (text || '');
+  return mdToHtml(processed);
 }
 
 export function htmlToMd(html: string): string {

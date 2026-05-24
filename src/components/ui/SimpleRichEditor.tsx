@@ -1,8 +1,9 @@
 import { useRef, useCallback, useEffect } from 'react';
-import { Bold, Italic, Send, Underline, List, Users, Workflow } from 'lucide-react';
-import { htmlToMd, mdToHtml } from '../../lib/audit-markdown';
-import { wrapSelectionAsEntity } from '../../lib/entity-editor';
-import { ENTITY_LABELS, type EntityType } from '../../lib/entity-tags';
+import { Bold, Highlighter, Italic, Underline, List } from 'lucide-react';
+import { htmlToMd, auditTextToEditorHtml } from '../../lib/audit-markdown';
+import { wrapSelectionAsHighlight } from '../../lib/entity-editor';
+import type { EntityType } from '../../lib/entity-tags';
+import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
 
 interface SimpleRichEditorProps {
   value: string;
@@ -11,13 +12,9 @@ interface SimpleRichEditorProps {
   placeholder?: string;
   className?: string;
   entityTags?: boolean;
+  entityLookup?: Map<string, EntityType>;
+  autoTagEntities?: boolean;
 }
-
-const ENTITY_BUTTONS: { type: EntityType; icon: typeof Workflow; short: string }[] = [
-  { type: 'flow', icon: Workflow, short: 'Flow' },
-  { type: 'campaign', icon: Send, short: 'Camp.' },
-  { type: 'segment', icon: Users, short: 'Seg.' },
-];
 
 export default function SimpleRichEditor({
   value,
@@ -25,7 +22,10 @@ export default function SimpleRichEditor({
   rows = 4,
   placeholder,
   entityTags = true,
+  entityLookup,
+  autoTagEntities = true,
 }: SimpleRichEditorProps) {
+  const { entityHighlightsEnabled } = usePlatformSettings();
   const editorRef = useRef<HTMLDivElement>(null);
   const isInternalUpdate = useRef(false);
 
@@ -34,11 +34,13 @@ export default function SimpleRichEditor({
       isInternalUpdate.current = false;
       return;
     }
-    const html = mdToHtml(value || '');
+    const html = entityTags
+      ? auditTextToEditorHtml(value || '', entityLookup, autoTagEntities, entityHighlightsEnabled)
+      : (value || '');
     if (editorRef.current.innerHTML !== html) {
       editorRef.current.innerHTML = html;
     }
-  }, [value]);
+  }, [value, entityTags, entityLookup, autoTagEntities, entityHighlightsEnabled]);
 
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;
@@ -53,12 +55,13 @@ export default function SimpleRichEditor({
     handleInput();
   }, [handleInput]);
 
-  const tagEntity = useCallback((type: EntityType) => {
-    if (wrapSelectionAsEntity(editorRef.current, type)) {
+  const highlightSelection = useCallback(() => {
+    if (!entityLookup?.size) return;
+    if (wrapSelectionAsHighlight(editorRef.current, entityLookup)) {
       editorRef.current?.focus();
       handleInput();
     }
-  }, [handleInput]);
+  }, [entityLookup, handleInput]);
 
   const minH = Math.max(rows * 24, 72);
 
@@ -78,17 +81,18 @@ export default function SimpleRichEditor({
         <ToolbarBtn onClick={() => exec('insertUnorderedList')} title="Bullet list">
           <List className="w-3.5 h-3.5" />
         </ToolbarBtn>
-        {entityTags && (
+        {entityTags && entityLookup && entityLookup.size > 0 && entityHighlightsEnabled && (
           <>
             <div className="w-px h-4 bg-gray-200 mx-1" />
-            {ENTITY_BUTTONS.map(({ type, icon: Icon, short }) => (
-              <ToolbarBtn key={type} onClick={() => tagEntity(type)} title={`Tag as ${ENTITY_LABELS[type]}`}>
-                <span className="inline-flex items-center gap-1 text-[10px] font-semibold">
-                  <Icon className="w-3 h-3" />
-                  {short}
-                </span>
-              </ToolbarBtn>
-            ))}
+            <ToolbarBtn
+              onClick={highlightSelection}
+              title="Highlight Klaviyo flow, segment, or campaign"
+            >
+              <span className="inline-flex items-center gap-1 text-[10px] font-semibold">
+                <Highlighter className="w-3 h-3" />
+                Highlight
+              </span>
+            </ToolbarBtn>
           </>
         )}
       </div>

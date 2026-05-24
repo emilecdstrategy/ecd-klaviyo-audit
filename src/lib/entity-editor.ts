@@ -1,4 +1,4 @@
-import { ENTITY_CHIP_CLASS, type EntityType } from './entity-tags';
+import { ENTITY_CHIP_CLASS, resolveEntityType, type EntityType } from './entity-tags';
 
 export function wrapSelectionAsEntity(root: HTMLElement | null, type: EntityType): boolean {
   const sel = window.getSelection();
@@ -25,4 +25,20 @@ export function wrapSelectionAsEntity(root: HTMLElement | null, type: EntityType
   sel.addRange(after);
 
   return true;
+}
+
+export function wrapSelectionAsHighlight(
+  root: HTMLElement | null,
+  lookup: Map<string, EntityType>,
+): boolean {
+  const sel = window.getSelection();
+  if (!root || !sel || sel.rangeCount === 0) return false;
+
+  const range = sel.getRangeAt(0);
+  if (!root.contains(range.commonAncestorContainer)) return false;
+
+  const text = range.toString();
+  if (!text.trim()) return false;
+
+  return wrapSelectionAsEntity(root, resolveEntityType(text, lookup));
 }

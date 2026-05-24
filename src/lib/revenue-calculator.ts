@@ -89,3 +89,28 @@ export function calculateTotalOpportunity(inputs: CalcInputs): {
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
 }
+
+type RevenueAddOnLike = {
+  revenue_monthly?: number;
+  is_hidden?: boolean;
+};
+
+type RevenueSectionLike = {
+  revenue_opportunity?: number;
+};
+
+export function computeAuditTotalRevenueOpportunity(
+  sections: RevenueSectionLike[],
+  layout: unknown,
+): number {
+  const sectionTotal = sections.reduce((sum, section) => sum + (Number(section.revenue_opportunity) || 0), 0);
+  const layoutObj = (layout as Record<string, unknown> | null | undefined) ?? {};
+  const revenueSummary = layoutObj.revenue_summary as Record<string, unknown> | undefined;
+  const blocks = revenueSummary?.blocks as Record<string, unknown> | undefined;
+  const addOns = blocks?.addOns as Record<string, unknown> | undefined;
+  const items = Array.isArray(addOns?.items) ? (addOns.items as RevenueAddOnLike[]) : [];
+  const addOnTotal = items
+    .filter(item => item && !item.is_hidden)
+    .reduce((sum, item) => sum + (Number(item.revenue_monthly) || 0), 0);
+  return sectionTotal + addOnTotal;
+}

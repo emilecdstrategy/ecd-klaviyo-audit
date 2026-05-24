@@ -17,8 +17,10 @@ export default function AppPreloader({
       aria-live="polite"
       aria-busy="true"
       className={cn(
-        'flex items-center justify-center animate-fade-in',
-        compact ? 'py-16' : 'min-h-screen bg-[#f9f9f9] p-6',
+        'flex items-center justify-center animate-fade-in bg-[#f9f9f9]',
+        compact
+          ? 'flex-1 w-full min-h-0'
+          : 'fixed inset-0 z-50 min-h-[100dvh]',
         className,
       )}
     >

@@ -11,6 +11,7 @@ import type { Audit, AuditSection } from '../../../lib/types';
 import { updateAudit, updateAuditSection } from '../../../lib/db';
 import { scheduleSavedToast, useToast } from '../../ui/Toast';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
+import { computeAuditTotalRevenueOpportunity } from '../../../lib/revenue-calculator';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
 export type TimelinePhase = {
@@ -89,7 +90,9 @@ type ReportEditContextValue = {
     field: 'name' | 'description',
     value: string,
   ) => void;
+  updateAddOnRevenue: (itemKey: string, value: number) => void;
   updateAddOnBullet: (itemKey: string, bulletIndex: number, value: string) => void;
+  updateSectionRevenueOpportunity: (sectionKey: string, value: number) => void;
   toggleLayoutSectionHidden: (layoutKey: 'executive_summary' | 'revenue_summary', hidden: boolean) => void;
   toggleAuditSectionHidden: (sectionKey: string, hidden: boolean) => void;
   toggleExecutiveBlockHidden: (blockKey: string, hidden: boolean) => void;
@@ -121,7 +124,9 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateTimelinePhase: () => {},
   updateTimelineItem: () => {},
   updateAddOnField: () => {},
+  updateAddOnRevenue: () => {},
   updateAddOnBullet: () => {},
+  updateSectionRevenueOpportunity: () => {},
   toggleLayoutSectionHidden: () => {},
   toggleAuditSectionHidden: () => {},
   toggleExecutiveBlockHidden: () => {},
@@ -299,6 +304,36 @@ export function ReportEditProvider({
     [getExecPayload, saveExecutive],
   );
 
+  const syncAuditTotalRevenue = useCallback(
+    (nextSections: AuditSection[], baseAudit: Audit) => {
+      const total = computeAuditTotalRevenueOpportunity(nextSections, baseAudit.layout);
+      if (total === baseAudit.total_revenue_opportunity) return baseAudit;
+      const nextAudit = { ...baseAudit, total_revenue_opportunity: total };
+      onAuditChange(nextAudit);
+      schedule('audit-total-revenue', async () => {
+        await updateAudit(baseAudit.id, { total_revenue_opportunity: total });
+      });
+      return nextAudit;
+    },
+    [onAuditChange, schedule],
+  );
+
+  const updateSectionRevenueOpportunity = useCallback(
+    (sectionKey: string, value: number) => {
+      const section = sections.find(s => s.section_key === sectionKey);
+      if (!section) return;
+      const nextSections = sections.map(s =>
+        s.id === section.id ? { ...s, revenue_opportunity: value } : s,
+      );
+      onSectionsChange(nextSections);
+      syncAuditTotalRevenue(nextSections, audit);
+      schedule(`section-${section.id}-revenue_opportunity`, async () => {
+        await updateAuditSection(section.id, { revenue_opportunity: value });
+      });
+    },
+    [sections, onSectionsChange, syncAuditTotalRevenue, audit, schedule],
+  );
+
   const updateAddOnField = useCallback(
     (itemKey: string, field: 'name' | 'description', value: string) => {
       const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
@@ -319,6 +354,33 @@ export function ReportEditProvider({
       });
     },
     [audit, onAuditChange, schedule],
+  );
+
+  const updateAddOnRevenue = useCallback(
+    (itemKey: string, value: number) => {
+      const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
+      const rs = { ...((layout.revenue_summary as Record<string, unknown>) ?? {}) };
+      const blocks = { ...((rs.blocks as Record<string, unknown>) ?? {}) };
+      const addOns = { ...((blocks.addOns as Record<string, unknown>) ?? {}) };
+      const items = [...((addOns.items as RevenueOpportunityAddOnItem[]) ?? [])];
+      const idx = items.findIndex(i => `${i.template_slug}-${i.display_order}` === itemKey);
+      if (idx < 0) return;
+      items[idx] = { ...items[idx], revenue_monthly: value };
+      addOns.items = items;
+      blocks.addOns = addOns;
+      rs.blocks = blocks;
+      layout.revenue_summary = rs;
+      const nextAudit = { ...audit, layout };
+      const total = computeAuditTotalRevenueOpportunity(sections, layout);
+      onAuditChange({ ...nextAudit, total_revenue_opportunity: total });
+      schedule('layout-addons', async () => {
+        await updateAudit(audit.id, {
+          layout,
+          ...(total !== audit.total_revenue_opportunity ? { total_revenue_opportunity: total } : {}),
+        });
+      });
+    },
+    [audit, onAuditChange, sections, schedule],
   );
 
   const updateAddOnBullet = useCallback(
@@ -548,7 +610,9 @@ export function ReportEditProvider({
       updateTimelinePhase,
       updateTimelineItem,
       updateAddOnField,
+      updateAddOnRevenue,
       updateAddOnBullet,
+      updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,
       toggleExecutiveBlockHidden,
@@ -574,7 +638,9 @@ export function ReportEditProvider({
       updateTimelinePhase,
       updateTimelineItem,
       updateAddOnField,
+      updateAddOnRevenue,
       updateAddOnBullet,
+      updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,
       toggleExecutiveBlockHidden,

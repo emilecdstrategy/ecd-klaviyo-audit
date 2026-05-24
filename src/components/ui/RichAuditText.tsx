@@ -2,14 +2,20 @@ import type { ReactNode } from 'react';
 import { prepareAuditText, type EntityType } from '../../lib/entity-tags';
 import { useReportEntities } from '../report/edit/ReportEntityContext';
 import EntityTagChip from './EntityTagChip';
+import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
 
 /** Renders inline **bold**, *italic*, and `type:entity` markers. */
 export function renderInlineMarkdown(
   text: string,
   lookup?: Map<string, EntityType>,
   autoTag = true,
+  highlightsEnabled = true,
 ): ReactNode[] {
-  const processed = lookup?.size ? prepareAuditText(text, lookup, autoTag) : text;
+  const processed = lookup?.size && highlightsEnabled
+    ? prepareAuditText(text, lookup, autoTag)
+    : lookup?.size && !highlightsEnabled
+      ? prepareAuditText(text, lookup, false)
+      : text;
   const nodes: ReactNode[] = [];
   const regex = /(`(flow|campaign|segment|form):([^`]+)`|\*\*(.+?)\*\*|\*(.+?)\*)/g;
   let last = 0;
@@ -19,9 +25,13 @@ export function renderInlineMarkdown(
   while ((match = regex.exec(processed)) !== null) {
     if (match.index > last) nodes.push(processed.slice(last, match.index));
     if (match[2] !== undefined && match[3] !== undefined) {
-      nodes.push(
-        <EntityTagChip key={key++} type={match[2] as EntityType} name={match[3]} />,
-      );
+      if (highlightsEnabled) {
+        nodes.push(
+          <EntityTagChip key={key++} type={match[2] as EntityType} name={match[3]} />,
+        );
+      } else {
+        nodes.push(match[3]);
+      }
     } else if (match[4] !== undefined) {
       nodes.push(<strong key={key++}>{match[4]}</strong>);
     } else if (match[5] !== undefined) {
@@ -39,15 +49,19 @@ export function RichAuditText({
   className,
   entityLookup: entityLookupProp,
   autoTagEntities: autoTagProp,
+  highlightsEnabled: highlightsEnabledProp,
 }: {
   text: string;
   className?: string;
   entityLookup?: Map<string, EntityType>;
   autoTagEntities?: boolean;
+  highlightsEnabled?: boolean;
 }) {
   const { entityLookup: ctxLookup, autoTagEntities: ctxAutoTag } = useReportEntities();
+  const { entityHighlightsEnabled } = usePlatformSettings();
   const entityLookup = entityLookupProp ?? ctxLookup;
   const autoTagEntities = autoTagProp ?? ctxAutoTag;
+  const highlightsEnabled = highlightsEnabledProp ?? entityHighlightsEnabled;
   const paragraphs = (text || '')
     .split('\n')
     .map(p => p.trim())
@@ -59,7 +73,7 @@ export function RichAuditText({
     <div className={className}>
       {paragraphs.map((p, i) => (
         <p key={`${i}-${p.slice(0, 12)}`} className={i > 0 ? 'mt-2' : ''}>
-          {renderInlineMarkdown(p, entityLookup, autoTagEntities)}
+          {renderInlineMarkdown(p, entityLookup, autoTagEntities, highlightsEnabled)}
         </p>
       ))}
     </div>

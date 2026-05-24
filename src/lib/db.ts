@@ -16,7 +16,13 @@ import type {
   IndustryEmailLibrary,
   AuditEmailDesign,
   RevenueOpportunityTemplate,
+  AnnotationSize,
 } from './types';
+import {
+  applyEntityHighlightStyle,
+  normalizeEntityHighlightStyle,
+  type EntityHighlightStyle,
+} from './entity-highlight-styles';
 
 function requireUserId(user: Profile | null): string {
   if (!user) throw new Error('Not signed in');
@@ -585,22 +591,41 @@ export async function ensureClientCreator(user: Profile | null, client: Partial<
   return { ...client, created_by: requireUserId(user) };
 }
 
-export async function getPlatformSettings(): Promise<{ annotation_size: 'sm' | 'md' | 'lg'; annotations_expanded: boolean }> {
+export type PlatformSettings = {
+  annotation_size: AnnotationSize;
+  annotations_expanded: boolean;
+  entity_highlight_style: EntityHighlightStyle;
+};
+
+export async function getPlatformSettings(): Promise<PlatformSettings> {
   const { data, error } = await supabase
     .from('platform_settings')
-    .select('annotation_size, annotations_expanded')
+    .select('annotation_size, annotations_expanded, entity_highlight_style')
     .eq('id', 'default')
     .single();
-  if (error || !data) return { annotation_size: 'md', annotations_expanded: false };
-  return { annotation_size: data.annotation_size || 'md', annotations_expanded: data.annotations_expanded ?? false };
+  if (error || !data) {
+    return { annotation_size: 'md', annotations_expanded: false, entity_highlight_style: 'purple' };
+  }
+  return {
+    annotation_size: (data.annotation_size || 'md') as AnnotationSize,
+    annotations_expanded: data.annotations_expanded ?? false,
+    entity_highlight_style: normalizeEntityHighlightStyle(data.entity_highlight_style),
+  };
 }
 
-export async function updatePlatformSettings(updates: { annotation_size?: string; annotations_expanded?: boolean }): Promise<void> {
+export async function updatePlatformSettings(updates: {
+  annotation_size?: string;
+  annotations_expanded?: boolean;
+  entity_highlight_style?: EntityHighlightStyle;
+}): Promise<void> {
   const { error } = await supabase
     .from('platform_settings')
     .update({ ...updates, updated_at: new Date().toISOString() })
     .eq('id', 'default');
   if (error) throw error;
+  if (updates.entity_highlight_style) {
+    applyEntityHighlightStyle(updates.entity_highlight_style);
+  }
 }
 
 function coerceTemplateBullets(input: unknown): string[] {

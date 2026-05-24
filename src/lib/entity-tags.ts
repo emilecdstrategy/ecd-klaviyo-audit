@@ -10,16 +10,26 @@ export const ENTITY_LABELS: Record<EntityType, string> = {
 };
 
 export const ENTITY_CHIP_CLASS: Record<EntityType, string> = {
-  flow: 'entity-tag entity-tag--flow',
-  campaign: 'entity-tag entity-tag--campaign',
-  segment: 'entity-tag entity-tag--segment',
-  form: 'entity-tag entity-tag--form',
+  flow: 'entity-tag',
+  campaign: 'entity-tag',
+  segment: 'entity-tag',
+  form: 'entity-tag',
 };
 
 const ENTITY_MD_REGEX = /`(flow|campaign|segment|form):([^`]+)`/g;
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+export function resolveEntityType(name: string, lookup: Map<string, EntityType>): EntityType {
+  const trimmed = name.trim();
+  if (!trimmed) return 'flow';
+  if (lookup.has(trimmed)) return lookup.get(trimmed)!;
+  for (const [key, type] of lookup) {
+    if (key.toLowerCase() === trimmed.toLowerCase()) return type;
+  }
+  return 'flow';
 }
 
 export function entityMd(type: EntityType, name: string): string {

@@ -19,7 +19,7 @@ export default function AppShell() {
     <div className="min-h-screen bg-[#f8f8f8]">
       <Sidebar collapsed={collapsed} onCollapsedChange={setCollapsed} />
       <div className={`${collapsed ? 'ml-[68px]' : 'ml-[240px]'} flex flex-col min-h-screen transition-[margin] duration-300`}>
-        <main className="flex-1">
+        <main className="flex flex-1 flex-col min-h-[100dvh]">
           <Suspense fallback={<AppPreloader compact />}>
             <Outlet />
           </Suspense>
