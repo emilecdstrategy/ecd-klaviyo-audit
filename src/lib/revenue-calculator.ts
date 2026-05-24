@@ -1,3 +1,5 @@
+import { isRevenueOpportunitySectionVisible } from './report-config/resolve';
+
 interface CalcInputs {
   listSize: number;
   aov: number;
@@ -118,6 +120,7 @@ type RevenueAddOnLike = {
 type RevenueSectionLike = {
   revenue_opportunity?: number;
   section_key?: string;
+  section_config?: Record<string, unknown> | null;
 };
 
 export function computeAuditTotalRevenueOpportunity(
@@ -126,6 +129,12 @@ export function computeAuditTotalRevenueOpportunity(
 ): number {
   const sectionTotal = sections
     .filter(section => section.section_key && isRevenueOpportunitySection(section.section_key))
+    .filter(section =>
+      isRevenueOpportunitySectionVisible(
+        section.section_key!,
+        section.section_config ?? null,
+      ),
+    )
     .reduce((sum, section) => sum + (Number(section.revenue_opportunity) || 0), 0);
   const layoutObj = (layout as Record<string, unknown> | null | undefined) ?? {};
   const revenueSummary = layoutObj.revenue_summary as Record<string, unknown> | undefined;

@@ -29,6 +29,7 @@ type AuditSectionRevenueRow = {
   audit_id: string;
   section_key: string;
   revenue_opportunity: number;
+  section_config?: Record<string, unknown> | null;
 };
 
 function attachComputedRevenueOpportunity(audits: Audit[], sections: AuditSectionRevenueRow[]): Audit[] {
@@ -53,7 +54,7 @@ async function fetchRevenueSectionsForAudits(auditIds: string[]): Promise<AuditS
   if (auditIds.length === 0) return [];
   const { data, error } = await supabase
     .from('audit_sections')
-    .select('audit_id, section_key, revenue_opportunity')
+    .select('audit_id, section_key, revenue_opportunity, section_config')
     .in('audit_id', auditIds)
     .in('section_key', [...REVENUE_OPPORTUNITY_SECTION_KEYS]);
   if (error) throw error;
@@ -143,7 +144,9 @@ export async function searchAudits(query: string, limit = 5): Promise<Audit[]> {
 export async function getAudit(id: string): Promise<Audit | null> {
   const { data, error } = await supabase.from('audits').select('*').eq('id', id).maybeSingle();
   if (error) throw error;
-  return (data ?? null) as Audit | null;
+  if (!data) return null;
+  const sections = await fetchRevenueSectionsForAudits([id]);
+  return attachComputedRevenueOpportunity([data as Audit], sections)[0] ?? null;
 }
 
 export async function createAudit(input: Omit<Audit, 'id' | 'created_at' | 'updated_at' | 'published_at' | 'public_share_token'>): Promise<Audit> {

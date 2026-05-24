@@ -308,3 +308,27 @@ export function isExecutiveSummaryBlockVisible(
 ): boolean {
   return isBlockVisible(resolved, block);
 }
+
+// -----------------------------------------------------------------------------
+// Revenue opportunity visibility (hidden audit sections)
+// -----------------------------------------------------------------------------
+
+export function isRevenueOpportunitySectionVisible(
+  sectionKey: string,
+  sectionConfig: Record<string, unknown> | null | undefined,
+): boolean {
+  switch (sectionKey) {
+    case 'flows':
+      return !resolveFlowsConfig(extractFlowsRawConfig(sectionConfig)).hidden;
+    case 'segmentation':
+      return !resolveSegmentationConfig(extractSegmentationRawConfig(sectionConfig)).hidden;
+    case 'campaigns':
+      return !resolveCampaignsConfig(extractCampaignsRawConfig(sectionConfig)).hidden;
+    case 'signup_forms':
+      return !resolveSignupFormsConfig(extractSignupFormsRawConfig(sectionConfig)).hidden;
+    case 'email_design':
+      return !resolveEmailDesignConfig(extractEmailDesignRawConfig(sectionConfig)).hidden;
+    default:
+      return true;
+  }
+}

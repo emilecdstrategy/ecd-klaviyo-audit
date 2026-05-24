@@ -437,11 +437,12 @@ export function ReportEditProvider({
         s.id === section.id ? { ...s, section_config: nextConfig } : s,
       );
       onSectionsChange(nextSections);
+      syncAuditTotalRevenue(nextSections, audit);
       schedule(`section-hidden-${section.id}`, async () => {
         await updateAuditSection(section.id, { section_config: nextConfig });
       });
     },
-    [sections, onSectionsChange, schedule],
+    [sections, onSectionsChange, schedule, syncAuditTotalRevenue, audit],
   );
 
   const toggleExecutiveBlockHidden = useCallback(

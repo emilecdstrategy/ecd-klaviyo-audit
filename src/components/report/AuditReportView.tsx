@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 're
 import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
 import { computeAuditTotalRevenueOpportunity, formatCurrency, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../lib/revenue-calculator';
+import { isRevenueOpportunitySectionVisible } from '../../lib/report-config/resolve';
 import { normalizeCoreFlowsMatrix } from '../../lib/core-flows-matrix';
 import AnnotationLayer from '../audit/AnnotationLayer';
 import ReportFlowTable from './ReportFlowTable';
@@ -253,6 +254,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   const revenueBreakdownSections = REVENUE_OPPORTUNITY_SECTION_KEYS
     .map(key => sections.find(s => s.section_key === key))
     .filter((s): s is AuditSection => !!s)
+    .filter(s =>
+      isRevenueOpportunitySectionVisible(
+        s.section_key,
+        (s.section_config as Record<string, unknown> | null | undefined) ?? null,
+      ),
+    )
     .filter(s => editMode || s.revenue_opportunity > 0);
   const addOnTotalRevenue = visibleAddOnItems.reduce(
     (sum, item) => sum + (Number(item.revenue_monthly) || 0),
