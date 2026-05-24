@@ -16,7 +16,21 @@ export const ENTITY_CHIP_CLASS: Record<EntityType, string> = {
   form: 'entity-tag',
 };
 
-const ENTITY_MD_REGEX = /`(flow|campaign|segment|form):([^`]+)`/g;
+const AUTO_TAG_BLOCKLIST = new Set([
+  'test', 'new', 'draft', 'sent', 'live', 'manual', 'clone', 'copy', 'email', 'sms', 'pop', 'vip',
+  'sale', 'promo', 'flow', 'list', 'form', 'cart', 'shop', 'buy', 'win', 'day', 'week',
+]);
+
+/** Short or generic Klaviyo asset names are too ambiguous for runtime auto-tagging in prose. */
+function isAutoTagCandidate(name: string): boolean {
+  const trimmed = name.trim();
+  if (trimmed.length < 2) return false;
+  if (AUTO_TAG_BLOCKLIST.has(trimmed.toLowerCase())) return false;
+  if (/[|–—/]/.test(trimmed)) return true;
+  if (/\s/.test(trimmed) && trimmed.length >= 8) return true;
+  if (trimmed.length >= 12) return true;
+  return trimmed.length >= 8;
+}
 
 function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -118,8 +132,8 @@ export function autoTagEntityNames(text: string, lookup: Map<string, EntityType>
 
   for (const name of names) {
     const type = lookup.get(name);
-    if (!type) continue;
-    const regex = new RegExp(`(?<!\\*\\*)\\b(${escapeRegex(name)})\\b(?!\\*\\*)`, 'gi');
+    if (!type || !isAutoTagCandidate(name)) continue;
+    const regex = new RegExp(`(?<!\\*\\*)\\b(${escapeRegex(name)})\\b(?!\\*\\*)`, 'g');
     result = result.replace(regex, (match, _captured, offset) => {
       if (typeof offset !== 'number') return match;
       if (overlapsEntityMarkerRange(offset, match.length, markerRanges)) return match;

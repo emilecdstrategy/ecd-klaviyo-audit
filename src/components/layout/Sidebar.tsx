@@ -18,8 +18,8 @@ interface SidebarProps {
 
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
-  { to: '/clients', icon: Users, label: 'Clients' },
   { to: '/audits', icon: ClipboardCheck, label: 'Audits' },
+  { to: '/clients', icon: Users, label: 'Clients' },
 ];
 
 const ADMIN_ITEMS = [

@@ -216,10 +216,7 @@ export default function Audits() {
                       className="hover:bg-gray-50/50 cursor-pointer transition-colors"
                     >
                       <td className="px-6 py-4">
-                        <div className="flex items-center gap-2.5 min-w-0">
-                          <SiteFavicon url={client?.website_url} />
-                          <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
-                        </div>
+                        <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2.5 min-w-0">
