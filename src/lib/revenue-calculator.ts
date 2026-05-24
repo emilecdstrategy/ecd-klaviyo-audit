@@ -90,6 +90,26 @@ export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);
 }
 
+/** Audit sections that contribute to the revenue opportunity total and banner breakdown. */
+export const REVENUE_OPPORTUNITY_SECTION_KEYS = [
+  'flows',
+  'segmentation',
+  'campaigns',
+  'signup_forms',
+  'email_design',
+] as const;
+
+export type RevenueOpportunitySectionKey = (typeof REVENUE_OPPORTUNITY_SECTION_KEYS)[number];
+
+export function isRevenueOpportunitySection(sectionKey: string): sectionKey is RevenueOpportunitySectionKey {
+  return (REVENUE_OPPORTUNITY_SECTION_KEYS as readonly string[]).includes(sectionKey);
+}
+
+/** Default email design $/mo when AI returns zero: at least $300 or 10% of other section revenue. */
+export function defaultEmailDesignRevenue(otherSectionsTotal: number): number {
+  return Math.max(300, Math.round(otherSectionsTotal * 0.1));
+}
+
 type RevenueAddOnLike = {
   revenue_monthly?: number;
   is_hidden?: boolean;
@@ -97,13 +117,16 @@ type RevenueAddOnLike = {
 
 type RevenueSectionLike = {
   revenue_opportunity?: number;
+  section_key?: string;
 };
 
 export function computeAuditTotalRevenueOpportunity(
   sections: RevenueSectionLike[],
   layout: unknown,
 ): number {
-  const sectionTotal = sections.reduce((sum, section) => sum + (Number(section.revenue_opportunity) || 0), 0);
+  const sectionTotal = sections
+    .filter(section => section.section_key && isRevenueOpportunitySection(section.section_key))
+    .reduce((sum, section) => sum + (Number(section.revenue_opportunity) || 0), 0);
   const layoutObj = (layout as Record<string, unknown> | null | undefined) ?? {};
   const revenueSummary = layoutObj.revenue_summary as Record<string, unknown> | undefined;
   const blocks = revenueSummary?.blocks as Record<string, unknown> | undefined;

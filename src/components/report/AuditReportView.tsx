@@ -1,7 +1,7 @@
 import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
 import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
-import { formatCurrency } from '../../lib/revenue-calculator';
+import { computeAuditTotalRevenueOpportunity, formatCurrency, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../lib/revenue-calculator';
 import AnnotationLayer from '../audit/AnnotationLayer';
 import ReportFlowTable from './ReportFlowTable';
 import ReportFlowInventoryTable from './ReportFlowInventoryTable';
@@ -178,11 +178,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   const isPreview = audit.status === 'draft' || audit.status === 'in_review';
 
   const currentFlowMonthlyRevenue = flowPerformance.reduce((s, f) => s + (f.monthly_revenue_current ?? 0), 0);
-  const REVENUE_SECTION_KEYS = new Set(['flows', 'segmentation', 'campaigns', 'signup_forms', 'email_design']);
-  const topOpportunities = [...sections]
-    .filter(s => REVENUE_SECTION_KEYS.has(s.section_key))
-    .filter(s => editMode || s.revenue_opportunity > 0)
-    .sort((a, b) => b.revenue_opportunity - a.revenue_opportunity);
   const reportSections = sections.filter(s => s.section_key !== 'revenue_summary' && s.status !== 'draft');
 
   let execText = audit.executive_summary || '';
@@ -254,8 +249,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       .filter(item => !item.is_hidden)
       .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
     : [];
-  const addOnRevenue = visibleAddOnItems.reduce((sum, item) => sum + (Number(item.revenue_monthly) || 0), 0);
-  const totalRevenue = sections.reduce((s, sec) => s + sec.revenue_opportunity, 0) + addOnRevenue;
+  const revenueBreakdownSections = REVENUE_OPPORTUNITY_SECTION_KEYS
+    .map(key => sections.find(s => s.section_key === key))
+    .filter((s): s is AuditSection => !!s)
+    .filter(s => editMode || s.revenue_opportunity > 0);
+  const revenueBreakdownAddOns = visibleAddOnItems.filter(
+    item => editMode || (Number(item.revenue_monthly) || 0) > 0,
+  );
+  const totalRevenue = computeAuditTotalRevenueOpportunity(sections, auditLayout);
 
   const executiveSummaryCfg = resolveExecutiveSummaryConfig(
     extractExecutiveSummaryRawConfig(auditLayout),
@@ -991,13 +992,13 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
               {editMode && (
                 <p className="mb-6 text-xs font-medium text-white/60">
-                  Edit each section&apos;s $/mo below — the total updates automatically. Add-on amounts are editable in each card above.
+                  Edit each section&apos;s $/mo below — add-on amounts are included in the total and editable here too.
                 </p>
               )}
 
-              {(topOpportunities.length > 0 || editMode) && (
+              {(revenueBreakdownSections.length > 0 || revenueBreakdownAddOns.length > 0 || editMode) && (
                 <div className="mx-auto mb-10 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {topOpportunities.map(s => (
+                  {revenueBreakdownSections.map(s => (
                     <div
                       key={s.id}
                       className="group min-w-0 overflow-hidden rounded-2xl border border-white/20 bg-white/10 p-4 text-left shadow-lg shadow-black/10 backdrop-blur-md transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/15"
@@ -1014,6 +1015,26 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       <p className="mt-0.5 text-xs text-white/50">per month</p>
                     </div>
                   ))}
+                  {revenueBreakdownAddOns.map(item => {
+                    const itemKey = `${item.template_slug}-${item.display_order}`;
+                    return (
+                      <div
+                        key={itemKey}
+                        className="group min-w-0 overflow-hidden rounded-2xl border border-white/20 bg-white/10 p-4 text-left shadow-lg shadow-black/10 backdrop-blur-md transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/15"
+                      >
+                        <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">
+                          {item.name}
+                        </p>
+                        <EditableCurrency
+                          value={item.revenue_monthly || 0}
+                          onSave={v => updateAddOnRevenue(itemKey, v)}
+                          variant="on-dark"
+                          className="text-xl font-bold tabular-nums text-white sm:text-2xl"
+                        />
+                        <p className="mt-0.5 text-xs text-white/50">add-on · per month</p>
+                      </div>
+                    );
+                  })}
                 </div>
               )}
 

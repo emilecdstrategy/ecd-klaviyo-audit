@@ -18,7 +18,11 @@ import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, Selec
 import SiteFavicon from '../components/ui/SiteFavicon';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { supabase } from '../lib/supabase';
-import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
+import {
+  computeAuditTotalRevenueOpportunity,
+  defaultEmailDesignRevenue,
+  REVENUE_OPPORTUNITY_SECTION_KEYS,
+} from '../lib/revenue-calculator';
 
 const CONTEXT_CHAR_SOFT = 15_000;
 const CONTEXT_CHAR_HARD = 30_000;
@@ -587,13 +591,48 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       setAnalysisStage('Saving results…');
 
       // Apply AI updates by matching section_key
+      const patchByKey = new Map(ai.sections.map(patch => [patch.section_key, patch]));
+
       for (const s of createdSections) {
-        const patch = ai.sections.find(p => p.section_key === s.section_key);
-        if (!patch) continue;
+        const patch = patchByKey.get(s.section_key);
+        if (!patch || s.section_key === 'email_design') continue;
         await updateAuditSection(s.id, patch as any);
       }
 
-      const totalOpportunity = ai.sections.reduce((sum, s) => sum + (Number((s as any).revenue_opportunity) || 0), 0);
+      const otherSectionRevenue = REVENUE_OPPORTUNITY_SECTION_KEYS
+        .filter(key => key !== 'email_design')
+        .reduce((sum, key) => sum + (Number(patchByKey.get(key)?.revenue_opportunity) || 0), 0);
+
+      const emailSection = createdSections.find(s => s.section_key === 'email_design');
+      const emailPatch = patchByKey.get('email_design');
+      if (emailSection && emailPatch) {
+        const aiEmailRevenue = Number(emailPatch.revenue_opportunity) || 0;
+        const emailRevenue = aiEmailRevenue > 0
+          ? aiEmailRevenue
+          : defaultEmailDesignRevenue(otherSectionRevenue);
+        await updateAuditSection(emailSection.id, {
+          ...emailPatch,
+          revenue_opportunity: emailRevenue,
+        } as any);
+      }
+
+      const patchedSections = createdSections.map(section => {
+        const patch = patchByKey.get(section.section_key);
+        if (!patch) return section;
+        if (section.section_key === 'email_design') {
+          const aiEmailRevenue = Number(patch.revenue_opportunity) || 0;
+          return {
+            ...section,
+            ...patch,
+            revenue_opportunity: aiEmailRevenue > 0
+              ? aiEmailRevenue
+              : defaultEmailDesignRevenue(otherSectionRevenue),
+          };
+        }
+        return { ...section, ...patch };
+      });
+
+      const totalOpportunity = computeAuditTotalRevenueOpportunity(patchedSections, initialLayout);
 
       const execPayload = (ai.strengths?.length || ai.findings?.length || ai.implementationTimeline?.length)
         ? JSON.stringify({
