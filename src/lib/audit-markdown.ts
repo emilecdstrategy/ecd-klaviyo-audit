@@ -27,6 +27,54 @@ export function mdToHtml(md: string): string {
   return html;
 }
 
+function decodeHtmlEntities(text: string): string {
+  return text
+    .replace(/&amp;/g, '&')
+    .replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>')
+    .replace(/&nbsp;/g, ' ');
+}
+
+function inlineHtmlToMd(html: string): string {
+  let md = html
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<strong>(.*?)<\/strong>/gi, '**$1**')
+    .replace(/<b>(.*?)<\/b>/gi, '**$1**')
+    .replace(/<em>(.*?)<\/em>/gi, '*$1*')
+    .replace(/<i>(.*?)<\/i>/gi, '*$1*')
+    .replace(/<u>(.*?)<\/u>/gi, '$1')
+    .replace(/<[^>]+>/g, '');
+
+  return decodeHtmlEntities(md);
+}
+
+/** Render a bullet string array as HTML for rich editors (admin templates). */
+export function bulletsArrayToEditorHtml(bullets: string[]): string {
+  const items = bullets
+    .map(v => v.trim())
+    .filter(Boolean)
+    .map(bullet => `<li>${mdToHtml(bullet)}</li>`);
+
+  if (!items.length) return '';
+  return `<ul>${items.join('')}</ul>`;
+}
+
+/** Parse rich-editor output back into a bullet string array. */
+export function editorValueToBulletsArray(value: string): string[] {
+  if (!value.trim()) return [];
+
+  if (/<li[\s>]/i.test(value)) {
+    return [...value.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]
+      .map(match => inlineHtmlToMd(match[1]).trim())
+      .filter(Boolean);
+  }
+
+  return value
+    .split('\n')
+    .map(line => line.replace(/^[-*•]\s*/, '').trim())
+    .filter(Boolean);
+}
+
 export function auditTextToEditorHtml(
   text: string,
   lookup?: Map<string, EntityType>,
@@ -60,6 +108,16 @@ export function htmlToMd(html: string): string {
       return `\`${type}:${name}\``;
     },
   );
+
+  md = md.replace(
+    /<ul[^>]*>([\s\S]*?)<\/ul>/gi,
+    (_, inner: string) =>
+      [...inner.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]
+        .map(match => `- ${inlineHtmlToMd(match[1]).trim()}`)
+        .join('\n'),
+  );
+
+  md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, inner: string) => `- ${inlineHtmlToMd(inner).trim()}\n`);
 
   md = md
     .replace(/<br\s*\/?>/gi, '\n')
