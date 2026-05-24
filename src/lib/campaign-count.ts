@@ -9,12 +9,6 @@ export function formatCampaignTotalDisplay(
   return new Intl.NumberFormat('en-US').format(count);
 }
 
-export function campaignTotalSubtext(
-  count: number,
-  truncated?: boolean | null,
-): string {
-  if (truncated || count > CAMPAIGN_SNAPSHOT_CAP) {
-    return 'email campaigns in account (partial scan)';
-  }
+export function campaignTotalSubtext(): string {
   return 'email campaigns in account';
 }

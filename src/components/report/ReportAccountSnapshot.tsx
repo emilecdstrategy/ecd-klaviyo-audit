@@ -141,7 +141,7 @@ export default function ReportAccountSnapshot({
   const totalCampaigns = campaignSnapshots.length;
   const campaignsTruncated = accountSnapshot?.campaigns_truncated ?? totalCampaigns > CAMPAIGN_SNAPSHOT_CAP;
   const totalCampaignsDisplay = formatCampaignTotalDisplay(totalCampaigns, campaignsTruncated);
-  const totalCampaignsSub = campaignTotalSubtext(totalCampaigns, campaignsTruncated);
+  const totalCampaignsSub = campaignTotalSubtext();
   const manualFlows = flowSnapshots.filter((f) => f.status?.toLowerCase() === 'manual' || f.trigger_type === 'Unconfigured').length;
 
   const hasPerf = flowPerformance.length > 0;
