@@ -1009,6 +1009,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                         value={s.revenue_opportunity}
                         onSave={v => updateSectionRevenueOpportunity(s.section_key, v)}
                         variant="on-dark"
+                        className="text-xl font-bold tabular-nums text-white sm:text-2xl"
                       />
                       <p className="mt-0.5 text-xs text-white/50">per month</p>
                     </div>

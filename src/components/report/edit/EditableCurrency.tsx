@@ -28,6 +28,15 @@ function inputCharWidth(raw: string): number {
   return Math.max(3, (raw || '0').length);
 }
 
+const VARIANT_DISPLAY_CLASS: Record<
+  NonNullable<EditableCurrencyProps['variant']>,
+  string
+> = {
+  default: 'text-sm font-semibold text-gray-900 tabular-nums',
+  'on-dark': 'text-xl font-bold tabular-nums text-white sm:text-2xl',
+  compact: 'text-sm font-semibold text-emerald-700 tabular-nums',
+};
+
 export default function EditableCurrency({
   value,
   onSave,
@@ -69,7 +78,7 @@ export default function EditableCurrency({
 
   if (!canEdit) {
     return (
-      <span className={className}>
+      <span className={cn(VARIANT_DISPLAY_CLASS[variant], className)}>
         {formatCurrency(value || 0)}
         {suffix ? <span className={suffixClassName}>{suffix}</span> : null}
       </span>
@@ -88,6 +97,7 @@ export default function EditableCurrency({
       className={cn(
         'inline-flex max-w-full min-w-0 items-center gap-1 group',
         variant === 'on-dark' && 'gap-0.5',
+        VARIANT_DISPLAY_CLASS[variant],
         className,
       )}
       title="Edit revenue opportunity ($/mo)"
