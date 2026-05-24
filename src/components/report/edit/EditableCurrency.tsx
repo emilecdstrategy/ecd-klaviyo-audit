@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { Pencil } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { formatCurrency } from '../../../lib/revenue-calculator';
 import { useReportEdit } from './ReportEditContext';
@@ -10,6 +11,8 @@ type EditableCurrencyProps = {
   inputClassName?: string;
   suffix?: string;
   suffixClassName?: string;
+  /** Light inputs on dark banners (total opportunity cards). */
+  variant?: 'default' | 'on-dark';
 };
 
 function parseCurrencyInput(raw: string): number {
@@ -26,29 +29,34 @@ export default function EditableCurrency({
   inputClassName,
   suffix,
   suffixClassName,
+  variant = 'default',
 }: EditableCurrencyProps) {
   const { editMode } = useReportEdit();
-  const [editing, setEditing] = useState(false);
   const [raw, setRaw] = useState(value ? String(value) : '');
   const inputRef = useRef<HTMLInputElement>(null);
+  const debounceRef = useRef<number | null>(null);
 
   useEffect(() => {
-    if (!editing) {
-      setRaw(value ? String(value) : '');
-      return;
-    }
-    inputRef.current?.focus();
-    inputRef.current?.select();
-  }, [value, editing]);
+    setRaw(value ? String(value) : '');
+  }, [value]);
 
   const canEdit = editMode && Boolean(onSave);
 
-  const commit = () => {
-    setEditing(false);
-    const next = parseCurrencyInput(raw);
+  const commit = (nextRaw = raw) => {
+    const next = parseCurrencyInput(nextRaw);
     if (next !== value) onSave?.(next);
     setRaw(next ? String(next) : '');
   };
+
+  const scheduleCommit = (nextRaw: string) => {
+    setRaw(nextRaw);
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+    debounceRef.current = window.setTimeout(() => commit(nextRaw), 600) as unknown as number;
+  };
+
+  useEffect(() => () => {
+    if (debounceRef.current) window.clearTimeout(debounceRef.current);
+  }, []);
 
   if (!canEdit) {
     return (
@@ -59,49 +67,47 @@ export default function EditableCurrency({
     );
   }
 
-  if (!editing) {
-    return (
-      <button
-        type="button"
-        onClick={() => setEditing(true)}
-        className={cn(
-          className,
-          'cursor-text rounded text-left transition-shadow',
-          'hover:ring-1 hover:ring-brand-primary/20 hover:ring-offset-1',
-          'focus:outline-none focus:ring-2 focus:ring-brand-primary/30 focus:ring-offset-1',
-        )}
-      >
-        {formatCurrency(value || 0)}
-        {suffix ? <span className={suffixClassName}>{suffix}</span> : null}
-      </button>
-    );
-  }
+  const inputStyles =
+    variant === 'on-dark'
+      ? 'border-white/30 bg-white/10 text-white placeholder:text-white/40 focus:border-white/60 focus:ring-white/20'
+      : 'border-brand-primary/30 bg-white text-gray-900 focus:border-brand-primary focus:ring-brand-primary/20';
 
   return (
-    <span className={cn('inline-flex items-baseline gap-0.5', className)}>
+    <label
+      className={cn('inline-flex items-center gap-1.5 group', className)}
+      title="Edit revenue opportunity ($/mo)"
+    >
+      <span className={cn('shrink-0 opacity-70', variant === 'on-dark' ? 'text-white/70' : 'text-emerald-600')}>$</span>
       <input
         ref={inputRef}
         type="text"
         inputMode="decimal"
+        aria-label="Revenue opportunity per month"
+        placeholder="0"
         value={raw}
-        onChange={e => setRaw(e.target.value.replace(/[^0-9.]/g, ''))}
-        onBlur={commit}
+        onChange={e => scheduleCommit(e.target.value.replace(/[^0-9.]/g, ''))}
+        onBlur={() => commit()}
         onKeyDown={e => {
           if (e.key === 'Enter') {
             e.preventDefault();
             commit();
-          }
-          if (e.key === 'Escape') {
-            setRaw(value ? String(value) : '');
-            setEditing(false);
+            inputRef.current?.blur();
           }
         }}
         className={cn(
-          'min-w-[5rem] bg-transparent outline-none border-b border-current/30 focus:border-current/60 tabular-nums',
+          'min-w-[5.5rem] rounded-md border px-2 py-1 text-sm font-semibold tabular-nums shadow-sm outline-none focus:ring-2',
+          inputStyles,
           inputClassName,
         )}
       />
       {suffix ? <span className={suffixClassName}>{suffix}</span> : null}
-    </span>
+      <Pencil
+        className={cn(
+          'h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+          variant === 'on-dark' ? 'text-white/50' : 'text-brand-primary/50',
+        )}
+        aria-hidden
+      />
+    </label>
   );
 }

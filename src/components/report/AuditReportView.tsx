@@ -178,8 +178,10 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   const isPreview = audit.status === 'draft' || audit.status === 'in_review';
 
   const currentFlowMonthlyRevenue = flowPerformance.reduce((s, f) => s + (f.monthly_revenue_current ?? 0), 0);
+  const REVENUE_SECTION_KEYS = new Set(['flows', 'segmentation', 'campaigns', 'signup_forms', 'email_design']);
   const topOpportunities = [...sections]
-    .filter(s => s.revenue_opportunity > 0)
+    .filter(s => REVENUE_SECTION_KEYS.has(s.section_key))
+    .filter(s => editMode || s.revenue_opportunity > 0)
     .sort((a, b) => b.revenue_opportunity - a.revenue_opportunity);
   const reportSections = sections.filter(s => s.section_key !== 'revenue_summary' && s.status !== 'draft');
 
@@ -985,7 +987,13 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 />
               </p>
 
-              {topOpportunities.length > 0 && (
+              {editMode && (
+                <p className="mb-6 text-xs font-medium text-white/60">
+                  Edit each section&apos;s $/mo below — the total updates automatically. Add-on amounts are editable in each card above.
+                </p>
+              )}
+
+              {(topOpportunities.length > 0 || editMode) && (
                 <div className="mx-auto mb-10 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
                   {topOpportunities.map(s => (
                     <div
@@ -999,7 +1007,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                         value={s.revenue_opportunity}
                         onSave={v => updateSectionRevenueOpportunity(s.section_key, v)}
                         className="text-xl font-bold tabular-nums text-white sm:text-2xl"
-                        inputClassName="text-xl font-bold text-white sm:text-2xl"
+                        inputClassName="text-base sm:text-lg font-bold"
+                        variant="on-dark"
                       />
                       <p className="mt-0.5 text-xs text-white/50">per month</p>
                     </div>
@@ -1564,7 +1573,7 @@ function ReportSectionBlock({
             <span className="text-[11px] font-bold text-gray-300 tabular-nums">{String(index + 1).padStart(2, '0')}</span>
             <h3 className="text-base font-bold text-gray-900">{SECTION_LABELS[section.section_key]}</h3>
           </div>
-          {section.revenue_opportunity > 0 && (
+          {(section.revenue_opportunity > 0 || editMode) && (
             <div className="flex items-center gap-2 shrink-0">
               <TrendingUp className="w-3.5 h-3.5 text-emerald-600" />
               <EditableCurrency

@@ -600,16 +600,24 @@ export type PlatformSettings = {
 export async function getPlatformSettings(): Promise<PlatformSettings> {
   const { data, error } = await supabase
     .from('platform_settings')
-    .select('annotation_size, annotations_expanded, entity_highlight_style')
+    .select('*')
     .eq('id', 'default')
     .single();
-  if (error || !data) {
-    return { annotation_size: 'md', annotations_expanded: false, entity_highlight_style: 'purple' };
-  }
+
+  const defaults: PlatformSettings = {
+    annotation_size: 'md',
+    annotations_expanded: false,
+    entity_highlight_style: 'purple',
+  };
+
+  if (error || !data) return defaults;
+
   return {
-    annotation_size: (data.annotation_size || 'md') as AnnotationSize,
-    annotations_expanded: data.annotations_expanded ?? false,
-    entity_highlight_style: normalizeEntityHighlightStyle(data.entity_highlight_style),
+    annotation_size: (data.annotation_size || defaults.annotation_size) as AnnotationSize,
+    annotations_expanded: data.annotations_expanded ?? defaults.annotations_expanded,
+    entity_highlight_style: normalizeEntityHighlightStyle(
+      data.entity_highlight_style ?? defaults.entity_highlight_style,
+    ),
   };
 }
 
