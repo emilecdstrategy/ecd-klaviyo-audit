@@ -911,7 +911,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       <EditableCurrency
                         value={item.revenue_monthly || 0}
                         onSave={v => updateAddOnRevenue(itemKey, v)}
-                        className="text-sm font-semibold text-emerald-700 tabular-nums"
+                        variant="compact"
+                        className="justify-end text-sm font-semibold text-emerald-700 tabular-nums"
                       />
                       <p className="text-[11px] text-emerald-600">/mo</p>
                     </div>
@@ -998,7 +999,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                   {topOpportunities.map(s => (
                     <div
                       key={s.id}
-                      className="group rounded-2xl border border-white/20 bg-white/10 p-4 text-left shadow-lg shadow-black/10 backdrop-blur-md transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/15"
+                      className="group min-w-0 overflow-hidden rounded-2xl border border-white/20 bg-white/10 p-4 text-left shadow-lg shadow-black/10 backdrop-blur-md transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/15"
                     >
                       <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">
                         {SECTION_LABELS[s.section_key]}
@@ -1006,8 +1007,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       <EditableCurrency
                         value={s.revenue_opportunity}
                         onSave={v => updateSectionRevenueOpportunity(s.section_key, v)}
-                        className="text-xl font-bold tabular-nums text-white sm:text-2xl"
-                        inputClassName="text-base sm:text-lg font-bold"
                         variant="on-dark"
                       />
                       <p className="mt-0.5 text-xs text-white/50">per month</p>
@@ -1579,6 +1578,7 @@ function ReportSectionBlock({
               <EditableCurrency
                 value={section.revenue_opportunity}
                 onSave={v => updateSectionRevenueOpportunity(sk, v)}
+                variant="compact"
                 className="text-sm font-semibold text-emerald-700"
                 suffix="/mo"
                 suffixClassName="text-sm font-semibold text-emerald-700"

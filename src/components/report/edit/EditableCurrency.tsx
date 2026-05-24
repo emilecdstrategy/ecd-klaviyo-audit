@@ -12,7 +12,7 @@ type EditableCurrencyProps = {
   suffix?: string;
   suffixClassName?: string;
   /** Light inputs on dark banners (total opportunity cards). */
-  variant?: 'default' | 'on-dark';
+  variant?: 'default' | 'on-dark' | 'compact';
 };
 
 function parseCurrencyInput(raw: string): number {
@@ -20,6 +20,10 @@ function parseCurrencyInput(raw: string): number {
   if (!cleaned) return 0;
   const parsed = Number(cleaned);
   return Number.isFinite(parsed) ? Math.round(parsed) : 0;
+}
+
+function inputCharWidth(raw: string): number {
+  return Math.max(3, (raw || '0').length);
 }
 
 export default function EditableCurrency({
@@ -35,6 +39,7 @@ export default function EditableCurrency({
   const [raw, setRaw] = useState(value ? String(value) : '');
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<number | null>(null);
+  const charWidth = inputCharWidth(raw);
 
   useEffect(() => {
     setRaw(value ? String(value) : '');
@@ -72,12 +77,26 @@ export default function EditableCurrency({
       ? 'border-white/30 bg-white/10 text-white placeholder:text-white/40 focus:border-white/60 focus:ring-white/20'
       : 'border-brand-primary/30 bg-white text-gray-900 focus:border-brand-primary focus:ring-brand-primary/20';
 
+  const showIcon = variant === 'default';
+
   return (
     <label
-      className={cn('inline-flex items-center gap-1.5 group', className)}
+      className={cn(
+        'inline-flex max-w-full min-w-0 items-center gap-1 group',
+        variant === 'on-dark' && 'gap-0.5',
+        className,
+      )}
       title="Edit revenue opportunity ($/mo)"
     >
-      <span className={cn('shrink-0 opacity-70', variant === 'on-dark' ? 'text-white/70' : 'text-emerald-600')}>$</span>
+      <span
+        className={cn(
+          'shrink-0 opacity-70',
+          variant === 'on-dark' ? 'text-white/70' : 'text-emerald-600',
+          variant === 'on-dark' && 'text-lg font-bold sm:text-xl',
+        )}
+      >
+        $
+      </span>
       <input
         ref={inputRef}
         type="text"
@@ -85,6 +104,7 @@ export default function EditableCurrency({
         aria-label="Revenue opportunity per month"
         placeholder="0"
         value={raw}
+        size={charWidth}
         onChange={e => scheduleCommit(e.target.value.replace(/[^0-9.]/g, ''))}
         onBlur={() => commit()}
         onKeyDown={e => {
@@ -94,20 +114,26 @@ export default function EditableCurrency({
             inputRef.current?.blur();
           }
         }}
+        style={{ width: `${charWidth + 1}ch` }}
         className={cn(
-          'min-w-[5.5rem] rounded-md border px-2 py-1 text-sm font-semibold tabular-nums shadow-sm outline-none focus:ring-2',
+          'box-border max-w-full shrink rounded-md border font-semibold tabular-nums shadow-sm outline-none focus:ring-2',
+          variant === 'on-dark' && 'px-1.5 py-0.5 text-lg font-bold sm:text-xl',
+          variant === 'compact' && 'px-1.5 py-0.5 text-sm',
+          variant === 'default' && 'px-2 py-1 text-sm',
           inputStyles,
           inputClassName,
         )}
       />
-      {suffix ? <span className={suffixClassName}>{suffix}</span> : null}
-      <Pencil
-        className={cn(
-          'h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
-          variant === 'on-dark' ? 'text-white/50' : 'text-brand-primary/50',
-        )}
-        aria-hidden
-      />
+      {suffix ? <span className={cn('shrink-0', suffixClassName)}>{suffix}</span> : null}
+      {showIcon ? (
+        <Pencil
+          className={cn(
+            'h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
+            variant === 'on-dark' ? 'text-white/50' : 'text-brand-primary/50',
+          )}
+          aria-hidden
+        />
+      ) : null}
     </label>
   );
 }
