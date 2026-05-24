@@ -21,7 +21,6 @@ import { supabase } from '../lib/supabase';
 import {
   computeAuditTotalRevenueOpportunity,
   defaultEmailDesignRevenue,
-  REVENUE_OPPORTUNITY_SECTION_KEYS,
 } from '../lib/revenue-calculator';
 import { normalizeFlowsSectionPatch } from '../lib/core-flows-matrix';
 
@@ -605,9 +604,18 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         await updateAuditSection(s.id, normalizedPatch as any);
       }
 
-      const otherSectionRevenue = REVENUE_OPPORTUNITY_SECTION_KEYS
-        .filter(key => key !== 'email_design')
-        .reduce((sum, key) => sum + (Number(patchByKey.get(key)?.revenue_opportunity) || 0), 0);
+      const sectionsForOpportunityBase = createdSections.map(section => {
+        const patch = patchByKey.get(section.section_key);
+        const merged = patch ? { ...section, ...patch } : section;
+        if (section.section_key === 'email_design') {
+          return { ...merged, revenue_opportunity: 0 };
+        }
+        return merged;
+      });
+      const opportunityBaseBeforeEmail = computeAuditTotalRevenueOpportunity(
+        sectionsForOpportunityBase,
+        initialLayout,
+      );
 
       const emailSection = createdSections.find(s => s.section_key === 'email_design');
       const emailPatch = patchByKey.get('email_design');
@@ -615,7 +623,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         const aiEmailRevenue = Number(emailPatch.revenue_opportunity) || 0;
         const emailRevenue = aiEmailRevenue > 0
           ? aiEmailRevenue
-          : defaultEmailDesignRevenue(otherSectionRevenue);
+          : defaultEmailDesignRevenue(opportunityBaseBeforeEmail);
         await updateAuditSection(emailSection.id, {
           ...emailPatch,
           revenue_opportunity: emailRevenue,
@@ -632,7 +640,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             ...patch,
             revenue_opportunity: aiEmailRevenue > 0
               ? aiEmailRevenue
-              : defaultEmailDesignRevenue(otherSectionRevenue),
+              : defaultEmailDesignRevenue(opportunityBaseBeforeEmail),
           };
         }
         return { ...section, ...patch };

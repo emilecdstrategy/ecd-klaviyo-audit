@@ -100,20 +100,36 @@ export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] })
                 Boolean(String(row.current_structure_note ?? '').trim()) ||
                 Boolean(String(row.recommended_structure ?? '').trim());
               const isExpanded = expandedIndex === i;
+              const toggleExpanded = () => {
+                if (!hasNotes) return;
+                setExpandedIndex(isExpanded ? null : i);
+              };
 
               return (
                 <Fragment key={i}>
                   <tr
+                    role={hasNotes ? 'button' : undefined}
+                    tabIndex={hasNotes ? 0 : undefined}
+                    aria-expanded={hasNotes ? isExpanded : undefined}
+                    onClick={toggleExpanded}
+                    onKeyDown={e => {
+                      if (!hasNotes) return;
+                      if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        toggleExpanded();
+                      }
+                    }}
                     className={cn(
                       'border-b border-gray-50 align-top transition-colors',
+                      hasNotes && 'cursor-pointer hover:bg-gray-50/80',
                       isExpanded && 'border-b-0 bg-brand-surface/30',
                     )}
                   >
                     <td className="px-5 py-3.5">
                       {row.flow_name ? (
-                        <span className="text-sm font-semibold text-gray-900">{row.flow_name}</span>
+                        <span className="text-sm font-medium text-gray-800">{row.flow_name}</span>
                       ) : (
-                        <span className="text-sm font-semibold text-gray-400">N/A</span>
+                        <span className="text-sm font-medium text-gray-400">N/A</span>
                       )}
                     </td>
                     <td className="px-3 py-3.5">
@@ -129,7 +145,10 @@ export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] })
                         <button
                           type="button"
                           aria-expanded={isExpanded}
-                          onClick={() => setExpandedIndex(isExpanded ? null : i)}
+                          onClick={e => {
+                            e.stopPropagation();
+                            toggleExpanded();
+                          }}
                           className={cn(
                             'inline-flex items-center gap-1 rounded-md px-2 py-1 text-xs font-semibold transition-colors',
                             isExpanded

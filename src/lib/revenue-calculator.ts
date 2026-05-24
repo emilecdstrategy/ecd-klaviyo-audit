@@ -105,9 +105,9 @@ export function isRevenueOpportunitySection(sectionKey: string): sectionKey is R
   return (REVENUE_OPPORTUNITY_SECTION_KEYS as readonly string[]).includes(sectionKey);
 }
 
-/** Default email design $/mo when AI returns zero: at least $300 or 10% of other section revenue. */
-export function defaultEmailDesignRevenue(otherSectionsTotal: number): number {
-  return Math.max(300, Math.round(otherSectionsTotal * 0.1));
+/** Default email design $/mo when AI returns zero: at least $300 or 10% of total identified opportunity (excl. email design). */
+export function defaultEmailDesignRevenue(totalOpportunityExcludingEmailDesign: number): number {
+  return Math.max(300, Math.round(totalOpportunityExcludingEmailDesign * 0.1));
 }
 
 type RevenueAddOnLike = {
