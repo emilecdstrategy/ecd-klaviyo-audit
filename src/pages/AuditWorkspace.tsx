@@ -210,12 +210,18 @@ export default function AuditWorkspace() {
   };
 
   const handleStatusChange = async (newStatus: Audit['status']) => {
+    if (newStatus === audit.status) return;
     try {
       const updated = await updateAuditStatus(audit.id, newStatus);
       setAudit(updated);
+      if (reportBundle) {
+        setReportBundle({ ...reportBundle, audit: updated, client: client ?? reportBundle.client });
+      }
       toast('Status updated');
     } catch (e) {
+      const message = e instanceof Error ? e.message : 'Failed to update status';
       console.error('Failed to update status:', e);
+      toast(message);
     }
   };
 

@@ -28,6 +28,8 @@ export default function WorkspacePublishBar({
   const [copied, setCopied] = useState(false);
   const shareUrl = shareToken ? `${window.location.origin}/report/${shareToken}` : '';
   const isPublished = audit.status === 'published';
+  const isViewerOnly = audit.status === 'viewer_only';
+  const hasShareLink = Boolean(shareUrl) && (isPublished || isViewerOnly);
   const statusLabel = STATUS_OPTIONS.find(opt => opt.value === audit.status)?.label ?? audit.status;
 
   const handleCopy = () => {
@@ -60,8 +62,13 @@ export default function WorkspacePublishBar({
       <div className="mx-auto flex max-w-[90rem] flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
         <div className="min-w-0 flex-1">
           <p className="text-sm font-semibold text-gray-900">Shareable report</p>
-          {isPublished && shareUrl ? (
+          {hasShareLink ? (
             <div className="mt-1.5 flex flex-wrap items-center gap-3">
+              {isViewerOnly && (
+                <p className="w-full text-xs text-blue-700">
+                  Viewer Only — link works for signed-in viewer accounts (not public anonymous access).
+                </p>
+              )}
               <div className="flex h-10 min-w-0 flex-1 items-stretch overflow-hidden rounded-lg border border-gray-200 bg-gray-50">
                 <input
                   readOnly
@@ -90,12 +97,16 @@ export default function WorkspacePublishBar({
               {statusControl}
             </div>
           ) : (
-            <p className="mt-1 text-sm text-gray-500">Publish to generate a client-facing link.</p>
+            <p className="mt-1 text-sm text-gray-500">
+              {isViewerOnly || isPublished
+                ? 'Generating share link…'
+                : 'Publish or set Viewer Only to generate a client-facing link.'}
+            </p>
           )}
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-3">
-          {!(isPublished && shareUrl) && statusControl}
+          {!(hasShareLink) && statusControl}
 
           {!isPublished && (
             <button
