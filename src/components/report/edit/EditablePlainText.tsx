@@ -45,11 +45,11 @@ export default function EditablePlainText({
     }
     setLocal(value);
     if (ref.current && editMode && onSave && rich) {
-      ref.current.innerHTML = auditTextToEditorHtml(value, entityLookup, autoTagEntities, entityHighlightsEnabled);
+      ref.current.innerHTML = auditTextToEditorHtml(value, entityLookup, false, entityHighlightsEnabled);
     } else if (ref.current && editMode && onSave) {
       ref.current.innerHTML = value || '';
     }
-  }, [value, editMode, onSave, rich, entityLookup, autoTagEntities, entityHighlightsEnabled]);
+  }, [value, editMode, onSave, rich, entityLookup, entityHighlightsEnabled]);
 
   const canEdit = editMode && Boolean(onSave);
 

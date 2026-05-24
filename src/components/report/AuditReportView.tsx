@@ -912,6 +912,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                         value={item.revenue_monthly || 0}
                         onSave={v => updateAddOnRevenue(itemKey, v)}
                         variant="compact"
+                        inputWidthScale={2}
                         className="justify-end text-sm font-semibold text-emerald-700 tabular-nums"
                       />
                       <p className="text-[11px] text-emerald-600">/mo</p>

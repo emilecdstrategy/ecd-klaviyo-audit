@@ -35,12 +35,12 @@ export default function SimpleRichEditor({
       return;
     }
     const html = entityTags
-      ? auditTextToEditorHtml(value || '', entityLookup, autoTagEntities, entityHighlightsEnabled)
+      ? auditTextToEditorHtml(value || '', entityLookup, false, entityHighlightsEnabled)
       : (value || '');
     if (editorRef.current.innerHTML !== html) {
       editorRef.current.innerHTML = html;
     }
-  }, [value, entityTags, entityLookup, autoTagEntities, entityHighlightsEnabled]);
+  }, [value, entityTags, entityLookup, entityHighlightsEnabled]);
 
   const handleInput = useCallback(() => {
     if (!editorRef.current) return;

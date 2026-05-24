@@ -38,11 +38,11 @@ export default function EditableRichText({
       isInternalUpdate.current = false;
       return;
     }
-    const html = auditTextToEditorHtml(value || '', entityLookup, autoTagEntities, entityHighlightsEnabled);
+    const html = auditTextToEditorHtml(value || '', entityLookup, false, entityHighlightsEnabled);
     if (editorRef.current.innerHTML !== html) {
       editorRef.current.innerHTML = html;
     }
-  }, [value, canEdit, entityLookup, autoTagEntities, entityHighlightsEnabled]);
+  }, [value, canEdit, entityLookup, entityHighlightsEnabled]);
 
   const persist = useCallback(() => {
     if (!editorRef.current || !onSave) return;

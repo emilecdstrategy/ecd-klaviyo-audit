@@ -13,6 +13,8 @@ type EditableCurrencyProps = {
   suffixClassName?: string;
   /** Light inputs on dark banners (total opportunity cards). */
   variant?: 'default' | 'on-dark' | 'compact';
+  /** Multiplier for content-sized input width (e.g. 2 for wider add-on fields). */
+  inputWidthScale?: number;
 };
 
 function parseCurrencyInput(raw: string): number {
@@ -34,12 +36,14 @@ export default function EditableCurrency({
   suffix,
   suffixClassName,
   variant = 'default',
+  inputWidthScale = 1,
 }: EditableCurrencyProps) {
   const { editMode } = useReportEdit();
   const [raw, setRaw] = useState(value ? String(value) : '');
   const inputRef = useRef<HTMLInputElement>(null);
   const debounceRef = useRef<number | null>(null);
   const charWidth = inputCharWidth(raw);
+  const inputWidthCh = Math.ceil((charWidth + 1) * inputWidthScale);
 
   useEffect(() => {
     setRaw(value ? String(value) : '');
@@ -104,7 +108,7 @@ export default function EditableCurrency({
         aria-label="Revenue opportunity per month"
         placeholder="0"
         value={raw}
-        size={charWidth}
+        size={inputWidthCh}
         onChange={e => scheduleCommit(e.target.value.replace(/[^0-9.]/g, ''))}
         onBlur={() => commit()}
         onKeyDown={e => {
@@ -114,11 +118,11 @@ export default function EditableCurrency({
             inputRef.current?.blur();
           }
         }}
-        style={{ width: `${charWidth + 1}ch` }}
+        style={{ width: `${inputWidthCh}ch` }}
         className={cn(
           'box-border max-w-full shrink rounded-md border font-semibold tabular-nums shadow-sm outline-none focus:ring-2',
           variant === 'on-dark' && 'px-1.5 py-0.5 text-lg font-bold sm:text-xl',
-          variant === 'compact' && 'px-1.5 py-0.5 text-sm',
+          variant === 'compact' && 'px-2 py-1 text-sm',
           variant === 'default' && 'px-2 py-1 text-sm',
           inputStyles,
           inputClassName,
