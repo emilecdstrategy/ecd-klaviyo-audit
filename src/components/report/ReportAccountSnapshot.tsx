@@ -68,6 +68,9 @@ function calcWeeklySendFrequency(campaigns: KlaviyoCampaignSnapshot[]) {
   return { recentSent, perWeek };
 }
 
+export const METRIC_ICON_CHIP_CLASS = 'flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100';
+export const METRIC_ICON_CLASS = 'h-3.5 w-3.5 shrink-0 stroke-gray-500 text-gray-500';
+
 function Card({
   label,
   value,
@@ -83,8 +86,8 @@ function Card({
     <div className="rounded-xl border border-gray-100 bg-white px-4 py-4 shadow-sm">
       <div className="mb-2 flex items-center gap-2">
         {Icon && (
-          <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-lg bg-gray-100">
-            <Icon className="h-3.5 w-3.5 text-gray-500" strokeWidth={2} />
+          <div className={METRIC_ICON_CHIP_CLASS}>
+            <Icon className={METRIC_ICON_CLASS} strokeWidth={2} />
           </div>
         )}
         <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</p>

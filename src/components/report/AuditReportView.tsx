@@ -416,8 +416,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
                 <ReportBlockHeader
                   icon={
-                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
-                      <LayoutDashboard className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-gray-100">
+                      <LayoutDashboard className="h-5 w-5 shrink-0 stroke-gray-500 text-gray-500" strokeWidth={2.25} />
                     </div>
                   }
                   title={
