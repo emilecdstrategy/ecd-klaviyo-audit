@@ -86,6 +86,25 @@ function stripFlowTags(value: string): string {
     .trim();
 }
 
+/** Plain-text structure notes: strip entity markers and repair broken auto-tag nesting. */
+export function sanitizeStructureNote(text: string): string {
+  let result = String(text ?? '').trim();
+  if (!result) return '';
+
+  // Repair nested tags created when auto-tag matched inside an existing marker.
+  result = result.replace(/`flow:`flow:/gi, '`flow:');
+
+  // Well-formed entity markers → display name only.
+  result = result.replace(/`(flow|campaign|segment|form):([^`]+)`/gi, '$2');
+
+  // Orphan markers left after partial parsing.
+  result = result.replace(/`flow:([^`,]+)`/gi, '$1');
+  result = result.replace(/`/g, '');
+  result = result.replace(/^flow:\s*/i, '');
+
+  return result.replace(/\s+/g, ' ').trim();
+}
+
 export function classifyCoreFlowName(raw: string, includeSubscription = true): string | null {
   const cleaned = stripFlowTags(String(raw ?? ''));
   if (!cleaned) return null;
@@ -137,17 +156,28 @@ export function normalizeCoreFlowsMatrix(
   for (const row of rows) {
     const canonical = classifyCoreFlowName(String(row.flow_name ?? ''), includeSubscription);
     if (!canonical || mapped.has(canonical)) continue;
-    mapped.set(canonical, { ...row, flow_name: canonical });
+    mapped.set(canonical, {
+      ...row,
+      flow_name: canonical,
+      current_structure_note: sanitizeStructureNote(String(row.current_structure_note ?? '')),
+      recommended_structure: sanitizeStructureNote(String(row.recommended_structure ?? '')),
+    });
   }
 
   if (mapped.size === 0 && rows.length === template.length) {
     return template.map((name, index) => ({
       ...rows[index],
       flow_name: name,
+      current_structure_note: sanitizeStructureNote(String(rows[index]?.current_structure_note ?? '')),
+      recommended_structure: sanitizeStructureNote(String(rows[index]?.recommended_structure ?? '')),
     }));
   }
 
-  return template.map(name => mapped.get(name) ?? emptyRow(name));
+  return template.map(name => {
+    const row = mapped.get(name);
+    if (!row) return emptyRow(name);
+    return row;
+  });
 }
 
 export function normalizeFlowsSectionDetails(

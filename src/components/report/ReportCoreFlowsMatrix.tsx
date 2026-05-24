@@ -1,6 +1,6 @@
 import { Fragment, useState } from 'react';
 import { ChevronDown, ChevronUp, GitBranch } from 'lucide-react';
-import { RichAuditText } from '../ui/RichAuditText';
+import EditablePlainText from './edit/EditablePlainText';
 import ReportBlockHeader from './ReportBlockHeader';
 import { cn } from '../../lib/utils';
 import type { CoreFlowRow } from '../../lib/core-flows-matrix';
@@ -29,45 +29,102 @@ function FlowStatusBadge({ present, live }: { present: boolean; live: boolean })
   );
 }
 
-function FlowNote({ label, text }: { label: string; text: string }) {
+function FlowNote({
+  label,
+  text,
+  editMode,
+  onSave,
+}: {
+  label: string;
+  text: string;
+  editMode?: boolean;
+  onSave?: (value: string) => void;
+}) {
   const trimmed = String(text ?? '').trim();
-  if (!trimmed || trimmed === 'N/A') return null;
+  const display = trimmed === 'N/A' ? '' : trimmed;
+  const canEdit = editMode && Boolean(onSave);
+  if (!display && !canEdit) return null;
 
   return (
     <div>
       <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">{label}</p>
-      <RichAuditText text={trimmed} className="text-sm leading-relaxed text-gray-700" />
+      <EditablePlainText
+        value={display}
+        onSave={onSave}
+        className="text-sm leading-relaxed text-gray-700"
+        as="p"
+        placeholder={canEdit ? 'Add a note…' : undefined}
+      />
     </div>
   );
 }
 
-function FlowRowDetails({ row }: { row: CoreFlowRow }) {
+function FlowRowDetails({
+  row,
+  rowIndex,
+  editMode,
+  onUpdateNote,
+}: {
+  row: CoreFlowRow;
+  rowIndex: number;
+  editMode?: boolean;
+  onUpdateNote?: (
+    rowIndex: number,
+    field: 'current_structure_note' | 'recommended_structure',
+    value: string,
+  ) => void;
+}) {
   const current = String(row.current_structure_note ?? '').trim();
   const recommended = String(row.recommended_structure ?? '').trim();
   const hasCurrent = Boolean(current && current !== 'N/A');
   const hasRecommended = Boolean(recommended && recommended !== 'N/A');
+  const canEdit = editMode && Boolean(onUpdateNote);
 
-  if (!hasCurrent && !hasRecommended) {
+  if (!hasCurrent && !hasRecommended && !canEdit) {
     return <p className="text-sm text-gray-400">No structure notes for this flow.</p>;
   }
 
   return (
     <div className="grid gap-4 sm:grid-cols-2">
-      {hasCurrent && (
+      {(hasCurrent || canEdit) && (
         <div className="rounded-lg border border-gray-100 bg-white px-4 py-3 shadow-sm">
-          <FlowNote label="Current structure" text={current} />
+          <FlowNote
+            label="Current structure"
+            text={current}
+            editMode={canEdit}
+            onSave={canEdit ? v => onUpdateNote!(rowIndex, 'current_structure_note', v) : undefined}
+          />
         </div>
       )}
-      {hasRecommended && (
+      {(hasRecommended || canEdit) && (
         <div className="rounded-lg border border-brand-primary/15 bg-brand-surface/40 px-4 py-3 shadow-sm">
-          <FlowNote label="Recommended" text={recommended} />
+          <FlowNote
+            label="Recommended"
+            text={recommended}
+            editMode={canEdit}
+            onSave={canEdit ? v => onUpdateNote!(rowIndex, 'recommended_structure', v) : undefined}
+          />
         </div>
       )}
     </div>
   );
 }
 
-export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] }) {
+type ReportCoreFlowsMatrixProps = {
+  rows: CoreFlowRow[];
+  editMode?: boolean;
+  onUpdateNote?: (
+    rowIndex: number,
+    field: 'current_structure_note' | 'recommended_structure',
+    value: string,
+  ) => void;
+};
+
+export default function ReportCoreFlowsMatrix({
+  rows,
+  editMode = false,
+  onUpdateNote,
+}: ReportCoreFlowsMatrixProps) {
   const [expandedIndex, setExpandedIndex] = useState<number | null>(null);
 
   if (!rows.length) return null;
@@ -81,7 +138,7 @@ export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] })
           </div>
         }
         title="Core Flows Matrix"
-        subtitle="Quick status check — expand a row for structure notes."
+        subtitle="Quick status check. Expand a row for structure notes."
       />
 
       <div className="overflow-x-auto">
@@ -98,7 +155,8 @@ export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] })
             {rows.map((row, i) => {
               const hasNotes =
                 Boolean(String(row.current_structure_note ?? '').trim()) ||
-                Boolean(String(row.recommended_structure ?? '').trim());
+                Boolean(String(row.recommended_structure ?? '').trim()) ||
+                editMode;
               const isExpanded = expandedIndex === i;
               const toggleExpanded = () => {
                 if (!hasNotes) return;
@@ -177,7 +235,12 @@ export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] })
                             'animate-slide-up motion-reduce:animate-none',
                           )}
                         >
-                          <FlowRowDetails row={row} />
+                          <FlowRowDetails
+                            row={row}
+                            rowIndex={i}
+                            editMode={editMode}
+                            onUpdateNote={onUpdateNote}
+                          />
                         </div>
                       </td>
                     </tr>

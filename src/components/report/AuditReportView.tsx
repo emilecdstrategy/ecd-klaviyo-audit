@@ -1395,7 +1395,7 @@ function ImplementationTimelinePhase({
 }
 
 function SectionRubricDetails({ section }: { section: AuditSection }) {
-  const { editMode, updateSectionDetailField, patchSectionBlock } = useReportEdit();
+  const { editMode, updateSectionDetailField, updateCoreFlowMatrixNote, patchSectionBlock } = useReportEdit();
   const details = parseSectionDetails((section as any).section_details);
   const sk = section.section_key;
   const rubricCfg = rubricBlockConfig(section);
@@ -1424,7 +1424,15 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
   if (section.section_key === 'flows') {
     const rows = details?.flows?.core_flows;
     if (!Array.isArray(rows) || rows.length === 0) return null;
-    return <ReportCoreFlowsMatrix rows={normalizeCoreFlowsMatrix(rows)} />;
+    return (
+      <ReportCoreFlowsMatrix
+        rows={normalizeCoreFlowsMatrix(rows)}
+        editMode={editMode}
+        onUpdateNote={(rowIndex, field, value) =>
+          updateCoreFlowMatrixNote(sk, rowIndex, field, value)
+        }
+      />
+    );
   }
 
   if (section.section_key === 'segmentation') {

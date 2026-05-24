@@ -11,7 +11,8 @@ import type { Audit, AuditSection } from '../../../lib/types';
 import { updateAudit, updateAuditSection } from '../../../lib/db';
 import { scheduleSavedToast, useToast } from '../../ui/Toast';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
-import { computeAuditTotalRevenueOpportunity } from '../../../lib/revenue-calculator';
+import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../../lib/revenue-calculator';
+import { normalizeCoreFlowsMatrix, sanitizeStructureNote, type CoreFlowRow } from '../../../lib/core-flows-matrix';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
 export type TimelinePhase = {
@@ -109,6 +110,12 @@ type ReportEditContextValue = {
     value: string,
   ) => void;
   updateSectionDetailField: (sectionKey: string, path: string[], value: string) => void;
+  updateCoreFlowMatrixNote: (
+    sectionKey: string,
+    rowIndex: number,
+    field: 'current_structure_note' | 'recommended_structure',
+    value: string,
+  ) => void;
   patchSectionBlock: (sectionKey: string, blockKey: string, patch: Record<string, unknown>) => void;
 };
 
@@ -138,6 +145,7 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   toggleTimelinePhaseHidden: () => {},
   updateSectionBlockField: () => {},
   updateSectionDetailField: () => {},
+  updateCoreFlowMatrixNote: () => {},
   patchSectionBlock: () => {},
 });
 
@@ -597,6 +605,57 @@ export function ReportEditProvider({
     [sections, onSectionsChange, schedule],
   );
 
+  const updateCoreFlowMatrixNote = useCallback(
+    (
+      sectionKey: string,
+      rowIndex: number,
+      field: 'current_structure_note' | 'recommended_structure',
+      value: string,
+    ) => {
+      const section = sections.find(s => s.section_key === sectionKey);
+      if (!section) return;
+      const raw = section.section_details;
+      const details: Record<string, unknown> =
+        raw && typeof raw === 'object' && !Array.isArray(raw)
+          ? { ...(raw as Record<string, unknown>) }
+          : typeof raw === 'string'
+            ? (() => {
+                try {
+                  const parsed = JSON.parse(raw);
+                  return parsed && typeof parsed === 'object' && !Array.isArray(parsed)
+                    ? { ...(parsed as Record<string, unknown>) }
+                    : {};
+                } catch {
+                  return {};
+                }
+              })()
+            : {};
+      const flows = details.flows;
+      const flowsObj =
+        flows && typeof flows === 'object' && !Array.isArray(flows)
+          ? { ...(flows as Record<string, unknown>) }
+          : {};
+      const coreFlows = Array.isArray(flowsObj.core_flows)
+        ? (flowsObj.core_flows as CoreFlowRow[])
+        : [];
+      const normalized = normalizeCoreFlowsMatrix(coreFlows);
+      if (rowIndex < 0 || rowIndex >= normalized.length) return;
+      normalized[rowIndex] = {
+        ...normalized[rowIndex],
+        [field]: sanitizeStructureNote(value),
+      };
+      details.flows = { ...flowsObj, core_flows: normalized };
+      const nextSections = sections.map(s =>
+        s.id === section.id ? { ...s, section_details: details } : s,
+      );
+      onSectionsChange(nextSections);
+      schedule(`core-flow-${section.id}-${rowIndex}-${field}`, async () => {
+        await updateAuditSection(section.id, { section_details: details });
+      });
+    },
+    [sections, onSectionsChange, schedule],
+  );
+
   const value = useMemo(
     () => ({
       editMode,
@@ -624,6 +683,7 @@ export function ReportEditProvider({
       toggleTimelinePhaseHidden,
       updateSectionBlockField,
       updateSectionDetailField,
+      updateCoreFlowMatrixNote,
       patchSectionBlock,
     }),
     [
@@ -652,6 +712,7 @@ export function ReportEditProvider({
       toggleTimelinePhaseHidden,
       updateSectionBlockField,
       updateSectionDetailField,
+      updateCoreFlowMatrixNote,
       patchSectionBlock,
     ],
   );

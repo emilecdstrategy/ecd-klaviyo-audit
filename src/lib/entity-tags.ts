@@ -70,6 +70,14 @@ export function migrateBoldEntitiesToTags(text: string, lookup: Map<string, Enti
   });
 }
 
+function isInsideEntityMarker(text: string, index: number): boolean {
+  const before = text.slice(0, index);
+  const open = before.lastIndexOf('`');
+  if (open === -1) return false;
+  const segment = text.slice(open, index + 1);
+  return /`(flow|campaign|segment|form):[^`]*$/i.test(segment);
+}
+
 /** Auto-wrap known Klaviyo entity names that are not already tagged or bolded. */
 export function autoTagEntityNames(text: string, lookup: Map<string, EntityType>): string {
   if (!lookup.size) return text;
@@ -81,7 +89,8 @@ export function autoTagEntityNames(text: string, lookup: Map<string, EntityType>
     const type = lookup.get(name);
     if (!type) continue;
     const regex = new RegExp(`(?<!\\*\\*)\\b(${escapeRegex(name)})\\b(?!\\*\\*)`, 'gi');
-    result = result.replace(regex, match => {
+    result = result.replace(regex, (match, _g1, offset) => {
+      if (typeof offset === 'number' && isInsideEntityMarker(result, offset)) return match;
       if (result.includes(entityMd(type, match))) return match;
       return entityMd(type, match);
     });

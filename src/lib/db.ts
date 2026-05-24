@@ -23,6 +23,42 @@ import {
   normalizeEntityHighlightStyle,
   type EntityHighlightStyle,
 } from './entity-highlight-styles';
+import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from './revenue-calculator';
+
+type AuditSectionRevenueRow = {
+  audit_id: string;
+  section_key: string;
+  revenue_opportunity: number;
+};
+
+function attachComputedRevenueOpportunity(audits: Audit[], sections: AuditSectionRevenueRow[]): Audit[] {
+  const sectionsByAudit = new Map<string, AuditSectionRevenueRow[]>();
+  for (const section of sections) {
+    const list = sectionsByAudit.get(section.audit_id) ?? [];
+    list.push(section);
+    sectionsByAudit.set(section.audit_id, list);
+  }
+
+  return audits.map(audit => ({
+    ...audit,
+    show_recommendations: (audit as Audit & { show_recommendations?: boolean }).show_recommendations ?? true,
+    total_revenue_opportunity: computeAuditTotalRevenueOpportunity(
+      sectionsByAudit.get(audit.id) ?? [],
+      audit.layout,
+    ),
+  })) as Audit[];
+}
+
+async function fetchRevenueSectionsForAudits(auditIds: string[]): Promise<AuditSectionRevenueRow[]> {
+  if (auditIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from('audit_sections')
+    .select('audit_id, section_key, revenue_opportunity')
+    .in('audit_id', auditIds)
+    .in('section_key', [...REVENUE_OPPORTUNITY_SECTION_KEYS]);
+  if (error) throw error;
+  return (data ?? []) as AuditSectionRevenueRow[];
+}
 
 function requireUserId(user: Profile | null): string {
   if (!user) throw new Error('Not signed in');
@@ -61,10 +97,9 @@ export async function deleteClient(id: string): Promise<void> {
 export async function listAudits(): Promise<Audit[]> {
   const { data, error } = await supabase.from('audits').select('*').order('updated_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []).map(a => ({
-    ...a,
-    show_recommendations: (a as any).show_recommendations ?? true,
-  })) as Audit[];
+  const audits = (data ?? []) as Audit[];
+  const sections = await fetchRevenueSectionsForAudits(audits.map(a => a.id));
+  return attachComputedRevenueOpportunity(audits, sections);
 }
 
 export async function listAuditsByClient(clientId: string): Promise<Audit[]> {
@@ -74,7 +109,9 @@ export async function listAuditsByClient(clientId: string): Promise<Audit[]> {
     .eq('client_id', clientId)
     .order('updated_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as Audit[];
+  const audits = (data ?? []) as Audit[];
+  const sections = await fetchRevenueSectionsForAudits(audits.map(a => a.id));
+  return attachComputedRevenueOpportunity(audits, sections);
 }
 
 export async function searchClients(query: string, limit = 5): Promise<Client[]> {

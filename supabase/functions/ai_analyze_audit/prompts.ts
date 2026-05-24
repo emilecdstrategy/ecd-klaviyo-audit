@@ -140,7 +140,7 @@ export function buildAuditSystemPrompt() {
     "For FLOWS, explicitly cover: Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
     "CORE FLOWS MATRIX flow_name — CRITICAL: flow_name must be EXACTLY one of the predefined ECD labels below. NEVER put Klaviyo flow names, entity tags, or combined flow strings in flow_name.",
     "Predefined flow_name values (use verbatim): Abandoned Cart | Browse Abandonment | Welcome Series | Post-Purchase | Winback / Re-engagement | Back-in-Stock | Sunset / List Cleaning. When client sells subscriptions, also include Subscription Lifecycle (8 rows total, inserted after Post-Purchase).",
-    "Reference matched Klaviyo flows using `flow:Name` tags inside current_structure_note or recommended_structure — not in flow_name.",
+    "In current_structure_note and recommended_structure use plain text only (no entity tags, backticks, or flow: prefixes). Mention the matched Klaviyo flow by name if helpful.",
     "For each core flow include: present/not present, live/not live, email_count (the number of email messages/steps in the flow sequence — NOT the recipient count; use the emails_in_sequence value from flow performance data when available), current structure note, and ECD recommended structure note.",
     "CORE FLOWS MATRIX NOTES — KEEP SHORT: current_structure_note and recommended_structure must each be ONE short phrase (max 15 words, no full sentences).",
     "Example current: '3 emails, no SMS, weak offer on email 2'. Example recommended: '4 emails + SMS, social proof in email 1, urgency in email 3'.",
