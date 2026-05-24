@@ -1,18 +1,11 @@
 import { Fragment, useState } from 'react';
 import { ChevronDown, ChevronUp, GitBranch } from 'lucide-react';
 import { RichAuditText } from '../ui/RichAuditText';
-import EntityTagChip from '../ui/EntityTagChip';
 import ReportBlockHeader from './ReportBlockHeader';
 import { cn } from '../../lib/utils';
+import type { CoreFlowRow } from '../../lib/core-flows-matrix';
 
-export type CoreFlowRow = {
-  flow_name?: string;
-  present?: boolean;
-  live?: boolean;
-  email_count?: number | null;
-  current_structure_note?: string;
-  recommended_structure?: string;
-};
+export type { CoreFlowRow };
 
 function FlowStatusBadge({ present, live }: { present: boolean; live: boolean }) {
   if (!present) {
@@ -118,7 +111,7 @@ export default function ReportCoreFlowsMatrix({ rows }: { rows: CoreFlowRow[] })
                   >
                     <td className="px-5 py-3.5">
                       {row.flow_name ? (
-                        <EntityTagChip type="flow" name={row.flow_name} />
+                        <span className="text-sm font-semibold text-gray-900">{row.flow_name}</span>
                       ) : (
                         <span className="text-sm font-semibold text-gray-400">N/A</span>
                       )}

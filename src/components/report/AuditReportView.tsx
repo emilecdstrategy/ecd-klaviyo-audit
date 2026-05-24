@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 're
 import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
 import { computeAuditTotalRevenueOpportunity, formatCurrency, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../lib/revenue-calculator';
+import { normalizeCoreFlowsMatrix } from '../../lib/core-flows-matrix';
 import AnnotationLayer from '../audit/AnnotationLayer';
 import ReportFlowTable from './ReportFlowTable';
 import ReportFlowInventoryTable from './ReportFlowInventoryTable';
@@ -1423,7 +1424,7 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
   if (section.section_key === 'flows') {
     const rows = details?.flows?.core_flows;
     if (!Array.isArray(rows) || rows.length === 0) return null;
-    return <ReportCoreFlowsMatrix rows={rows} />;
+    return <ReportCoreFlowsMatrix rows={normalizeCoreFlowsMatrix(rows)} />;
   }
 
   if (section.section_key === 'segmentation') {

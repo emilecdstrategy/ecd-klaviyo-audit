@@ -2,6 +2,9 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { ChevronDown, ChevronUp, Check, RotateCcw } from 'lucide-react';
 import type { AuditSection } from '../../lib/types';
 import { SECTION_LABELS, CONFIDENCE_LABELS } from '../../lib/constants';
+import {
+  CORE_FLOW_MATRIX_NAMES_WITH_SUBSCRIPTION,
+} from '../../lib/core-flows-matrix';
 import RevenueOpportunityCard from '../ui/RevenueOpportunityCard';
 import StatusBadge from '../ui/StatusBadge';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
@@ -1118,26 +1121,33 @@ function RubricTab({
     const coreFlows = Array.isArray(flows?.core_flows)
       ? (flows!.core_flows as Array<Record<string, unknown>>)
       : [];
+    const flowNameOptions = CORE_FLOW_MATRIX_NAMES_WITH_SUBSCRIPTION;
+    const nextAvailableFlowName = () => {
+      const used = new Set(coreFlows.map(row => String(row.flow_name ?? '')));
+      return flowNameOptions.find(name => !used.has(name)) ?? flowNameOptions[0];
+    };
     return (
       <div className="space-y-4">
         <p className="text-xs text-gray-500">
-          Edit the Core Flows Matrix rows that render under the Flows section. These populate the rubric rendered in the public report.
+          Edit the Core Flows Matrix rows that render under the Flows section. Flow names use predefined ECD labels — reference matched Klaviyo flows in the structure notes.
         </p>
         <div className="space-y-2">
           {coreFlows.map((row, i) => (
             <div key={i} className="rounded-lg border border-gray-100 p-3 space-y-2">
               <div className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={String(row.flow_name ?? '')}
+                <select
+                  value={String(row.flow_name ?? flowNameOptions[0])}
                   onChange={e => {
                     const next = coreFlows.slice();
                     next[i] = { ...row, flow_name: e.target.value };
                     write(['flows', 'core_flows'], next);
                   }}
-                  placeholder="Flow name"
-                  className="flex-1 px-3 py-1.5 border border-gray-200 rounded-md text-sm"
-                />
+                  className="flex-1 px-3 py-1.5 border border-gray-200 rounded-md text-sm bg-white"
+                >
+                  {flowNameOptions.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
                 <button
                   type="button"
                   onClick={() => {
@@ -1231,7 +1241,7 @@ function RubricTab({
             type="button"
             onClick={() => {
               const next = [...coreFlows, {
-                flow_name: '',
+                flow_name: nextAvailableFlowName(),
                 present: false,
                 live: false,
                 email_count: null,

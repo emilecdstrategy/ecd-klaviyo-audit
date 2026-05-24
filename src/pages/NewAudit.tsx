@@ -23,6 +23,7 @@ import {
   defaultEmailDesignRevenue,
   REVENUE_OPPORTUNITY_SECTION_KEYS,
 } from '../lib/revenue-calculator';
+import { normalizeFlowsSectionPatch } from '../lib/core-flows-matrix';
 
 const CONTEXT_CHAR_SOFT = 15_000;
 const CONTEXT_CHAR_HARD = 30_000;
@@ -596,7 +597,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       for (const s of createdSections) {
         const patch = patchByKey.get(s.section_key);
         if (!patch || s.section_key === 'email_design') continue;
-        await updateAuditSection(s.id, patch as any);
+        const normalizedPatch = s.section_key === 'flows'
+          ? normalizeFlowsSectionPatch(patch as { section_details?: unknown }, {
+              includeSubscription: Boolean(form.clientSellsSubscriptions),
+            })
+          : patch;
+        await updateAuditSection(s.id, normalizedPatch as any);
       }
 
       const otherSectionRevenue = REVENUE_OPPORTUNITY_SECTION_KEYS

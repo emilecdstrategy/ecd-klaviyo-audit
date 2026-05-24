@@ -18,15 +18,11 @@ export const SECTION_LABELS: Record<string, string> = {
   revenue_summary: 'Revenue Opportunity Summary',
 };
 
-export const FLOW_TYPES = [
-  'Abandoned Cart',
-  'Browse Abandonment',
-  'Welcome Series',
-  'Post-Purchase',
-  'Winback / Re-engagement',
-  'Back-in-Stock',
-  'Sunset / List Cleaning',
-];
+export {
+  CORE_FLOW_MATRIX_NAMES as FLOW_TYPES,
+  CORE_FLOW_MATRIX_NAMES,
+  CORE_FLOW_MATRIX_NAMES_WITH_SUBSCRIPTION,
+} from './core-flows-matrix';
 
 export const INDUSTRIES = [
   'Home & Garden',

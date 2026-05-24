@@ -85,7 +85,20 @@ const SECTION_ITEM_SCHEMA = {
                 additionalProperties: false,
                 required: ["flow_name", "present", "live", "email_count", "current_structure_note", "recommended_structure"],
                 properties: {
-                  flow_name: { type: "string" },
+                  flow_name: {
+                    type: "string",
+                    enum: [
+                      "Abandoned Cart",
+                      "Browse Abandonment",
+                      "Welcome Series",
+                      "Post-Purchase",
+                      "Subscription Lifecycle",
+                      "Winback / Re-engagement",
+                      "Back-in-Stock",
+                      "Sunset / List Cleaning",
+                    ],
+                    description: "Predefined ECD core flow label only — never the Klaviyo flow name",
+                  },
                   present: { type: "boolean" },
                   live: { type: "boolean" },
                   email_count: { type: "number", description: "Number of email messages/steps in the flow sequence, NOT recipient count" },
