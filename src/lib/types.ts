@@ -109,7 +109,13 @@ export interface KlaviyoFlowSnapshot {
   archived: boolean | null;
   created_at_klaviyo: string | null;
   updated_at_klaviyo: string | null;
-  raw: any;
+  action_count?: number | null;
+  flow_actions?: unknown[] | null;
+  raw?: unknown;
+  is_hidden?: boolean;
+  display_name?: string | null;
+  display_notes?: string | null;
+  display_order?: number | null;
 }
 
 export interface KlaviyoCampaignSnapshot {
@@ -122,7 +128,7 @@ export interface KlaviyoCampaignSnapshot {
   send_channel: string;
   created_at_klaviyo: string | null;
   updated_at_klaviyo: string | null;
-  raw: any;
+  raw?: unknown;
   is_hidden?: boolean;
   display_name?: string | null;
   display_notes?: string | null;
@@ -139,7 +145,7 @@ export interface KlaviyoFormSnapshot {
   ab_test: any;
   created_at_klaviyo: string | null;
   updated_at_klaviyo: string | null;
-  raw: any;
+  raw?: unknown;
   is_hidden?: boolean;
   display_name?: string | null;
   display_notes?: string | null;
@@ -154,7 +160,7 @@ export interface KlaviyoSegmentSnapshot {
   name: string;
   created_at_klaviyo: string | null;
   updated_at_klaviyo: string | null;
-  raw: any;
+  raw?: unknown;
   is_hidden?: boolean;
   display_name?: string | null;
   display_notes?: string | null;

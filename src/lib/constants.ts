@@ -1,13 +1,3 @@
-export const SECTION_KEYS = [
-  'account_health',
-  'flows',
-  'segmentation',
-  'campaigns',
-  'email_design',
-  'signup_forms',
-  'revenue_summary',
-] as const;
-
 export const SECTION_LABELS: Record<string, string> = {
   account_health: 'Account Health Overview',
   flows: 'Flows Audit',
@@ -19,7 +9,6 @@ export const SECTION_LABELS: Record<string, string> = {
 };
 
 export {
-  CORE_FLOW_MATRIX_NAMES as FLOW_TYPES,
   CORE_FLOW_MATRIX_NAMES,
   CORE_FLOW_MATRIX_NAMES_WITH_SUBSCRIPTION,
 } from './core-flows-matrix';
@@ -36,31 +25,6 @@ export const INDUSTRIES = [
   'Pet Products',
   'Kids & Baby',
   'Other',
-];
-
-export const ESP_PLATFORMS = [
-  'Klaviyo',
-  'Mailchimp',
-  'Omnisend',
-  'ActiveCampaign',
-  'Other',
-];
-
-export const EMAIL_TYPES = [
-  'promotional',
-  'welcome',
-  'post-purchase',
-  'seasonal',
-  'educational',
-];
-
-export const SCREENSHOT_CATEGORIES = [
-  { key: 'account_overview', label: 'Account Overview', description: 'Main dashboard or account summary screen' },
-  { key: 'flows', label: 'Flow Builder Screenshots', description: 'Screenshots of each active flow and their performance' },
-  { key: 'campaigns', label: 'Campaign Calendar / List', description: 'Recent campaign list showing send dates and performance' },
-  { key: 'segments', label: 'Segments / Lists', description: 'List of segments with subscriber counts' },
-  { key: 'signup_forms', label: 'Signup Forms', description: 'Screenshots of active popup forms and embedded forms' },
-  { key: 'email_examples', label: 'Email Examples', description: 'Screenshots of 3-5 recent email designs' },
 ];
 
 export const CONFIDENCE_LABELS: Record<string, string> = {

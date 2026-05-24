@@ -26,3 +26,25 @@ dist-ssr
 .design/handoff/**/*.zip
 .design/handoff/**/assets/**
 .design/handoff/**/preview/**
+
+# Supabase CLI local state
+supabase/.temp/
+
+# MCP deploy debug artifacts
+scripts/.*
+scripts/_*.cjs
+scripts/for-mcp-embed.json
+scripts/*-deploy*.cjs
+scripts/*-deploy*.mjs
+scripts/*-deploy*.js
+scripts/deploy-from-disk.mjs
+scripts/deploy-ai-analyze-audit-from-disk.mjs
+scripts/emit-deploy-payload.cjs
+scripts/read-deploy-args.cjs
+scripts/prepare-deploy-args.cjs
+scripts/build-deploy-args-from-disk.cjs
+scripts/load-mcp-args-out.cjs
+scripts/mcp-deploy-from-file.cjs
+scripts/repair-audit-findings.mjs
+scripts/preview-repair-payload.mjs
+scripts/write-repair-migration.mjs

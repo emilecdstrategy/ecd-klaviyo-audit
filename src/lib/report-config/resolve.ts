@@ -1,6 +1,4 @@
 import type {
-  AccountHealthBlockKey,
-  AccountHealthSectionConfig,
   CampaignsBlockKey,
   CampaignsSectionConfig,
   EmailDesignBlockKey,
@@ -10,7 +8,6 @@ import type {
   FlowsBlockKey,
   FlowsSectionConfig,
   FlowsSectionConfigRoot,
-  RevenueSummaryBlockKey,
   RevenueSummarySectionConfig,
   SegmentationBlockKey,
   SegmentationSectionConfig,
@@ -18,7 +15,6 @@ import type {
   SignupFormsSectionConfig,
 } from './types';
 import {
-  DEFAULT_ACCOUNT_HEALTH_SECTION,
   DEFAULT_CAMPAIGNS_SECTION,
   DEFAULT_EMAIL_DESIGN_SECTION,
   DEFAULT_EXECUTIVE_SUMMARY_SECTION,
@@ -135,31 +131,6 @@ export function isFlowsBlockVisible(resolved: FlowsSectionConfig, block: FlowsBl
 }
 
 // -----------------------------------------------------------------------------
-// Account Health
-// -----------------------------------------------------------------------------
-
-export function extractAccountHealthRawConfig(
-  sectionConfig: Record<string, unknown> | null | undefined,
-): Partial<AccountHealthSectionConfig> | undefined {
-  return extractSubtree<AccountHealthSectionConfig>(sectionConfig, 'account_health');
-}
-
-export function resolveAccountHealthConfig(
-  raw: Partial<AccountHealthSectionConfig> | null | undefined,
-  defaults: AccountHealthSectionConfig = DEFAULT_ACCOUNT_HEALTH_SECTION,
-): AccountHealthSectionConfig {
-  if (!raw) return defaults;
-  return deepMerge(defaults, raw);
-}
-
-export function isAccountHealthBlockVisible(
-  resolved: AccountHealthSectionConfig,
-  block: AccountHealthBlockKey,
-): boolean {
-  return isBlockVisible(resolved, block);
-}
-
-// -----------------------------------------------------------------------------
 // Segmentation
 // -----------------------------------------------------------------------------
 
@@ -263,25 +234,12 @@ export function isEmailDesignBlockVisible(
 // Revenue Summary
 // -----------------------------------------------------------------------------
 
-export function extractRevenueSummaryRawConfig(
-  sectionConfig: Record<string, unknown> | null | undefined,
-): Partial<RevenueSummarySectionConfig> | undefined {
-  return extractSubtree<RevenueSummarySectionConfig>(sectionConfig, 'revenue_summary');
-}
-
 export function resolveRevenueSummaryConfig(
   raw: Partial<RevenueSummarySectionConfig> | null | undefined,
   defaults: RevenueSummarySectionConfig = DEFAULT_REVENUE_SUMMARY_SECTION,
 ): RevenueSummarySectionConfig {
   if (!raw) return defaults;
   return deepMerge(defaults, raw);
-}
-
-export function isRevenueSummaryBlockVisible(
-  resolved: RevenueSummarySectionConfig,
-  block: RevenueSummaryBlockKey,
-): boolean {
-  return isBlockVisible(resolved, block);
 }
 
 // -----------------------------------------------------------------------------

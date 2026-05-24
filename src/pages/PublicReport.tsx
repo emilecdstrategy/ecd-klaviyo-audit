@@ -1,7 +1,10 @@
+import { lazy, Suspense } from 'react';
 import { useParams } from 'react-router-dom';
-import AuditReportView from '../components/report/AuditReportView';
 import AppPreloader from '../components/ui/AppPreloader';
+import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
 import { useAuditReportData } from '../hooks/useAuditReportData';
+
+const AuditReportView = lazy(() => import('../components/report/AuditReportView'));
 
 export default function PublicReport() {
   const { token } = useParams();
@@ -33,5 +36,9 @@ export default function PublicReport() {
     );
   }
 
-  return <AuditReportView data={data} />;
+  return (
+    <Suspense fallback={<SkeletonAuditWorkspace />}>
+      <AuditReportView data={data} />
+    </Suspense>
+  );
 }

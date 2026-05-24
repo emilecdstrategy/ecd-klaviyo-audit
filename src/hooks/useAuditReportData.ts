@@ -12,9 +12,7 @@ import type {
   KlaviyoFlowSnapshot,
   KlaviyoFormSnapshot,
   KlaviyoSegmentSnapshot,
-  Recommendation,
 } from '../lib/types';
-import type { HealthScoreItem } from '../lib/types';
 
 export type AuditReportBundle = {
   audit: Audit;
@@ -27,8 +25,6 @@ export type AuditReportBundle = {
   segmentSnapshots: KlaviyoSegmentSnapshot[];
   formSnapshots: KlaviyoFormSnapshot[];
   campaignSnapshots: KlaviyoCampaignSnapshot[];
-  healthScores: HealthScoreItem[];
-  recommendations: Recommendation[];
   emailDesign: AuditEmailDesign | null;
   reportingDiagnostic?: string | null;
   accountSnapshot?: {

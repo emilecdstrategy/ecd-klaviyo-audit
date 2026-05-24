@@ -1,4 +1,4 @@
-import { useState, useEffect, useLayoutEffect, useRef, type ReactNode } from 'react';
+import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode } from 'react';
 import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
 import { computeAuditTotalRevenueOpportunity, formatCurrency, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../lib/revenue-calculator';
@@ -31,7 +31,6 @@ import ReportBlockEditChrome, { ReportHiddenItemStub, ReportItemHideButton } fro
 import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem } from '../../lib/types';
-import { getPlatformSettings } from '../../lib/db';
 import { resolveExecutiveFindings } from '../../lib/findings-normalize';
 import { cn } from '../../lib/utils';
 import type { AuditReportBundle } from '../../hooks/useAuditReportData';
@@ -179,157 +178,251 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
   const isPreview = audit.status === 'draft' || audit.status === 'in_review';
 
-  const currentFlowMonthlyRevenue = flowPerformance.reduce((s, f) => s + (f.monthly_revenue_current ?? 0), 0);
-  const reportSections = sections.filter(s => s.section_key !== 'revenue_summary' && s.status !== 'draft');
+  const currentFlowMonthlyRevenue = useMemo(
+    () => flowPerformance.reduce((sum, flow) => sum + (flow.monthly_revenue_current ?? 0), 0),
+    [flowPerformance],
+  );
 
-  let execText = audit.executive_summary || '';
-  let aiFindings: string[] = [];
-  let aiStrengths: string[] = [];
-  let aiConcerns: string[] = [];
-  let aiTimeline: { phase: string; timeframe: string; label: string; items: string[] }[] = [];
-  let findingsHidden: boolean[] = [];
-  let strengthsHidden: boolean[] = [];
-  let timelineHidden: boolean[] = [];
-  try {
-    const parsed = JSON.parse(audit.executive_summary || '');
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      if (typeof parsed.text === 'string') execText = parsed.text;
-      aiFindings = Array.isArray(parsed.findings) ? parsed.findings : [];
-      aiStrengths = Array.isArray(parsed.strengths) ? parsed.strengths : [];
-      aiConcerns = Array.isArray(parsed.concerns) ? parsed.concerns : [];
-      aiTimeline = Array.isArray(parsed.timeline) ? parsed.timeline : [];
-      findingsHidden = Array.isArray(parsed.findingsHidden) ? parsed.findingsHidden.map(Boolean) : [];
-      strengthsHidden = Array.isArray(parsed.strengthsHidden) ? parsed.strengthsHidden.map(Boolean) : [];
-      timelineHidden = Array.isArray(parsed.timelineHidden) ? parsed.timelineHidden.map(Boolean) : [];
+  const reportSections = useMemo(
+    () => sections.filter(section => section.section_key !== 'revenue_summary' && section.status !== 'draft'),
+    [sections],
+  );
+
+  const executiveSummaryData = useMemo(() => {
+    let execText = audit.executive_summary || '';
+    let aiFindings: string[] = [];
+    let aiStrengths: string[] = [];
+    let aiConcerns: string[] = [];
+    let aiTimeline: { phase: string; timeframe: string; label: string; items: string[] }[] = [];
+    let findingsHidden: boolean[] = [];
+    let strengthsHidden: boolean[] = [];
+    let timelineHidden: boolean[] = [];
+    try {
+      const parsed = JSON.parse(audit.executive_summary || '');
+      if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+        if (typeof parsed.text === 'string') execText = parsed.text;
+        aiFindings = Array.isArray(parsed.findings) ? parsed.findings : [];
+        aiStrengths = Array.isArray(parsed.strengths) ? parsed.strengths : [];
+        aiConcerns = Array.isArray(parsed.concerns) ? parsed.concerns : [];
+        aiTimeline = Array.isArray(parsed.timeline) ? parsed.timeline : [];
+        findingsHidden = Array.isArray(parsed.findingsHidden) ? parsed.findingsHidden.map(Boolean) : [];
+        strengthsHidden = Array.isArray(parsed.strengthsHidden) ? parsed.strengthsHidden.map(Boolean) : [];
+        timelineHidden = Array.isArray(parsed.timelineHidden) ? parsed.timelineHidden.map(Boolean) : [];
+      }
+    } catch {
+      // plain text — keep as-is
     }
-  } catch {
-    // plain text — keep as-is
-  }
-  aiFindings = resolveExecutiveFindings(aiFindings, aiConcerns);
+    return {
+      execText,
+      aiFindings: resolveExecutiveFindings(aiFindings, aiConcerns),
+      aiStrengths,
+      aiTimeline,
+      findingsHidden,
+      strengthsHidden,
+      timelineHidden,
+    };
+  }, [audit.executive_summary]);
 
-  const pickConfig = (key: string) =>
-    (reportSections.find(s => s.section_key === key)?.section_config as Record<string, unknown> | null | undefined) ?? null;
+  const {
+    execText,
+    aiFindings,
+    aiStrengths,
+    aiTimeline,
+    findingsHidden,
+    strengthsHidden,
+    timelineHidden,
+  } = executiveSummaryData;
 
-  const flowsSectionRow = reportSections.find(s => s.section_key === 'flows');
-  const flowsCfg = resolveFlowsConfig(extractFlowsRawConfig(pickConfig('flows')));
-
-  const segmentationSectionRow = reportSections.find(s => s.section_key === 'segmentation');
-  const segmentationCfg = resolveSegmentationConfig(
-    extractSegmentationRawConfig(pickConfig('segmentation')),
+  const auditLayout = useMemo(
+    () => (audit.layout as Record<string, unknown> | null | undefined) ?? {},
+    [audit.layout],
   );
 
-  const signupFormsSectionRow = reportSections.find(s => s.section_key === 'signup_forms');
-  const signupFormsCfg = resolveSignupFormsConfig(
-    extractSignupFormsRawConfig(pickConfig('signup_forms')),
+  const sectionConfigs = useMemo(() => {
+    const pickConfig = (key: string) =>
+      (reportSections.find(section => section.section_key === key)?.section_config as Record<string, unknown> | null | undefined) ?? null;
+
+    const flowsSectionRow = reportSections.find(section => section.section_key === 'flows');
+    const flowsCfg = resolveFlowsConfig(extractFlowsRawConfig(pickConfig('flows')));
+
+    const segmentationSectionRow = reportSections.find(section => section.section_key === 'segmentation');
+    const segmentationCfg = resolveSegmentationConfig(extractSegmentationRawConfig(pickConfig('segmentation')));
+
+    const signupFormsSectionRow = reportSections.find(section => section.section_key === 'signup_forms');
+    const signupFormsCfg = resolveSignupFormsConfig(extractSignupFormsRawConfig(pickConfig('signup_forms')));
+
+    const campaignsSectionRow = reportSections.find(section => section.section_key === 'campaigns');
+    const campaignsCfg = resolveCampaignsConfig(extractCampaignsRawConfig(pickConfig('campaigns')));
+
+    const emailDesignCfg = resolveEmailDesignConfig(extractEmailDesignRawConfig(pickConfig('email_design')));
+
+    const revenueSummaryRaw = auditLayout.revenue_summary as Partial<RevenueSummarySectionConfig> | null | undefined;
+    const revenueSummaryCfg = resolveRevenueSummaryConfig(
+      revenueSummaryRaw && typeof revenueSummaryRaw === 'object' ? revenueSummaryRaw : undefined,
+    );
+
+    const executiveSummaryCfg = resolveExecutiveSummaryConfig(
+      extractExecutiveSummaryRawConfig(auditLayout),
+    );
+
+    return {
+      flowsSectionRow,
+      flowsCfg,
+      segmentationSectionRow,
+      segmentationCfg,
+      signupFormsSectionRow,
+      signupFormsCfg,
+      campaignsSectionRow,
+      campaignsCfg,
+      emailDesignCfg,
+      revenueSummaryCfg,
+      executiveSummaryCfg,
+    };
+  }, [auditLayout, reportSections]);
+
+  const {
+    flowsSectionRow,
+    flowsCfg,
+    segmentationSectionRow,
+    segmentationCfg,
+    signupFormsSectionRow,
+    signupFormsCfg,
+    campaignsSectionRow,
+    campaignsCfg,
+    emailDesignCfg,
+    revenueSummaryCfg,
+    executiveSummaryCfg,
+  } = sectionConfigs;
+
+  const visibleAddOnItems = useMemo(() => {
+    const addOnItemsRaw = revenueSummaryCfg.blocks.addOns?.items;
+    return Array.isArray(addOnItemsRaw)
+      ? addOnItemsRaw
+        .filter((item): item is RevenueOpportunityAddOnItem => !!item && typeof item === 'object')
+        .map((item, index) => ({
+          ...item,
+          bullets: Array.isArray(item.bullets) ? item.bullets.map(value => String(value)) : [],
+          revenue_monthly: Number(item.revenue_monthly ?? 0),
+          display_order: typeof item.display_order === 'number' ? item.display_order : (index + 1) * 10,
+          is_hidden: Boolean(item.is_hidden),
+        }))
+        .filter(item => !item.is_hidden)
+        .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+      : [];
+  }, [revenueSummaryCfg]);
+
+  const revenueBreakdownSections = useMemo(
+    () =>
+      REVENUE_OPPORTUNITY_SECTION_KEYS
+        .map(key => sections.find(section => section.section_key === key))
+        .filter((section): section is AuditSection => !!section)
+        .filter(section =>
+          isRevenueOpportunitySectionVisible(
+            section.section_key,
+            (section.section_config as Record<string, unknown> | null | undefined) ?? null,
+          ),
+        )
+        .filter(section => editMode || section.revenue_opportunity > 0),
+    [sections, editMode],
   );
 
-  const campaignsSectionRow = reportSections.find(s => s.section_key === 'campaigns');
-  const campaignsCfg = resolveCampaignsConfig(
-    extractCampaignsRawConfig(pickConfig('campaigns')),
+  const addOnTotalRevenue = useMemo(
+    () => visibleAddOnItems.reduce((sum, item) => sum + (Number(item.revenue_monthly) || 0), 0),
+    [visibleAddOnItems],
   );
 
-  const emailDesignCfg = resolveEmailDesignConfig(
-    extractEmailDesignRawConfig(pickConfig('email_design')),
-  );
-
-  const auditLayout = (audit.layout as Record<string, unknown> | null | undefined) ?? {};
-  const revenueSummaryRaw = auditLayout.revenue_summary as Partial<RevenueSummarySectionConfig> | null | undefined;
-  const revenueSummaryCfg = resolveRevenueSummaryConfig(
-    revenueSummaryRaw && typeof revenueSummaryRaw === 'object' ? revenueSummaryRaw : undefined,
-  );
-  const addOnItemsRaw = revenueSummaryCfg.blocks.addOns?.items;
-  const visibleAddOnItems: RevenueOpportunityAddOnItem[] = Array.isArray(addOnItemsRaw)
-    ? addOnItemsRaw
-      .filter((item): item is RevenueOpportunityAddOnItem => !!item && typeof item === 'object')
-      .map((item, index) => ({
-        ...item,
-        bullets: Array.isArray(item.bullets) ? item.bullets.map(v => String(v)) : [],
-        revenue_monthly: Number(item.revenue_monthly ?? 0),
-        display_order: typeof item.display_order === 'number' ? item.display_order : (index + 1) * 10,
-        is_hidden: Boolean(item.is_hidden),
-      }))
-      .filter(item => !item.is_hidden)
-      .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
-    : [];
-  const revenueBreakdownSections = REVENUE_OPPORTUNITY_SECTION_KEYS
-    .map(key => sections.find(s => s.section_key === key))
-    .filter((s): s is AuditSection => !!s)
-    .filter(s =>
-      isRevenueOpportunitySectionVisible(
-        s.section_key,
-        (s.section_config as Record<string, unknown> | null | undefined) ?? null,
-      ),
-    )
-    .filter(s => editMode || s.revenue_opportunity > 0);
-  const addOnTotalRevenue = visibleAddOnItems.reduce(
-    (sum, item) => sum + (Number(item.revenue_monthly) || 0),
-    0,
-  );
   const hasAddOnBreakdown = visibleAddOnItems.length > 0 && (editMode || addOnTotalRevenue > 0);
-  const totalRevenue = computeAuditTotalRevenueOpportunity(sections, auditLayout);
 
-  const executiveSummaryCfg = resolveExecutiveSummaryConfig(
-    extractExecutiveSummaryRawConfig(auditLayout),
-  );
+  const totalRevenue = useMemo(() => {
+    if (!editMode && typeof audit.total_revenue_opportunity === 'number') {
+      return audit.total_revenue_opportunity;
+    }
+    return computeAuditTotalRevenueOpportunity(sections, auditLayout);
+  }, [editMode, audit.total_revenue_opportunity, sections, auditLayout]);
 
   const flowsDataAvailable = flowSnapshots.length > 0 || flowPerformance.length > 0;
   const emailDesignDataAvailable =
     Boolean(emailDesign?.client_email_html || emailDesign?.ecd_example) || editMode;
 
-  const sectionHiddenFlags: Record<string, boolean> = {
-    summary: Boolean(executiveSummaryCfg.hidden),
-    flows: Boolean(flowsCfg.hidden),
-    segments: Boolean(segmentationCfg.hidden),
-    forms: Boolean(signupFormsCfg.hidden),
-    campaigns: Boolean(campaignsCfg.hidden),
-    email_design: Boolean(emailDesignCfg.hidden),
-    opportunity: Boolean(revenueSummaryCfg.hidden),
-  };
+  const sectionHiddenFlags = useMemo<Record<string, boolean>>(
+    () => ({
+      summary: Boolean(executiveSummaryCfg.hidden),
+      flows: Boolean(flowsCfg.hidden),
+      segments: Boolean(segmentationCfg.hidden),
+      forms: Boolean(signupFormsCfg.hidden),
+      campaigns: Boolean(campaignsCfg.hidden),
+      email_design: Boolean(emailDesignCfg.hidden),
+      opportunity: Boolean(revenueSummaryCfg.hidden),
+    }),
+    [executiveSummaryCfg, flowsCfg, segmentationCfg, signupFormsCfg, campaignsCfg, emailDesignCfg, revenueSummaryCfg],
+  );
 
-  const sectionDataAvailable: Record<string, boolean> = {
-    summary: true,
-    flows: flowsDataAvailable,
-    segments: segmentSnapshots.length > 0,
-    forms: formSnapshots.length > 0,
-    campaigns: campaignSnapshots.length > 0,
-    email_design: emailDesignDataAvailable,
-    opportunity: true,
-  };
+  const sectionDataAvailable = useMemo<Record<string, boolean>>(
+    () => ({
+      summary: true,
+      flows: flowsDataAvailable,
+      segments: segmentSnapshots.length > 0,
+      forms: formSnapshots.length > 0,
+      campaigns: campaignSnapshots.length > 0,
+      email_design: emailDesignDataAvailable,
+      opportunity: true,
+    }),
+    [flowsDataAvailable, segmentSnapshots.length, formSnapshots.length, campaignSnapshots.length, emailDesignDataAvailable],
+  );
 
-  const sectionVisibility: Record<string, boolean> = {
-    summary: !sectionHiddenFlags.summary,
-    flows: flowsDataAvailable && !sectionHiddenFlags.flows,
-    segments: segmentSnapshots.length > 0 && !sectionHiddenFlags.segments,
-    forms: formSnapshots.length > 0 && !sectionHiddenFlags.forms,
-    campaigns: campaignSnapshots.length > 0 && !sectionHiddenFlags.campaigns,
-    email_design: emailDesignDataAvailable && !sectionHiddenFlags.email_design,
-    opportunity: !sectionHiddenFlags.opportunity,
-  };
+  const sectionVisibility = useMemo<Record<string, boolean>>(
+    () => ({
+      summary: !sectionHiddenFlags.summary,
+      flows: flowsDataAvailable && !sectionHiddenFlags.flows,
+      segments: segmentSnapshots.length > 0 && !sectionHiddenFlags.segments,
+      forms: formSnapshots.length > 0 && !sectionHiddenFlags.forms,
+      campaigns: campaignSnapshots.length > 0 && !sectionHiddenFlags.campaigns,
+      email_design: emailDesignDataAvailable && !sectionHiddenFlags.email_design,
+      opportunity: !sectionHiddenFlags.opportunity,
+    }),
+    [
+      sectionHiddenFlags,
+      flowsDataAvailable,
+      segmentSnapshots.length,
+      formSnapshots.length,
+      campaignSnapshots.length,
+      emailDesignDataAvailable,
+    ],
+  );
 
-  const navSectionIds = NAV_ITEMS.filter(item => {
-    if (!sectionDataAvailable[item.id]) return false;
-    if (editMode) return true;
-    return sectionVisibility[item.id];
-  });
+  const navSectionIds = useMemo(
+    () =>
+      NAV_ITEMS.filter(item => {
+        if (!sectionDataAvailable[item.id]) return false;
+        if (editMode) return true;
+        return sectionVisibility[item.id];
+      }),
+    [sectionDataAvailable, editMode, sectionVisibility],
+  );
 
-  const sectionNumbers: Record<string, string> = {};
-  {
+  const sectionNumbers = useMemo(() => {
+    const numbers: Record<string, string> = {};
     let n = 1;
     for (const item of navSectionIds) {
       if (sectionHiddenFlags[item.id] && editMode) {
-        sectionNumbers[item.id] = '—';
+        numbers[item.id] = '—';
         continue;
       }
       if (!sectionVisibility[item.id]) continue;
-      sectionNumbers[item.id] = String(n).padStart(2, '0');
+      numbers[item.id] = String(n).padStart(2, '0');
       n += 1;
     }
-  }
+    return numbers;
+  }, [navSectionIds, sectionHiddenFlags, editMode, sectionVisibility]);
 
-  const visibleNavItems = navSectionIds.map(item => ({
-    ...item,
-    isHidden: sectionHiddenFlags[item.id],
-  }));
+  const visibleNavItems = useMemo(
+    () =>
+      navSectionIds.map(item => ({
+        ...item,
+        isHidden: sectionHiddenFlags[item.id],
+      })),
+    [navSectionIds, sectionHiddenFlags],
+  );
 
   const setRef = (id: string) => (el: HTMLElement | null) => {
     sectionRefs.current[id] = el;
@@ -1779,15 +1872,9 @@ function EmailDesignComparison({
   fullscreen: boolean;
   onFullscreenChange: (open: boolean) => void;
 }) {
-  const [globalAnnotationSize, setGlobalAnnotationSize] = useState<'sm' | 'md' | 'lg'>('md');
-  const [globalAnnotationsExpanded, setGlobalAnnotationsExpanded] = useState(false);
-
-  useEffect(() => {
-    getPlatformSettings().then(s => {
-      setGlobalAnnotationSize(s.annotation_size);
-      setGlobalAnnotationsExpanded(s.annotations_expanded);
-    }).catch(() => {});
-  }, []);
+  const { settings } = usePlatformSettings();
+  const globalAnnotationSize = settings.annotation_size;
+  const globalAnnotationsExpanded = settings.annotations_expanded;
 
   const edSection = sections.find(s => s.section_key === 'email_design');
   const sectionAnns = edSection ? annotations.filter(a => a.audit_section_id === edSection.id) : [];

@@ -11,7 +11,7 @@ import type { Audit, AuditSection } from '../../../lib/types';
 import { updateAudit, updateAuditSection } from '../../../lib/db';
 import { scheduleSavedToast, useToast } from '../../ui/Toast';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
-import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../../lib/revenue-calculator';
+import { computeAuditTotalRevenueOpportunity } from '../../../lib/revenue-calculator';
 import { normalizeCoreFlowsMatrix, sanitizeStructureNote, type CoreFlowRow } from '../../../lib/core-flows-matrix';
 import { repairEntityMarkers } from '../../../lib/entity-tags';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';

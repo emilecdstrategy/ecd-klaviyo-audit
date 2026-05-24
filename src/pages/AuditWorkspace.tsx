@@ -1,42 +1,30 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { ExternalLink } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import SiteFavicon from '../components/ui/SiteFavicon';
-import AuditReportView from '../components/report/AuditReportView';
 import { ReportEditProvider } from '../components/report/edit/ReportEditContext';
-import EmailDesignEditor, { EmailDesignDrawer } from '../components/audit/EmailDesignEditor';
-import RevenueAddOnItemsEditor from '../components/audit/RevenueAddOnItemsEditor';
 import WorkspacePublishBar from '../components/audit/WorkspacePublishBar';
 import { mergeReportBundle, type AuditReportBundle } from '../hooks/useAuditReportData';
 import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
-import type { Audit, AuditAsset, Client } from '../lib/types';
+import type { Audit, Client } from '../lib/types';
 import {
-  getAudit,
-  getClient,
   getAuditReportBundleById,
-  listAnnotationsForAuditSections,
-  listAssets,
-  listAuditSections,
+  listIndustryEmailLibrary,
   publishAudit,
   updateAuditStatus,
   updateAuditSection,
-  getAuditEmailDesign,
-  listIndustryEmailLibrary,
 } from '../lib/db';
 import { supabase } from '../lib/supabase';
-import { useToast } from '../components/ui/Toast';
+import { scheduleSavedToast, useToast } from '../components/ui/Toast';
 
-function WorkspaceSaveStatus() {
-  const { saveStatus } = useReportEdit();
-  if (saveStatus === 'idle') return null;
-  return (
-    <span className={`text-xs ${saveStatus === 'error' ? 'text-red-600' : saveStatus === 'saved' ? 'text-emerald-600' : 'text-gray-500'}`}>
-      {saveStatus === 'saving' ? 'Saving…' : saveStatus === 'saved' ? 'Saved' : 'Save failed'}
-    </span>
-  );
-}
+const AuditReportView = lazy(() => import('../components/report/AuditReportView'));
+const EmailDesignEditor = lazy(() => import('../components/audit/EmailDesignEditor'));
+const RevenueAddOnItemsEditor = lazy(() => import('../components/audit/RevenueAddOnItemsEditor'));
+const EmailDesignDrawer = lazy(() =>
+  import('../components/audit/EmailDesignEditor').then(module => ({ default: module.EmailDesignDrawer })),
+);
 
 export default function AuditWorkspace() {
   const { id } = useParams();
@@ -45,7 +33,6 @@ export default function AuditWorkspace() {
 
   const [audit, setAudit] = useState<Audit | null>(null);
   const [client, setClient] = useState<Client | null>(null);
-  const [assets, setAssets] = useState<AuditAsset[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
 
@@ -61,9 +48,8 @@ export default function AuditWorkspace() {
   const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
   const [scopeWarnings, setScopeWarnings] = useState<string[]>([]);
   const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
-  const [reportLoading, setReportLoading] = useState(false);
 
-  const emailDesignSection = sections.find(s => s.section_key === 'email_design');
+  const emailDesignSection = sections.find(section => section.section_key === 'email_design');
 
   useEffect(() => {
     let cancelled = false;
@@ -72,36 +58,28 @@ export default function AuditWorkspace() {
       try {
         setLoading(true);
         setError('');
-        const a = await getAudit(id);
-        if (!a) throw new Error('Audit not found');
-        const c = await getClient(a.client_id);
-        const [secs, as, ed, lib] = await Promise.all([
-          listAuditSections(id),
-          listAssets(id),
-          getAuditEmailDesign(id),
-          listIndustryEmailLibrary(),
-        ]);
-        const anns = await listAnnotationsForAuditSections(secs.map(s => s.id));
+        const report = await getAuditReportBundleById(id);
         if (cancelled) return;
-        setAudit(a);
-        setClient(c);
-        setSections(secs);
-        setAssets(as);
-        setAnnotations(anns);
-        setEmailDesign(ed);
-        setEmailLibrary(lib);
+        if (!report) throw new Error('Audit not found');
 
-        if (a.audit_method === 'api') {
+        setAudit(report.audit);
+        setClient(report.client);
+        setSections(report.sections);
+        setAnnotations(report.annotations);
+        setEmailDesign(report.emailDesign);
+        setReportBundle(report as AuditReportBundle);
+
+        if (report.audit.audit_method === 'api') {
           try {
             const { data: conn } = await supabase
               .from('klaviyo_connections')
               .select('scopes')
-              .eq('client_id', a.client_id)
+              .eq('client_id', report.audit.client_id)
               .maybeSingle();
             if (conn?.scopes) {
               const missing = Object.entries(conn.scopes as Record<string, unknown>)
-                .filter(([, v]) => v !== true)
-                .map(([k]) => k);
+                .filter(([, value]) => value !== true)
+                .map(([key]) => key);
               if (missing.length > 0) setScopeWarnings(missing);
             }
           } catch {
@@ -119,27 +97,15 @@ export default function AuditWorkspace() {
   }, [id]);
 
   useEffect(() => {
-    if (!audit?.id) return;
+    if (!emailDesignDrawerOpen || emailLibrary.length > 0) return;
     let cancelled = false;
-    (async () => {
-      try {
-        setReportLoading(true);
-        const report = await getAuditReportBundleById(audit.id);
-        if (!cancelled && report) {
-          setReportBundle({
-            ...report,
-            audit,
-            client: client ?? report.client,
-          } as AuditReportBundle);
-        }
-      } catch {
-        if (!cancelled) setReportBundle(null);
-      } finally {
-        if (!cancelled) setReportLoading(false);
-      }
-    })();
+    listIndustryEmailLibrary()
+      .then(library => {
+        if (!cancelled) setEmailLibrary(library);
+      })
+      .catch(() => {});
     return () => { cancelled = true; };
-  }, [audit?.id, client]);
+  }, [emailDesignDrawerOpen, emailLibrary.length]);
 
   const mergedReportData = useMemo(() => {
     if (!reportBundle || !audit || !client) return null;
@@ -184,7 +150,7 @@ export default function AuditWorkspace() {
   }
 
   const handleSectionUpdate = (sectionId: string, updates: Partial<AuditSection>) => {
-    setSections(prev => prev.map(s => (s.id === sectionId ? { ...s, ...updates } : s)));
+    setSections(prev => prev.map(section => (section.id === sectionId ? { ...section, ...updates } : section)));
     if (saveTimers.current[sectionId]) window.clearTimeout(saveTimers.current[sectionId]);
     saveTimers.current[sectionId] = window.setTimeout(async () => {
       try {
@@ -263,13 +229,15 @@ export default function AuditWorkspace() {
         )}
 
         <div className="min-w-0">
-          {(reportLoading || !mergedReportData) && <SkeletonAuditWorkspace />}
-          {!reportLoading && mergedReportData && (
-            <AuditReportView
-              data={mergedReportData}
-              onManageEmailDesign={() => setEmailDesignDrawerOpen(true)}
-              onManageRevenueOpportunities={() => setRevenueDrawerOpen(true)}
-            />
+          {!mergedReportData && <SkeletonAuditWorkspace />}
+          {mergedReportData && (
+            <Suspense fallback={<SkeletonAuditWorkspace />}>
+              <AuditReportView
+                data={mergedReportData}
+                onManageEmailDesign={() => setEmailDesignDrawerOpen(true)}
+                onManageRevenueOpportunities={() => setRevenueDrawerOpen(true)}
+              />
+            </Suspense>
           )}
         </div>
 
@@ -282,39 +250,47 @@ export default function AuditWorkspace() {
           publishDisabledReason={publishBlockedReason || undefined}
         />
 
-        <EmailDesignDrawer
-          open={emailDesignDrawerOpen}
-          onClose={() => setEmailDesignDrawerOpen(false)}
-          revenueValue={emailDesignSection?.revenue_opportunity}
-          onRevenueChange={
-            emailDesignSection
-              ? value => handleSectionUpdate(emailDesignSection.id, { revenue_opportunity: value })
-              : undefined
-          }
-        >
-          <EmailDesignEditor
-            audit={audit}
-            emailDesign={emailDesign}
-            emailLibrary={emailLibrary}
-            annotations={annotations}
-            section={emailDesignSection ?? null}
-            onAnnotationsChange={setAnnotations}
-            onEmailDesignChange={setEmailDesign}
-            onSectionUpdate={
-              emailDesignSection
-                ? updates => handleSectionUpdate(emailDesignSection.id, updates)
-                : undefined
-            }
-          />
-        </EmailDesignDrawer>
+        {emailDesignDrawerOpen && (
+          <Suspense fallback={null}>
+            <EmailDesignDrawer
+              open={emailDesignDrawerOpen}
+              onClose={() => setEmailDesignDrawerOpen(false)}
+              revenueValue={emailDesignSection?.revenue_opportunity}
+              onRevenueChange={
+                emailDesignSection
+                  ? value => handleSectionUpdate(emailDesignSection.id, { revenue_opportunity: value })
+                  : undefined
+              }
+            >
+              <EmailDesignEditor
+                audit={audit}
+                emailDesign={emailDesign}
+                emailLibrary={emailLibrary}
+                annotations={annotations}
+                section={emailDesignSection ?? null}
+                onAnnotationsChange={setAnnotations}
+                onEmailDesignChange={setEmailDesign}
+                onSectionUpdate={
+                  emailDesignSection
+                    ? updates => handleSectionUpdate(emailDesignSection.id, updates)
+                    : undefined
+                }
+              />
+            </EmailDesignDrawer>
+          </Suspense>
+        )}
 
-        <EmailDesignDrawer
-          open={revenueDrawerOpen}
-          onClose={() => setRevenueDrawerOpen(false)}
-          title="Revenue opportunities"
-        >
-          <RevenueAddOnItemsEditor audit={audit} onAuditChange={setAudit} />
-        </EmailDesignDrawer>
+        {revenueDrawerOpen && (
+          <Suspense fallback={null}>
+            <EmailDesignDrawer
+              open={revenueDrawerOpen}
+              onClose={() => setRevenueDrawerOpen(false)}
+              title="Revenue opportunities"
+            >
+              <RevenueAddOnItemsEditor audit={audit} onAuditChange={setAudit} />
+            </EmailDesignDrawer>
+          </Suspense>
+        )}
       </div>
     </ReportEditProvider>
   );

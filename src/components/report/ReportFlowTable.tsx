@@ -227,7 +227,9 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
             <tbody className="divide-y divide-gray-50">
               {visible.map((flow) => {
                 const snap = snapshotMap.get(flow.flow_name);
-                const actionCount = snap?.raw?.attributes?.action_count ?? snap?.raw?.relationships?.flow_actions?.data?.length ?? null;
+                const actionCount =
+                  snap?.action_count
+                  ?? (Array.isArray(snap?.flow_actions) ? snap.flow_actions.length : null);
                 const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
                 const rating: MetricStatus = (flow.display_rating as MetricStatus | null | undefined) ?? overallRating(flow);
                 const assessment = flow.display_assessment ?? buildAssessment(flow);

@@ -7,8 +7,6 @@ import type {
   Annotation,
   AuditAsset,
   FlowPerformance,
-  Recommendation,
-  HealthScoreItem,
   KlaviyoFlowSnapshot,
   KlaviyoSegmentSnapshot,
   KlaviyoFormSnapshot,
@@ -24,6 +22,17 @@ import {
   type EntityHighlightStyle,
 } from './entity-highlight-styles';
 import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from './revenue-calculator';
+
+const FLOW_SNAPSHOT_SELECT =
+  'id, audit_id, client_id, flow_id, name, status, trigger_type, archived, created_at_klaviyo, updated_at_klaviyo, fetched_at, action_count:raw->attributes->action_count, flow_actions:raw->relationships->flow_actions->data';
+const SEGMENT_SNAPSHOT_SELECT =
+  'id, audit_id, client_id, segment_id, name, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order';
+const FORM_SNAPSHOT_SELECT =
+  'id, audit_id, client_id, form_id, name, status, ab_test, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order';
+const CAMPAIGN_SNAPSHOT_SELECT =
+  'id, audit_id, client_id, campaign_id, name, status, send_channel, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order';
+
+const AUDIT_LIST_SELECT = '*, audit_sections(section_key, revenue_opportunity, section_config)';
 
 type AuditSectionRevenueRow = {
   audit_id: string;
@@ -61,6 +70,28 @@ async function fetchRevenueSectionsForAudits(auditIds: string[]): Promise<AuditS
   return (data ?? []) as AuditSectionRevenueRow[];
 }
 
+function mapAuditsWithEmbeddedSections(rows: unknown[]): Audit[] {
+  return rows.map(row => {
+    const { audit_sections, ...audit } = row as Audit & { audit_sections?: AuditSectionRevenueRow[] };
+    const revenueSections = (audit_sections ?? []).filter(section =>
+      (REVENUE_OPPORTUNITY_SECTION_KEYS as readonly string[]).includes(section.section_key),
+    );
+    return attachComputedRevenueOpportunity([audit as Audit], revenueSections)[0];
+  });
+}
+
+function finalizePublicReportSections(bundle: Awaited<ReturnType<typeof fetchAuditReportBundleForAudit>>) {
+  if (!bundle) return null;
+  const approved = bundle.sections.filter(section => section.status === 'approved');
+  const finalSections = approved.length > 0 ? approved : bundle.sections;
+  const sectionIds = new Set(finalSections.map(section => section.id));
+  return {
+    ...bundle,
+    sections: finalSections,
+    annotations: bundle.annotations.filter(annotation => sectionIds.has(annotation.audit_section_id)),
+  };
+}
+
 function requireUserId(user: Profile | null): string {
   if (!user) throw new Error('Not signed in');
   return user.id;
@@ -96,23 +127,22 @@ export async function deleteClient(id: string): Promise<void> {
 }
 
 export async function listAudits(): Promise<Audit[]> {
-  const { data, error } = await supabase.from('audits').select('*').order('updated_at', { ascending: false });
+  const { data, error } = await supabase
+    .from('audits')
+    .select(AUDIT_LIST_SELECT)
+    .order('updated_at', { ascending: false });
   if (error) throw error;
-  const audits = (data ?? []) as Audit[];
-  const sections = await fetchRevenueSectionsForAudits(audits.map(a => a.id));
-  return attachComputedRevenueOpportunity(audits, sections);
+  return mapAuditsWithEmbeddedSections(data ?? []);
 }
 
 export async function listAuditsByClient(clientId: string): Promise<Audit[]> {
   const { data, error } = await supabase
     .from('audits')
-    .select('*')
+    .select(AUDIT_LIST_SELECT)
     .eq('client_id', clientId)
     .order('updated_at', { ascending: false });
   if (error) throw error;
-  const audits = (data ?? []) as Audit[];
-  const sections = await fetchRevenueSectionsForAudits(audits.map(a => a.id));
-  return attachComputedRevenueOpportunity(audits, sections);
+  return mapAuditsWithEmbeddedSections(data ?? []);
 }
 
 export async function searchClients(query: string, limit = 5): Promise<Client[]> {
@@ -377,7 +407,10 @@ export async function deleteAnnotation(id: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function fetchAuditReportBundleForAudit(audit: Audit): Promise<{
+export async function fetchAuditReportBundleForAudit(
+  audit: Audit,
+  options?: { approvedSectionsOnly?: boolean },
+): Promise<{
   audit: Audit;
   client: Client;
   sections: AuditSection[];
@@ -388,8 +421,6 @@ export async function fetchAuditReportBundleForAudit(audit: Audit): Promise<{
   segmentSnapshots: KlaviyoSegmentSnapshot[];
   formSnapshots: KlaviyoFormSnapshot[];
   campaignSnapshots: KlaviyoCampaignSnapshot[];
-  healthScores: HealthScoreItem[];
-  recommendations: Recommendation[];
   emailDesign: AuditEmailDesign | null;
   reportingDiagnostic?: string | null;
   accountSnapshot?: {
@@ -407,17 +438,20 @@ export async function fetchAuditReportBundleForAudit(audit: Audit): Promise<{
     deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
   } | null;
 } | null> {
-  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, scores, recs, rollups, emailDesignRes] = await Promise.all([
+  let sectionsQuery = supabase.from('audit_sections').select('*').eq('audit_id', audit.id);
+  if (options?.approvedSectionsOnly) {
+    sectionsQuery = sectionsQuery.eq('status', 'approved');
+  }
+
+  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, rollups, emailDesignRes] = await Promise.all([
     supabase.from('clients').select('*').eq('id', audit.client_id).maybeSingle(),
-    supabase.from('audit_sections').select('*').eq('audit_id', audit.id),
+    sectionsQuery,
     supabase.from('audit_assets').select('*').eq('audit_id', audit.id),
     supabase.from('flow_performance').select('*').eq('audit_id', audit.id),
-    supabase.from('klaviyo_flow_snapshots').select('*').eq('audit_id', audit.id),
-    supabase.from('klaviyo_segment_snapshots').select('*').eq('audit_id', audit.id),
-    supabase.from('klaviyo_form_snapshots').select('*').eq('audit_id', audit.id),
-    supabase.from('klaviyo_campaign_snapshots').select('*').eq('audit_id', audit.id),
-    supabase.from('health_scores').select('*').eq('audit_id', audit.id),
-    supabase.from('recommendations').select('*').eq('audit_id', audit.id).order('sort_order', { ascending: true }),
+    supabase.from('klaviyo_flow_snapshots').select(FLOW_SNAPSHOT_SELECT).eq('audit_id', audit.id),
+    supabase.from('klaviyo_segment_snapshots').select(SEGMENT_SNAPSHOT_SELECT).eq('audit_id', audit.id),
+    supabase.from('klaviyo_form_snapshots').select(FORM_SNAPSHOT_SELECT).eq('audit_id', audit.id),
+    supabase.from('klaviyo_campaign_snapshots').select(CAMPAIGN_SNAPSHOT_SELECT).eq('audit_id', audit.id),
     supabase.from('klaviyo_reporting_rollups').select('timeframe_key, computed').eq('audit_id', audit.id),
     supabase.from('audit_email_design').select('*, ecd_example:industry_email_library(*)').eq('audit_id', audit.id).maybeSingle(),
   ]);
@@ -430,25 +464,29 @@ export async function fetchAuditReportBundleForAudit(audit: Audit): Promise<{
   if (segSnaps.error) throw segSnaps.error;
   if (formSnaps.error) throw formSnaps.error;
   if (campSnaps.error) throw campSnaps.error;
-  if (scores.error) throw scores.error;
-  if (recs.error) throw recs.error;
   if (rollups.error) throw rollups.error;
+
   if (!client.data) return null;
 
   const allSections = (sections.data ?? []) as AuditSection[];
-  const sectionIds = allSections.map(s => s.id);
+  const sectionIds = allSections.map(section => section.id);
   const annotations = await listAnnotationsForAuditSections(sectionIds);
 
   const reportingDiagnostic = ((rollups.data ?? []) as any[])
-    .find((r: any) => r.timeframe_key === 'last_30_days')?.computed?.reporting_errors?.[0]?.message
+    .find((row: any) => row.timeframe_key === 'last_30_days')?.computed?.reporting_errors?.[0]?.message
     ?? null;
 
   const accountSnapshot = ((rollups.data ?? []) as any[])
-    .find((r: any) => r.timeframe_key === 'last_30_days')?.computed?.account_snapshot
+    .find((row: any) => row.timeframe_key === 'last_30_days')?.computed?.account_snapshot
     ?? null;
 
+  const revenueSections = allSections.filter(section =>
+    (REVENUE_OPPORTUNITY_SECTION_KEYS as readonly string[]).includes(section.section_key),
+  );
+  const auditWithRevenue = attachComputedRevenueOpportunity([audit], revenueSections)[0];
+
   return {
-    audit,
+    audit: auditWithRevenue,
     client: client.data as Client,
     sections: allSections,
     assets: (assets.data ?? []) as AuditAsset[],
@@ -458,8 +496,6 @@ export async function fetchAuditReportBundleForAudit(audit: Audit): Promise<{
     segmentSnapshots: (segSnaps.data ?? []) as KlaviyoSegmentSnapshot[],
     formSnapshots: (formSnaps.data ?? []) as KlaviyoFormSnapshot[],
     campaignSnapshots: (campSnaps.data ?? []) as KlaviyoCampaignSnapshot[],
-    healthScores: (scores.data ?? []) as HealthScoreItem[],
-    recommendations: (recs.data ?? []) as Recommendation[],
     emailDesign: (emailDesignRes.data ?? null) as AuditEmailDesign | null,
     reportingDiagnostic,
     accountSnapshot,
@@ -473,49 +509,37 @@ export async function getAuditReportBundleById(auditId: string): Promise<Awaited
   return fetchAuditReportBundleForAudit(audit as Audit);
 }
 
-export async function getPublicReportByToken(token: string): Promise<{
-  audit: Audit;
-  client: Client;
-  sections: AuditSection[];
-  assets: AuditAsset[];
-  annotations: Annotation[];
-  flowPerformance: FlowPerformance[];
-  flowSnapshots: KlaviyoFlowSnapshot[];
-  segmentSnapshots: KlaviyoSegmentSnapshot[];
-  formSnapshots: KlaviyoFormSnapshot[];
-  campaignSnapshots: KlaviyoCampaignSnapshot[];
-  healthScores: HealthScoreItem[];
-  recommendations: Recommendation[];
-  emailDesign: AuditEmailDesign | null;
-  reportingDiagnostic?: string | null;
-  accountSnapshot?: {
-    email_subscribed_profiles_count: number | null;
-    active_profiles_90d_count: number | null;
-    suppressed_profiles_count: number | null;
-    bounce_rate_90d: number | null;
-    spam_rate_90d: number | null;
-    active_profiles_definition?: string | null;
-    computed_at?: string | null;
-    email_subscribed_profiles_truncated?: boolean | null;
-    active_profiles_90d_truncated?: boolean | null;
-    suppressed_profiles_truncated?: boolean | null;
-    campaigns_truncated?: boolean | null;
-    deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
-  } | null;
-} | null> {
-  const { data: sessionData } = await supabase.auth.getSession();
-  const isAuthenticated = !!sessionData.session;
-  let userRole: string | null = null;
-  if (isAuthenticated && sessionData.session) {
-    const { data: profile } = await supabase.from('profiles').select('role').eq('id', sessionData.session.user.id).maybeSingle();
-    userRole = profile?.role ?? null;
+export async function getPublicReportByToken(token: string): Promise<Awaited<ReturnType<typeof fetchAuditReportBundleForAudit>>> {
+  const { data: publishedAudit, error: publishedErr } = await supabase
+    .from('audits')
+    .select('*')
+    .eq('public_share_token', token)
+    .eq('status', 'published')
+    .maybeSingle();
+  if (publishedErr) throw publishedErr;
+
+  if (publishedAudit) {
+    let bundle = await fetchAuditReportBundleForAudit(publishedAudit as Audit, { approvedSectionsOnly: true });
+    if (bundle && bundle.sections.length === 0) {
+      bundle = await fetchAuditReportBundleForAudit(publishedAudit as Audit);
+    }
+    return finalizePublicReportSections(bundle);
   }
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  if (!sessionData.session) return null;
+
+  let userRole: string | null = null;
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('role')
+    .eq('id', sessionData.session.user.id)
+    .maybeSingle();
+  userRole = profile?.role ?? null;
   const isAdmin = userRole === 'admin';
 
   let query = supabase.from('audits').select('*').eq('public_share_token', token);
-  if (!isAuthenticated) {
-    query = query.eq('status', 'published');
-  } else if (!isAdmin) {
+  if (!isAdmin) {
     query = query.in('status', ['published', 'viewer_only']);
   }
   const { data: audit, error: auditErr } = await query.maybeSingle();
@@ -523,18 +547,7 @@ export async function getPublicReportByToken(token: string): Promise<{
   if (!audit) return null;
 
   const bundle = await fetchAuditReportBundleForAudit(audit as Audit);
-  if (!bundle) return null;
-
-  const visibleSections = bundle.sections.filter(s => s.status === 'approved');
-  const finalSections = visibleSections.length > 0 ? visibleSections : bundle.sections;
-  const sectionIds = finalSections.map(s => s.id);
-  const annotations = await listAnnotationsForAuditSections(sectionIds);
-
-  return {
-    ...bundle,
-    sections: finalSections,
-    annotations,
-  };
+  return finalizePublicReportSections(bundle);
 }
 
 // --- Industry Email Library ---
