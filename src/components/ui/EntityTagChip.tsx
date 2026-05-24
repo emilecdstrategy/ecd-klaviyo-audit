@@ -1,5 +1,5 @@
 import { cn } from '../../lib/utils';
-import { ENTITY_CHIP_CLASS, type EntityType } from '../../lib/entity-tags';
+import { ENTITY_CHIP_CLASS, ENTITY_LABELS, type EntityType } from '../../lib/entity-tags';
 
 export default function EntityTagChip({
   type,
@@ -11,7 +11,11 @@ export default function EntityTagChip({
   className?: string;
 }) {
   return (
-    <span className={cn(ENTITY_CHIP_CLASS[type], className)} data-entity-type={type}>
+    <span
+      className={cn(ENTITY_CHIP_CLASS[type], className)}
+      data-entity-type={type}
+      title={ENTITY_LABELS[type]}
+    >
       {name}
     </span>
   );

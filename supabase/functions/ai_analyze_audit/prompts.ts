@@ -89,7 +89,7 @@ export function buildAuditSystemPrompt() {
     "  Segments: `segment:Exact Segment Name`",
     "  Forms: `form:Exact Form Name`",
     "Use the EXACT name as it appears in the Klaviyo data (including prefixes like 'MM |').",
-    "Apply in ALL narrative fields: findings, strengths, executiveSummary, current_state_notes, optimized_notes, ai_findings, summary_text, timeline items, and rubric notes.",
+    "Apply in narrative fields: findings, strengths, executiveSummary, current_state_notes, optimized_notes, ai_findings, summary_text, and timeline items. Do NOT use entity tags in core flows matrix structure notes.",
     "You may still use **bold** for problem phrases, metrics, and non-entity emphasis — but NOT for flow/campaign/segment/form names (use entity tags instead).",
     "Example: 'SMS cart recovery is not pulling its weight yet, `flow:MM | SMS Cart Abandonment` has 45 recipients and $0 in revenue.'",
     "",

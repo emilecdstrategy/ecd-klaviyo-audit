@@ -1,6 +1,13 @@
 /** Markdown-lite format used across audit copy: **bold**, *italic*, `type:entity`, newlines. */
 
-import { ENTITY_CHIP_CLASS, prepareAuditText, stripEntityMarkers, type EntityType } from './entity-tags';
+import {
+  ENTITY_CHIP_CLASS,
+  ENTITY_LABELS,
+  prepareAuditText,
+  repairEntityMarkers,
+  stripEntityMarkers,
+  type EntityType,
+} from './entity-tags';
 
 const ENTITY_TYPES = ['flow', 'campaign', 'segment', 'form'] as const;
 
@@ -9,7 +16,8 @@ function entitySpan(type: EntityType, name: string): string {
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;');
-  return `<span data-entity-type="${type}" class="${ENTITY_CHIP_CLASS[type]}">${safe}</span>`;
+  const label = ENTITY_LABELS[type];
+  return `<span data-entity-type="${type}" class="${ENTITY_CHIP_CLASS[type]}" title="${label}">${safe}</span>`;
 }
 
 export function mdToHtml(md: string): string {
@@ -132,7 +140,7 @@ export function htmlToMd(html: string): string {
     .replace(/&gt;/g, '>')
     .replace(/&nbsp;/g, ' ');
 
-  return md;
+  return repairEntityMarkers(md);
 }
 
 export function hasRichAuditMarkup(text: string): boolean {

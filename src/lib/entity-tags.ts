@@ -22,6 +22,44 @@ function escapeRegex(s: string): string {
   return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 }
 
+function getEntityMarkerRanges(text: string): Array<[number, number]> {
+  const ranges: Array<[number, number]> = [];
+  const re = /`(flow|campaign|segment|form):([^`]+)`/g;
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(text))) {
+    ranges.push([match.index, match.index + match[0].length]);
+  }
+  return ranges;
+}
+
+function overlapsEntityMarkerRange(
+  start: number,
+  length: number,
+  ranges: Array<[number, number]>,
+): boolean {
+  const end = start + length;
+  return ranges.some(([rangeStart, rangeEnd]) => start < rangeEnd && end > rangeStart);
+}
+
+/** Repair nested or broken entity markers left by legacy auto-tagging. */
+export function repairEntityMarkers(text: string): string {
+  let result = String(text ?? '');
+
+  // Legacy nested wrap: `flow:`flow:ECD | Welcome Series` NEW` -> `flow:ECD | Welcome Series NEW`
+  result = result.replace(
+    /`flow:`flow:([^`]+)`([^`]*?)`/g,
+    (_match, name: string, suffix: string) => `\`flow:${name}${suffix}\``,
+  );
+
+  // Simple nested prefix: `flow:`flow:Name` -> `flow:Name`
+  result = result.replace(/`flow:`flow:/gi, '`flow:');
+
+  // Orphan prefix immediately before a valid marker: `flow:` `flow:Name` -> `flow:Name`
+  result = result.replace(/`flow:\s*`(flow|campaign|segment|form):/gi, '`$1:');
+
+  return result;
+}
+
 export function resolveEntityType(name: string, lookup: Map<string, EntityType>): EntityType {
   const trimmed = name.trim();
   if (!trimmed) return 'flow';
@@ -70,30 +108,27 @@ export function migrateBoldEntitiesToTags(text: string, lookup: Map<string, Enti
   });
 }
 
-function isInsideEntityMarker(text: string, index: number): boolean {
-  const before = text.slice(0, index);
-  const open = before.lastIndexOf('`');
-  if (open === -1) return false;
-  const segment = text.slice(open, index + 1);
-  return /`(flow|campaign|segment|form):[^`]*$/i.test(segment);
-}
-
 /** Auto-wrap known Klaviyo entity names that are not already tagged or bolded. */
 export function autoTagEntityNames(text: string, lookup: Map<string, EntityType>): string {
   if (!lookup.size) return text;
 
   let result = text;
+  const markerRanges = getEntityMarkerRanges(result);
   const names = Array.from(lookup.keys()).sort((a, b) => b.length - a.length);
 
   for (const name of names) {
     const type = lookup.get(name);
     if (!type) continue;
     const regex = new RegExp(`(?<!\\*\\*)\\b(${escapeRegex(name)})\\b(?!\\*\\*)`, 'gi');
-    result = result.replace(regex, (match, _g1, offset) => {
-      if (typeof offset === 'number' && isInsideEntityMarker(result, offset)) return match;
-      if (result.includes(entityMd(type, match))) return match;
-      return entityMd(type, match);
+    result = result.replace(regex, (match, _captured, offset) => {
+      if (typeof offset !== 'number') return match;
+      if (overlapsEntityMarkerRange(offset, match.length, markerRanges)) return match;
+      const tagged = entityMd(type, match);
+      if (result.includes(tagged)) return match;
+      return tagged;
     });
+    // Recompute ranges after each pass so new tags are protected.
+    markerRanges.splice(0, markerRanges.length, ...getEntityMarkerRanges(result));
   }
 
   return result;
@@ -104,10 +139,10 @@ export function prepareAuditText(
   lookup: Map<string, EntityType>,
   autoTag = true,
 ): string {
-  let result = text || '';
+  let result = repairEntityMarkers(text || '');
   result = migrateBoldEntitiesToTags(result, lookup);
   if (autoTag) result = autoTagEntityNames(result, lookup);
-  return result;
+  return repairEntityMarkers(result);
 }
 
 export function stripEntityMarkers(text: string): string {

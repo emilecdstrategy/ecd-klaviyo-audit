@@ -13,6 +13,7 @@ import { scheduleSavedToast, useToast } from '../../ui/Toast';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
 import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../../lib/revenue-calculator';
 import { normalizeCoreFlowsMatrix, sanitizeStructureNote, type CoreFlowRow } from '../../../lib/core-flows-matrix';
+import { repairEntityMarkers } from '../../../lib/entity-tags';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
 export type TimelinePhase = {
@@ -211,7 +212,7 @@ export function ReportEditProvider({
       const prev = getExecPayload();
       const findings = [...(prev.findings ?? [])];
       while (findings.length <= index) findings.push('');
-      findings[index] = value;
+      findings[index] = repairEntityMarkers(value);
       saveExecutive({ findings });
     },
     [getExecPayload, saveExecutive],
@@ -222,7 +223,7 @@ export function ReportEditProvider({
       const prev = getExecPayload();
       const strengths = [...(prev.strengths ?? [])];
       while (strengths.length <= index) strengths.push('');
-      strengths[index] = value;
+      strengths[index] = repairEntityMarkers(value);
       saveExecutive({ strengths });
     },
     [getExecPayload, saveExecutive],
@@ -305,7 +306,7 @@ export function ReportEditProvider({
       if (!phase) return;
       const items = [...(phase.items ?? [])];
       while (items.length <= itemIndex) items.push('');
-      items[itemIndex] = value;
+      items[itemIndex] = repairEntityMarkers(value);
       timeline[phaseIndex] = { ...phase, items };
       saveExecutive({ timeline });
     },
