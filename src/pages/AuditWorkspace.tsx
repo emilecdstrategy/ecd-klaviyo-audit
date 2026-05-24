@@ -245,7 +245,7 @@ export default function AuditWorkspace() {
                   href={`/report/${audit.public_share_token}`}
                   target="_blank"
                   rel="noopener noreferrer"
-                  className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
                 >
                   <ExternalLink className="w-4 h-4" />
                   View Report
