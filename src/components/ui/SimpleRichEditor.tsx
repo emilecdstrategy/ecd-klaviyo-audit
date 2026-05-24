@@ -1,7 +1,7 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { Bold, Highlighter, Italic, Underline, List } from 'lucide-react';
 import { htmlToMd, auditTextToEditorHtml } from '../../lib/audit-markdown';
-import { wrapSelectionAsHighlight } from '../../lib/entity-editor';
+import { HIGHLIGHT_SHORTCUT_LABEL, isHighlightShortcut, toggleSelectionHighlight } from '../../lib/entity-editor';
 import type { EntityType } from '../../lib/entity-tags';
 import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
 
@@ -55,9 +55,9 @@ export default function SimpleRichEditor({
     handleInput();
   }, [handleInput]);
 
-  const highlightSelection = useCallback(() => {
+  const toggleHighlight = useCallback(() => {
     if (!entityLookup?.size) return;
-    if (wrapSelectionAsHighlight(editorRef.current, entityLookup)) {
+    if (toggleSelectionHighlight(editorRef.current, entityLookup)) {
       editorRef.current?.focus();
       handleInput();
     }
@@ -85,8 +85,8 @@ export default function SimpleRichEditor({
           <>
             <div className="w-px h-4 bg-gray-200 mx-1" />
             <ToolbarBtn
-              onClick={highlightSelection}
-              title="Highlight Klaviyo flow, segment, or campaign"
+              onClick={toggleHighlight}
+              title={`Highlight Klaviyo flow, segment, or campaign (${HIGHLIGHT_SHORTCUT_LABEL})`}
             >
               <span className="inline-flex items-center gap-1 text-[10px] font-semibold">
                 <Highlighter className="w-3 h-3" />
@@ -101,6 +101,17 @@ export default function SimpleRichEditor({
         contentEditable
         suppressContentEditableWarning
         onInput={handleInput}
+        onKeyDown={e => {
+          if (
+            entityTags &&
+            entityHighlightsEnabled &&
+            entityLookup?.size &&
+            isHighlightShortcut(e)
+          ) {
+            e.preventDefault();
+            toggleHighlight();
+          }
+        }}
         data-placeholder={placeholder}
         className="px-3 py-2 text-sm text-gray-800 leading-relaxed outline-none [&_strong]:font-semibold [&_em]:italic [&_u]:underline [&_ul]:list-disc [&_ul]:ml-4 [&_li]:mb-0.5 empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 [&_.entity-tag]:pointer-events-none"
         style={{ minHeight: minH, maxHeight: 400, overflowY: 'auto' }}

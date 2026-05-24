@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { htmlToMd, auditTextToEditorHtml } from '../../../lib/audit-markdown';
-import { wrapSelectionAsHighlight } from '../../../lib/entity-editor';
+import { isHighlightShortcut, toggleSelectionHighlight } from '../../../lib/entity-editor';
 import { cn } from '../../../lib/utils';
 import { RichAuditText } from '../../ui/RichAuditText';
 import FloatingFormatToolbar, { useFloatingToolbarPosition } from './FloatingFormatToolbar';
@@ -56,8 +56,8 @@ export default function EditableRichText({
     persist();
   };
 
-  const highlightSelection = () => {
-    if (wrapSelectionAsHighlight(editorRef.current, entityLookup)) {
+  const toggleHighlight = () => {
+    if (toggleSelectionHighlight(editorRef.current, entityLookup)) {
       editorRef.current?.focus();
       persist();
     }
@@ -89,6 +89,11 @@ export default function EditableRichText({
         }}
         onInput={persist}
         onKeyDown={e => {
+          if (entityHighlightsEnabled && isHighlightShortcut(e)) {
+            e.preventDefault();
+            toggleHighlight();
+            return;
+          }
           if (singleLine && e.key === 'Enter') {
             e.preventDefault();
             editorRef.current?.blur();
@@ -110,7 +115,7 @@ export default function EditableRichText({
         left={toolbarPos.left}
         onBold={() => exec('bold')}
         onItalic={() => exec('italic')}
-        onHighlight={entityHighlightsEnabled ? highlightSelection : undefined}
+        onHighlight={entityHighlightsEnabled ? toggleHighlight : undefined}
       />
     </>
   );

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
 import { Bold, Highlighter, Italic } from 'lucide-react';
+import { HIGHLIGHT_SHORTCUT_LABEL } from '../../../lib/entity-editor';
 
 export function useFloatingToolbarPosition(
   anchorRef: RefObject<HTMLElement | null>,
@@ -70,7 +71,7 @@ export default function FloatingFormatToolbar({
             type="button"
             onClick={onHighlight}
             className="rounded px-1.5 py-1 text-[10px] font-semibold text-gray-600 hover:bg-gray-100 inline-flex items-center gap-1"
-            title="Highlight Klaviyo flow, segment, or campaign"
+            title={`Highlight Klaviyo flow, segment, or campaign (${HIGHLIGHT_SHORTCUT_LABEL})`}
           >
             <Highlighter className="h-3 w-3" />
             Highlight
