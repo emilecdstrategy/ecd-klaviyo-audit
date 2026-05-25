@@ -944,9 +944,6 @@ function RevenueOpportunitiesTab() {
             return (
               <div
                 key={entry.id}
-                draggable
-                onDragStart={() => setDragIndex(index)}
-                onDragEnd={() => setDragIndex(null)}
                 onDragOver={e => e.preventDefault()}
                 onDrop={() => {
                   if (dragIndex === null || dragIndex === index) return;
@@ -959,8 +956,16 @@ function RevenueOpportunitiesTab() {
                 className={`bg-white rounded-xl p-5 card-shadow space-y-3 transition-colors ${dragIndex === index ? 'ring-2 ring-brand-primary/30 bg-brand-primary/[0.02]' : ''}`}
               >
                 <div className="flex items-center justify-between">
-                  <div className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500">
-                    <GripVertical className="w-3.5 h-3.5 cursor-grab" />
+                  <div
+                    draggable
+                    onDragStart={(e) => {
+                      setDragIndex(index);
+                      e.dataTransfer.effectAllowed = 'move';
+                    }}
+                    onDragEnd={() => setDragIndex(null)}
+                    className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 cursor-grab active:cursor-grabbing select-none"
+                  >
+                    <GripVertical className="w-3.5 h-3.5 pointer-events-none" />
                     Drag to reorder
                   </div>
                   <div className="flex items-center gap-1">
