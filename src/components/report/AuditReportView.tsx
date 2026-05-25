@@ -446,7 +446,16 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     >
     <div className="min-h-screen bg-brand-surface">
       {topBanner}
-      {isPreview && !topBanner && (
+      {editMode && (
+        <div className="border-b border-brand-primary/20 bg-brand-primary/5 px-6 py-2.5 text-center">
+          <span className="text-sm font-medium text-gray-700">
+            <span className="font-semibold text-brand-primary">Edit mode</span>
+            {' — '}
+            Click text, titles, and values in the report below to update them. Changes save automatically.
+          </span>
+        </div>
+      )}
+      {isPreview && !topBanner && !editMode && (
         <div className="bg-amber-50 border-b border-amber-200 px-6 py-2.5 text-center">
           <span className="text-sm font-medium text-amber-800">Preview Mode — This report is not published yet and is only visible to team members.</span>
         </div>
@@ -464,7 +473,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                   setActiveSection(item.id);
                   const el = sectionRefs.current[item.id] ?? document.getElementById(item.id);
                   if (!el) return;
-                  const headerOffset = isPreview ? 90 : 52;
+                  const headerOffset = isPreview || editMode ? 90 : 52;
                   const top = el.getBoundingClientRect().top + window.scrollY - headerOffset;
                   window.scrollTo({ top, behavior: 'smooth' });
                 }}
