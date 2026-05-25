@@ -49,6 +49,13 @@
     box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08), 0 2px 4px rgba(0, 0, 0, 0.04);
   }
 
+  /* Break report out of AppShell sidebar gutter so edit mode matches public preview width/centering. */
+  .report-viewport-bleed {
+    width: 100vw;
+    max-width: 100vw;
+    margin-left: calc(100% - 100vw);
+  }
+
   .entity-tag {
     @apply inline-flex items-center rounded-md border px-1.5 py-px text-[0.85em] font-medium leading-snug align-baseline mx-0.5 whitespace-nowrap;
     background-color: var(--entity-tag-bg);

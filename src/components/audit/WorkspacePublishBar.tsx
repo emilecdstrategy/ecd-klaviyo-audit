@@ -61,7 +61,7 @@ export default function WorkspacePublishBar({
   );
 
   return (
-    <div className="fixed bottom-0 left-[68px] right-0 z-40 border-t border-gray-200 bg-white shadow-[0_-4px_24px_rgba(0,0,0,0.08)]">
+    <div className="fixed bottom-0 left-0 right-0 z-40 border-t border-gray-200 bg-white shadow-[0_-4px_24px_rgba(0,0,0,0.08)]">
       <div className="mx-auto flex max-w-[90rem] flex-col gap-3 px-5 py-3.5 sm:flex-row sm:items-end sm:justify-between sm:gap-6">
         <div className="min-w-0">
           <p className="text-sm font-semibold text-gray-900">Shareable report</p>

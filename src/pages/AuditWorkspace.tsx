@@ -247,7 +247,7 @@ export default function AuditWorkspace() {
           </div>
         )}
 
-        <div className="min-w-0">
+        <div className="min-w-0 overflow-x-clip">
           {analysisInProgress ? (
             <div className="px-6 py-4">
               <AuditGenerationStatus
@@ -258,7 +258,7 @@ export default function AuditWorkspace() {
               />
             </div>
           ) : (
-            <>
+            <div className="report-viewport-bleed">
               {!mergedReportData && <SkeletonAuditWorkspace />}
               {mergedReportData && (
                 <Suspense fallback={<SkeletonAuditWorkspace />}>
@@ -269,7 +269,7 @@ export default function AuditWorkspace() {
                   />
                 </Suspense>
               )}
-            </>
+            </div>
           )}
         </div>
 
