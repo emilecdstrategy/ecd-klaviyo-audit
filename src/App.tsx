@@ -7,6 +7,7 @@ import Modal from './components/ui/Modal';
 import AppPreloader from './components/ui/AppPreloader';
 import { ToastProvider } from './components/ui/Toast';
 import { PlatformSettingsProvider } from './contexts/PlatformSettingsContext';
+import { shouldConfirmAuditWizardClose } from './lib/audit-wizard-guard';
 
 const Dashboard = lazy(() => import('./pages/Dashboard'));
 const Clients = lazy(() => import('./pages/Clients'));
@@ -61,6 +62,16 @@ function AppRoutes() {
 
   const isViewer = user && !hasRole('admin');
 
+  const closeAuditWizardModal = () => {
+    if (shouldConfirmAuditWizardClose()) {
+      const confirmed = window.confirm(
+        'Analysis is still running in the background. Close this window? You can reopen the audit from the Audits page to check progress.',
+      );
+      if (!confirmed) return;
+    }
+    navigate(-1);
+  };
+
   return (
     <>
     <Suspense fallback={<AppPreloader />}>
@@ -110,7 +121,7 @@ function AppRoutes() {
               <Modal
                 open
                 title="New Audit"
-                onClose={() => navigate(-1)}
+                onClose={closeAuditWizardModal}
                 className="max-w-5xl"
               >
                 <NewAudit asModal />

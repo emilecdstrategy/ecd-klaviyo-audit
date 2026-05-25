@@ -15,7 +15,9 @@ import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../lib/revenue-calculator';
+import { isLikelyAuditGenerating } from '../lib/audit-pipeline-status';
 import { listAudits, listClients } from '../lib/db';
+import GeneratingBadge from '../components/ui/GeneratingBadge';
 import { useEffect } from 'react';
 import type { Audit, Client } from '../lib/types';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -230,7 +232,10 @@ export default function Audits() {
                         </span>
                       </td>
                       <td className="px-6 py-4">
-                        <StatusBadge status={audit.status} />
+                        <div className="flex items-center gap-2">
+                          <StatusBadge status={audit.status} />
+                          {isLikelyAuditGenerating(audit) && <GeneratingBadge />}
+                        </div>
                       </td>
                       <td className="px-6 py-4 text-xs text-gray-400">
                         {new Date(audit.updated_at).toLocaleDateString()}

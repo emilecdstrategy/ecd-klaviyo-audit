@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
@@ -24,6 +24,11 @@ import {
   defaultEmailDesignRevenue,
 } from '../lib/revenue-calculator';
 import { normalizeFlowsSectionPatch } from '../lib/core-flows-matrix';
+import {
+  clearAuditGenerationActive,
+  markAuditGenerationActive,
+} from '../lib/audit-pipeline-status';
+import { setAuditWizardCloseGuard } from '../lib/audit-wizard-guard';
 
 const CONTEXT_CHAR_SOFT = 15_000;
 const CONTEXT_CHAR_HARD = 30_000;
@@ -299,6 +304,20 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   // Poll recent klaviyo_runs (by audit_id) while analyzing so the "View run log" panel
   // shows all stages in real time — each stage gets its own correlation_id.
   const [currentAuditId, setCurrentAuditId] = useState<string | null>(null);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
+
+  useEffect(() => {
+    setAuditWizardCloseGuard(() => analyzing);
+    return () => setAuditWizardCloseGuard(null);
+  }, [analyzing]);
+
   useEffect(() => {
     if (!analyzing || !currentAuditId) return;
     let cancelled = false;
@@ -390,6 +409,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       } as any);
 
       setCurrentAuditId(audit.id);
+      markAuditGenerationActive(audit.id);
       setStageRuns([]);
 
       // 3) Create default section rows
@@ -693,7 +713,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       setAnalysisProgress(100);
       setAnalysisStage('Done');
       setAnalyzing(false);
-      navigate(`/audits/${audit.id}`);
+      clearAuditGenerationActive(audit.id);
+      if (mountedRef.current) navigate(`/audits/${audit.id}`);
     } catch (e: unknown) {
       setAnalyzing(false);
       setError(e instanceof Error ? e.message : 'Failed to run analysis');

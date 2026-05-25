@@ -19,6 +19,8 @@ import { SkeletonClientDetail } from '../components/ui/Skeleton';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { useAuth } from '../contexts/AuthContext';
 import { formatCurrency } from '../lib/revenue-calculator';
+import { isLikelyAuditGenerating } from '../lib/audit-pipeline-status';
+import GeneratingBadge from '../components/ui/GeneratingBadge';
 import { useEffect, useState } from 'react';
 import type { Audit, Client } from '../lib/types';
 import { getClient, listAuditsByClient, updateClient } from '../lib/db';
@@ -309,7 +311,10 @@ export default function ClientDetail() {
                         <span className="text-sm font-semibold text-emerald-700">
                           {formatCurrency(audit.total_revenue_opportunity)}
                         </span>
-                        <StatusBadge status={audit.status} />
+                        <div className="flex items-center gap-2">
+                          <StatusBadge status={audit.status} />
+                          {isLikelyAuditGenerating(audit) && <GeneratingBadge />}
+                        </div>
                         {hasRole('admin') && (
                           <button
                             type="button"

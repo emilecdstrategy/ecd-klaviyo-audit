@@ -15,7 +15,9 @@ import StatusBadge from '../components/ui/StatusBadge';
 import { SkeletonKPICards, SkeletonListCard } from '../components/ui/Skeleton';
 import SiteFavicon from '../components/ui/SiteFavicon';
 import { formatCurrency } from '../lib/revenue-calculator';
+import { isLikelyAuditGenerating } from '../lib/audit-pipeline-status';
 import { listAudits, listClients } from '../lib/db';
+import GeneratingBadge from '../components/ui/GeneratingBadge';
 import type { Audit, Client } from '../lib/types';
 
 export default function Dashboard() {
@@ -119,7 +121,10 @@ export default function Dashboard() {
                         <span className="text-sm font-semibold text-emerald-700">
                           {formatCurrency(audit.total_revenue_opportunity)}
                         </span>
-                        <StatusBadge status={audit.status} />
+                        <div className="flex items-center gap-2">
+                          <StatusBadge status={audit.status} />
+                          {isLikelyAuditGenerating(audit) && <GeneratingBadge />}
+                        </div>
                       </div>
                     </button>
                   );

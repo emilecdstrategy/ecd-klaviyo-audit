@@ -7,6 +7,8 @@ import { ReportEditProvider } from '../components/report/edit/ReportEditContext'
 import WorkspacePublishBar from '../components/audit/WorkspacePublishBar';
 import { mergeReportBundle, type AuditReportBundle } from '../hooks/useAuditReportData';
 import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
+import AuditGenerationStatus from '../components/audit/AuditGenerationStatus';
+import { clearAuditGenerationActive, fetchAuditPipelineStatus } from '../lib/audit-pipeline-status';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, Client } from '../lib/types';
 import {
@@ -48,6 +50,8 @@ export default function AuditWorkspace() {
   const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
   const [scopeWarnings, setScopeWarnings] = useState<string[]>([]);
   const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
+  const [analysisInProgress, setAnalysisInProgress] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   const emailDesignSection = sections.find(section => section.section_key === 'email_design');
 
@@ -68,6 +72,12 @@ export default function AuditWorkspace() {
         setAnnotations(report.annotations);
         setEmailDesign(report.emailDesign);
         setReportBundle(report as AuditReportBundle);
+
+        const pipeline = await fetchAuditPipelineStatus(id);
+        if (!cancelled) {
+          setAnalysisInProgress(pipeline.isGenerating);
+          if (!pipeline.isGenerating) clearAuditGenerationActive(id);
+        }
 
         if (report.audit.audit_method === 'api') {
           try {
@@ -94,7 +104,7 @@ export default function AuditWorkspace() {
       }
     })();
     return () => { cancelled = true; };
-  }, [id]);
+  }, [id, reloadKey]);
 
   useEffect(() => {
     if (!emailDesignDrawerOpen || emailLibrary.length > 0) return;
@@ -238,15 +248,28 @@ export default function AuditWorkspace() {
         )}
 
         <div className="min-w-0">
-          {!mergedReportData && <SkeletonAuditWorkspace />}
-          {mergedReportData && (
-            <Suspense fallback={<SkeletonAuditWorkspace />}>
-              <AuditReportView
-                data={mergedReportData}
-                onManageEmailDesign={() => setEmailDesignDrawerOpen(true)}
-                onManageRevenueOpportunities={() => setRevenueDrawerOpen(true)}
+          {analysisInProgress ? (
+            <div className="px-6 py-4">
+              <AuditGenerationStatus
+                auditId={audit.id}
+                onComplete={() => {
+                  setReloadKey(key => key + 1);
+                }}
               />
-            </Suspense>
+            </div>
+          ) : (
+            <>
+              {!mergedReportData && <SkeletonAuditWorkspace />}
+              {mergedReportData && (
+                <Suspense fallback={<SkeletonAuditWorkspace />}>
+                  <AuditReportView
+                    data={mergedReportData}
+                    onManageEmailDesign={() => setEmailDesignDrawerOpen(true)}
+                    onManageRevenueOpportunities={() => setRevenueDrawerOpen(true)}
+                  />
+                </Suspense>
+              )}
+            </>
           )}
         </div>
 
