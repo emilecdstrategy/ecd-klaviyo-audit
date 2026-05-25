@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, Pencil } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import SiteFavicon from '../components/ui/SiteFavicon';
 import { ReportEditProvider } from '../components/report/edit/ReportEditContext';
@@ -220,6 +220,15 @@ export default function AuditWorkspace() {
             </div>
           }
         />
+
+        <div className="mx-6 mt-3 flex items-start gap-2.5 rounded-lg border border-brand-primary/20 bg-brand-primary/5 px-4 py-2.5">
+          <Pencil className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary" strokeWidth={2.25} />
+          <p className="text-sm text-gray-700">
+            <span className="font-semibold text-brand-primary">Edit mode</span>
+            {' — '}
+            Click text, titles, and values in the report below to update them. Changes save automatically.
+          </p>
+        </div>
 
         {scopeWarnings.length > 0 && (
           <div className="mx-6 mt-3 px-4 py-2.5 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg">
