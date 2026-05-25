@@ -1,6 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
 import { fetchAuditPipelineStatus, type AuditPipelineStatus } from '../../lib/audit-pipeline-status';
+import { isAuditAiResumeInFlight, resumeAuditAnalysis } from '../../lib/resume-audit-analysis';
 
 type AuditGenerationStatusProps = {
   auditId: string;
@@ -25,6 +26,17 @@ function stepState(progress: number, minProgress: number, nextMin?: number) {
 export default function AuditGenerationStatus({ auditId, onComplete, compact = false }: AuditGenerationStatusProps) {
   const [status, setStatus] = useState<AuditPipelineStatus | null>(null);
   const [loadError, setLoadError] = useState('');
+  const [resumeError, setResumeError] = useState('');
+  const [resumeLabel, setResumeLabel] = useState('');
+  const [resumeProgress, setResumeProgress] = useState<number | null>(null);
+  const resumeStartedRef = useRef(false);
+
+  const pollStatus = useCallback(async () => {
+    const next = await fetchAuditPipelineStatus(auditId);
+    setStatus(next);
+    setLoadError('');
+    return next;
+  }, [auditId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -32,10 +44,8 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
 
     const poll = async () => {
       try {
-        const next = await fetchAuditPipelineStatus(auditId);
+        const next = await pollStatus();
         if (cancelled) return;
-        setStatus(next);
-        setLoadError('');
         if (!next.isGenerating && !next.isStalled) {
           onComplete?.();
           if (intervalId) window.clearInterval(intervalId);
@@ -52,7 +62,26 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
       cancelled = true;
       if (intervalId) window.clearInterval(intervalId);
     };
-  }, [auditId, onComplete]);
+  }, [auditId, onComplete, pollStatus]);
+
+  useEffect(() => {
+    if (!status?.needsAiResume) return;
+    if (resumeStartedRef.current || isAuditAiResumeInFlight(auditId)) return;
+
+    resumeStartedRef.current = true;
+    setResumeError('');
+
+    resumeAuditAnalysis(auditId, update => {
+      setResumeLabel(update.label);
+      setResumeProgress(update.progress);
+      setStatus(prev => (prev ? { ...prev, label: update.label, progress: update.progress } : prev));
+    })
+      .then(() => pollStatus())
+      .catch((e: unknown) => {
+        resumeStartedRef.current = false;
+        setResumeError(e instanceof Error ? e.message : 'Failed to resume AI analysis');
+      });
+  }, [auditId, pollStatus, status?.needsAiResume]);
 
   if (loadError) {
     return (
@@ -75,24 +104,31 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
       <div className="rounded-xl border border-amber-200 bg-amber-50 px-6 py-5 text-center">
         <h2 className="text-lg font-semibold text-gray-900">Analysis did not finish</h2>
         <p className="mt-2 text-sm text-gray-600 max-w-lg mx-auto">
-          This audit was started but no results were saved. Try running a new audit for this client, or contact support if the issue persists.
+          Klaviyo data collection stopped before completing. Try running a new audit for this client, or contact support if the issue persists.
         </p>
       </div>
     );
   }
 
-  const progress = status.progress;
+  const progress = resumeProgress ?? status.progress;
+  const label = resumeLabel || status.label;
+  const klaviyoStillRunning = status.phase !== 'ai_analysis' && status.phase !== 'complete';
 
   return (
     <div className={`bg-white rounded-xl card-shadow text-center animate-slide-up ${compact ? 'p-6' : 'p-8'}`}>
       <Loader2 className="w-12 h-12 text-brand-primary animate-spin mx-auto mb-4" />
       <h2 className="text-xl font-bold text-gray-900 mb-2">Analysis in progress</h2>
       <p className="text-sm text-gray-500 mb-2 max-w-md mx-auto">
-        {status.label}
+        {label}
       </p>
       <p className="text-xs text-gray-400 mb-6 max-w-md mx-auto">
-        You can close this page — Klaviyo and AI work continues on the server. Reopen this audit anytime to check progress.
+        {klaviyoStillRunning
+          ? 'You can close this page — Klaviyo collection continues on the server. Reopen this audit anytime to check progress.'
+          : 'Klaviyo data is ready. AI analysis runs while this page is open — keep this tab open or return here to resume automatically.'}
       </p>
+      {resumeError && (
+        <p className="text-sm text-red-600 mb-4 max-w-md mx-auto">{resumeError}</p>
+      )}
       <div className="max-w-xs mx-auto">
         <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
           <div

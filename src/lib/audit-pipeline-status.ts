@@ -24,6 +24,7 @@ export type AuditPipelinePhase =
 export type AuditPipelineStatus = {
   isGenerating: boolean;
   isStalled: boolean;
+  needsAiResume: boolean;
   phase: AuditPipelinePhase;
   progress: number;
   label: string;
@@ -82,6 +83,7 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
     return {
       isGenerating: false,
       isStalled: false,
+      needsAiResume: false,
       phase: 'complete',
       progress: 100,
       label: 'Analysis complete',
@@ -91,13 +93,16 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   }
 
   const age = Date.now() - new Date(audit.created_at).getTime();
-  const isStale = age > STALE_AFTER_MS;
 
   const configRun = stageRuns.find(run => run.stage === 'config' || !run.stage);
   const reportingRun = stageRuns.find(run => run.stage === 'reporting');
   const reportingDone = reportingRun && ['success', 'partial', 'error', 'timeout'].includes(reportingRun.status);
   const profileActive = profileJob && ['pending', 'running'].includes(profileJob.status);
   const profileScanTotal = profileJob?.total_profiles != null ? Number(profileJob.total_profiles) : null;
+  const klaviyoComplete = Boolean(
+    configRun?.status === 'success' && reportingDone && !profileActive,
+  );
+  const isStale = !klaviyoComplete && age > STALE_AFTER_MS;
 
   let phase: AuditPipelinePhase = 'starting';
   let progress = 10;
@@ -124,12 +129,17 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   } else {
     phase = 'ai_analysis';
     progress = 60;
-    label = 'Running AI analysis and saving sections…';
+    label = klaviyoComplete
+      ? 'Klaviyo data ready — starting AI analysis…'
+      : 'Running AI analysis and saving sections…';
   }
 
+  const needsAiResume = klaviyoComplete;
+
   return {
-    isGenerating: !isStale,
+    isGenerating: !isStale || needsAiResume,
     isStalled: isStale,
+    needsAiResume,
     phase,
     progress,
     label,
