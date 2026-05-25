@@ -1,4 +1,5 @@
 import type { ReactNode } from 'react';
+import { parseRichAuditBlocks } from '../../lib/audit-markdown';
 import { prepareAuditText, type EntityType } from '../../lib/entity-tags';
 import { useReportEntities } from '../report/edit/ReportEntityContext';
 import EntityTagChip from './EntityTagChip';
@@ -76,6 +77,65 @@ export function RichAuditText({
           {renderInlineMarkdown(p, entityLookup, autoTagEntities, highlightsEnabled)}
         </p>
       ))}
+    </div>
+  );
+}
+
+/** Renders markdown with optional bullet lists (`- item`) and paragraphs. */
+export function RichAuditContent({
+  text,
+  className,
+  listClassName = 'list-disc pl-5 space-y-2 marker:text-brand-primary',
+  itemClassName = 'text-sm leading-relaxed text-gray-700',
+  paragraphClassName,
+  entityLookup: entityLookupProp,
+  autoTagEntities: autoTagProp,
+  highlightsEnabled: highlightsEnabledProp,
+}: {
+  text: string;
+  className?: string;
+  listClassName?: string;
+  itemClassName?: string;
+  paragraphClassName?: string;
+  entityLookup?: Map<string, EntityType>;
+  autoTagEntities?: boolean;
+  highlightsEnabled?: boolean;
+}) {
+  const { entityLookup: ctxLookup, autoTagEntities: ctxAutoTag } = useReportEntities();
+  const { entityHighlightsEnabled } = usePlatformSettings();
+  const entityLookup = entityLookupProp ?? ctxLookup;
+  const autoTagEntities = autoTagProp ?? ctxAutoTag;
+  const highlightsEnabled = highlightsEnabledProp ?? entityHighlightsEnabled;
+  const blocks = parseRichAuditBlocks(text || '');
+
+  if (!blocks.length) return null;
+
+  return (
+    <div className={className}>
+      {blocks.map((block, blockIndex) => {
+        if (block.type === 'list') {
+          return (
+            <ul
+              key={`list-${blockIndex}`}
+              className={[listClassName, blockIndex > 0 ? 'mt-3' : ''].filter(Boolean).join(' ')}
+            >
+              {block.items.map((item, itemIndex) => (
+                <li key={`${blockIndex}-${itemIndex}`} className={itemClassName}>
+                  {renderInlineMarkdown(item, entityLookup, autoTagEntities, highlightsEnabled)}
+                </li>
+              ))}
+            </ul>
+          );
+        }
+        return (
+          <p
+            key={`p-${blockIndex}`}
+            className={[paragraphClassName ?? itemClassName, blockIndex > 0 ? 'mt-3' : ''].filter(Boolean).join(' ')}
+          >
+            {renderInlineMarkdown(block.text, entityLookup, autoTagEntities, highlightsEnabled)}
+          </p>
+        );
+      })}
     </div>
   );
 }

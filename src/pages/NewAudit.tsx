@@ -11,7 +11,8 @@ import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import { useAuth } from '../contexts/AuthContext';
 import { formatClientListMeta } from '../lib/client-display';
-import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates } from '../lib/db';
+import { createAudit, createAuditSections, createClient, ensureClientCreator, findClientByCompanyName, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates } from '../lib/db';
+import { resolveRevenueOpportunityContent } from '../lib/revenue-opportunity-content';
 import type { Audit, AuditContext, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import SiteFavicon from '../components/ui/SiteFavicon';
@@ -342,16 +343,21 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       setAnalysisStage('Preparing client…');
       let clientId = form.clientId;
       if (!clientId) {
-        const created = await createClient(await ensureClientCreator(user, {
-          name: form.clientName || form.companyName,
-          company_name: form.companyName,
-          website_url: '',
-          industry: form.industry,
-          esp_platform: 'Klaviyo',
-          api_key_placeholder: '',
-          notes: '',
-        }) as any);
-        clientId = created.id;
+        const existing = await findClientByCompanyName(form.companyName);
+        if (existing) {
+          clientId = existing.id;
+        } else {
+          const created = await createClient(await ensureClientCreator(user, {
+            name: form.clientName || form.companyName,
+            company_name: form.companyName,
+            website_url: '',
+            industry: form.industry,
+            esp_platform: 'Klaviyo',
+            api_key_placeholder: '',
+            notes: '',
+          }) as Partial<Client>);
+          clientId = created.id;
+        }
       } else {
         const patch: Record<string, string> = {};
         if (form.industry) patch.industry = form.industry;
@@ -371,7 +377,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           template_slug: template.slug,
           name: template.name,
           description: template.description || undefined,
-          bullets: Array.isArray(template.bullets) ? template.bullets : [],
+          content: template.content || resolveRevenueOpportunityContent(template),
+          bullets: [],
           revenue_monthly: Number(template.default_revenue_monthly ?? 0),
           display_order: template.display_order ?? (index + 1) * 10,
           is_hidden: false,

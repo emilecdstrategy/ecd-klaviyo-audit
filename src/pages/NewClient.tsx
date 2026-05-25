@@ -5,7 +5,7 @@ import TopBar from '../components/layout/TopBar';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { useAuth } from '../contexts/AuthContext';
-import { createClient, ensureClientCreator } from '../lib/db';
+import { createClient, ensureClientCreator, findClientByCompanyName } from '../lib/db';
 
 import { supabase } from '../lib/supabase';
 
@@ -36,6 +36,10 @@ export default function NewClient({ asModal }: NewClientProps) {
       const apiKey = form.api_key.trim();
       if (!apiKey) {
         throw new Error('Klaviyo Private API key is required to create a client.');
+      }
+      const existing = await findClientByCompanyName(form.company_name);
+      if (existing) {
+        throw new Error(`A client named “${existing.company_name}” already exists. Open that client to run a new audit.`);
       }
       const payload = await ensureClientCreator(user, {
         name: form.name,

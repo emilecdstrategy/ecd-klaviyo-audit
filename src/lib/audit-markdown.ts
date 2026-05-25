@@ -143,6 +143,41 @@ export function htmlToMd(html: string): string {
   return repairEntityMarkers(md);
 }
 
+export type RichAuditBlock =
+  | { type: 'paragraph'; text: string }
+  | { type: 'list'; items: string[] };
+
+/** Split markdown into paragraphs and bullet lists (lines starting with `- `). */
+export function parseRichAuditBlocks(text: string): RichAuditBlock[] {
+  const blocks: RichAuditBlock[] = [];
+  let listItems: string[] | null = null;
+
+  const flushList = () => {
+    if (listItems?.length) {
+      blocks.push({ type: 'list', items: listItems });
+      listItems = null;
+    }
+  };
+
+  for (const rawLine of text.split('\n')) {
+    const line = rawLine.trim();
+    if (!line) {
+      flushList();
+      continue;
+    }
+    if (/^[-*•]\s+/.test(line)) {
+      if (!listItems) listItems = [];
+      listItems.push(line.replace(/^[-*•]\s+/, '').trim());
+      continue;
+    }
+    flushList();
+    blocks.push({ type: 'paragraph', text: line });
+  }
+
+  flushList();
+  return blocks;
+}
+
 export function hasRichAuditMarkup(text: string): boolean {
   if (/(<(b|strong|i|em|u|span)[>\s/])/i.test(text)) return true;
   if (/(\*\*|__|\*|_|~~)/.test(text)) return true;

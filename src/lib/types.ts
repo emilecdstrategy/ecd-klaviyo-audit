@@ -49,6 +49,9 @@ export interface RevenueOpportunityTemplate {
   slug: string;
   name: string;
   description: string;
+  /** Rich-text body (markdown). List vs paragraph formatting comes from the editor. */
+  content: string;
+  /** @deprecated Legacy bullet strings — use `content` instead. */
   bullets: string[];
   default_revenue_monthly: number;
   display_order: number;
@@ -61,6 +64,9 @@ export interface RevenueOpportunityAddOnItem {
   template_slug: string;
   name: string;
   description?: string;
+  /** Rich-text body (markdown). List vs paragraph formatting comes from the editor. */
+  content?: string;
+  /** @deprecated Legacy bullet strings — use `content` instead. */
   bullets: string[];
   revenue_monthly: number;
   is_hidden?: boolean;

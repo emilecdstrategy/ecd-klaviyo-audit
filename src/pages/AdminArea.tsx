@@ -26,7 +26,6 @@ import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { useToast } from '../components/ui/Toast';
 import { supabase } from '../lib/supabase';
 import SimpleRichEditor from '../components/ui/SimpleRichEditor';
-import { bulletsArrayToEditorHtml, editorValueToBulletsArray } from '../lib/audit-markdown';
 import {
   listIndustryEmailLibrary,
   createIndustryEmail,
@@ -693,12 +692,10 @@ function RevenueOpportunitiesTab() {
   const [newEntry, setNewEntry] = useState({
     name: '',
     description: '',
-    bullets: [] as string[],
+    content: '',
     defaultRevenue: '',
     isActive: true,
   });
-
-  const sanitizeBullets = (raw: string[]) => raw.map(v => v.trim()).filter(Boolean);
   const toHandle = (name: string) =>
     name
       .toLowerCase()
@@ -745,7 +742,7 @@ function RevenueOpportunitiesTab() {
         slug: uniqueHandleFromName(entry.name, entries, entry.id),
         name: entry.name.trim(),
         description: entry.description.trim(),
-        bullets: sanitizeBullets(entry.bullets),
+        content: entry.content.trim(),
         default_revenue_monthly: Number(entry.default_revenue_monthly || 0),
         display_order: Number(entry.display_order || 0),
         is_active: Boolean(entry.is_active),
@@ -785,7 +782,8 @@ function RevenueOpportunitiesTab() {
         slug: uniqueHandleFromName(name, entries),
         name,
         description: newEntry.description.trim(),
-        bullets: sanitizeBullets(newEntry.bullets),
+        content: newEntry.content.trim(),
+        bullets: [],
         default_revenue_monthly: Number(newEntry.defaultRevenue || 0),
         display_order: nextDisplayOrder,
         is_active: newEntry.isActive,
@@ -793,7 +791,7 @@ function RevenueOpportunitiesTab() {
       setNewEntry({
         name: '',
         description: '',
-        bullets: [],
+        content: '',
         defaultRevenue: '',
         isActive: true,
       });
@@ -891,16 +889,12 @@ function RevenueOpportunitiesTab() {
           />
         </div>
         <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Bullets</label>
+          <label className="block text-xs font-medium text-gray-500 mb-1">Body</label>
           <SimpleRichEditor
-            entityTags={false}
-            value={bulletsArrayToEditorHtml(newEntry.bullets)}
-            onChange={(value) => setNewEntry(prev => ({
-              ...prev,
-              bullets: editorValueToBulletsArray(value),
-            }))}
+            value={newEntry.content}
+            onChange={(value) => setNewEntry(prev => ({ ...prev, content: value }))}
             rows={4}
-            placeholder="Add bullet points here"
+            placeholder="Paragraphs or bullet lists — use the list button in the toolbar."
           />
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -1009,17 +1003,16 @@ function RevenueOpportunitiesTab() {
                   />
                 </div>
                 <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Bullets</label>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Body</label>
                   <SimpleRichEditor
-                    entityTags={false}
-                    value={bulletsArrayToEditorHtml(entry.bullets)}
+                    value={entry.content}
                     onChange={(value) => {
                       setEntries(prev => prev.map(p => (
-                        p.id === entry.id ? { ...p, bullets: editorValueToBulletsArray(value) } : p
+                        p.id === entry.id ? { ...p, content: value } : p
                       )));
                     }}
                     rows={4}
-                    placeholder="Add bullet points here"
+                    placeholder="Paragraphs or bullet lists — use the list button in the toolbar."
                   />
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">

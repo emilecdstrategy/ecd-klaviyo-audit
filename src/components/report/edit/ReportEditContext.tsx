@@ -93,7 +93,7 @@ type ReportEditContextValue = {
     value: string,
   ) => void;
   updateAddOnRevenue: (itemKey: string, value: number) => void;
-  updateAddOnBullet: (itemKey: string, bulletIndex: number, value: string) => void;
+  updateAddOnContent: (itemKey: string, value: string) => void;
   updateSectionRevenueOpportunity: (sectionKey: string, value: number) => void;
   toggleLayoutSectionHidden: (layoutKey: 'executive_summary' | 'revenue_summary', hidden: boolean) => void;
   toggleAuditSectionHidden: (sectionKey: string, hidden: boolean) => void;
@@ -133,7 +133,7 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateTimelineItem: () => {},
   updateAddOnField: () => {},
   updateAddOnRevenue: () => {},
-  updateAddOnBullet: () => {},
+  updateAddOnContent: () => {},
   updateSectionRevenueOpportunity: () => {},
   toggleLayoutSectionHidden: () => {},
   toggleAuditSectionHidden: () => {},
@@ -392,8 +392,8 @@ export function ReportEditProvider({
     [audit, onAuditChange, sections, schedule],
   );
 
-  const updateAddOnBullet = useCallback(
-    (itemKey: string, bulletIndex: number, value: string) => {
+  const updateAddOnContent = useCallback(
+    (itemKey: string, value: string) => {
       const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
       const rs = { ...((layout.revenue_summary as Record<string, unknown>) ?? {}) };
       const blocks = { ...((rs.blocks as Record<string, unknown>) ?? {}) };
@@ -401,10 +401,7 @@ export function ReportEditProvider({
       const items = [...((addOns.items as RevenueOpportunityAddOnItem[]) ?? [])];
       const idx = items.findIndex(i => `${i.template_slug}-${i.display_order}` === itemKey);
       if (idx < 0) return;
-      const bullets = [...(items[idx].bullets ?? [])];
-      while (bullets.length <= bulletIndex) bullets.push('');
-      bullets[bulletIndex] = value;
-      items[idx] = { ...items[idx], bullets };
+      items[idx] = { ...items[idx], content: value };
       addOns.items = items;
       blocks.addOns = addOns;
       rs.blocks = blocks;
@@ -672,7 +669,7 @@ export function ReportEditProvider({
       updateTimelineItem,
       updateAddOnField,
       updateAddOnRevenue,
-      updateAddOnBullet,
+      updateAddOnContent,
       updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,
@@ -701,7 +698,7 @@ export function ReportEditProvider({
       updateTimelineItem,
       updateAddOnField,
       updateAddOnRevenue,
-      updateAddOnBullet,
+      updateAddOnContent,
       updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,

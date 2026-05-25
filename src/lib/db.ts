@@ -21,6 +21,8 @@ import {
   normalizeEntityHighlightStyle,
   type EntityHighlightStyle,
 } from './entity-highlight-styles';
+import { dedupeClientsByCompany, normalizeCompanyKey } from './client-display';
+import { resolveRevenueOpportunityContent } from './revenue-opportunity-content';
 import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from './revenue-calculator';
 
 const FLOW_SNAPSHOT_SELECT =
@@ -99,10 +101,42 @@ function requireUserId(user: Profile | null): string {
   return user.id;
 }
 
-export async function listClients(): Promise<Client[]> {
-  const { data, error } = await supabase.from('clients').select('*').order('created_at', { ascending: false });
+async function fetchAuditCountByClient(): Promise<Map<string, number>> {
+  const { data, error } = await supabase.from('audits').select('client_id');
   if (error) throw error;
-  return data ?? [];
+  const counts = new Map<string, number>();
+  for (const row of data ?? []) {
+    const id = row.client_id as string;
+    if (!id) continue;
+    counts.set(id, (counts.get(id) ?? 0) + 1);
+  }
+  return counts;
+}
+
+export async function findClientByCompanyName(companyName: string): Promise<Client | null> {
+  const key = normalizeCompanyKey(companyName);
+  if (!key) return null;
+  const trimmed = companyName.trim();
+  const { data, error } = await supabase
+    .from('clients')
+    .select('*')
+    .ilike('company_name', trimmed)
+    .order('created_at', { ascending: true })
+    .limit(20);
+  if (error) throw error;
+  const matches = (data ?? []).filter(c => normalizeCompanyKey(c.company_name) === key) as Client[];
+  if (!matches.length) return null;
+  const auditCounts = await fetchAuditCountByClient();
+  return dedupeClientsByCompany(matches, auditCounts)[0] ?? null;
+}
+
+export async function listClients(): Promise<Client[]> {
+  const [{ data, error }, auditCounts] = await Promise.all([
+    supabase.from('clients').select('*').order('created_at', { ascending: false }),
+    fetchAuditCountByClient(),
+  ]);
+  if (error) throw error;
+  return dedupeClientsByCompany((data ?? []) as Client[], auditCounts);
 }
 
 export async function getClient(id: string): Promise<Client | null> {
@@ -150,14 +184,17 @@ export async function listAuditsByClient(clientId: string): Promise<Audit[]> {
 export async function searchClients(query: string, limit = 5): Promise<Client[]> {
   const q = query.trim();
   if (!q) return [];
-  const { data, error } = await supabase
-    .from('clients')
-    .select('*')
-    .or(`company_name.ilike.%${q}%,name.ilike.%${q}%,industry.ilike.%${q}%`)
-    .order('created_at', { ascending: false })
-    .limit(limit);
+  const [{ data, error }, auditCounts] = await Promise.all([
+    supabase
+      .from('clients')
+      .select('*')
+      .or(`company_name.ilike.%${q}%,name.ilike.%${q}%,industry.ilike.%${q}%`)
+      .order('created_at', { ascending: false })
+      .limit(Math.max(limit * 3, limit)),
+    fetchAuditCountByClient(),
+  ]);
   if (error) throw error;
-  return (data ?? []) as Client[];
+  return dedupeClientsByCompany((data ?? []) as Client[], auditCounts).slice(0, limit);
 }
 
 export async function searchAudits(query: string, limit = 5): Promise<Audit[]> {
@@ -701,12 +738,18 @@ function coerceTemplateBullets(input: unknown): string[] {
 }
 
 function mapRevenueOpportunityTemplateRow(row: any): RevenueOpportunityTemplate {
+  const bullets = coerceTemplateBullets(row.bullets);
+  const content = resolveRevenueOpportunityContent({
+    content: row.content ?? '',
+    bullets,
+  });
   return {
     id: row.id,
     slug: row.slug,
     name: row.name,
     description: row.description ?? '',
-    bullets: coerceTemplateBullets(row.bullets),
+    content,
+    bullets,
     default_revenue_monthly: Number(row.default_revenue_monthly ?? 0),
     display_order: Number(row.display_order ?? 0),
     is_active: Boolean(row.is_active),
@@ -734,11 +777,13 @@ export async function listRevenueOpportunityTemplates(
 export async function createRevenueOpportunityTemplate(
   input: Omit<RevenueOpportunityTemplate, 'id' | 'created_at' | 'updated_at'>,
 ): Promise<RevenueOpportunityTemplate> {
+  const content = input.content ?? resolveRevenueOpportunityContent(input);
   const { data, error } = await supabase
     .from('revenue_opportunity_templates')
     .insert({
       ...input,
-      bullets: input.bullets ?? [],
+      content,
+      bullets: [],
     })
     .select('*')
     .single();
@@ -750,12 +795,16 @@ export async function updateRevenueOpportunityTemplate(
   id: string,
   updates: Partial<Omit<RevenueOpportunityTemplate, 'id' | 'created_at' | 'updated_at'>>,
 ): Promise<RevenueOpportunityTemplate> {
+  const payload: Record<string, unknown> = {
+    ...updates,
+    updated_at: new Date().toISOString(),
+  };
+  if (updates.content !== undefined) {
+    payload.bullets = [];
+  }
   const { data, error } = await supabase
     .from('revenue_opportunity_templates')
-    .update({
-      ...updates,
-      updated_at: new Date().toISOString(),
-    })
+    .update(payload)
     .eq('id', id)
     .select('*')
     .single();

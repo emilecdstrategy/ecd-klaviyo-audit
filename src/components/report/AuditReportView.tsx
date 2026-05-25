@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode }
 import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
 import { computeAuditTotalRevenueOpportunity, formatCurrency, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../lib/revenue-calculator';
+import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
 import { isRevenueOpportunitySectionVisible } from '../../lib/report-config/resolve';
 import { normalizeCoreFlowsMatrix } from '../../lib/core-flows-matrix';
 import AnnotationLayer from '../audit/AnnotationLayer';
@@ -125,7 +126,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     updateBlockTitle,
     updateAddOnField,
     updateAddOnRevenue,
-    updateAddOnBullet,
+    updateAddOnContent,
     updateSectionRevenueOpportunity,
     toggleLayoutSectionHidden,
     toggleAuditSectionHidden,
@@ -301,6 +302,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
         .filter((item): item is RevenueOpportunityAddOnItem => !!item && typeof item === 'object')
         .map((item, index) => ({
           ...item,
+          content: resolveRevenueOpportunityContent(item),
           bullets: Array.isArray(item.bullets) ? item.bullets.map(value => String(value)) : [],
           revenue_monthly: Number(item.revenue_monthly ?? 0),
           display_order: typeof item.display_order === 'number' ? item.display_order : (index + 1) * 10,
@@ -1022,18 +1024,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       <p className="text-[11px] text-emerald-600">/mo</p>
                     </div>
                   </div>
-                  {item.bullets.length > 0 && (
-                    <ul className="list-disc pl-5 space-y-2 marker:text-brand-primary">
-                      {item.bullets.map((bullet, idx) => (
-                        <li key={`${itemKey}-bullet-${idx}`} className="text-sm leading-relaxed text-gray-700">
-                          <EditableRichText
-                            value={bullet}
-                            onSave={v => updateAddOnBullet(itemKey, idx, v)}
-                            className="text-sm leading-relaxed text-gray-700"
-                          />
-                        </li>
-                      ))}
-                    </ul>
+                  {item.content && (
+                    <EditableRichText
+                      value={item.content}
+                      onSave={v => updateAddOnContent(itemKey, v)}
+                      className="text-sm leading-relaxed text-gray-700"
+                    />
                   )}
                 </div>
               );})}

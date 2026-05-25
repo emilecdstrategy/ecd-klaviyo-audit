@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState, type RefObject } from 'react';
 import { createPortal } from 'react-dom';
-import { Bold, Highlighter, Italic } from 'lucide-react';
+import { Bold, Highlighter, Italic, List } from 'lucide-react';
 import { HIGHLIGHT_SHORTCUT_LABEL } from '../../../lib/entity-editor';
 
 export function useFloatingToolbarPosition(
@@ -42,6 +42,7 @@ export default function FloatingFormatToolbar({
   onBold,
   onItalic,
   onHighlight,
+  onList,
 }: {
   visible: boolean;
   top: number;
@@ -49,6 +50,7 @@ export default function FloatingFormatToolbar({
   onBold: () => void;
   onItalic: () => void;
   onHighlight?: () => void;
+  onList?: () => void;
 }) {
   if (!visible) return null;
 
@@ -64,6 +66,14 @@ export default function FloatingFormatToolbar({
       <button type="button" onClick={onItalic} className="rounded p-1.5 hover:bg-gray-100" title="Italic (Ctrl+I)">
         <Italic className="h-3.5 w-3.5" />
       </button>
+      {onList && (
+        <>
+          <div className="mx-0.5 h-4 w-px bg-gray-200" />
+          <button type="button" onClick={onList} className="rounded p-1.5 hover:bg-gray-100" title="Bullet list">
+            <List className="h-3.5 w-3.5" />
+          </button>
+        </>
+      )}
       {onHighlight && (
         <>
           <div className="mx-0.5 h-4 w-px bg-gray-200" />

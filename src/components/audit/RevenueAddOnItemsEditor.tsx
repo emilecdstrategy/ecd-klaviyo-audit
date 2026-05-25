@@ -2,20 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, GripVertical, Plus } from 'lucide-react';
 import type { Audit, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../../lib/types';
 import { listRevenueOpportunityTemplates, updateAudit } from '../../lib/db';
+import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
 import { scheduleSavedToast, useToast } from '../ui/Toast';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
-
-function bulletsToEditorValue(bullets: string[]): string {
-  return bullets.map(line => `- ${line}`).join('\n');
-}
-
-function editorValueToBullets(value: string): string[] {
-  return value
-    .split('\n')
-    .map(line => line.replace(/^[-*]\s+/, '').trim())
-    .filter(Boolean);
-}
 
 function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
   if (!Array.isArray(rawItems)) return [];
@@ -25,6 +15,7 @@ function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
       template_slug: String(item.template_slug ?? ''),
       name: String(item.name ?? ''),
       description: item.description ? String(item.description) : undefined,
+      content: resolveRevenueOpportunityContent(item),
       bullets: Array.isArray(item.bullets) ? item.bullets.map(v => String(v)) : [],
       revenue_monthly: Number(item.revenue_monthly ?? 0),
       is_hidden: Boolean(item.is_hidden),
@@ -90,6 +81,7 @@ export default function RevenueAddOnItemsEditor({
   const writeItems = (nextItems: RevenueOpportunityAddOnItem[]) => {
     const withOrder = nextItems.map((item, index) => ({
       ...item,
+      content: item.content?.trim() || resolveRevenueOpportunityContent(item),
       display_order: (index + 1) * 10,
     }));
     const revenueSummary = (layout.revenue_summary as Record<string, unknown> | undefined) ?? {};
@@ -234,16 +226,16 @@ export default function RevenueAddOnItemsEditor({
               </div>
 
               <div>
-                <label className="block text-[11px] font-medium text-gray-500 mb-1">Bullets</label>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1">Body</label>
                 <SimpleRichEditor
-                  value={bulletsToEditorValue(item.bullets)}
+                  value={item.content ?? ''}
                   onChange={(value) => {
                     const next = addOnItems.slice();
-                    next[index] = { ...item, bullets: editorValueToBullets(value) };
+                    next[index] = { ...item, content: value };
                     writeItems(next);
                   }}
                   rows={4}
-                  placeholder="Use one bullet per line. Formatting is supported."
+                  placeholder="Paragraphs or bullet lists — use the list button in the toolbar."
                 />
               </div>
 
@@ -311,7 +303,8 @@ export default function RevenueAddOnItemsEditor({
                 template_slug: template.slug,
                 name: template.name,
                 description: template.description || undefined,
-                bullets: template.bullets ?? [],
+                content: template.content || resolveRevenueOpportunityContent(template),
+                bullets: [],
                 revenue_monthly: Number(template.default_revenue_monthly ?? 0),
                 is_hidden: false,
               },

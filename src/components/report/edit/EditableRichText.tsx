@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { htmlToMd, auditTextToEditorHtml } from '../../../lib/audit-markdown';
 import { isHighlightShortcut, toggleSelectionHighlight } from '../../../lib/entity-editor';
 import { cn } from '../../../lib/utils';
-import { RichAuditText } from '../../ui/RichAuditText';
+import { RichAuditContent } from '../../ui/RichAuditText';
 import FloatingFormatToolbar, { useFloatingToolbarPosition } from './FloatingFormatToolbar';
 import { useReportEdit } from './ReportEditContext';
 import { useReportEntities } from './ReportEntityContext';
@@ -65,7 +65,7 @@ export default function EditableRichText({
 
   if (!canEdit) {
     return (
-      <RichAuditText
+      <RichAuditContent
         text={value}
         className={className}
         entityLookup={entityLookup}
@@ -107,6 +107,7 @@ export default function EditableRichText({
           'hover:ring-1 hover:ring-brand-primary/20 hover:ring-offset-1',
           'empty:before:content-[attr(data-placeholder)] empty:before:text-gray-400 empty:before:pointer-events-none',
           '[&_.entity-tag]:pointer-events-none',
+          '[&_ul]:list-disc [&_ul]:pl-5 [&_ul]:space-y-2',
         )}
       />
       <FloatingFormatToolbar
@@ -116,6 +117,7 @@ export default function EditableRichText({
         onBold={() => exec('bold')}
         onItalic={() => exec('italic')}
         onHighlight={entityHighlightsEnabled ? toggleHighlight : undefined}
+        onList={() => exec('insertUnorderedList')}
       />
     </>
   );
