@@ -318,6 +318,24 @@ async function chainStage(stage: Stage, auditId: string, extra: Record<string, u
   } catch { /* best effort */ }
 }
 
+async function chainAuditAnalysis(auditId: string) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
+  try {
+    await Promise.race([
+      fetch(`${SUPABASE_URL}/functions/v1/audit_finalize_analysis`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+        },
+        body: JSON.stringify({ audit_id: auditId }),
+      }),
+      sleep(4_000),
+    ]);
+  } catch { /* best effort */ }
+}
+
 async function finalizeProfileScan(
   sb: ReturnType<typeof assertServiceClient>,
   auditId: string,
@@ -379,6 +397,8 @@ async function finalizeProfileScan(
     error_message: null,
     updated_at: new Date().toISOString(),
   }).eq("audit_id", auditId));
+
+  await chainAuditAnalysis(auditId);
 }
 
 async function handleResumeProfileScan(auditId: string, correlationId: string): Promise<Response> {
@@ -1539,6 +1559,8 @@ async function runStageReporting(params: {
       }, { onConflict: "audit_id" }));
 
       await chainStage("resume_profile_scan", params.auditId);
+    } else {
+      await chainAuditAnalysis(params.auditId);
     }
 
     await logStageRun(sb, {

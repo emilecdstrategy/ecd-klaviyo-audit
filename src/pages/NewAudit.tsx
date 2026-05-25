@@ -11,22 +11,17 @@ import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import { useAuth } from '../contexts/AuthContext';
 import { formatClientListMeta } from '../lib/client-display';
-import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateAuditSection, updateClient, getIndustryEmailByIndustry, upsertAuditEmailDesign, createAnnotation, listRevenueOpportunityTemplates } from '../lib/db';
+import { createAudit, createAuditSections, createClient, ensureClientCreator, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates } from '../lib/db';
 import type { Audit, AuditContext, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
-import { runAIAnalysis } from '../lib/ai-service';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import SiteFavicon from '../components/ui/SiteFavicon';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 import { supabase } from '../lib/supabase';
 import {
-  computeAuditTotalRevenueOpportunity,
-  defaultEmailDesignRevenue,
-} from '../lib/revenue-calculator';
-import { normalizeFlowsSectionPatch } from '../lib/core-flows-matrix';
-import {
   clearAuditGenerationActive,
   markAuditGenerationActive,
+  waitForServerAuditAnalysis,
 } from '../lib/audit-pipeline-status';
 import { setAuditWizardCloseGuard } from '../lib/audit-wizard-guard';
 
@@ -568,147 +563,22 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         }
       }
 
-      const profileAudienceScan: 'full' | 'skipped' | 'timed_out' =
-        audienceWait === 'timed_out' ? 'timed_out' : audienceWait === 'skipped' ? 'skipped' : 'full';
-
-      // 5) Run AI analysis and persist section updates
-      setAnalysisProgress(40);
-      setAnalysisStage('Running AI analysis…');
-      const ticker = setInterval(() => {
-        setAnalysisProgress(prev => {
-          if (prev >= 68) return 68;
-          return Math.round((prev + (68 - prev) * 0.08) * 10) / 10;
-        });
-      }, 2000);
-      let ai;
-      try {
-        ai = await runAIAnalysis({
-          auditId: audit.id,
-          clientId,
-          clientName: form.clientName,
-          companyName: form.companyName,
-          espPlatform: 'Klaviyo',
-          websiteUrl: '',
-          listSize: snapshotListSize,
+      if (snapshotListSize > 0 || snapshotEngagement > 0 || snapshotRpr > 0) {
+        await updateAudit(audit.id, {
+          list_size: snapshotListSize,
+          monthly_traffic: snapshotEngagement,
           aov: snapshotRpr,
-          monthlyTraffic: snapshotEngagement,
-          auditMethod: 'api' as any,
-          auditContext: contextPayload ?? undefined,
-          profileAudienceScan,
-          clientSellsSubscriptions: Boolean(form.clientSellsSubscriptions),
-        }, (update) => {
-          if (update.total > 0) {
-            setAnalysisStage(update.label);
-            const mapped = 40 + Math.round((update.current / update.total) * 28);
-            setAnalysisProgress(prev => Math.max(prev, Math.min(68, mapped)));
-          } else if (update.label) {
-            setAnalysisStage(update.label);
-          }
-        });
-      } finally {
-        clearInterval(ticker);
-      }
-      setAnalysisProgress(70);
-      setAnalysisStage('Saving results…');
-
-      // Apply AI updates by matching section_key
-      const patchByKey = new Map(ai.sections.map(patch => [patch.section_key, patch]));
-
-      for (const s of createdSections) {
-        const patch = patchByKey.get(s.section_key);
-        if (!patch || s.section_key === 'email_design') continue;
-        const normalizedPatch = s.section_key === 'flows'
-          ? normalizeFlowsSectionPatch(patch as { section_details?: unknown }, {
-              includeSubscription: Boolean(form.clientSellsSubscriptions),
-            })
-          : patch;
-        await updateAuditSection(s.id, normalizedPatch as any);
+        } as Partial<Audit>);
       }
 
-      const sectionsForOpportunityBase = createdSections.map(section => {
-        const patch = patchByKey.get(section.section_key);
-        const merged = patch ? { ...section, ...patch } : section;
-        if (section.section_key === 'email_design') {
-          return { ...merged, revenue_opportunity: 0 };
-        }
-        return merged;
+      setAnalysisProgress(40);
+      setAnalysisStage('Running AI analysis on server…');
+      await waitForServerAuditAnalysis(audit.id, {
+        onUpdate: (label, progress) => {
+          setAnalysisStage(label);
+          setAnalysisProgress(Math.max(40, Math.min(95, progress)));
+        },
       });
-      const opportunityBaseBeforeEmail = computeAuditTotalRevenueOpportunity(
-        sectionsForOpportunityBase,
-        initialLayout,
-      );
-
-      const emailSection = createdSections.find(s => s.section_key === 'email_design');
-      const emailPatch = patchByKey.get('email_design');
-      if (emailSection && emailPatch) {
-        const aiEmailRevenue = Number(emailPatch.revenue_opportunity) || 0;
-        const emailRevenue = aiEmailRevenue > 0
-          ? aiEmailRevenue
-          : defaultEmailDesignRevenue(opportunityBaseBeforeEmail);
-        await updateAuditSection(emailSection.id, {
-          ...emailPatch,
-          revenue_opportunity: emailRevenue,
-        } as any);
-      }
-
-      const patchedSections = createdSections.map(section => {
-        const patch = patchByKey.get(section.section_key);
-        if (!patch) return section;
-        if (section.section_key === 'email_design') {
-          const aiEmailRevenue = Number(patch.revenue_opportunity) || 0;
-          return {
-            ...section,
-            ...patch,
-            revenue_opportunity: aiEmailRevenue > 0
-              ? aiEmailRevenue
-              : defaultEmailDesignRevenue(opportunityBaseBeforeEmail),
-          };
-        }
-        return { ...section, ...patch };
-      });
-
-      const totalOpportunity = computeAuditTotalRevenueOpportunity(patchedSections, initialLayout);
-
-      const execPayload = (ai.strengths?.length || ai.findings?.length || ai.implementationTimeline?.length)
-        ? JSON.stringify({
-            text: ai.executiveSummary,
-            findings: ai.findings ?? [],
-            strengths: ai.strengths ?? [],
-            timeline: ai.implementationTimeline ?? [],
-          })
-        : ai.executiveSummary;
-
-      await updateAudit(audit.id, {
-        executive_summary: execPayload,
-        total_revenue_opportunity: totalOpportunity,
-        list_size: snapshotListSize,
-        monthly_traffic: snapshotEngagement,
-        aov: snapshotRpr,
-      } as any);
-
-      // Best-effort: match industry → ECD benchmark email + copy annotations
-      try {
-        const industry = form.industry || clients.find(c => c.id === clientId)?.industry || '';
-        if (industry) {
-          const ecdExample = await getIndustryEmailByIndustry(industry);
-          if (ecdExample) {
-            await upsertAuditEmailDesign(audit.id, { ecd_example_id: ecdExample.id });
-            const emailDesignSection = createdSections.find(s => s.section_key === 'email_design');
-            if (emailDesignSection && ecdExample.default_annotations?.length) {
-              for (const ann of ecdExample.default_annotations) {
-                await createAnnotation({
-                  audit_section_id: emailDesignSection.id,
-                  asset_id: null,
-                  x_position: ann.x,
-                  y_position: ann.y,
-                  label: ann.label,
-                  side: 'optimized',
-                });
-              }
-            }
-          }
-        }
-      } catch { /* non-critical */ }
 
       setAnalysisProgress(100);
       setAnalysisStage('Done');

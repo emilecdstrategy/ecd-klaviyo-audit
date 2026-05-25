@@ -25,6 +25,9 @@ export type AuditPipelineStatus = {
   isGenerating: boolean;
   isStalled: boolean;
   needsAiResume: boolean;
+  aiServerActive: boolean;
+  aiJobFailed: boolean;
+  aiJobError: string | null;
   phase: AuditPipelinePhase;
   progress: number;
   label: string;
@@ -55,7 +58,7 @@ export function isLikelyAuditGenerating(audit: Pick<Audit, 'audit_method' | 'exe
 }
 
 export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPipelineStatus> {
-  const [{ data: audit, error: auditErr }, { data: sections, error: sectionsErr }, { data: runs, error: runsErr }, { data: profileJob, error: profileErr }] = await Promise.all([
+  const [{ data: audit, error: auditErr }, { data: sections, error: sectionsErr }, { data: runs, error: runsErr }, { data: profileJob, error: profileErr }, { data: aiJob, error: aiJobErr }] = await Promise.all([
     supabase.from('audits').select('executive_summary, audit_method, created_at').eq('id', auditId).single(),
     supabase.from('audit_sections').select('section_key, summary_text, human_edited_findings').eq('audit_id', auditId),
     supabase
@@ -69,12 +72,19 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
       .select('status, total_profiles, subscribed, updated_at')
       .eq('audit_id', auditId)
       .maybeSingle(),
+    supabase
+      .from('audit_analysis_jobs')
+      .select('status, step_index, error_message')
+      .eq('audit_id', auditId)
+      .maybeSingle(),
   ]);
 
   if (auditErr) throw auditErr;
   if (sectionsErr) throw sectionsErr;
   if (runsErr) throw runsErr;
   if (profileErr) throw profileErr;
+  // aiJobErr is non-fatal before migration is applied everywhere
+  if (aiJobErr && aiJobErr.code !== 'PGRST205') throw aiJobErr;
 
   const stageRuns = (runs ?? []) as KlaviyoRunRow[];
   const sectionRows = sections ?? [];
@@ -84,6 +94,9 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
       isGenerating: false,
       isStalled: false,
       needsAiResume: false,
+      aiServerActive: false,
+      aiJobFailed: false,
+      aiJobError: null,
       phase: 'complete',
       progress: 100,
       label: 'Analysis complete',
@@ -91,6 +104,11 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
       profileScanTotal: profileJob?.total_profiles ?? null,
     };
   }
+
+  const aiJobStatus = aiJob?.status ?? null;
+  const aiServerActive = aiJobStatus === 'pending' || aiJobStatus === 'running';
+  const aiJobFailed = aiJobStatus === 'failed';
+  const aiJobError = aiJobFailed ? (aiJob?.error_message ?? 'AI analysis failed') : null;
 
   const age = Date.now() - new Date(audit.created_at).getTime();
 
@@ -129,23 +147,70 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   } else {
     phase = 'ai_analysis';
     progress = 60;
-    label = klaviyoComplete
-      ? 'Klaviyo data ready — starting AI analysis…'
-      : 'Running AI analysis and saving sections…';
+    if (aiServerActive) {
+      const stepIndex = Number(aiJob?.step_index) || 0;
+      progress = 62 + Math.min(33, stepIndex * 4);
+      label = 'Running AI analysis on server…';
+    } else if (klaviyoComplete) {
+      label = aiJobFailed
+        ? 'AI analysis failed — retrying…'
+        : 'Klaviyo data ready — starting AI analysis on server…';
+    } else {
+      label = 'Running AI analysis and saving sections…';
+    }
   }
 
-  const needsAiResume = klaviyoComplete;
+  const needsAiResume = klaviyoComplete && !aiServerActive && !aiJobFailed;
 
   return {
-    isGenerating: !isStale || needsAiResume,
+    isGenerating: !isStale || klaviyoComplete,
     isStalled: isStale,
-    needsAiResume,
+    needsAiResume: needsAiResume || aiJobFailed,
+    aiServerActive,
+    aiJobFailed,
+    aiJobError,
     phase,
     progress,
     label,
     stageRuns,
     profileScanTotal,
   };
+}
+
+export async function startServerAuditAnalysis(auditId: string): Promise<void> {
+  const { error } = await supabase.functions.invoke('audit_finalize_analysis', {
+    body: { audit_id: auditId },
+  });
+  if (error) throw new Error(error.message || 'Failed to start server AI analysis');
+}
+
+export async function waitForServerAuditAnalysis(
+  auditId: string,
+  options?: {
+    onUpdate?: (label: string, progress: number) => void;
+    maxWaitMs?: number;
+  },
+): Promise<void> {
+  const started = Date.now();
+  const maxWait = options?.maxWaitMs ?? GENERATING_MAX_AGE_MS;
+  let nudgeSent = false;
+
+  while (Date.now() - started < maxWait) {
+    const status = await fetchAuditPipelineStatus(auditId);
+    options?.onUpdate?.(status.label, status.progress);
+    if (!status.isGenerating && status.phase === 'complete') return;
+    if (status.aiJobFailed && nudgeSent) {
+      throw new Error(status.aiJobError ?? 'AI analysis failed on server');
+    }
+    if ((status.needsAiResume || status.aiJobFailed) && !status.aiServerActive) {
+      if (!nudgeSent || status.aiJobFailed) {
+        nudgeSent = true;
+        await startServerAuditAnalysis(auditId);
+      }
+    }
+    await new Promise(resolve => setTimeout(resolve, 3000));
+  }
+  throw new Error('Timed out waiting for AI analysis');
 }
 
 export const ACTIVE_AUDIT_GENERATION_KEY = 'ecd-active-audit-generation';

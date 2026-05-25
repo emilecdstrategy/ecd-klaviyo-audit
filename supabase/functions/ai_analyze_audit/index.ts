@@ -284,15 +284,20 @@ serve(async (req) => {
   let retries = 0;
 
   try {
-    try {
-      await getUserIdFromAuthorization(req);
-    } catch (e) {
-      // Important: return 200 so supabase-js doesn't surface a non-2xx transport error.
-      // The client handles ok:false responses and can show a friendly message.
-      return jsonCors(
-        { ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId },
-        { status: 200 },
-      );
+    const auth = req.headers.get("authorization") ?? "";
+    const token = auth.replace(/^Bearer\s+/i, "");
+    const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+    if (!isServiceRole) {
+      try {
+        await getUserIdFromAuthorization(req);
+      } catch (e) {
+        // Important: return 200 so supabase-js doesn't surface a non-2xx transport error.
+        // The client handles ok:false responses and can show a friendly message.
+        return jsonCors(
+          { ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId },
+          { status: 200 },
+        );
+      }
     }
 
     const body = (await req.json()) as WizardData & { refineBaseline?: RefineBaseline; auditContext?: AuditContextInput };
