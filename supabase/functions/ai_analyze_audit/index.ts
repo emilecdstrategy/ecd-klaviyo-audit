@@ -236,7 +236,7 @@ async function fetchKlaviyoContext(auditId: string, clientId: string): Promise<K
     sb.from("klaviyo_campaign_snapshots").select("name, status, send_channel, created_at_klaviyo, updated_at_klaviyo").eq("audit_id", auditId),
     sb.from("klaviyo_segment_snapshots").select("name, created_at_klaviyo, updated_at_klaviyo").eq("audit_id", auditId),
     sb.from("klaviyo_form_snapshots").select("name, status").eq("audit_id", auditId),
-    sb.from("flow_performance").select("flow_name, flow_status, recipients_per_month, actual_open_rate, actual_click_rate, actual_conv_rate, monthly_revenue_current, email_message_count").eq("audit_id", auditId),
+    sb.from("flow_performance").select("flow_name, flow_status, recipients_per_month, actual_open_rate, actual_click_rate, actual_conv_rate, benchmark_open_rate_low, benchmark_open_rate_high, benchmark_click_rate_low, benchmark_click_rate_high, benchmark_conv_rate_low, benchmark_conv_rate_high, monthly_revenue_current, email_message_count").eq("audit_id", auditId),
     sb.from("klaviyo_reporting_rollups").select("timeframe_key, computed").eq("audit_id", auditId).eq("timeframe_key", "last_30_days").maybeSingle(),
   ]);
 

@@ -1,5 +1,6 @@
 import { AI_SCHEMA_VERSION } from "./schema.ts";
 import { AUDIT_SECTION_KEYS, type SectionKey } from "./schema.ts";
+import { buildBenchmarkReferenceBlock, formatBenchmarkRange, getFlowBenchmarks } from "../_shared/benchmarks.ts";
 
 type WizardData = {
   auditId?: string;
@@ -97,7 +98,24 @@ export function buildAuditSystemPrompt() {
     "Do not use placeholders, hedging, or vague generic statements.",
     "EXECUTIVE SUMMARY: Keep the top executiveSummary text to 1-2 sentences max (no long paragraphs). Do NOT include dollar amounts or revenue promises in executiveSummary.",
     "",
-    "FINDINGS: Return exactly 5 strings in the findings array. These are the numbered problem statements shown first on the client report.",
+    "BENCHMARK CONTEXT — CRITICAL:",
+    "Whenever you cite a percentage (open rate, click rate, conversion rate, bounce rate, spam rate, revenue share, etc.), immediately state the relevant benchmark range and whether the result is healthy, below benchmark, or needs attention.",
+    "Use the benchmark_reference table in the user payload. Do NOT invent benchmark ranges or call a rate 'healthy' without naming the range.",
+    "Example strength: '`flow:Abandoned Checkout` generated $9,246 from 1,187 recipients with a 3.11% conversion rate, comfortably above the 2–6% benchmark for high-intent recovery flows.'",
+    "Example strength: '`flow:Browse Abandonment` has an 83.6% open rate (benchmark 25–45%, likely inflated by Apple MPP) and $5,034 in revenue.'",
+    "",
+    "STRENGTHS: Return 3-6 items in the strengths array.",
+    "These appear as the 'What's Working' block on the client report (after Account Snapshot, before Key Findings).",
+    "Each item is a single sentence with a bold lead phrase followed by supporting detail.",
+    "Format: '**Bold claim**, specific evidence from the data.'",
+    "Example strengths: '**Abandoned Cart/Checkout flows** drive 57.5% of all flow revenue ($41,858), which is a strong foundation to build on', '`flow:Browse Abandonment` has an 83.6% open rate (benchmark 25–45%) and $5,034 in revenue, performing well on engagement'.",
+    "Be specific: use actual flow names (via entity tags), dollar amounts, percentages, and recipient counts from the data.",
+    "Do NOT be generic. Every bullet must reference concrete data from this specific Klaviyo account.",
+    "Use **bold** for category labels and metrics. Use entity tags for specific Klaviyo asset names.",
+    "Every paragraph should include 2-4 tagged entity names or bold metrics so the report is easy to scan.",
+    "",
+    "FINDINGS: Return exactly 5 strings in the findings array.",
+    "These are the numbered problem statements shown last in the Executive Summary (after Account Snapshot and What's Working).",
     "Each finding is a specific gap or issue with a bold lead phrase and supporting evidence from the data.",
     "Format: '**Bold problem**, specific evidence from the account.' Tag any flow/campaign/segment/form names with entity tags.",
     "Each finding MUST be one complete sentence. NEVER split a single finding across multiple array items.",
@@ -107,19 +125,10 @@ export function buildAuditSystemPrompt() {
     "NEVER include dollar amounts, monthly revenue figures, 'unlock $X', or revenue opportunity language in findings.",
     "Example findings: '**No active post-purchase flow**, which means repeat purchase revenue is not being captured after the first order', '**45 draft flows sitting idle**, including flows that previously generated revenue'.",
     "",
-    "STRENGTHS: Return 3-6 items in the strengths array.",
-    "Each item is a single sentence with a bold lead phrase followed by supporting detail.",
-    "Format: '**Bold claim**, specific evidence from the data.'",
-    "Example strengths: '**Abandoned Cart/Checkout flows** drive 57.5% of all flow revenue ($41,858), which is a strong foundation to build on', '`flow:Browse Abandonment` has a solid 83.6% open rate and $5,034 in revenue, performing well against benchmarks'.",
-    "Be specific: use actual flow names (via entity tags), dollar amounts, percentages, and recipient counts from the data.",
-    "Do NOT be generic. Every bullet must reference concrete data from this specific Klaviyo account.",
-    "Use **bold** for category labels and metrics. Use entity tags for specific Klaviyo asset names.",
-    "Every paragraph should include 2-4 tagged entity names or bold metrics so the report is easy to scan.",
-    "",
     "SECTION summary_text — KEY TAKEAWAY:",
     "Each section's summary_text is displayed as a 'Key Takeaway' on the client report. Keep it to 2-4 sentences MAX — punchy and scannable.",
     "Tag flow, segment, form, and campaign names with entity tags (e.g., `flow:Abandoned Cart`, `segment:Engaged Subscribers`, `form:Popup`).",
-    "Bold key dollar amounts and percentages.",
+    "Bold key dollar amounts and percentages. When citing a percentage, always include the benchmark range and health assessment.",
     "",
     "IMPLEMENTATION TIMELINE: Return exactly 4 phases based on the audit findings.",
     "Phase 1 (Week 1-2, 'Quick Wins'): low-effort high-impact fixes found in the data (e.g., activating draft flows, fixing broken forms).",
@@ -218,30 +227,26 @@ function summarizeLists(lists: KlaviyoContext["lists"]): string {
   return `Total lists: ${lists.length}\nList names: ${lists.map(l => l.name).join(", ")}`;
 }
 
-const NON_REVENUE_PATTERNS = [
-  /review\s*request/i, /review\s*follow/i, /feedback/i, /survey/i, /nps/i,
-  /sunset/i, /list\s*clean/i,
-  /order\s*confirm/i, /order\s*notif/i,
-  /shipping/i, /delivery/i, /fulfillment/i, /transactional/i,
-  /password\s*reset/i, /account\s*confirm/i, /double\s*opt/i,
-];
-function isNonRevenueFlow(name: string): boolean {
-  return NON_REVENUE_PATTERNS.some(p => p.test(name));
-}
 
 function summarizeFlowPerformance(perf: KlaviyoContext["flowPerformance"]): string {
   if (!perf?.length) return "No flow performance data available (metrics scope may be missing).";
   const lines = [`Flow performance data (last 30 days) for ${perf.length} flows:`];
   for (const fp of perf.slice(0, 20)) {
-    const nonRev = isNonRevenueFlow(fp.flow_name);
-    const tag = nonRev ? "[NON-REVENUE/engagement-only]" : "[REVENUE]";
-    const parts = [`${fp.flow_name} ${tag} (${fp.flow_status})`];
+    const b = getFlowBenchmarks(fp.flow_name);
+    const tag = b.tier === "non_revenue" ? "[NON-REVENUE/engagement-only]" : "[REVENUE]";
+    const parts = [`${fp.flow_name} ${tag} (${fp.flow_status}, ${b.tierLabel})`];
     if (fp.email_message_count != null) parts.push(`emails_in_sequence: ${fp.email_message_count}`);
     if (fp.recipients_per_month) parts.push(`recipients: ${fp.recipients_per_month}`);
-    if (fp.actual_open_rate != null) parts.push(`open: ${(fp.actual_open_rate * 100).toFixed(1)}%`);
-    if (fp.actual_click_rate != null) parts.push(`click: ${(fp.actual_click_rate * 100).toFixed(1)}%`);
-    if (!nonRev && fp.actual_conv_rate != null) parts.push(`conv: ${(fp.actual_conv_rate * 100).toFixed(1)}%`);
-    if (!nonRev && fp.monthly_revenue_current) parts.push(`revenue: $${fp.monthly_revenue_current.toFixed(0)}`);
+    if (fp.actual_open_rate != null) {
+      parts.push(`open: ${(fp.actual_open_rate * 100).toFixed(1)}% (benchmark ${formatBenchmarkRange(b.openRateLow, b.openRateHigh)})`);
+    }
+    if (fp.actual_click_rate != null) {
+      parts.push(`click: ${(fp.actual_click_rate * 100).toFixed(1)}% (benchmark ${formatBenchmarkRange(b.clickRateLow, b.clickRateHigh)})`);
+    }
+    if (b.convApplicable && fp.actual_conv_rate != null) {
+      parts.push(`conv: ${(fp.actual_conv_rate * 100).toFixed(2)}% (benchmark ${formatBenchmarkRange(b.convRateLow, b.convRateHigh)})`);
+    }
+    if (b.convApplicable && fp.monthly_revenue_current) parts.push(`revenue: $${fp.monthly_revenue_current.toFixed(0)}`);
     lines.push(`  - ${parts.join(", ")}`);
   }
   return lines.join("\n");
@@ -351,6 +356,7 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
       sells_subscriptions: Boolean(data.clientSellsSubscriptions),
     },
     klaviyo_data: klaviyoSection,
+    benchmark_reference: buildBenchmarkReferenceBlock(),
     required_sections: mode === "top_level_only" ? [] : requested,
     style: {
       audience: "ecommerce founder/marketing lead",
@@ -395,8 +401,8 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
 
   if (mode !== "sections_only") {
     payload.required_top_level_fields = {
-      findings: "Array of exactly 5 strings. Each is a problem statement ranked by impact. Bold lead phrase plus evidence. No dollar amounts or revenue language.",
-      strengths: "Array of 3-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages. Write naturally, no em-dashes, use commas and plain language.",
+      strengths: "Array of 3-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages WITH benchmark ranges and health assessment. Write naturally, no em-dashes, use commas and plain language.",
+      findings: "Array of exactly 5 strings. Each is a problem statement ranked by impact. Bold lead phrase plus evidence. When citing percentages, include benchmark range. No dollar amounts or revenue language.",
       implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
     };
   }

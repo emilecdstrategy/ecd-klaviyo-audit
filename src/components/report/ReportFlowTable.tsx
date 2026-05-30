@@ -1,53 +1,69 @@
 import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
 import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
+import {
+  classifyRate,
+  formatBenchmarkRange,
+  formatHealthyLabel,
+  formatPctDecimal,
+  getFlowBenchmarks,
+  OPEN_RATE_BENCHMARK,
+  CLICK_RATE_BENCHMARK,
+  RECOVERY_CONV_BENCHMARK,
+  STANDARD_CONV_BENCHMARK,
+  type MetricStatus,
+} from '../../lib/benchmarks';
 import { useRef, useState, useLayoutEffect, useCallback, type MouseEvent } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 const DEFAULT_VISIBLE_FLOWS = 2;
 
-export type MetricStatus = 'good' | 'warning' | 'bad' | 'missing';
-
-function metricStatus(actual: number | null, low: number, _high: number): MetricStatus {
-  if (actual === null) return 'missing';
-  if (actual >= low) return 'good';
-  if (actual >= low * 0.7) return 'warning';
-  return 'bad';
-}
+export type { MetricStatus };
 
 function overallRating(flow: FlowPerformance): MetricStatus {
-  const nonRevenue = isNonRevenueFlow(flow.flow_name);
+  const b = getFlowBenchmarks(flow.flow_name);
   const scores = [
-    metricStatus(flow.actual_open_rate, flow.benchmark_open_rate_low, flow.benchmark_open_rate_high),
-    metricStatus(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high),
-    ...(nonRevenue ? [] : [metricStatus(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high)]),
+    classifyRate(flow.actual_open_rate, b.openRateLow, b.openRateHigh),
+    classifyRate(flow.actual_click_rate, b.clickRateLow, b.clickRateHigh),
+    ...(b.convApplicable ? [classifyRate(flow.actual_conv_rate, b.convRateLow, b.convRateHigh)] : []),
   ];
   const bad = scores.filter(s => s === 'bad').length;
   const good = scores.filter(s => s === 'good').length;
   if (bad >= 2) return 'bad';
   if (good >= 2) return 'good';
-  if (nonRevenue && good >= 1) return 'good';
+  if (!b.convApplicable && good >= 1) return 'good';
   return 'warning';
 }
 
 function buildAssessment(flow: FlowPerformance): string {
-  const nonRevenue = isNonRevenueFlow(flow.flow_name);
+  const b = getFlowBenchmarks(flow.flow_name);
   const parts: string[] = [];
-  const openStatus = metricStatus(flow.actual_open_rate, flow.benchmark_open_rate_low, flow.benchmark_open_rate_high);
-  const clickStatus = metricStatus(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high);
+  const openStatus = classifyRate(flow.actual_open_rate, b.openRateLow, b.openRateHigh);
+  const clickStatus = classifyRate(flow.actual_click_rate, b.clickRateLow, b.clickRateHigh);
 
-  if (openStatus === 'bad' && flow.actual_open_rate !== null) {
-    parts.push(`Open rate ${(flow.actual_open_rate * 100).toFixed(1)}% below ${(flow.benchmark_open_rate_low * 100).toFixed(0)}-${(flow.benchmark_open_rate_high * 100).toFixed(0)}% benchmark`);
-  }
-  if (clickStatus === 'bad' && flow.actual_click_rate !== null) {
-    parts.push(`Click ${(flow.actual_click_rate * 100).toFixed(1)}% vs. ${(flow.benchmark_click_rate_low * 100).toFixed(0)}-${(flow.benchmark_click_rate_high * 100).toFixed(0)}% benchmark`);
-  }
-
-  if (!nonRevenue) {
-    const convStatus = metricStatus(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high);
-    if (convStatus === 'bad' && flow.actual_conv_rate !== null) {
-      parts.push(`Conv ${(flow.actual_conv_rate * 100).toFixed(2)}% vs. ${(flow.benchmark_conv_rate_low * 100).toFixed(1)}-${(flow.benchmark_conv_rate_high * 100).toFixed(0)}% benchmark`);
+  const describeMetric = (
+    label: string,
+    actual: number | null,
+    low: number,
+    high: number,
+    status: MetricStatus,
+  ) => {
+    if (actual === null) return;
+    const actualStr = formatPctDecimal(actual);
+    const rangeStr = formatBenchmarkRange(low, high);
+    if (status === 'good') {
+      parts.push(`${label} ${actualStr} (${formatHealthyLabel(status)} vs ${rangeStr})`);
+    } else if (status === 'warning' || status === 'bad') {
+      parts.push(`${label} ${actualStr} below ${rangeStr} benchmark`);
     }
+  };
+
+  describeMetric('Open', flow.actual_open_rate, b.openRateLow, b.openRateHigh, openStatus);
+  describeMetric('Click', flow.actual_click_rate, b.clickRateLow, b.clickRateHigh, clickStatus);
+
+  if (b.convApplicable) {
+    const convStatus = classifyRate(flow.actual_conv_rate, b.convRateLow, b.convRateHigh);
+    describeMetric('Conv', flow.actual_conv_rate, b.convRateLow, b.convRateHigh, convStatus);
 
     const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
     if (flow.recipients_per_month > 50_000 && rpr < 0.02) {
@@ -56,9 +72,11 @@ function buildAssessment(flow: FlowPerformance): string {
   }
 
   if (parts.length === 0) {
-    if (nonRevenue) return 'Non-revenue flow. Engagement metrics look healthy.';
+    if (!b.convApplicable) return 'Non-revenue flow. Engagement metrics look healthy.';
     const rating = overallRating(flow);
-    if (rating === 'good') return 'Performing well relative to benchmarks.';
+    if (rating === 'good') {
+      return `Performing within healthy ranges for a ${b.tierLabel} (open ${formatBenchmarkRange(b.openRateLow, b.openRateHigh)}, click ${formatBenchmarkRange(b.clickRateLow, b.clickRateHigh)}, conv ${formatBenchmarkRange(b.convRateLow, b.convRateHigh)}).`;
+    }
     return 'Moderate performance, room for improvement.';
   }
 
@@ -87,7 +105,7 @@ function FlowStatusBadge({ status }: { status: FlowPerformance['flow_status'] })
 }
 
 function pctCell(actual: number | null, low: number, high: number) {
-  const status = metricStatus(actual, low, high);
+  const status = classifyRate(actual, low, high);
   const colorMap: Record<MetricStatus, string> = {
     good: 'text-emerald-700',
     warning: 'text-amber-600',
@@ -95,9 +113,16 @@ function pctCell(actual: number | null, low: number, high: number) {
     missing: 'text-gray-300',
   };
   return (
-    <span className={`text-sm font-semibold tabular-nums ${colorMap[status]}`}>
-      {actual !== null ? `${(actual * 100).toFixed(actual < 0.01 ? 2 : 1)}%` : '—'}
-    </span>
+    <div className="flex flex-col items-center gap-0.5">
+      <span className={`text-sm font-semibold tabular-nums ${colorMap[status]}`}>
+        {actual !== null ? formatPctDecimal(actual) : '—'}
+      </span>
+      {low > 0 || high > 0 ? (
+        <span className="text-[10px] leading-tight text-gray-400 tabular-nums">
+          vs {formatBenchmarkRange(low, high)}
+        </span>
+      ) : null}
+    </div>
   );
 }
 
@@ -195,7 +220,14 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
 
   return (
     <div>
-      <p className="text-sm text-gray-500 mb-4">{subtitle}</p>
+      <p className="text-sm text-gray-500 mb-2">{subtitle}</p>
+      <p className="text-xs text-gray-400 mb-4">
+        Percentages shown against ECD Klaviyo healthy benchmark ranges — open{' '}
+        {formatBenchmarkRange(OPEN_RATE_BENCHMARK.low, OPEN_RATE_BENCHMARK.high)}, click{' '}
+        {formatBenchmarkRange(CLICK_RATE_BENCHMARK.low, CLICK_RATE_BENCHMARK.high)}, conversion{' '}
+        {formatBenchmarkRange(RECOVERY_CONV_BENCHMARK.low, RECOVERY_CONV_BENCHMARK.high)} (recovery) or{' '}
+        {formatBenchmarkRange(STANDARD_CONV_BENCHMARK.low, STANDARD_CONV_BENCHMARK.high)} (other revenue flows).
+      </p>
       <div className="rounded-xl card-shadow overflow-hidden border border-gray-100 bg-white">
         <div
           ref={scrollRef}
@@ -235,6 +267,7 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
                 const assessment = flow.display_assessment ?? buildAssessment(flow);
                 const displayName = flow.display_name ?? flow.flow_name;
                 const nonRevenue = isNonRevenueFlow(flow.flow_name);
+                const flowBenchmarks = getFlowBenchmarks(flow.flow_name);
 
                 return (
                   <tr
@@ -262,15 +295,15 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
                       {actionCount ?? '—'}
                     </td>
                     <td className="px-4 py-4 text-center">
-                      {pctCell(flow.actual_open_rate, flow.benchmark_open_rate_low, flow.benchmark_open_rate_high)}
+                      {pctCell(flow.actual_open_rate, flowBenchmarks.openRateLow, flowBenchmarks.openRateHigh)}
                     </td>
                     <td className="px-4 py-4 text-center">
-                      {pctCell(flow.actual_click_rate, flow.benchmark_click_rate_low, flow.benchmark_click_rate_high)}
+                      {pctCell(flow.actual_click_rate, flowBenchmarks.clickRateLow, flowBenchmarks.clickRateHigh)}
                     </td>
                     <td className="px-4 py-4 text-center">
                       {nonRevenue
                         ? <span className="text-sm text-gray-300">N/A</span>
-                        : pctCell(flow.actual_conv_rate, flow.benchmark_conv_rate_low, flow.benchmark_conv_rate_high)}
+                        : pctCell(flow.actual_conv_rate, flowBenchmarks.convRateLow, flowBenchmarks.convRateHigh)}
                     </td>
                     <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-900">
                       {nonRevenue

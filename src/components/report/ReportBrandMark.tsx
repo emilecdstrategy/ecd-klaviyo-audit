@@ -25,11 +25,11 @@ export default function ReportBrandMark({
         alt="ECD Digital Strategy"
         className={cn(s.img, 'rounded-lg object-cover shadow-sm ring-1', inverted ? 'ring-white/20' : 'ring-black/5')}
       />
-      <div>
+      <div className="flex flex-col gap-1">
         <span className={cn(s.title, 'font-bold leading-tight block', inverted ? 'text-white' : 'text-gray-900')}>
           ECD Digital Strategy
         </span>
-        <span className={cn(s.subtitle, 'block -mt-0.5 leading-none', inverted ? 'text-white/70' : 'text-gray-500')}>
+        <span className={cn(s.subtitle, 'block leading-snug', inverted ? 'text-white/70' : 'text-gray-500')}>
           {subtitle}
         </span>
       </div>

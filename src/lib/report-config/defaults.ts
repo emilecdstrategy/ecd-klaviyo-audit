@@ -19,21 +19,11 @@ import type {
  * column header), so this registry intentionally covers only overridable copy.
  */
 
-export const DEFAULT_FLOWS_VISIBLE_ROWS = 2;
+import { DEFAULT_FLOWS_HEALTH_BENCHMARKS } from '../benchmarks';
 
-export const DEFAULT_FLOWS_HEALTH_BENCHMARKS = {
-  openRateLow: 0.30,
-  openRateHigh: 0.45,
-  clickRateLow: 0.05,
-  clickRateHigh: 0.10,
-  revenueTiers: [
-    { min: 500_000, label: 'Strong' },
-    { min: 300_000, label: 'Good' },
-    { min: 200_000, label: 'Moderate' },
-    { min: 100_000, label: 'Needs work' },
-    { min: 50_000, label: 'Starter' },
-  ],
-} as const;
+export { DEFAULT_FLOWS_HEALTH_BENCHMARKS };
+
+export const DEFAULT_FLOWS_VISIBLE_ROWS = 2;
 
 export const DEFAULT_FLOWS_SECTION: FlowsSectionConfig = {
   hidden: false,
@@ -250,11 +240,6 @@ export const DEFAULT_EXECUTIVE_SUMMARY_SECTION: ExecutiveSummarySectionConfig = 
       intro: undefined,
       eyebrow: undefined,
     },
-    findings: {
-      hidden: false,
-      title: 'Key Findings',
-      subtitle: undefined,
-    },
     accountSnapshot: {
       hidden: false,
       title: 'Account Snapshot',
@@ -265,5 +250,13 @@ export const DEFAULT_EXECUTIVE_SUMMARY_SECTION: ExecutiveSummarySectionConfig = 
       title: "What's Working",
       subtitle: undefined,
     },
+    findings: {
+      hidden: false,
+      title: 'Key Findings',
+      subtitle: undefined,
+    },
   },
 };
+
+/** Display order for executive summary blocks (Account Snapshot → What's Working → Key Findings). */
+export const EXECUTIVE_SUMMARY_BLOCK_ORDER = ['accountSnapshot', 'strengths', 'findings'] as const;

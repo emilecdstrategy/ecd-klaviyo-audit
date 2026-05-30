@@ -65,7 +65,7 @@ const SECTION_ITEM_SCHEMA = {
     current_state_notes: { type: "string", minLength: 40, maxLength: 3000 },
     optimized_notes: { type: "string", minLength: 40, maxLength: 3000 },
     ai_findings: { type: "string", minLength: 40, maxLength: 3000 },
-    summary_text: { type: "string", minLength: 40, maxLength: 500 },
+    summary_text: { type: "string", minLength: 40, maxLength: 650 },
     revenue_opportunity: { type: "number", minimum: 0, maximum: 25000 },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
     section_details: {
@@ -167,21 +167,21 @@ const SECTION_ITEM_SCHEMA = {
 export const AI_OUTPUT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["schemaVersion", "executiveSummary", "findings", "strengths", "implementationTimeline", "sections"],
+  required: ["schemaVersion", "executiveSummary", "strengths", "findings", "implementationTimeline", "sections"],
   properties: {
     schemaVersion: { type: "string" },
     executiveSummary: { type: "string", minLength: 80, maxLength: 4000 },
-    findings: {
-      type: "array",
-      minItems: 5,
-      maxItems: 5,
-      items: { type: "string", minLength: 20, maxLength: 600 },
-    },
     strengths: {
       type: "array",
       minItems: 3,
       maxItems: 7,
-      items: { type: "string", minLength: 20, maxLength: 300 },
+      items: { type: "string", minLength: 20, maxLength: 400 },
+    },
+    findings: {
+      type: "array",
+      minItems: 5,
+      maxItems: 5,
+      items: { type: "string", minLength: 20, maxLength: 700 },
     },
     implementationTimeline: {
       type: "array",
@@ -216,21 +216,21 @@ export const AI_SECTIONS_ONLY_SCHEMA = {
 export const AI_TOP_LEVEL_ONLY_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["schemaVersion", "executiveSummary", "findings", "strengths", "implementationTimeline"],
+  required: ["schemaVersion", "executiveSummary", "strengths", "findings", "implementationTimeline"],
   properties: {
     schemaVersion: { type: "string" },
     executiveSummary: { type: "string", minLength: 80, maxLength: 4000 },
-    findings: {
-      type: "array",
-      minItems: 5,
-      maxItems: 5,
-      items: { type: "string", minLength: 20, maxLength: 600 },
-    },
     strengths: {
       type: "array",
       minItems: 3,
       maxItems: 7,
-      items: { type: "string", minLength: 20, maxLength: 300 },
+      items: { type: "string", minLength: 20, maxLength: 400 },
+    },
+    findings: {
+      type: "array",
+      minItems: 5,
+      maxItems: 5,
+      items: { type: "string", minLength: 20, maxLength: 700 },
     },
     implementationTimeline: {
       type: "array",

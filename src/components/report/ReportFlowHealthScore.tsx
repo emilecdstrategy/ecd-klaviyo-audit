@@ -2,6 +2,14 @@ import type { ReactNode } from 'react';
 import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
 import { isNonRevenueFlow } from '../../lib/revenue-calculator';
 import type { FlowsHealthBenchmarks } from '../../lib/report-config/types';
+import {
+  ACCOUNT_CONV_BENCHMARK,
+  classifyRate,
+  DEFAULT_FLOWS_HEALTH_BENCHMARKS,
+  formatBenchmarkRange,
+  formatHealthyLabel,
+  formatPctDecimal,
+} from '../../lib/benchmarks';
 
 interface Props {
   snapshots: KlaviyoFlowSnapshot[];
@@ -33,17 +41,8 @@ function flowNameMatchesAny(name: string, patterns: string[]): boolean {
 }
 
 const DEFAULT_BENCHMARKS: Required<FlowsHealthBenchmarks> = {
-  openRateLow: 0.30,
-  openRateHigh: 0.45,
-  clickRateLow: 0.05,
-  clickRateHigh: 0.10,
-  revenueTiers: [
-    { min: 500_000, label: 'Strong' },
-    { min: 300_000, label: 'Good' },
-    { min: 200_000, label: 'Moderate' },
-    { min: 100_000, label: 'Needs work' },
-    { min: 50_000, label: 'Starter' },
-  ],
+  ...DEFAULT_FLOWS_HEALTH_BENCHMARKS,
+  revenueTiers: [...DEFAULT_FLOWS_HEALTH_BENCHMARKS.revenueTiers],
 };
 
 function resolveBenchmarks(overrides?: FlowsHealthBenchmarks): Required<FlowsHealthBenchmarks> {
@@ -116,16 +115,16 @@ function computeCategories(
 
   // Conversion Rates (0-10)
   let convScore = 0;
-  if (weightedConv >= 0.05) convScore = 10;
-  else if (weightedConv >= 0.03) convScore = 7;
-  else if (weightedConv >= 0.02) convScore = 5;
-  else if (weightedConv >= 0.01) convScore = 3;
-  else if (weightedConv >= 0.005) convScore = 2;
+  if (weightedConv >= ACCOUNT_CONV_BENCHMARK.high * 1.5) convScore = 10;
+  else if (weightedConv >= ACCOUNT_CONV_BENCHMARK.high) convScore = 7;
+  else if (weightedConv >= ACCOUNT_CONV_BENCHMARK.low) convScore = 5;
+  else if (weightedConv >= ACCOUNT_CONV_BENCHMARK.low * 0.7) convScore = 3;
   else convScore = 1;
+  const convStatus = classifyRate(weightedConv, ACCOUNT_CONV_BENCHMARK.low, ACCOUNT_CONV_BENCHMARK.high);
   categories.push({
     name: 'Conversion Rates',
     score: convScore, maxScore: 10,
-    assessment: `${(weightedConv * 100).toFixed(2)}% overall vs. 2-5% benchmark`,
+    assessment: `${formatPctDecimal(weightedConv)} overall vs. ${formatBenchmarkRange(ACCOUNT_CONV_BENCHMARK.low, ACCOUNT_CONV_BENCHMARK.high)} benchmark (${formatHealthyLabel(convStatus)})`,
   });
 
   const clickLow = benchmarks.clickRateLow;
@@ -136,10 +135,11 @@ function computeCategories(
   else if (weightedClick >= clickLow) clickScore = 5;
   else if (weightedClick >= clickLow / 2) clickScore = 3;
   else clickScore = 1;
+  const clickStatus = classifyRate(weightedClick, clickLow, clickHigh);
   categories.push({
     name: 'Click-Through Rates',
     score: clickScore, maxScore: 10,
-    assessment: `${(weightedClick * 100).toFixed(1)}% avg vs. ${(clickLow * 100).toFixed(0)}-${(clickHigh * 100).toFixed(0)}% benchmark`,
+    assessment: `${formatPctDecimal(weightedClick)} avg vs. ${formatBenchmarkRange(clickLow, clickHigh)} benchmark (${formatHealthyLabel(clickStatus)})`,
   });
 
   const openLow = benchmarks.openRateLow;
@@ -151,12 +151,13 @@ function computeCategories(
   else if (weightedOpen >= openLow - 0.10) openScore = 4;
   else openScore = 2;
   if (weightedOpen >= openHigh) openScore = Math.min(10, openScore);
+  const openStatus = classifyRate(weightedOpen, openLow, openHigh);
   categories.push({
     name: 'Open Rates',
     score: openScore, maxScore: 10,
     assessment: weightedOpen >= openHigh
-      ? 'Decent but likely inflated by Apple MPP'
-      : `${(weightedOpen * 100).toFixed(1)}% avg, room for improvement`,
+      ? `${formatPctDecimal(weightedOpen)} avg vs. ${formatBenchmarkRange(openLow, openHigh)} — likely inflated by Apple MPP`
+      : `${formatPctDecimal(weightedOpen)} avg vs. ${formatBenchmarkRange(openLow, openHigh)} benchmark (${formatHealthyLabel(openStatus)})`,
   });
 
   // Flow Hygiene (0-10)

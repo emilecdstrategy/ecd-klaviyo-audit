@@ -511,16 +511,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             onSaveLabel={v => updateLayoutTitle('executive_summary', 'sectionTitle', v)}
           />
 
-          {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'findings') || editMode) && (
-            <ReportKeyFindings
-              title={executiveSummaryCfg.blocks.findings?.title ?? 'Key Findings'}
-              subtitle={executiveSummaryCfg.blocks.findings?.subtitle}
-              findings={aiFindings}
-              findingsHidden={findingsHidden}
-              blockHidden={executiveSummaryCfg.blocks.findings?.hidden === true}
-            />
-          )}
-
           {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'accountSnapshot') || editMode) &&
             (flowSnapshots.length > 0 || campaignSnapshots.length > 0 || editMode) && (
               <ReportBlockEditChrome
@@ -571,6 +561,16 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               strengths={aiStrengths.length > 0 ? aiStrengths : ['', '', '']}
               strengthsHidden={strengthsHidden}
               blockHidden={executiveSummaryCfg.blocks.strengths?.hidden === true}
+            />
+          )}
+
+          {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'findings') || editMode) && (
+            <ReportKeyFindings
+              title={executiveSummaryCfg.blocks.findings?.title ?? 'Key Findings'}
+              subtitle={executiveSummaryCfg.blocks.findings?.subtitle}
+              findings={aiFindings}
+              findingsHidden={findingsHidden}
+              blockHidden={executiveSummaryCfg.blocks.findings?.hidden === true}
             />
           )}
 

@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization } from "../_shared/auth.ts";
+import { getFlowBenchmarks } from "../_shared/benchmarks.ts";
 
 // Stage machine: each stage runs in its own edge invocation with a fresh ~150s
 // budget. `config` is the entry point the frontend calls; subsequent stages
@@ -1413,15 +1414,6 @@ async function runStageReporting(params: {
         if (mid) flowAgg[gid].messageIds.add(mid);
       }
 
-      const NON_REVENUE_PATTERNS = [
-        /review\s*request/i, /review\s*follow/i, /feedback/i, /survey/i, /nps/i,
-        /sunset/i, /list\s*clean/i,
-        /order\s*confirm/i, /order\s*notif/i,
-        /shipping/i, /delivery/i, /fulfillment/i, /transactional/i,
-        /password\s*reset/i, /account\s*confirm/i, /double\s*opt/i,
-      ];
-      const isNonRevenueFlow = (name: string) => NON_REVENUE_PATTERNS.some((p) => p.test(name));
-
       const flowPerfRows = Object.entries(flowAgg).map(([flowId, a]) => {
         const denom = Math.max(1, a.recipients);
         const actual_open = a.open / denom;
@@ -1433,7 +1425,8 @@ async function runStageReporting(params: {
         const flowStatus = ((flowMeta?.status ?? "live") as string).toLowerCase();
         const mappedStatus =
           flowStatus.includes("draft") ? "draft" : flowStatus.includes("paused") ? "paused" : "live";
-        const nonRevenue = isNonRevenueFlow(flowName);
+        const flowBenchmarks = getFlowBenchmarks(flowName);
+        const nonRevenue = flowBenchmarks.tier === "non_revenue";
         const targetRpr = actual_rpr * 1.15;
         const opportunity = nonRevenue ? 0 : Math.max(0, (targetRpr - actual_rpr) * a.recipients);
         return {
@@ -1443,14 +1436,14 @@ async function runStageReporting(params: {
           priority: "medium",
           recipients_per_month: Math.round(a.recipients),
           actual_open_rate: actual_open,
-          benchmark_open_rate_low: 0.25,
-          benchmark_open_rate_high: 0.45,
+          benchmark_open_rate_low: flowBenchmarks.openRateLow,
+          benchmark_open_rate_high: flowBenchmarks.openRateHigh,
           actual_click_rate: actual_click,
-          benchmark_click_rate_low: 0.01,
-          benchmark_click_rate_high: 0.05,
+          benchmark_click_rate_low: flowBenchmarks.clickRateLow,
+          benchmark_click_rate_high: flowBenchmarks.clickRateHigh,
           actual_conv_rate: actual_conv,
-          benchmark_conv_rate_low: nonRevenue ? 0 : 0.001,
-          benchmark_conv_rate_high: nonRevenue ? 0 : 0.02,
+          benchmark_conv_rate_low: flowBenchmarks.convRateLow,
+          benchmark_conv_rate_high: flowBenchmarks.convRateHigh,
           monthly_revenue_current: a.value,
           monthly_revenue_opportunity: opportunity,
           email_message_count: a.messageIds.size || null,

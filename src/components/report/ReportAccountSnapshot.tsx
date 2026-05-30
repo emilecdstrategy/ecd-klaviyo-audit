@@ -16,6 +16,16 @@ import {
 } from 'lucide-react';
 import type { FlowPerformance, KlaviyoCampaignSnapshot, KlaviyoFlowSnapshot } from '../../lib/types';
 import { CAMPAIGN_SNAPSHOT_CAP, campaignTotalSubtext, formatCampaignTotalDisplay } from '../../lib/campaign-count';
+import {
+  ACCOUNT_CONV_BENCHMARK,
+  BOUNCE_BENCHMARK,
+  classifyDeliverabilityRate,
+  classifyRate,
+  formatBenchmarkRange,
+  formatHealthyLabel,
+  formatPctDecimal,
+  SPAM_BENCHMARK,
+} from '../../lib/benchmarks';
 
 function normalizeReportingDiagnostic(raw?: string | null) {
   const msg = (raw ?? '').trim();
@@ -32,16 +42,13 @@ function normalizeReportingDiagnostic(raw?: string | null) {
 
 function formatPct(n: number | null) {
   if (n == null || Number.isNaN(n)) return '—';
-  return `${(n * 100).toFixed(n < 0.01 ? 2 : 1)}%`;
+  return formatPctDecimal(n);
 }
 
 /** Spam/bounce rates can be tiny; show extra precision when above zero but under 0.01%. */
 function formatRatePct(n: number | null) {
   if (n == null || Number.isNaN(n)) return '—';
-  const pct = n * 100;
-  if (pct <= 0) return '0.00%';
-  if (pct < 0.01) return `${pct.toFixed(3)}%`;
-  return `${pct.toFixed(pct < 1 ? 2 : 1)}%`;
+  return formatPctDecimal(n, { extraPrecisionBelow: 0.01 });
 }
 
 function formatInt(n: number | null) {
@@ -155,6 +162,22 @@ export default function ReportAccountSnapshot({
 
   const perfUnavailableReason = normalizeReportingDiagnostic(reportingDiagnostic) || 'not enough reporting data available';
   const { recentSent, perWeek } = calcWeeklySendFrequency(campaignSnapshots);
+  const bounceStatus = classifyDeliverabilityRate(
+    accountSnapshot?.bounce_rate_90d ?? null,
+    BOUNCE_BENCHMARK.healthyMax,
+    BOUNCE_BENCHMARK.warningMax,
+  );
+  const spamStatus = classifyDeliverabilityRate(
+    accountSnapshot?.spam_rate_90d ?? null,
+    SPAM_BENCHMARK.healthyMax,
+    SPAM_BENCHMARK.warningMax,
+  );
+  const convStatus = classifyRate(
+    weightedConv,
+    ACCOUNT_CONV_BENCHMARK.low,
+    ACCOUNT_CONV_BENCHMARK.high,
+  );
+  const convBenchmarkLabel = formatBenchmarkRange(ACCOUNT_CONV_BENCHMARK.low, ACCOUNT_CONV_BENCHMARK.high);
 
   return (
     <div>
@@ -233,7 +256,10 @@ export default function ReportAccountSnapshot({
           value={accountSnapshot?.bounce_rate_90d != null ? formatRatePct(accountSnapshot.bounce_rate_90d) : 'N/A'}
           sub={
             accountSnapshot?.bounce_rate_90d != null
-              ? `${accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30' : 'last 90'} days · email campaigns (weighted by recipients)`
+              ? [
+                  `${accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30' : 'last 90'} days · email campaigns (weighted by recipients)`,
+                  `${BOUNCE_BENCHMARK.label} · ${formatHealthyLabel(bounceStatus)}`,
+                ].join(' · ')
               : 'not enough campaign data available'
           }
         />
@@ -243,7 +269,10 @@ export default function ReportAccountSnapshot({
           value={accountSnapshot?.spam_rate_90d != null ? formatRatePct(accountSnapshot.spam_rate_90d) : 'N/A'}
           sub={
             accountSnapshot?.spam_rate_90d != null
-              ? `${accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30' : 'last 90'} days · email campaigns (weighted by recipients)`
+              ? [
+                  `${accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30' : 'last 90'} days · email campaigns (weighted by recipients)`,
+                  `${SPAM_BENCHMARK.label} · ${formatHealthyLabel(spamStatus)}`,
+                ].join(' · ')
               : 'not enough campaign data available'
           }
         />
@@ -251,7 +280,11 @@ export default function ReportAccountSnapshot({
           icon={TrendingUp}
           label="Flow Conv. Rate"
           value={hasPerf && weightedConv != null ? formatPct(weightedConv) : 'N/A'}
-          sub={hasPerf ? 'weighted average (flows)' : perfUnavailableReason}
+          sub={
+            hasPerf
+              ? `weighted average (flows) · Benchmark ${convBenchmarkLabel} · ${formatHealthyLabel(convStatus)}`
+              : perfUnavailableReason
+          }
         />
         <Card
           icon={DollarSign}
@@ -262,8 +295,10 @@ export default function ReportAccountSnapshot({
       </div>
 
       <BenchmarkCallout title="Benchmark: Healthy account hygiene">
-        A healthy account typically has consistent sending cadence, low complaint/bounce signals, a clear suppression strategy,
-        and a clean engaged/unengaged segmentation framework. This audit will surface hygiene risks once deliverability indicators are available.
+        A healthy account typically has bounce rate {BOUNCE_BENCHMARK.label} (warning 2–5%, concerning above 5%),
+        spam/complaint rate {SPAM_BENCHMARK.label} (warning 0.1–0.3%, concerning above 0.3%),
+        weighted flow conversion {convBenchmarkLabel}, consistent sending cadence, a clear suppression strategy,
+        and a clean engaged/unengaged segmentation framework.
       </BenchmarkCallout>
     </div>
   );
