@@ -18,14 +18,13 @@ function DeliverabilityGauge({
 }) {
   const radius = 54;
   const circumference = 2 * Math.PI * radius;
-  // Reserve a small arc gap so high scores (e.g. 99) still show grey track
-  const maxFill = circumference * 0.96;
-  const dashOffset = circumference - (Math.min(100, Math.max(0, score)) / 100) * maxFill;
+  const clamped = Math.min(100, Math.max(0, score));
+  const dashOffset = circumference - (clamped / 100) * circumference;
 
   return (
     <div className="relative h-36 w-36 shrink-0">
       <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
-        <circle cx="60" cy="60" r={radius} fill="none" stroke="#e5e7eb" strokeWidth="10" />
+        <circle cx="60" cy="60" r={radius} fill="none" stroke="#f3f4f6" strokeWidth="10" />
         <circle
           cx="60"
           cy="60"
