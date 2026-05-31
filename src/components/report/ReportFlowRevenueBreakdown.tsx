@@ -82,26 +82,28 @@ export default function ReportFlowRevenueBreakdown({ performance, title, revenue
           const targetPct = mixTarget != null ? mixTarget * 100 : null;
           const meetsTarget = targetPct != null && pct >= targetPct;
           return (
-            <div key={flow.id} className="grid grid-cols-[minmax(0,26%)_minmax(0,1fr)_auto] items-center gap-x-3">
+            <div key={flow.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3">
               <div
-                className="min-w-0 truncate text-right text-sm font-medium text-gray-700"
+                className="max-w-[11rem] min-w-0 truncate text-right text-sm font-medium text-gray-700"
                 title={flow.flow_name}
               >
                 {flow.flow_name}
               </div>
-              <div className="flex min-w-0 max-w-[42%] items-center gap-2 h-6">
-                <div
-                  className={`${BAR_COLORS[i % BAR_COLORS.length]} rounded-r-md h-full flex items-center min-w-[3px]`}
-                  style={{ width: `${Math.max(barWidth, 3)}%` }}
-                >
-                  {!isShortBar && (
-                    <span className="text-[11px] font-bold text-white px-1.5 whitespace-nowrap">
-                      {formatCurrency(flow.monthly_revenue_current)}
-                    </span>
-                  )}
+              <div className="flex min-w-0 items-center gap-2">
+                <div className="relative h-6 min-w-0 flex-1 overflow-hidden rounded-md bg-gray-100">
+                  <div
+                    className={`absolute inset-y-0 left-0 ${BAR_COLORS[i % BAR_COLORS.length]} flex items-center rounded-r-md`}
+                    style={{ width: `${Math.max(barWidth, flow.monthly_revenue_current > 0 ? 2 : 0)}%` }}
+                  >
+                    {!isShortBar && (
+                      <span className="text-[11px] font-bold text-white px-1.5 whitespace-nowrap">
+                        {formatCurrency(flow.monthly_revenue_current)}
+                      </span>
+                    )}
+                  </div>
                 </div>
                 {isShortBar && (
-                  <span className={`text-[11px] font-bold whitespace-nowrap ${TEXT_COLORS[i % TEXT_COLORS.length]}`}>
+                  <span className={`shrink-0 text-[11px] font-bold whitespace-nowrap ${TEXT_COLORS[i % TEXT_COLORS.length]}`}>
                     {formatCurrency(flow.monthly_revenue_current)}
                   </span>
                 )}
@@ -119,31 +121,33 @@ export default function ReportFlowRevenueBreakdown({ performance, title, revenue
         })}
 
         {rest.length > 0 && (
-          <div className="grid grid-cols-[minmax(0,26%)_minmax(0,1fr)_auto] items-center gap-x-3">
-            <div className="min-w-0 truncate text-right text-sm text-gray-500">
+          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3">
+            <div className="max-w-[11rem] min-w-0 truncate text-right text-sm text-gray-500">
               All Other Flows ({rest.length})
             </div>
-            <div className="flex min-w-0 max-w-[42%] items-center gap-2 h-6">
+            <div className="flex min-w-0 items-center gap-2">
               {(() => {
                 const restBarWidth = (restRevenue / maxRevenue) * 100;
                 const isShortBar = restBarWidth < 28;
                 return (
                   <>
-              <div
-                className="bg-gray-300 rounded-r-md h-full flex items-center"
-                style={{ width: `${Math.max(restBarWidth, 3)}%` }}
-              >
-                {!isShortBar && (
-                  <span className="text-[11px] font-bold text-gray-700 px-1.5 whitespace-nowrap">
-                    {formatCurrency(restRevenue)}
-                  </span>
-                )}
-              </div>
-                  {isShortBar && (
-                    <span className="text-[11px] font-bold text-gray-600 whitespace-nowrap">
-                      {formatCurrency(restRevenue)}
-                    </span>
-                  )}
+                    <div className="relative h-6 min-w-0 flex-1 overflow-hidden rounded-md bg-gray-100">
+                      <div
+                        className="absolute inset-y-0 left-0 flex items-center rounded-r-md bg-gray-300"
+                        style={{ width: `${Math.max(restBarWidth, restRevenue > 0 ? 2 : 0)}%` }}
+                      >
+                        {!isShortBar && (
+                          <span className="text-[11px] font-bold text-gray-700 px-1.5 whitespace-nowrap">
+                            {formatCurrency(restRevenue)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                    {isShortBar && (
+                      <span className="shrink-0 text-[11px] font-bold text-gray-600 whitespace-nowrap">
+                        {formatCurrency(restRevenue)}
+                      </span>
+                    )}
                   </>
                 );
               })()}
