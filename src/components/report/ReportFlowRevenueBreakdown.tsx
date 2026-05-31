@@ -59,6 +59,41 @@ export default function ReportFlowRevenueBreakdown({ performance, title, revenue
   const topRevenue = top.reduce((s, f) => s + f.monthly_revenue_current, 0);
   const maxRevenue = top[0]?.monthly_revenue_current ?? 1;
 
+  const rowGridClass = 'grid grid-cols-[12.5rem_minmax(0,1fr)_10rem] items-center gap-x-3';
+
+  const renderBarTrack = (
+    revenue: number,
+    barWidth: number,
+    colorClass: string,
+    textColorClass: string,
+    labelInsideClass = 'text-white',
+  ) => {
+    const isShortBar = barWidth < 28;
+    const fillWidth = `${Math.max(barWidth, revenue > 0 ? 2 : 0)}%`;
+    return (
+      <div className="relative h-6 w-full overflow-visible rounded-md bg-gray-100">
+        <div
+          className={`absolute inset-y-0 left-0 ${colorClass} flex items-center overflow-hidden rounded-r-md`}
+          style={{ width: fillWidth }}
+        >
+          {!isShortBar && (
+            <span className={`px-1.5 text-[11px] font-bold whitespace-nowrap ${labelInsideClass}`}>
+              {formatCurrency(revenue)}
+            </span>
+          )}
+        </div>
+        {isShortBar && revenue > 0 && (
+          <span
+            className={`absolute top-1/2 -translate-y-1/2 text-[11px] font-bold whitespace-nowrap ${textColorClass}`}
+            style={{ left: `calc(${fillWidth} + 6px)` }}
+          >
+            {formatCurrency(revenue)}
+          </span>
+        )}
+      </div>
+    );
+  };
+
   return (
     <div>
       <h3 className="text-lg font-bold text-gray-900 mb-1">{title ?? 'Revenue Breakdown by Flow'}</h3>
@@ -73,42 +108,28 @@ export default function ReportFlowRevenueBreakdown({ performance, title, revenue
         .
       </p>
 
-      <div className="space-y-2">
+      <div className={`${rowGridClass} gap-y-2`}>
         {top.map((flow, i) => {
           const pct = totalRevenue > 0 ? (flow.monthly_revenue_current / totalRevenue) * 100 : 0;
           const barWidth = maxRevenue > 0 ? (flow.monthly_revenue_current / maxRevenue) * 100 : 0;
-          const isShortBar = barWidth < 28;
           const mixTarget = getFlowRevenueMixTarget(flow.flow_name, benchmarks);
           const targetPct = mixTarget != null ? mixTarget * 100 : null;
           const meetsTarget = targetPct != null && pct >= targetPct;
           return (
-            <div key={flow.id} className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3">
+            <div key={flow.id} className="contents">
               <div
-                className="max-w-[11rem] min-w-0 truncate text-right text-sm font-medium text-gray-700"
+                className="min-w-0 truncate text-right text-sm font-medium text-gray-700"
                 title={flow.flow_name}
               >
                 {flow.flow_name}
               </div>
-              <div className="flex min-w-0 items-center gap-2">
-                <div className="relative h-6 min-w-0 flex-1 overflow-hidden rounded-md bg-gray-100">
-                  <div
-                    className={`absolute inset-y-0 left-0 ${BAR_COLORS[i % BAR_COLORS.length]} flex items-center rounded-r-md`}
-                    style={{ width: `${Math.max(barWidth, flow.monthly_revenue_current > 0 ? 2 : 0)}%` }}
-                  >
-                    {!isShortBar && (
-                      <span className="text-[11px] font-bold text-white px-1.5 whitespace-nowrap">
-                        {formatCurrency(flow.monthly_revenue_current)}
-                      </span>
-                    )}
-                  </div>
-                </div>
-                {isShortBar && (
-                  <span className={`shrink-0 text-[11px] font-bold whitespace-nowrap ${TEXT_COLORS[i % TEXT_COLORS.length]}`}>
-                    {formatCurrency(flow.monthly_revenue_current)}
-                  </span>
-                )}
-              </div>
-              <div className="shrink-0 whitespace-nowrap text-right text-sm tabular-nums">
+              {renderBarTrack(
+                flow.monthly_revenue_current,
+                barWidth,
+                BAR_COLORS[i % BAR_COLORS.length],
+                TEXT_COLORS[i % TEXT_COLORS.length],
+              )}
+              <div className="min-w-0 whitespace-nowrap text-right text-sm tabular-nums">
                 <span className="text-gray-500">{pct.toFixed(1)}%</span>
                 {targetPct != null ? (
                   <span className={`ml-1 text-xs ${meetsTarget ? 'text-emerald-600' : 'text-amber-600'}`}>
@@ -121,41 +142,21 @@ export default function ReportFlowRevenueBreakdown({ performance, title, revenue
         })}
 
         {rest.length > 0 && (
-          <div className="grid grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-x-3">
-            <div className="max-w-[11rem] min-w-0 truncate text-right text-sm text-gray-500">
+          <>
+            <div className="min-w-0 truncate text-right text-sm text-gray-500">
               All Other Flows ({rest.length})
             </div>
-            <div className="flex min-w-0 items-center gap-2">
-              {(() => {
-                const restBarWidth = (restRevenue / maxRevenue) * 100;
-                const isShortBar = restBarWidth < 28;
-                return (
-                  <>
-                    <div className="relative h-6 min-w-0 flex-1 overflow-hidden rounded-md bg-gray-100">
-                      <div
-                        className="absolute inset-y-0 left-0 flex items-center rounded-r-md bg-gray-300"
-                        style={{ width: `${Math.max(restBarWidth, restRevenue > 0 ? 2 : 0)}%` }}
-                      >
-                        {!isShortBar && (
-                          <span className="text-[11px] font-bold text-gray-700 px-1.5 whitespace-nowrap">
-                            {formatCurrency(restRevenue)}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                    {isShortBar && (
-                      <span className="shrink-0 text-[11px] font-bold text-gray-600 whitespace-nowrap">
-                        {formatCurrency(restRevenue)}
-                      </span>
-                    )}
-                  </>
-                );
-              })()}
-            </div>
-            <div className="shrink-0 whitespace-nowrap text-right text-sm tabular-nums text-gray-500">
+            {renderBarTrack(
+              restRevenue,
+              (restRevenue / maxRevenue) * 100,
+              'bg-gray-300',
+              'text-gray-600',
+              'text-gray-700',
+            )}
+            <div className="min-w-0 whitespace-nowrap text-right text-sm tabular-nums text-gray-500">
               {((restRevenue / totalRevenue) * 100).toFixed(1)}%
             </div>
-          </div>
+          </>
         )}
       </div>
     </div>
