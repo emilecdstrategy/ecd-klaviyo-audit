@@ -19,6 +19,7 @@ function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
       bullets: Array.isArray(item.bullets) ? item.bullets.map(v => String(v)) : [],
       revenue_monthly: Number(item.revenue_monthly ?? 0),
       image_url: item.image_url ?? null,
+      details_url: item.details_url ?? null,
       is_hidden: Boolean(item.is_hidden),
       display_order: typeof item.display_order === 'number' ? item.display_order : (index + 1) * 10,
     }))
@@ -302,6 +303,21 @@ export default function RevenueAddOnItemsEditor({
                 </div>
               </div>
 
+              <div>
+                <label className="block text-[11px] font-medium text-gray-500 mb-1">Details doc URL</label>
+                <input
+                  type="url"
+                  placeholder="https://…"
+                  value={item.details_url ?? ''}
+                  onChange={e => {
+                    const next = addOnItems.slice();
+                    next[index] = { ...item, details_url: e.target.value.trim() || null };
+                    writeItems(next);
+                  }}
+                  className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                />
+              </div>
+
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 min-w-[220px]">
                   <div className="text-xs text-gray-700 font-medium">Show in report</div>
@@ -370,6 +386,7 @@ export default function RevenueAddOnItemsEditor({
                 bullets: [],
                 revenue_monthly: Number(template.default_revenue_monthly ?? 0),
                 image_url: template.image_url ?? null,
+                details_url: template.details_url ?? null,
                 is_hidden: false,
               },
             ]);

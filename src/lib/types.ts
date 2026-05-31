@@ -56,6 +56,8 @@ export interface RevenueOpportunityTemplate {
   default_revenue_monthly: number;
   /** Optional default screenshot shown on the report add-on card. */
   image_url?: string | null;
+  /** Optional link to full service docs or slides (opens in a new tab). */
+  details_url?: string | null;
   display_order: number;
   is_active: boolean;
   created_at: string;
@@ -73,6 +75,8 @@ export interface RevenueOpportunityAddOnItem {
   revenue_monthly: number;
   /** Per-audit screenshot. Falls back to the template default when added. */
   image_url?: string | null;
+  /** Per-audit link to full service docs or slides. */
+  details_url?: string | null;
   is_hidden?: boolean;
   display_order?: number;
 }

@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode } from 'react';
-import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays, Image as ImageIcon, ZoomIn } from 'lucide-react';
+import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays, Image as ImageIcon, ZoomIn, ExternalLink } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
 import { computeAuditTotalRevenueOpportunity, formatCurrency, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../lib/revenue-calculator';
 import { formatStoreRevenueContext } from '../../lib/revenue-breakdown';
@@ -1186,6 +1186,30 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                         >
                           Remove
                         </button>
+                      </div>
+                    )}
+                    {(item.details_url?.trim() || editMode) && (
+                      <div className="mt-4 flex flex-col items-end gap-2 border-t border-gray-100 pt-4">
+                        {editMode && (
+                          <EditablePlainText
+                            value={item.details_url ?? ''}
+                            onSave={v => updateAddOnField(itemKey, 'details_url', v)}
+                            className="w-full text-right text-xs text-gray-500"
+                            as="p"
+                            placeholder="Details doc URL (opens in new tab)…"
+                          />
+                        )}
+                        {item.details_url?.trim() && (
+                          <a
+                            href={item.details_url.trim()}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm transition-colors hover:border-brand-primary/30 hover:bg-white hover:text-brand-primary"
+                          >
+                            View more details
+                            <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
+                          </a>
+                        )}
                       </div>
                     )}
                   </div>

@@ -781,6 +781,7 @@ function mapRevenueOpportunityTemplateRow(row: any): RevenueOpportunityTemplate 
     bullets,
     default_revenue_monthly: Number(row.default_revenue_monthly ?? 0),
     image_url: row.image_url ?? null,
+    details_url: row.details_url ?? null,
     display_order: Number(row.display_order ?? 0),
     is_active: Boolean(row.is_active),
     created_at: row.created_at,

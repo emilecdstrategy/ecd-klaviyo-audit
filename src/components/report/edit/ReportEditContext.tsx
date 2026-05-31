@@ -91,7 +91,7 @@ type ReportEditContextValue = {
   updateTimelineItem: (phaseIndex: number, itemIndex: number, value: string) => void;
   updateAddOnField: (
     itemKey: string,
-    field: 'name' | 'description',
+    field: 'name' | 'description' | 'details_url',
     value: string,
   ) => void;
   updateAddOnRevenue: (itemKey: string, value: number) => void;
@@ -348,7 +348,7 @@ export function ReportEditProvider({
   );
 
   const updateAddOnField = useCallback(
-    (itemKey: string, field: 'name' | 'description', value: string) => {
+    (itemKey: string, field: 'name' | 'description' | 'details_url', value: string) => {
       const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
       const rs = { ...((layout.revenue_summary as Record<string, unknown>) ?? {}) };
       const blocks = { ...((rs.blocks as Record<string, unknown>) ?? {}) };
@@ -356,7 +356,8 @@ export function ReportEditProvider({
       const items = [...((addOns.items as RevenueOpportunityAddOnItem[]) ?? [])];
       const idx = items.findIndex(i => `${i.template_slug}-${i.display_order}` === itemKey);
       if (idx < 0) return;
-      items[idx] = { ...items[idx], [field]: value };
+      const nextValue = field === 'details_url' ? (value.trim() || null) : value;
+      items[idx] = { ...items[idx], [field]: nextValue };
       addOns.items = items;
       blocks.addOns = addOns;
       rs.blocks = blocks;

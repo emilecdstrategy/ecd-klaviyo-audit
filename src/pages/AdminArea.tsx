@@ -765,6 +765,7 @@ function RevenueOpportunitiesTab() {
         content: entry.content.trim(),
         default_revenue_monthly: Number(entry.default_revenue_monthly || 0),
         image_url: entry.image_url ?? null,
+        details_url: entry.details_url?.trim() || null,
         display_order: Number(entry.display_order || 0),
         is_active: Boolean(entry.is_active),
       });
@@ -1082,6 +1083,19 @@ function RevenueOpportunitiesTab() {
                       <p className="text-[11px] text-gray-400">Shown by default on the report add-on card.</p>
                     </div>
                   </div>
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500 mb-1">Details doc URL</label>
+                  <input
+                    type="url"
+                    placeholder="https://…"
+                    value={entry.details_url ?? ''}
+                    onChange={e => setEntries(prev => prev.map(p => (
+                      p.id === entry.id ? { ...p, details_url: e.target.value || null } : p
+                    )))}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                  <p className="mt-1 text-[11px] text-gray-400">Powers the &quot;View more details&quot; button on the report card (opens in a new tab).</p>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   <div>
