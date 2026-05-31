@@ -1,10 +1,9 @@
-import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
+import type { FlowPerformance } from '../../lib/types';
 import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
 import {
   classifyRate,
   formatBenchmarkRange,
   formatBenchmarkSubline,
-  formatHealthyLabel,
   formatPctDecimal,
   getFlowBenchmarks,
   type BenchmarkConfig,
@@ -34,54 +33,6 @@ function overallRating(flow: FlowPerformance, config: BenchmarkConfig): MetricSt
   if (good >= 2) return 'good';
   if (!b.convApplicable && good >= 1) return 'good';
   return 'warning';
-}
-
-function buildAssessment(flow: FlowPerformance, config: BenchmarkConfig): string {
-  const b = getFlowBenchmarks(flow.flow_name, config);
-  const parts: string[] = [];
-  const openStatus = classifyRate(flow.actual_open_rate, b.openRateLow, b.openRateHigh);
-  const clickStatus = classifyRate(flow.actual_click_rate, b.clickRateLow, b.clickRateHigh);
-
-  const describeMetric = (
-    label: string,
-    actual: number | null,
-    low: number,
-    high: number,
-    status: MetricStatus,
-  ) => {
-    if (actual === null) return;
-    const actualStr = formatPctDecimal(actual);
-    const rangeStr = formatBenchmarkRange(low, high);
-    if (status === 'good') {
-      parts.push(`${label} ${actualStr} (${formatHealthyLabel(status)} vs ${rangeStr})`);
-    } else if (status === 'warning' || status === 'bad') {
-      parts.push(`${label} ${actualStr} below ${rangeStr} benchmark`);
-    }
-  };
-
-  describeMetric('Open', flow.actual_open_rate, b.openRateLow, b.openRateHigh, openStatus);
-  describeMetric('Click', flow.actual_click_rate, b.clickRateLow, b.clickRateHigh, clickStatus);
-
-  if (b.convApplicable) {
-    const convStatus = classifyRate(flow.actual_conv_rate, b.convRateLow, b.convRateHigh);
-    describeMetric('Conv', flow.actual_conv_rate, b.convRateLow, b.convRateHigh, convStatus);
-
-    const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
-    if (flow.recipients_per_month > 50_000 && rpr < 0.02) {
-      parts.push(`Massive volume, tiny conversion. ${flow.recipients_per_month.toLocaleString()} recipients for ${formatCurrency(flow.monthly_revenue_current)}`);
-    }
-  }
-
-  if (parts.length === 0) {
-    if (!b.convApplicable) return 'Non-revenue flow. Engagement metrics look healthy.';
-    const rating = overallRating(flow, config);
-    if (rating === 'good') {
-      return `Performing within healthy ranges for a ${b.tierLabel} (open ${formatBenchmarkRange(b.openRateLow, b.openRateHigh)}, click ${formatBenchmarkRange(b.clickRateLow, b.clickRateHigh)}, conv ${formatBenchmarkRange(b.convRateLow, b.convRateHigh)}).`;
-    }
-    return 'Moderate performance, room for improvement.';
-  }
-
-  return parts.slice(0, 2).join('. ') + '.';
 }
 
 function RatingDot({ status }: { status: MetricStatus }) {
@@ -129,12 +80,11 @@ function pctCell(actual: number | null, low: number, high: number) {
 
 interface ReportFlowTableProps {
   flows: FlowPerformance[];
-  snapshots?: KlaviyoFlowSnapshot[];
   defaultVisibleRows?: number;
   subtitleOverride?: string;
 }
 
-export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, subtitleOverride }: ReportFlowTableProps) {
+export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOverride }: ReportFlowTableProps) {
   const { benchmarks } = usePlatformSettings();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<{ isDown: boolean; startX: number; startScrollLeft: number }>({
@@ -179,13 +129,6 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
       window.removeEventListener('resize', updateOverflow);
     };
   }, [updateOverflow, sorted.length, flows.length, expanded]);
-
-  const snapshotMap = new Map<string, KlaviyoFlowSnapshot>();
-  if (snapshots) {
-    for (const s of snapshots) {
-      snapshotMap.set(s.name, s);
-    }
-  }
 
   const totalRecipients = sorted.reduce((s, f) => s + f.recipients_per_month, 0);
   const totalRevenue = sorted.reduce((s, f) => s + f.monthly_revenue_current, 0);
@@ -242,31 +185,24 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
           onMouseUp={stopDragging}
           onMouseLeave={stopDragging}
         >
-          <table className="w-full min-w-[1100px] text-sm">
+          <table className="w-full min-w-[840px] text-sm">
             <thead>
               <tr className="bg-gray-50">
                 <th className={`${thClass} text-left`}>Flow</th>
                 <th className={`${thClass} text-center w-16`}>Status</th>
                 <th className={`${thClass} text-right w-24`}>Recipients</th>
-                <th className={`${thClass} text-center w-16`}>Actions</th>
                 <th className={`${thClass} text-center w-20`}>Open Rate</th>
                 <th className={`${thClass} text-center w-20`}>Click Rate</th>
                 <th className={`${thClass} text-center w-20`}>Conv Rate</th>
                 <th className={`${thClass} text-right w-20`}>Revenue</th>
                 <th className={`${thClass} text-right w-16`}>RPR</th>
                 <th className={`${thClass} text-center w-14`}>Rating</th>
-                <th className={`${thClass} text-left min-w-[200px]`}>Assessment</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
               {visible.map((flow) => {
-                const snap = snapshotMap.get(flow.flow_name);
-                const actionCount =
-                  snap?.action_count
-                  ?? (Array.isArray(snap?.flow_actions) ? snap.flow_actions.length : null);
                 const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
                 const rating: MetricStatus = (flow.display_rating as MetricStatus | null | undefined) ?? overallRating(flow, benchmarks);
-                const assessment = flow.display_assessment ?? buildAssessment(flow, benchmarks);
                 const displayName = flow.display_name ?? flow.flow_name;
                 const nonRevenue = isNonRevenueFlow(flow.flow_name);
                 const flowBenchmarks = getFlowBenchmarks(flow.flow_name, benchmarks);
@@ -293,9 +229,6 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
                     <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-700">
                       {flow.recipients_per_month.toLocaleString()}
                     </td>
-                    <td className="px-4 py-4 text-center text-sm tabular-nums text-gray-600">
-                      {actionCount ?? '—'}
-                    </td>
                     <td className="px-4 py-4 text-center">
                       {pctCell(flow.actual_open_rate, flowBenchmarks.openRateLow, flowBenchmarks.openRateHigh)}
                     </td>
@@ -318,11 +251,6 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
                     <td className="px-4 py-4 text-center">
                       <RatingDot status={rating} />
                     </td>
-                    <td className="py-4 pl-4 pr-6">
-                      <p className={`text-xs leading-relaxed ${rating === 'bad' ? 'text-gray-800 font-medium' : 'text-gray-500'}`}>
-                        {assessment}
-                      </p>
-                    </td>
                   </tr>
                 );
               })}
@@ -335,13 +263,11 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
                 <td />
                 <td />
                 <td />
-                <td />
                 <td className="px-4 py-4 text-right text-sm font-bold text-gray-900 tabular-nums">{formatCurrency(totalRevenue)}</td>
                 <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-600">
                   ${totalRecipients > 0 ? (totalRevenue / totalRecipients).toFixed(2) : '0.00'}
                 </td>
                 <td />
-                <td className="pr-6" />
               </tr>
             </tfoot>
           </table>

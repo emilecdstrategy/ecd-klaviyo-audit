@@ -25,6 +25,7 @@ import { dedupeClientsByCompany, normalizeCompanyKey } from './client-display';
 import { resolveRevenueOpportunityContent } from './revenue-opportunity-content';
 import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from './revenue-calculator';
 import { computeCampaignRevenuePerRecipient } from './campaign-metrics';
+import type { RevenueBreakdown } from './revenue-breakdown';
 import {
   DEFAULT_BENCHMARK_CONFIG,
   resolveBenchmarkConfig,
@@ -485,6 +486,7 @@ export async function fetchAuditReportBundleForAudit(
     campaigns_truncated?: boolean | null;
     deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
     profile_scan_status?: 'pending' | 'complete' | 'failed' | 'skipped' | null;
+    revenue_breakdown?: RevenueBreakdown | null;
   } | null;
 } | null> {
   let sectionsQuery = supabase.from('audit_sections').select('*').eq('audit_id', audit.id);

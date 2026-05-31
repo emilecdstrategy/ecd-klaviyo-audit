@@ -709,7 +709,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 <div className="p-6">
                   <ReportFlowTable
                     flows={flowPerformance}
-                    snapshots={flowSnapshots as any}
                     defaultVisibleRows={flowsCfg.blocks.flowTable?.defaultVisibleRows}
                     subtitleOverride={flowsCfg.blocks.flowTable?.subtitleOverride}
                   />

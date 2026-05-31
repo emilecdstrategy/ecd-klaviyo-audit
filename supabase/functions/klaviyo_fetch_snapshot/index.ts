@@ -1,8 +1,9 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getUserIdFromAuthorization } from "../_shared/auth.ts";
+import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { fetchPlatformBenchmarkConfig, getFlowBenchmarks } from "../_shared/benchmarks.ts";
 import { computeCampaignRevenuePerRecipient } from "../_shared/campaign-metrics.ts";
+import { buildRevenueBreakdown } from "../_shared/revenue-breakdown.ts";
 
 // Stage machine: each stage runs in its own edge invocation with a fresh ~150s
 // budget. `config` is the entry point the frontend calls; subsequent stages
@@ -19,7 +20,8 @@ type Stage =
   | "config"
   | "reporting"
   | "profile"
-  | "resume_profile_scan";
+  | "resume_profile_scan"
+  | "backfill_revenue_breakdown";
 
 type FetchInput = {
   audit_id?: string;
@@ -648,6 +650,94 @@ function retryAfterMsFromKlaviyo429(body: any): number | null {
 }
 
 type ValuesReportResult = Awaited<ReturnType<typeof queryValuesReport>>;
+
+async function queryMetricAggregateSumValue(params: {
+  apiKey: string;
+  revision: string;
+  metricId: string;
+  timezone?: string | null;
+  days?: number;
+}) {
+  const days = params.days ?? 30;
+  const since = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+  const filter = [
+    `greater-or-equal(datetime,${since.toISOString()})`,
+    `less-than(datetime,${new Date().toISOString()})`,
+  ];
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), KLAVIYO_HTTP_TIMEOUT_MS);
+  try {
+    const res = await fetch(`${KLAVIYO_BASE}/api/metric-aggregates/`, {
+      method: "POST",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        authorization: `Klaviyo-API-Key ${params.apiKey}`,
+        revision: params.revision,
+      },
+      body: JSON.stringify({
+        data: {
+          type: "metric-aggregate",
+          attributes: {
+            metric_id: params.metricId,
+            measurements: ["sum_value"],
+            interval: "day",
+            filter,
+            timezone: params.timezone ?? "UTC",
+          },
+        },
+      }),
+      signal: ctrl.signal,
+    });
+    const text = await res.text();
+    let body: any = null;
+    try {
+      body = text ? JSON.parse(text) : null;
+    } catch {
+      body = text;
+    }
+    if (!res.ok) {
+      return { ok: false as const, status: res.status, sum: null as number | null, body };
+    }
+    const dataPoints = body?.data?.attributes?.data ?? [];
+    let sum = 0;
+    for (const point of dataPoints) {
+      const measurements = point?.measurements?.sum_value;
+      if (Array.isArray(measurements)) {
+        for (const v of measurements) sum += Number(v) || 0;
+      } else if (measurements != null) {
+        sum += Number(measurements) || 0;
+      }
+    }
+    return { ok: true as const, status: res.status, sum, body };
+  } catch (e) {
+    const aborted = (e as any)?.name === "AbortError";
+    return {
+      ok: false as const,
+      status: aborted ? 504 : 0,
+      sum: null as number | null,
+      body: aborted ? `Metric aggregate timed out after ${KLAVIYO_HTTP_TIMEOUT_MS}ms` : String(e),
+    };
+  } finally {
+    clearTimeout(t);
+  }
+}
+
+async function queryMetricAggregateSumValueWithRetry(params: Parameters<typeof queryMetricAggregateSumValue>[0]) {
+  let last: Awaited<ReturnType<typeof queryMetricAggregateSumValue>> = {
+    ok: false,
+    status: 0,
+    sum: null,
+    body: null,
+  };
+  for (let attempt = 1; attempt <= 3; attempt++) {
+    last = await queryMetricAggregateSumValue(params);
+    if (last.ok) return last;
+    if (![429, 500, 502, 503, 504].includes(last.status)) return last;
+    await sleep(400 * Math.pow(2, attempt - 1));
+  }
+  return last;
+}
 
 async function queryValuesReportWithBackoff(
   params: Parameters<typeof queryValuesReport>[0] & {
@@ -1290,10 +1380,11 @@ async function runStageReporting(params: {
     clientId = audit.client_id as string;
 
     const { data: conn } = await sb.from("klaviyo_connections")
-      .select("revision, conversion_metric_id")
+      .select("revision, conversion_metric_id, timezone")
       .eq("client_id", clientId).maybeSingle();
     revision = (conn?.revision as string | null) || DEFAULT_REVISION;
     const conversionMetricId = (conn?.conversion_metric_id as string | null) || null;
+    const accountTimezone = (conn?.timezone as string | null) || "UTC";
 
     const apiKey = await resolveApiKey(sb, clientId, null);
 
@@ -1341,6 +1432,8 @@ async function runStageReporting(params: {
     let bounceRate90d: number | null = null;
     let spamRate90d: number | null = null;
     let metricReCacheAt: string | null = null;
+    let totalStoreRevenue: number | null = null;
+    let campaignRowsAllChannels: any[] = [];
 
     await mustSucceed("delete flow_performance", sb.from("flow_performance").delete().eq("audit_id", params.auditId));
 
@@ -1381,6 +1474,44 @@ async function runStageReporting(params: {
         flowReports.push({ timeframe: tf, results: flow30.body?.data?.attributes?.results ?? [] });
       } else {
         reportingErrors.push({ stage: `flow_values_${tf}`, status: flow30.status ?? null, message: trimBody(flow30.body) ?? "Flow values report failed" });
+      }
+
+      const campAllChannels30 = await queryValuesReportWithBackoff({
+        apiKey,
+        revision,
+        endpointPath: "/api/campaign-values-reports/",
+        timeframeKey: tf,
+        conversionMetricId,
+        statistics: ["conversion_value"],
+        groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
+        deadlineAtMs,
+        bucket,
+      });
+      if (campAllChannels30.ok) {
+        campaignRowsAllChannels = campAllChannels30.body?.data?.attributes?.results ?? [];
+      } else {
+        reportingErrors.push({
+          stage: "campaign_values_all_channels_last_30_days",
+          status: campAllChannels30.status ?? null,
+          message: trimBody(campAllChannels30.body) ?? "All-channel campaign values report failed",
+        });
+      }
+
+      const metricAgg = await queryMetricAggregateSumValueWithRetry({
+        apiKey,
+        revision,
+        metricId: conversionMetricId,
+        timezone: accountTimezone,
+        days: 30,
+      });
+      if (metricAgg.ok && metricAgg.sum != null) {
+        totalStoreRevenue = metricAgg.sum;
+      } else {
+        reportingErrors.push({
+          stage: "metric_aggregate_total_revenue",
+          status: metricAgg.status ?? null,
+          message: trimBody(metricAgg.body) ?? "Metric aggregate total revenue failed",
+        });
       }
 
       // 90d campaign for deliverability.
@@ -1513,6 +1644,14 @@ async function runStageReporting(params: {
     }
 
     // Merge into rollups: update existing seeded rows with results.
+    const flowRows30 = flowReports.find((r) => r.timeframe === "last_30_days")?.results ?? [];
+    const revenueBreakdown = buildRevenueBreakdown({
+      totalStoreRevenue,
+      campaignRowsAllChannels,
+      flowRows: flowRows30,
+      timeframe: "last_30_days",
+    });
+
     const accountSnapshotFinal = {
       ...(accountSnapshotSeed ?? {}),
       bounce_rate_90d: bounceRate90d,
@@ -1521,6 +1660,7 @@ async function runStageReporting(params: {
       campaign_revenue_per_recipient_30d: computeCampaignRevenuePerRecipient(
         campaignReports.find((r) => r.timeframe === "last_30_days")?.results ?? [],
       ),
+      revenue_breakdown: revenueBreakdown,
       profile_scan_status: profileScanFull ? "pending" : "skipped",
       computed_at: new Date().toISOString(),
     };
@@ -1619,6 +1759,145 @@ async function runStageReporting(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Stage: backfill_revenue_breakdown (non-destructive patch)
+// ---------------------------------------------------------------------------
+
+async function runStageBackfillRevenueBreakdown(params: {
+  auditId: string;
+  correlationId: string;
+}): Promise<Response> {
+  const startedAt = Date.now();
+  const deadlineAtMs = startedAt + 148_000;
+  const sb = assertServiceClient();
+  let clientId: string | null = null;
+  let revision: string = DEFAULT_REVISION;
+
+  try {
+    const { data: audit, error: auditErr } = await sb.from("audits").select("client_id").eq("id", params.auditId).maybeSingle();
+    if (auditErr) throw auditErr;
+    if (!audit?.client_id) throw new Error("audit not found");
+    clientId = audit.client_id as string;
+
+    const { data: conn } = await sb.from("klaviyo_connections")
+      .select("revision, conversion_metric_id, timezone")
+      .eq("client_id", clientId).maybeSingle();
+    revision = (conn?.revision as string | null) || DEFAULT_REVISION;
+    const conversionMetricId = (conn?.conversion_metric_id as string | null) || null;
+    const accountTimezone = (conn?.timezone as string | null) || "UTC";
+    if (!conversionMetricId) throw new Error("No conversion_metric_id on klaviyo_connections");
+
+    const apiKey = await resolveApiKey(sb, clientId, null);
+    const { data: rollups } = await sb.from("klaviyo_reporting_rollups")
+      .select("id, timeframe_key, computed, flows")
+      .eq("audit_id", params.auditId);
+
+    const rollup30 = (rollups ?? []).find((r) => r.timeframe_key === "last_30_days");
+    if (!rollup30) throw new Error("No last_30_days rollup found for audit");
+
+    const reportingErrors: Array<{ stage: string; status?: number | null; message: string }> = [];
+    const bucket = createReportingBucket({ tokensPerMin: REPORTING_TOKENS_PER_MIN, burst: REPORTING_BURST });
+
+    const campAllChannels30 = await queryValuesReportWithBackoff({
+      apiKey,
+      revision,
+      endpointPath: "/api/campaign-values-reports/",
+      timeframeKey: "last_30_days",
+      conversionMetricId,
+      statistics: ["conversion_value"],
+      groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
+      deadlineAtMs,
+      bucket,
+    });
+    const campaignRowsAllChannels = campAllChannels30.ok
+      ? (campAllChannels30.body?.data?.attributes?.results ?? [])
+      : [];
+    if (!campAllChannels30.ok) {
+      reportingErrors.push({
+        stage: "campaign_values_all_channels_last_30_days",
+        status: campAllChannels30.status ?? null,
+        message: trimBody(campAllChannels30.body) ?? "All-channel campaign values report failed",
+      });
+    }
+
+    const metricAgg = await queryMetricAggregateSumValueWithRetry({
+      apiKey,
+      revision,
+      metricId: conversionMetricId,
+      timezone: accountTimezone,
+      days: 30,
+    });
+    const totalStoreRevenue = metricAgg.ok && metricAgg.sum != null ? metricAgg.sum : null;
+    if (!metricAgg.ok) {
+      reportingErrors.push({
+        stage: "metric_aggregate_total_revenue",
+        status: metricAgg.status ?? null,
+        message: trimBody(metricAgg.body) ?? "Metric aggregate total revenue failed",
+      });
+    }
+
+    const flowRows30 = Array.isArray(rollup30.flows) ? rollup30.flows : [];
+    const revenueBreakdown = buildRevenueBreakdown({
+      totalStoreRevenue,
+      campaignRowsAllChannels,
+      flowRows: flowRows30,
+      timeframe: "last_30_days",
+    });
+
+    for (const row of rollups ?? []) {
+      const prevComputed = (row.computed ?? {}) as Record<string, unknown>;
+      const prevSnapshot = ((prevComputed as any).account_snapshot ?? {}) as Record<string, unknown>;
+      const account_snapshot = {
+        ...prevSnapshot,
+        revenue_breakdown: revenueBreakdown,
+        computed_at: new Date().toISOString(),
+      };
+      await mustSucceed("patch revenue_breakdown", sb.from("klaviyo_reporting_rollups")
+        .update({
+          computed: {
+            ...prevComputed,
+            account_snapshot,
+            revenue_breakdown_backfilled_at: new Date().toISOString(),
+          },
+        }).eq("id", row.id));
+    }
+
+    await logStageRun(sb, {
+      correlationId: params.correlationId,
+      auditId: params.auditId,
+      clientId,
+      stage: "backfill_revenue_breakdown",
+      status: reportingErrors.length ? "partial" : "success",
+      revision,
+      elapsedMs: Date.now() - startedAt,
+      errorMessage: reportingErrors.length ? JSON.stringify(reportingErrors).slice(0, 1000) : null,
+    });
+
+    return json({
+      ok: true,
+      correlationId: params.correlationId,
+      stage: "backfill_revenue_breakdown",
+      revenue_breakdown: revenueBreakdown,
+      errors: reportingErrors,
+      elapsed_ms: Date.now() - startedAt,
+    });
+  } catch (e) {
+    const msg = redactSecrets(e instanceof Error ? e.message : "Unknown error");
+    await logStageRun(sb, {
+      correlationId: params.correlationId,
+      auditId: params.auditId,
+      clientId,
+      stage: "backfill_revenue_breakdown",
+      status: "error",
+      revision,
+      elapsedMs: Date.now() - startedAt,
+      errorCode: "backfill_revenue_breakdown_failed",
+      errorMessage: msg,
+    });
+    return json({ ok: false, error: { code: "backfill_revenue_breakdown_failed", message: msg }, correlationId: params.correlationId }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -1646,11 +1925,11 @@ serve(async (req) => {
   }
 
   // Stage-specific auth + dispatch.
-  if (stage === "resume_profile_scan" || stage === "reporting" || stage === "profile") {
+  if (stage === "resume_profile_scan" || stage === "reporting" || stage === "profile" || stage === "backfill_revenue_breakdown") {
     // These stages are usually chain-invoked with the service role key; accept either the SR key or a signed-in user (for manual retries).
     const auth = req.headers.get("authorization") ?? "";
     const token = auth.replace(/^Bearer\s+/i, "");
-    const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+    const isServiceRole = isServiceRoleAuthorization(token);
     if (!isServiceRole) {
       try {
         await requireAuthenticatedUser(req);
@@ -1670,6 +1949,9 @@ serve(async (req) => {
       }
       if (stage === "reporting") {
         return await runStageReporting({ auditId, correlationId });
+      }
+      if (stage === "backfill_revenue_breakdown") {
+        return await runStageBackfillRevenueBreakdown({ auditId, correlationId });
       }
       // stage === "profile" — just kicks the resume chain (used by stage 2 and nudges).
       await chainStage("resume_profile_scan", auditId);

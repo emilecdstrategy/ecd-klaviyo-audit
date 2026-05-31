@@ -13,8 +13,17 @@ import {
   ShieldAlert,
   TrendingUp,
   DollarSign,
+  Store,
+  PieChart,
+  Send,
+  Workflow as WorkflowIcon,
+  Mail,
+  MessageSquare,
 } from 'lucide-react';
 import type { FlowPerformance, KlaviyoCampaignSnapshot, KlaviyoFlowSnapshot } from '../../lib/types';
+import { formatCurrency } from '../../lib/revenue-calculator';
+import type { RevenueBreakdown } from '../../lib/revenue-breakdown';
+import { formatRevenueBreakdownPct } from '../../lib/revenue-breakdown';
 import {
   classifyDeliverabilityRate,
   classifyRate,
@@ -114,6 +123,111 @@ function BenchmarkCallout({ title, children }: { title: string; children: ReactN
   );
 }
 
+function RevenueSplitStat({
+  label,
+  amount,
+  pctOfAttributed,
+  icon: Icon,
+}: {
+  label: string;
+  amount: number;
+  pctOfAttributed: string;
+  icon: LucideIcon;
+}) {
+  return (
+    <div className="flex min-w-0 flex-1 flex-col gap-1 border-gray-100 px-4 first:pl-0 last:pr-0 sm:border-r sm:last:border-r-0">
+      <div className="flex items-center gap-1.5">
+        <Icon className="h-3.5 w-3.5 shrink-0 text-gray-400" strokeWidth={2} />
+        <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">{label}</p>
+      </div>
+      <p className="text-lg font-bold tabular-nums tracking-tight text-gray-900">{formatCurrency(amount)}</p>
+      <p className="text-xs tabular-nums text-gray-500">{pctOfAttributed} of attributed</p>
+    </div>
+  );
+}
+
+function RevenuePerformance({ breakdown }: { breakdown: RevenueBreakdown }) {
+  const attributedPctOfTotal = formatRevenueBreakdownPct(
+    breakdown.attributed_revenue,
+    breakdown.total_store_revenue ?? 0,
+  );
+  const hasTotal = breakdown.total_store_revenue != null && Number.isFinite(breakdown.total_store_revenue);
+
+  return (
+    <div className="mb-6 overflow-hidden rounded-xl border border-gray-100 bg-[#f9f9f9]">
+      <div className="border-b border-gray-100 px-5 py-3">
+        <div className="flex items-center gap-2">
+          <div className={METRIC_ICON_CHIP_CLASS}>
+            <PieChart className={METRIC_ICON_CLASS} strokeWidth={2} />
+          </div>
+          <div>
+            <p className="text-sm font-bold text-gray-900">Revenue Performance</p>
+            <p className="text-xs text-gray-500">Last 30 days · Placed Order attribution</p>
+          </div>
+        </div>
+      </div>
+
+      <div className="grid gap-4 px-5 py-5 sm:grid-cols-2">
+        <div>
+          <div className="mb-1 flex items-center gap-1.5">
+            <Store className="h-3.5 w-3.5 text-gray-400" strokeWidth={2} />
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">Total Store Revenue</p>
+          </div>
+          <p className="text-3xl font-bold tabular-nums tracking-tight text-gray-900">
+            {hasTotal ? formatCurrency(breakdown.total_store_revenue!) : 'N/A'}
+          </p>
+        </div>
+        <div>
+          <div className="mb-1 flex items-center gap-1.5">
+            <DollarSign className="h-3.5 w-3.5 text-gray-400" strokeWidth={2} />
+            <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
+              Klaviyo-Attributed Revenue
+              {hasTotal && attributedPctOfTotal !== '—' && (
+                <span className="ml-1 font-normal normal-case text-gray-400">
+                  ({attributedPctOfTotal} of total)
+                </span>
+              )}
+            </p>
+          </div>
+          <p className="text-3xl font-bold tabular-nums tracking-tight text-gray-900">
+            {formatCurrency(breakdown.attributed_revenue)}
+          </p>
+        </div>
+      </div>
+
+      <div className="border-t border-gray-100 px-5 py-4">
+        <p className="mb-3 text-[10px] font-bold uppercase tracking-wider text-gray-500">Attributed revenue breakdown</p>
+        <div className="flex flex-col gap-4 sm:flex-row sm:gap-0">
+          <RevenueSplitStat
+            label="Campaigns"
+            amount={breakdown.campaign_revenue}
+            pctOfAttributed={formatRevenueBreakdownPct(breakdown.campaign_revenue, breakdown.attributed_revenue)}
+            icon={Send}
+          />
+          <RevenueSplitStat
+            label="Flows"
+            amount={breakdown.flow_revenue}
+            pctOfAttributed={formatRevenueBreakdownPct(breakdown.flow_revenue, breakdown.attributed_revenue)}
+            icon={WorkflowIcon}
+          />
+          <RevenueSplitStat
+            label="Email"
+            amount={breakdown.email_revenue}
+            pctOfAttributed={formatRevenueBreakdownPct(breakdown.email_revenue, breakdown.attributed_revenue)}
+            icon={Mail}
+          />
+          <RevenueSplitStat
+            label="SMS"
+            amount={breakdown.sms_revenue}
+            pctOfAttributed={formatRevenueBreakdownPct(breakdown.sms_revenue, breakdown.attributed_revenue)}
+            icon={MessageSquare}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export default function ReportAccountSnapshot({
   flowSnapshots,
   flowPerformance,
@@ -142,6 +256,7 @@ export default function ReportAccountSnapshot({
     campaigns_truncated?: boolean | null;
     deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
     profile_scan_status?: 'pending' | 'complete' | 'failed' | 'skipped' | null;
+    revenue_breakdown?: RevenueBreakdown | null;
   } | null;
 }) {
   const { benchmarks } = usePlatformSettings();
@@ -182,6 +297,10 @@ export default function ReportAccountSnapshot({
 
   return (
     <div>
+      {accountSnapshot?.revenue_breakdown && (
+        <RevenuePerformance breakdown={accountSnapshot.revenue_breakdown} />
+      )}
+
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Card icon={Workflow} label="Total Flows" value={String(totalFlows)} sub="in Klaviyo account" />
         <Card icon={Zap} label="Live Flows" value={String(liveFlows)} sub="actively sending" />
