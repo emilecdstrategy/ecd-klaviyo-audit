@@ -305,30 +305,6 @@ export default function ReportAccountSnapshot({
         <Card icon={Workflow} label="Total Flows" value={String(totalFlows)} sub="in Klaviyo account" />
         <Card icon={Zap} label="Live Flows" value={String(liveFlows)} sub="actively sending" />
         <Card
-          icon={Smartphone}
-          label="Total SMS Profiles"
-          value={formatIntWithTruncFlag(
-            accountSnapshot?.sms_subscribed_profiles_count ?? null,
-            accountSnapshot?.email_subscribed_profiles_truncated,
-          )}
-          sub={
-            accountSnapshot?.profile_scan_status === 'skipped'
-              ? 'fast audit — full profile scan not run'
-              : accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.sms_subscribed_profiles_count == null
-                ? 'full profile scan in progress'
-                : accountSnapshot?.sms_subscribed_profiles_count == null
-                  ? 'requires full profile scan'
-                  : 'SMS marketing subscribed'
-          }
-        />
-        <Card
-          icon={Megaphone}
-          label="Campaign Rev / Recipient"
-          value={hasCampaignRpr ? `$${campaignRevenuePerRecipient!.toFixed(2)}` : 'N/A'}
-          sub={hasCampaignRpr ? 'last 30 days · email campaigns' : perfUnavailableReason}
-        />
-
-        <Card
           icon={Users}
           label="List Size"
           value={formatIntWithTruncFlag(
@@ -343,6 +319,23 @@ export default function ReportAccountSnapshot({
                 : (accountSnapshot?.total_profiles_count ?? accountSnapshot?.email_subscribed_profiles_count) == null
                   ? 'requires profiles:read scope'
                   : 'all profiles in Klaviyo account'
+          }
+        />
+        <Card
+          icon={Smartphone}
+          label="Total SMS Profiles"
+          value={formatIntWithTruncFlag(
+            accountSnapshot?.sms_subscribed_profiles_count ?? null,
+            accountSnapshot?.email_subscribed_profiles_truncated,
+          )}
+          sub={
+            accountSnapshot?.profile_scan_status === 'skipped'
+              ? 'fast audit — full profile scan not run'
+              : accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.sms_subscribed_profiles_count == null
+                ? 'full profile scan in progress'
+                : accountSnapshot?.sms_subscribed_profiles_count == null
+                  ? 'requires full profile scan'
+                  : 'SMS marketing subscribed'
           }
         />
         <Card
@@ -438,6 +431,12 @@ export default function ReportAccountSnapshot({
           label="Revenue / Recipient"
           value={hasPerf && revenuePerRecipient != null ? `$${revenuePerRecipient.toFixed(2)}` : 'N/A'}
           sub={hasPerf ? 'across all flows' : perfUnavailableReason}
+        />
+        <Card
+          icon={Megaphone}
+          label="Campaign Rev / Recipient"
+          value={hasCampaignRpr ? `$${campaignRevenuePerRecipient!.toFixed(2)}` : 'N/A'}
+          sub={hasCampaignRpr ? 'last 30 days · email campaigns' : perfUnavailableReason}
         />
       </div>
 

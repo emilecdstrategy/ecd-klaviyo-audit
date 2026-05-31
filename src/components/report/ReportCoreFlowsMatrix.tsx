@@ -147,7 +147,7 @@ export default function ReportCoreFlowsMatrix({
             <tr className="border-b border-gray-100 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
               <th className="px-5 py-3">Flow</th>
               <th className="px-3 py-3">Status</th>
-              <th className="px-3 py-3 text-center">Emails</th>
+              <th className="px-3 py-3 text-center">Email Steps</th>
               <th className="px-5 py-3 w-24" />
             </tr>
           </thead>

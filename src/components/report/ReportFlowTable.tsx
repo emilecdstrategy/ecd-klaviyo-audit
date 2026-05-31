@@ -193,17 +193,17 @@ export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOve
           onMouseUp={stopDragging}
           onMouseLeave={stopDragging}
         >
-          <table className="w-full min-w-[920px] table-fixed text-sm">
+          <table className="w-full min-w-[960px] table-fixed text-sm">
             <colgroup>
-              <col style={{ width: '11%' }} />
+              <col style={{ width: '24%' }} />
               <col style={{ width: '6%' }} />
+              <col style={{ width: '9%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '12%' }} />
+              <col style={{ width: '11%' }} />
               <col style={{ width: '8%' }} />
-              <col style={{ width: '17%' }} />
-              <col style={{ width: '17%' }} />
-              <col style={{ width: '17%' }} />
-              <col style={{ width: '10%' }} />
-              <col style={{ width: '7%' }} />
-              <col style={{ width: '5%' }} />
+              <col style={{ width: '6%' }} />
             </colgroup>
             <thead>
               <tr className="bg-gray-50">
@@ -234,15 +234,12 @@ export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOve
                       flow.flow_status === 'missing' && 'opacity-75',
                     )}
                   >
-                    <td className="py-4 pl-6 pr-2 overflow-hidden">
-                      <p
-                        className="text-sm font-medium text-gray-900 leading-tight truncate"
-                        title={displayName}
-                      >
+                    <td className="py-4 pl-6 pr-3">
+                      <p className="text-sm font-medium text-gray-900 leading-snug break-words">
                         {displayName}
                       </p>
                       {nonRevenue && (
-                        <span className="inline-block mt-0.5 max-w-full truncate text-[9px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
+                        <span className="inline-block mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
                           Engagement only
                         </span>
                       )}
@@ -253,13 +250,13 @@ export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOve
                     <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-700">
                       {flow.recipients_per_month.toLocaleString()}
                     </td>
-                    <td className="px-3 py-4 text-center align-top">
+                    <td className="px-2 py-4 text-center align-top">
                       {pctCell(flow.actual_open_rate, flowBenchmarks.openRateLow, flowBenchmarks.openRateHigh)}
                     </td>
-                    <td className="px-3 py-4 text-center align-top">
+                    <td className="px-2 py-4 text-center align-top">
                       {pctCell(flow.actual_click_rate, flowBenchmarks.clickRateLow, flowBenchmarks.clickRateHigh)}
                     </td>
-                    <td className="px-3 py-4 text-center align-top">
+                    <td className="px-2 py-4 text-center align-top">
                       {nonRevenue
                         ? <span className="text-sm text-gray-300">N/A</span>
                         : pctCell(flow.actual_conv_rate, flowBenchmarks.convRateLow, flowBenchmarks.convRateHigh)}
