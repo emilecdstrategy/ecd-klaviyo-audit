@@ -1092,41 +1092,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                   key={itemKey}
                   className="group flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-primary/30 hover:shadow-lg hover:shadow-brand-primary/5"
                 >
-                  {item.image_url ? (
-                    <button
-                      type="button"
-                      onClick={() => setLightboxSrc(item.image_url ?? null)}
-                      className="relative block w-full overflow-hidden bg-gray-100"
-                      aria-label={`View ${item.name} screenshot`}
-                    >
-                      <img
-                        src={item.image_url}
-                        alt={item.name}
-                        className="h-44 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
-                      />
-                      <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[11px] font-medium text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
-                        <ZoomIn className="h-3 w-3" /> View
-                      </span>
-                    </button>
-                  ) : editMode ? (
-                    <label className="flex h-28 w-full cursor-pointer flex-col items-center justify-center gap-1 border-b border-dashed border-gray-200 bg-gray-50 text-gray-400 transition-colors hover:bg-gray-100">
-                      <ImageIcon className="h-5 w-5" />
-                      <span className="text-xs font-medium">
-                        {uploadingAddOnKey === itemKey ? 'Uploading…' : 'Add screenshot'}
-                      </span>
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={uploadingAddOnKey === itemKey}
-                        onChange={e => {
-                          handleAddOnImageUpload(itemKey, e.target.files?.[0]);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
-                  ) : null}
-
                   <div className="flex flex-1 flex-col p-5">
                     <div className="mb-2.5 flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -1164,6 +1129,40 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                         className="text-sm leading-relaxed text-gray-700"
                       />
                     )}
+                    {item.image_url ? (
+                      <button
+                        type="button"
+                        onClick={() => setLightboxSrc(item.image_url ?? null)}
+                        className="relative mt-4 block w-full overflow-hidden rounded-lg border border-gray-100 bg-gray-50"
+                        aria-label={`View ${item.name} screenshot`}
+                      >
+                        <img
+                          src={item.image_url}
+                          alt={item.name}
+                          className="block w-full h-auto object-contain"
+                        />
+                        <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[11px] font-medium text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
+                          <ZoomIn className="h-3 w-3" /> View full size
+                        </span>
+                      </button>
+                    ) : editMode ? (
+                      <label className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-gray-400 transition-colors hover:bg-gray-100">
+                        <ImageIcon className="h-5 w-5" />
+                        <span className="text-xs font-medium">
+                          {uploadingAddOnKey === itemKey ? 'Uploading…' : 'Add screenshot'}
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          disabled={uploadingAddOnKey === itemKey}
+                          onChange={e => {
+                            handleAddOnImageUpload(itemKey, e.target.files?.[0]);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                    ) : null}
                     {editMode && item.image_url && (
                       <div className="mt-3 flex items-center gap-3 border-t border-gray-100 pt-3">
                         <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900">
