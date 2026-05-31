@@ -28,11 +28,14 @@ export type AuditReportBundle = {
   emailDesign: AuditEmailDesign | null;
   reportingDiagnostic?: string | null;
   accountSnapshot?: {
+    total_profiles_count?: number | null;
     email_subscribed_profiles_count: number | null;
+    sms_subscribed_profiles_count?: number | null;
     active_profiles_90d_count: number | null;
     suppressed_profiles_count: number | null;
     bounce_rate_90d: number | null;
     spam_rate_90d: number | null;
+    campaign_revenue_per_recipient_30d?: number | null;
     active_profiles_definition?: string | null;
     computed_at?: string | null;
     email_subscribed_profiles_truncated?: boolean | null;
@@ -40,6 +43,7 @@ export type AuditReportBundle = {
     suppressed_profiles_truncated?: boolean | null;
     campaigns_truncated?: boolean | null;
     deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
+    profile_scan_status?: 'pending' | 'complete' | 'failed' | 'skipped' | null;
   } | null;
 };
 

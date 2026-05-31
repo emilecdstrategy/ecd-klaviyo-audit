@@ -3,8 +3,8 @@ import type { LucideIcon } from 'lucide-react';
 import {
   Workflow,
   Zap,
-  MousePointerClick,
-  Send,
+  Smartphone,
+  Megaphone,
   Users,
   UserCheck,
   UserX,
@@ -15,7 +15,6 @@ import {
   DollarSign,
 } from 'lucide-react';
 import type { FlowPerformance, KlaviyoCampaignSnapshot, KlaviyoFlowSnapshot } from '../../lib/types';
-import { CAMPAIGN_SNAPSHOT_CAP, campaignTotalSubtext, formatCampaignTotalDisplay } from '../../lib/campaign-count';
 import {
   classifyDeliverabilityRate,
   classifyRate,
@@ -133,6 +132,8 @@ export default function ReportAccountSnapshot({
     suppressed_profiles_count: number | null;
     bounce_rate_90d: number | null;
     spam_rate_90d: number | null;
+    sms_subscribed_profiles_count?: number | null;
+    campaign_revenue_per_recipient_30d?: number | null;
     active_profiles_definition?: string | null;
     computed_at?: string | null;
     email_subscribed_profiles_truncated?: boolean | null;
@@ -146,11 +147,8 @@ export default function ReportAccountSnapshot({
   const { benchmarks } = usePlatformSettings();
   const totalFlows = flowSnapshots.length;
   const liveFlows = flowSnapshots.filter((f) => f.status?.toLowerCase() === 'live' || f.status?.toLowerCase() === 'manual').length;
-  const totalCampaigns = campaignSnapshots.length;
-  const campaignsTruncated = accountSnapshot?.campaigns_truncated ?? totalCampaigns > CAMPAIGN_SNAPSHOT_CAP;
-  const totalCampaignsDisplay = formatCampaignTotalDisplay(totalCampaigns, campaignsTruncated);
-  const totalCampaignsSub = campaignTotalSubtext();
-  const manualFlows = flowSnapshots.filter((f) => f.status?.toLowerCase() === 'manual' || f.trigger_type === 'Unconfigured').length;
+  const campaignRevenuePerRecipient = accountSnapshot?.campaign_revenue_per_recipient_30d ?? null;
+  const hasCampaignRpr = campaignRevenuePerRecipient != null && Number.isFinite(campaignRevenuePerRecipient);
 
   const hasPerf = flowPerformance.length > 0;
   const totalRecipients = hasPerf ? flowPerformance.reduce((s, f) => s + (f.recipients_per_month ?? 0), 0) : null;
@@ -187,8 +185,29 @@ export default function ReportAccountSnapshot({
       <div className="grid grid-cols-2 gap-3 sm:gap-4 lg:grid-cols-4">
         <Card icon={Workflow} label="Total Flows" value={String(totalFlows)} sub="in Klaviyo account" />
         <Card icon={Zap} label="Live Flows" value={String(liveFlows)} sub="actively sending" />
-        <Card icon={MousePointerClick} label="Manual Flows" value={String(manualFlows)} sub="require manual trigger" />
-        <Card icon={Send} label="Total Campaigns" value={totalCampaignsDisplay} sub={totalCampaignsSub} />
+        <Card
+          icon={Smartphone}
+          label="Total SMS Profiles"
+          value={formatIntWithTruncFlag(
+            accountSnapshot?.sms_subscribed_profiles_count ?? null,
+            accountSnapshot?.email_subscribed_profiles_truncated,
+          )}
+          sub={
+            accountSnapshot?.profile_scan_status === 'skipped'
+              ? 'fast audit — full profile scan not run'
+              : accountSnapshot?.profile_scan_status === 'pending' && accountSnapshot?.sms_subscribed_profiles_count == null
+                ? 'full profile scan in progress'
+                : accountSnapshot?.sms_subscribed_profiles_count == null
+                  ? 'requires full profile scan'
+                  : 'SMS marketing subscribed'
+          }
+        />
+        <Card
+          icon={Megaphone}
+          label="Campaign Rev / Recipient"
+          value={hasCampaignRpr ? `$${campaignRevenuePerRecipient!.toFixed(2)}` : 'N/A'}
+          sub={hasCampaignRpr ? 'last 30 days · email campaigns' : perfUnavailableReason}
+        />
 
         <Card
           icon={Users}

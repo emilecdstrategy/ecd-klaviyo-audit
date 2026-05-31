@@ -24,6 +24,7 @@ import {
 import { dedupeClientsByCompany, normalizeCompanyKey } from './client-display';
 import { resolveRevenueOpportunityContent } from './revenue-opportunity-content';
 import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from './revenue-calculator';
+import { computeCampaignRevenuePerRecipient } from './campaign-metrics';
 import {
   DEFAULT_BENCHMARK_CONFIG,
   resolveBenchmarkConfig,
@@ -468,11 +469,14 @@ export async function fetchAuditReportBundleForAudit(
   emailDesign: AuditEmailDesign | null;
   reportingDiagnostic?: string | null;
   accountSnapshot?: {
+    total_profiles_count?: number | null;
     email_subscribed_profiles_count: number | null;
+    sms_subscribed_profiles_count?: number | null;
     active_profiles_90d_count: number | null;
     suppressed_profiles_count: number | null;
     bounce_rate_90d: number | null;
     spam_rate_90d: number | null;
+    campaign_revenue_per_recipient_30d?: number | null;
     active_profiles_definition?: string | null;
     computed_at?: string | null;
     email_subscribed_profiles_truncated?: boolean | null;
@@ -480,6 +484,7 @@ export async function fetchAuditReportBundleForAudit(
     suppressed_profiles_truncated?: boolean | null;
     campaigns_truncated?: boolean | null;
     deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
+    profile_scan_status?: 'pending' | 'complete' | 'failed' | 'skipped' | null;
   } | null;
 } | null> {
   let sectionsQuery = supabase.from('audit_sections').select('*').eq('audit_id', audit.id);
@@ -496,7 +501,7 @@ export async function fetchAuditReportBundleForAudit(
     supabase.from('klaviyo_segment_snapshots').select(SEGMENT_SNAPSHOT_SELECT).eq('audit_id', audit.id),
     supabase.from('klaviyo_form_snapshots').select(FORM_SNAPSHOT_SELECT).eq('audit_id', audit.id),
     supabase.from('klaviyo_campaign_snapshots').select(CAMPAIGN_SNAPSHOT_SELECT).eq('audit_id', audit.id),
-    supabase.from('klaviyo_reporting_rollups').select('timeframe_key, computed').eq('audit_id', audit.id),
+    supabase.from('klaviyo_reporting_rollups').select('timeframe_key, computed, campaigns').eq('audit_id', audit.id),
     supabase.from('audit_email_design').select('*, ecd_example:industry_email_library(*)').eq('audit_id', audit.id).maybeSingle(),
   ]);
 
@@ -520,9 +525,20 @@ export async function fetchAuditReportBundleForAudit(
     .find((row: any) => row.timeframe_key === 'last_30_days')?.computed?.reporting_errors?.[0]?.message
     ?? null;
 
-  const accountSnapshot = ((rollups.data ?? []) as any[])
-    .find((row: any) => row.timeframe_key === 'last_30_days')?.computed?.account_snapshot
-    ?? null;
+  const rollup30 = ((rollups.data ?? []) as any[]).find((row: any) => row.timeframe_key === 'last_30_days');
+  const accountSnapshotRaw = rollup30?.computed?.account_snapshot ?? null;
+  const campaignRprStored = accountSnapshotRaw?.campaign_revenue_per_recipient_30d;
+  const campaignRprComputed = computeCampaignRevenuePerRecipient(rollup30?.campaigns);
+  const campaignRevenuePerRecipient =
+    typeof campaignRprStored === 'number' && Number.isFinite(campaignRprStored)
+      ? campaignRprStored
+      : campaignRprComputed;
+  const accountSnapshot = accountSnapshotRaw
+    ? {
+        ...accountSnapshotRaw,
+        campaign_revenue_per_recipient_30d: campaignRevenuePerRecipient,
+      }
+    : null;
 
   const revenueSections = allSections.filter(section =>
     (REVENUE_OPPORTUNITY_SECTION_KEYS as readonly string[]).includes(section.section_key),

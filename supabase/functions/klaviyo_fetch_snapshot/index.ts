@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization } from "../_shared/auth.ts";
 import { fetchPlatformBenchmarkConfig, getFlowBenchmarks } from "../_shared/benchmarks.ts";
+import { computeCampaignRevenuePerRecipient } from "../_shared/campaign-metrics.ts";
 
 // Stage machine: each stage runs in its own edge invocation with a fresh ~150s
 // budget. `config` is the entry point the frontend calls; subsequent stages
@@ -219,6 +220,7 @@ type ProfileChunkOk = {
   ok: true;
   totalProfiles: number;
   subscribed: number;
+  smsSubscribed: number;
   active90d: number;
   suppressed: number;
   truncated: boolean;
@@ -232,6 +234,7 @@ async function computeProfileSnapshotChunk(params: {
   startPath: string | null;
   totalProfiles: number;
   subscribed: number;
+  smsSubscribed: number;
   active90d: number;
   suppressed: number;
   deadlineAtMs: number;
@@ -239,6 +242,7 @@ async function computeProfileSnapshotChunk(params: {
   const since90Ms = Date.parse(params.since90Iso);
   let totalProfiles = params.totalProfiles;
   let subscribed = params.subscribed;
+  let smsSubscribed = params.smsSubscribed;
   let active90d = params.active90d;
   let suppressed = params.suppressed;
   let next = params.startPath ?? PROFILE_FIRST_PATH;
@@ -249,6 +253,7 @@ async function computeProfileSnapshotChunk(params: {
         ok: true,
         totalProfiles,
         subscribed,
+        smsSubscribed,
         active90d,
         suppressed,
         truncated: true,
@@ -262,14 +267,16 @@ async function computeProfileSnapshotChunk(params: {
     const items = res.body?.data ?? [];
     for (const p of items) {
       totalProfiles += 1;
-      const consent = String(p?.attributes?.subscriptions?.email?.marketing?.consent ?? "").toUpperCase();
-      const isSubscribed = consent === "SUBSCRIBED";
-      if (isSubscribed) subscribed += 1;
+      const emailConsent = String(p?.attributes?.subscriptions?.email?.marketing?.consent ?? "").toUpperCase();
+      const isEmailSubscribed = emailConsent === "SUBSCRIBED";
+      if (isEmailSubscribed) subscribed += 1;
+      const smsConsent = String(p?.attributes?.subscriptions?.sms?.marketing?.consent ?? "").toUpperCase();
+      if (smsConsent === "SUBSCRIBED") smsSubscribed += 1;
       const suppressionList = p?.attributes?.subscriptions?.email?.marketing?.suppression;
       if (Array.isArray(suppressionList) ? suppressionList.length > 0 : suppressionList != null) {
         suppressed += 1;
       }
-      if (isSubscribed) {
+      if (isEmailSubscribed) {
         const updated = p?.attributes?.updated;
         const updatedMs = typeof updated === "string" ? Date.parse(updated) : NaN;
         if (Number.isFinite(updatedMs) && Number.isFinite(since90Ms) && updatedMs >= since90Ms) {
@@ -283,6 +290,7 @@ async function computeProfileSnapshotChunk(params: {
         ok: true,
         totalProfiles,
         subscribed,
+        smsSubscribed,
         active90d,
         suppressed,
         truncated: false,
@@ -342,6 +350,7 @@ async function finalizeProfileScan(
   auditId: string,
   totalProfiles: number,
   subscribed: number,
+  smsSubscribed: number,
   active90d: number,
   suppressed: number,
   stagedRpr: number | null,
@@ -352,6 +361,7 @@ async function finalizeProfileScan(
   const accountSnapshotPatch = {
     total_profiles_count: totalProfiles,
     email_subscribed_profiles_count: subscribed,
+    sms_subscribed_profiles_count: smsSubscribed,
     active_profiles_90d_count: active90d,
     suppressed_profiles_count: suppressed,
     email_subscribed_profiles_truncated: false,
@@ -457,6 +467,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
     startPath,
     totalProfiles: Number(claimed.total_profiles ?? 0),
     subscribed: Number(claimed.subscribed ?? 0),
+    smsSubscribed: Number(claimed.sms_subscribed ?? 0),
     active90d: Number(claimed.active90d ?? 0),
     suppressed: Number(claimed.suppressed ?? 0),
     deadlineAtMs,
@@ -488,6 +499,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       next_path: chunk.nextPath,
       total_profiles: chunk.totalProfiles,
       subscribed: chunk.subscribed,
+      sms_subscribed: chunk.smsSubscribed,
       active90d: chunk.active90d,
       suppressed: chunk.suppressed,
       updated_at: new Date().toISOString(),
@@ -508,7 +520,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
 
   const staged = claimed.staged_revenue_per_recipient;
   const stagedRpr = staged != null && Number.isFinite(Number(staged)) ? Number(staged) : null;
-  await finalizeProfileScan(sb, auditId, chunk.totalProfiles, chunk.subscribed, chunk.active90d, chunk.suppressed, stagedRpr);
+  await finalizeProfileScan(sb, auditId, chunk.totalProfiles, chunk.subscribed, chunk.smsSubscribed, chunk.active90d, chunk.suppressed, stagedRpr);
   await logStageRun(sb, {
     correlationId,
     auditId,
@@ -1506,6 +1518,9 @@ async function runStageReporting(params: {
       bounce_rate_90d: bounceRate90d,
       spam_rate_90d: spamRate90d,
       deliverability_campaign_timeframe: campaignReports.some((r) => r.timeframe === "last_90_days") ? "last_90_days" : "last_30_days",
+      campaign_revenue_per_recipient_30d: computeCampaignRevenuePerRecipient(
+        campaignReports.find((r) => r.timeframe === "last_30_days")?.results ?? [],
+      ),
       profile_scan_status: profileScanFull ? "pending" : "skipped",
       computed_at: new Date().toISOString(),
     };
