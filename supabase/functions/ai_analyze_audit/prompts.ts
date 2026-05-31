@@ -1,6 +1,6 @@
 import { AI_SCHEMA_VERSION } from "./schema.ts";
 import { AUDIT_SECTION_KEYS, type SectionKey } from "./schema.ts";
-import { buildBenchmarkReferenceBlock, formatBenchmarkRange, getFlowBenchmarks } from "../_shared/benchmarks.ts";
+import { buildBenchmarkReferenceBlock, formatBenchmarkRange, getFlowBenchmarks, type BenchmarkConfig, DEFAULT_BENCHMARK_CONFIG } from "../_shared/benchmarks.ts";
 
 type WizardData = {
   auditId?: string;
@@ -228,11 +228,14 @@ function summarizeLists(lists: KlaviyoContext["lists"]): string {
 }
 
 
-function summarizeFlowPerformance(perf: KlaviyoContext["flowPerformance"]): string {
+function summarizeFlowPerformance(
+  perf: KlaviyoContext["flowPerformance"],
+  config: BenchmarkConfig = DEFAULT_BENCHMARK_CONFIG,
+): string {
   if (!perf?.length) return "No flow performance data available (metrics scope may be missing).";
   const lines = [`Flow performance data (last 30 days) for ${perf.length} flows:`];
   for (const fp of perf.slice(0, 20)) {
-    const b = getFlowBenchmarks(fp.flow_name);
+    const b = getFlowBenchmarks(fp.flow_name, config);
     const tag = b.tier === "non_revenue" ? "[NON-REVENUE/engagement-only]" : "[REVENUE]";
     const parts = [`${fp.flow_name} ${tag} (${fp.flow_status}, ${b.tierLabel})`];
     if (fp.email_message_count != null) parts.push(`emails_in_sequence: ${fp.email_message_count}`);
@@ -283,14 +286,18 @@ function summarizeSubscriptionFlowCandidates(
   return `Soft-matched subscription lifecycle flows: ${lines.join("; ")}`;
 }
 
-function buildScopedKlaviyoData(klaviyo: KlaviyoContext, requestedKeys: readonly string[]): Record<string, unknown> {
+function buildScopedKlaviyoData(
+  klaviyo: KlaviyoContext,
+  requestedKeys: readonly string[],
+  benchmarkConfig: BenchmarkConfig = DEFAULT_BENCHMARK_CONFIG,
+): Record<string, unknown> {
   const scoped: Record<string, unknown> = { account: klaviyo.account ?? null };
   const needs = new Set(requestedKeys);
   const needsAll = needs.size === 0 || needs.size >= 4;
 
   if (needsAll || needs.has("flows") || needs.has("account_health")) {
     scoped.flows_summary = summarizeFlows(klaviyo.flows);
-    scoped.flow_performance = summarizeFlowPerformance(klaviyo.flowPerformance);
+    scoped.flow_performance = summarizeFlowPerformance(klaviyo.flowPerformance, benchmarkConfig);
   }
   if (needsAll || needs.has("campaigns") || needs.has("account_health")) {
     scoped.campaigns_summary = summarizeCampaigns(klaviyo.campaigns?.slice(0, 30), klaviyo.campaigns_truncated);
@@ -307,7 +314,12 @@ function buildScopedKlaviyoData(klaviyo: KlaviyoContext, requestedKeys: readonly
   return scoped;
 }
 
-export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext, mode: PromptMode = "full") {
+export function buildAuditUserPrompt(
+  data: WizardData,
+  klaviyo?: KlaviyoContext,
+  mode: PromptMode = "full",
+  benchmarkConfig: BenchmarkConfig = DEFAULT_BENCHMARK_CONFIG,
+) {
   const requested = Array.isArray(data.requestedSectionKeys) && data.requestedSectionKeys.length > 0
     ? data.requestedSectionKeys
     : AUDIT_SECTION_KEYS;
@@ -334,7 +346,7 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
           })),
       };
     } else {
-      klaviyoSection = buildScopedKlaviyoData(klaviyo, requested);
+      klaviyoSection = buildScopedKlaviyoData(klaviyo, requested, benchmarkConfig);
     }
   }
 
@@ -356,7 +368,7 @@ export function buildAuditUserPrompt(data: WizardData, klaviyo?: KlaviyoContext,
       sells_subscriptions: Boolean(data.clientSellsSubscriptions),
     },
     klaviyo_data: klaviyoSection,
-    benchmark_reference: buildBenchmarkReferenceBlock(),
+    benchmark_reference: buildBenchmarkReferenceBlock(benchmarkConfig),
     required_sections: mode === "top_level_only" ? [] : requested,
     style: {
       audience: "ecommerce founder/marketing lead",

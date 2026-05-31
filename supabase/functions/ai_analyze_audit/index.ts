@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getUserIdFromAuthorization } from "../_shared/auth.ts";
+import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import {
   AI_OUTPUT_JSON_SCHEMA,
   AI_SECTIONS_ONLY_SCHEMA,
@@ -22,6 +22,7 @@ import {
   type RefineBaseline,
   type AuditContextInput,
 } from "./prompts.ts";
+import { fetchPlatformBenchmarkConfig } from "../_shared/benchmarks.ts";
 
 type WizardData = Record<string, unknown>;
 
@@ -286,7 +287,7 @@ serve(async (req) => {
   try {
     const auth = req.headers.get("authorization") ?? "";
     const token = auth.replace(/^Bearer\s+/i, "");
-    const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+    const isServiceRole = isServiceRoleAuthorization(token);
     if (!isServiceRole) {
       try {
         await getUserIdFromAuthorization(req);
@@ -415,10 +416,13 @@ serve(async (req) => {
     const LIGHT_SECTIONS: readonly string[] = ["email_design", "signup_forms"];
     const isLightSection = mode === "sections_only" && requiredKeys.length === 1 && LIGHT_SECTIONS.includes(requiredKeys[0]);
 
+    const supabaseAdmin = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+    const benchmarkConfig = await fetchPlatformBenchmarkConfig(supabaseAdmin);
+
     const first = await callOpenAI({
       model: PRIMARY_MODEL,
       systemPrompt,
-      userPrompt: buildAuditUserPrompt(body, klaviyoCtx ?? undefined, mode),
+      userPrompt: buildAuditUserPrompt(body, klaviyoCtx ?? undefined, mode, benchmarkConfig),
       jsonSchema: selectedSchema,
       reasoningEffort: isLightSection ? "low" : "medium",
     });

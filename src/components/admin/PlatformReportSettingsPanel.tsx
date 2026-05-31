@@ -10,6 +10,7 @@ import {
   type EntityHighlightStyle,
 } from '../../lib/entity-highlight-styles';
 import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
+import BenchmarkSettingsPanel from './BenchmarkSettingsPanel';
 
 export default function PlatformReportSettingsPanel() {
   const toast = useToast();
@@ -164,6 +165,8 @@ export default function PlatformReportSettingsPanel() {
           </div>
         </div>
       </div>
+
+      <BenchmarkSettingsPanel />
     </div>
   );
 }

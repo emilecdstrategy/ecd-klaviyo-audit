@@ -24,6 +24,11 @@ import {
 import { dedupeClientsByCompany, normalizeCompanyKey } from './client-display';
 import { resolveRevenueOpportunityContent } from './revenue-opportunity-content';
 import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from './revenue-calculator';
+import {
+  DEFAULT_BENCHMARK_CONFIG,
+  resolveBenchmarkConfig,
+  type BenchmarkConfig,
+} from './benchmarks';
 
 const FLOW_SNAPSHOT_SELECT =
   'id, audit_id, client_id, flow_id, name, status, trigger_type, archived, created_at_klaviyo, updated_at_klaviyo, fetched_at, action_count:raw->attributes->action_count, flow_actions:raw->relationships->flow_actions->data';
@@ -689,6 +694,7 @@ export type PlatformSettings = {
   annotation_size: AnnotationSize;
   annotations_expanded: boolean;
   entity_highlight_style: EntityHighlightStyle;
+  benchmarks: BenchmarkConfig;
 };
 
 export async function getPlatformSettings(): Promise<PlatformSettings> {
@@ -702,6 +708,7 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     annotation_size: 'md',
     annotations_expanded: false,
     entity_highlight_style: 'purple',
+    benchmarks: { ...DEFAULT_BENCHMARK_CONFIG },
   };
 
   if (error || !data) return defaults;
@@ -712,6 +719,7 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     entity_highlight_style: normalizeEntityHighlightStyle(
       data.entity_highlight_style ?? defaults.entity_highlight_style,
     ),
+    benchmarks: resolveBenchmarkConfig(data.benchmarks as Partial<BenchmarkConfig> | null),
   };
 }
 
@@ -719,6 +727,7 @@ export async function updatePlatformSettings(updates: {
   annotation_size?: string;
   annotations_expanded?: boolean;
   entity_highlight_style?: EntityHighlightStyle;
+  benchmarks?: BenchmarkConfig;
 }): Promise<void> {
   const { error } = await supabase
     .from('platform_settings')

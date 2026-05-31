@@ -17,15 +17,15 @@ import {
 import type { FlowPerformance, KlaviyoCampaignSnapshot, KlaviyoFlowSnapshot } from '../../lib/types';
 import { CAMPAIGN_SNAPSHOT_CAP, campaignTotalSubtext, formatCampaignTotalDisplay } from '../../lib/campaign-count';
 import {
-  ACCOUNT_CONV_BENCHMARK,
-  BOUNCE_BENCHMARK,
   classifyDeliverabilityRate,
   classifyRate,
-  formatBenchmarkRange,
-  formatHealthyLabel,
+  formatDeliverabilityWarningRange,
+  formatHealthyBenchmarkRange,
+  formatHealthyBenchmarkUnder,
   formatPctDecimal,
-  SPAM_BENCHMARK,
 } from '../../lib/benchmarks';
+import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
+import { BenchmarkMetricCard } from './BenchmarkMetricCard';
 
 function normalizeReportingDiagnostic(raw?: string | null) {
   const msg = (raw ?? '').trim();
@@ -143,6 +143,7 @@ export default function ReportAccountSnapshot({
     profile_scan_status?: 'pending' | 'complete' | 'failed' | 'skipped' | null;
   } | null;
 }) {
+  const { benchmarks } = usePlatformSettings();
   const totalFlows = flowSnapshots.length;
   const liveFlows = flowSnapshots.filter((f) => f.status?.toLowerCase() === 'live' || f.status?.toLowerCase() === 'manual').length;
   const totalCampaigns = campaignSnapshots.length;
@@ -162,22 +163,24 @@ export default function ReportAccountSnapshot({
 
   const perfUnavailableReason = normalizeReportingDiagnostic(reportingDiagnostic) || 'not enough reporting data available';
   const { recentSent, perWeek } = calcWeeklySendFrequency(campaignSnapshots);
+  const deliverabilityWindow = accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30 days' : 'last 90 days';
+  const deliverabilityContext = `${deliverabilityWindow} · email campaigns (weighted by recipients)`;
+
   const bounceStatus = classifyDeliverabilityRate(
     accountSnapshot?.bounce_rate_90d ?? null,
-    BOUNCE_BENCHMARK.healthyMax,
-    BOUNCE_BENCHMARK.warningMax,
+    benchmarks.bounceHealthyMax,
+    benchmarks.bounceWarningMax,
   );
   const spamStatus = classifyDeliverabilityRate(
     accountSnapshot?.spam_rate_90d ?? null,
-    SPAM_BENCHMARK.healthyMax,
-    SPAM_BENCHMARK.warningMax,
+    benchmarks.spamHealthyMax,
+    benchmarks.spamWarningMax,
   );
   const convStatus = classifyRate(
     weightedConv,
-    ACCOUNT_CONV_BENCHMARK.low,
-    ACCOUNT_CONV_BENCHMARK.high,
+    benchmarks.accountConvLow,
+    benchmarks.accountConvHigh,
   );
-  const convBenchmarkLabel = formatBenchmarkRange(ACCOUNT_CONV_BENCHMARK.low, ACCOUNT_CONV_BENCHMARK.high);
 
   return (
     <div>
@@ -250,42 +253,48 @@ export default function ReportAccountSnapshot({
           sub={recentSent > 0 ? `${recentSent} campaigns sent (last 30 days)` : 'based on recent sent campaigns'}
         />
 
-        <Card
-          icon={MailX}
-          label="Bounce Rate"
-          value={accountSnapshot?.bounce_rate_90d != null ? formatRatePct(accountSnapshot.bounce_rate_90d) : 'N/A'}
-          sub={
-            accountSnapshot?.bounce_rate_90d != null
-              ? [
-                  `${accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30' : 'last 90'} days · email campaigns (weighted by recipients)`,
-                  `${BOUNCE_BENCHMARK.label} · ${formatHealthyLabel(bounceStatus)}`,
-                ].join(' · ')
-              : 'not enough campaign data available'
-          }
-        />
-        <Card
-          icon={ShieldAlert}
-          label="Spam Rate"
-          value={accountSnapshot?.spam_rate_90d != null ? formatRatePct(accountSnapshot.spam_rate_90d) : 'N/A'}
-          sub={
-            accountSnapshot?.spam_rate_90d != null
-              ? [
-                  `${accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30' : 'last 90'} days · email campaigns (weighted by recipients)`,
-                  `${SPAM_BENCHMARK.label} · ${formatHealthyLabel(spamStatus)}`,
-                ].join(' · ')
-              : 'not enough campaign data available'
-          }
-        />
-        <Card
-          icon={TrendingUp}
-          label="Flow Conv. Rate"
-          value={hasPerf && weightedConv != null ? formatPct(weightedConv) : 'N/A'}
-          sub={
-            hasPerf
-              ? `weighted average (flows) · Benchmark ${convBenchmarkLabel} · ${formatHealthyLabel(convStatus)}`
-              : perfUnavailableReason
-          }
-        />
+        {accountSnapshot?.bounce_rate_90d != null ? (
+          <BenchmarkMetricCard
+            icon={MailX}
+            label="Bounce Rate"
+            value={formatRatePct(accountSnapshot.bounce_rate_90d)}
+            contextLine={deliverabilityContext}
+            benchmarkLine={formatHealthyBenchmarkUnder(benchmarks.bounceHealthyMax)}
+            status={bounceStatus}
+            direction="lower"
+          />
+        ) : (
+          <Card icon={MailX} label="Bounce Rate" value="N/A" sub="not enough campaign data available" />
+        )}
+
+        {accountSnapshot?.spam_rate_90d != null ? (
+          <BenchmarkMetricCard
+            icon={ShieldAlert}
+            label="Spam Rate"
+            value={formatRatePct(accountSnapshot.spam_rate_90d)}
+            contextLine={deliverabilityContext}
+            benchmarkLine={formatHealthyBenchmarkUnder(benchmarks.spamHealthyMax)}
+            status={spamStatus}
+            direction="lower"
+          />
+        ) : (
+          <Card icon={ShieldAlert} label="Spam Rate" value="N/A" sub="not enough campaign data available" />
+        )}
+
+        {hasPerf && weightedConv != null ? (
+          <BenchmarkMetricCard
+            icon={TrendingUp}
+            label="Flow Conv. Rate"
+            value={formatPct(weightedConv)}
+            contextLine="Weighted average across all flows"
+            benchmarkLine={formatHealthyBenchmarkRange(benchmarks.accountConvLow, benchmarks.accountConvHigh)}
+            status={convStatus}
+            direction="higher"
+          />
+        ) : (
+          <Card icon={TrendingUp} label="Flow Conv. Rate" value="N/A" sub={perfUnavailableReason} />
+        )}
+
         <Card
           icon={DollarSign}
           label="Revenue / Recipient"
@@ -295,9 +304,12 @@ export default function ReportAccountSnapshot({
       </div>
 
       <BenchmarkCallout title="Benchmark: Healthy account hygiene">
-        A healthy account typically has bounce rate {BOUNCE_BENCHMARK.label} (warning 2–5%, concerning above 5%),
-        spam/complaint rate {SPAM_BENCHMARK.label} (warning 0.1–0.3%, concerning above 0.3%),
-        weighted flow conversion {convBenchmarkLabel}, consistent sending cadence, a clear suppression strategy,
+        A healthy account typically has bounce rate {formatHealthyBenchmarkUnder(benchmarks.bounceHealthyMax)} (
+        {formatDeliverabilityWarningRange(benchmarks.bounceHealthyMax, benchmarks.bounceWarningMax)}),
+        spam/complaint rate {formatHealthyBenchmarkUnder(benchmarks.spamHealthyMax)} (
+        {formatDeliverabilityWarningRange(benchmarks.spamHealthyMax, benchmarks.spamWarningMax)}),
+        weighted flow conversion {formatHealthyBenchmarkRange(benchmarks.accountConvLow, benchmarks.accountConvHigh)},
+        consistent sending cadence, a clear suppression strategy,
         and a clean engaged/unengaged segmentation framework.
       </BenchmarkCallout>
     </div>

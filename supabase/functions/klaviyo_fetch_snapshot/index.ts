@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization } from "../_shared/auth.ts";
-import { getFlowBenchmarks } from "../_shared/benchmarks.ts";
+import { fetchPlatformBenchmarkConfig, getFlowBenchmarks } from "../_shared/benchmarks.ts";
 
 // Stage machine: each stage runs in its own edge invocation with a fresh ~150s
 // budget. `config` is the entry point the frontend calls; subsequent stages
@@ -1414,6 +1414,8 @@ async function runStageReporting(params: {
         if (mid) flowAgg[gid].messageIds.add(mid);
       }
 
+      const platformBenchmarks = await fetchPlatformBenchmarkConfig(sb);
+
       const flowPerfRows = Object.entries(flowAgg).map(([flowId, a]) => {
         const denom = Math.max(1, a.recipients);
         const actual_open = a.open / denom;
@@ -1425,7 +1427,7 @@ async function runStageReporting(params: {
         const flowStatus = ((flowMeta?.status ?? "live") as string).toLowerCase();
         const mappedStatus =
           flowStatus.includes("draft") ? "draft" : flowStatus.includes("paused") ? "paused" : "live";
-        const flowBenchmarks = getFlowBenchmarks(flowName);
+        const flowBenchmarks = getFlowBenchmarks(flowName, platformBenchmarks);
         const nonRevenue = flowBenchmarks.tier === "non_revenue";
         const targetRpr = actual_rpr * 1.15;
         const opportunity = nonRevenue ? 0 : Math.max(0, (targetRpr - actual_rpr) * a.recipients);

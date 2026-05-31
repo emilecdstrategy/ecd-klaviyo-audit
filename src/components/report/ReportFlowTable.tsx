@@ -3,15 +3,16 @@ import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
 import {
   classifyRate,
   formatBenchmarkRange,
+  formatBenchmarkSubline,
   formatHealthyLabel,
   formatPctDecimal,
   getFlowBenchmarks,
-  OPEN_RATE_BENCHMARK,
-  CLICK_RATE_BENCHMARK,
-  RECOVERY_CONV_BENCHMARK,
-  STANDARD_CONV_BENCHMARK,
+  type BenchmarkConfig,
   type MetricStatus,
 } from '../../lib/benchmarks';
+import { metricStatusStyles } from '../../lib/benchmark-ui';
+import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
+import { BenchmarkStatusBadge } from './BenchmarkMetricCard';
 import { useRef, useState, useLayoutEffect, useCallback, type MouseEvent } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
@@ -20,8 +21,8 @@ const DEFAULT_VISIBLE_FLOWS = 2;
 
 export type { MetricStatus };
 
-function overallRating(flow: FlowPerformance): MetricStatus {
-  const b = getFlowBenchmarks(flow.flow_name);
+function overallRating(flow: FlowPerformance, config: BenchmarkConfig): MetricStatus {
+  const b = getFlowBenchmarks(flow.flow_name, config);
   const scores = [
     classifyRate(flow.actual_open_rate, b.openRateLow, b.openRateHigh),
     classifyRate(flow.actual_click_rate, b.clickRateLow, b.clickRateHigh),
@@ -35,8 +36,8 @@ function overallRating(flow: FlowPerformance): MetricStatus {
   return 'warning';
 }
 
-function buildAssessment(flow: FlowPerformance): string {
-  const b = getFlowBenchmarks(flow.flow_name);
+function buildAssessment(flow: FlowPerformance, config: BenchmarkConfig): string {
+  const b = getFlowBenchmarks(flow.flow_name, config);
   const parts: string[] = [];
   const openStatus = classifyRate(flow.actual_open_rate, b.openRateLow, b.openRateHigh);
   const clickStatus = classifyRate(flow.actual_click_rate, b.clickRateLow, b.clickRateHigh);
@@ -73,7 +74,7 @@ function buildAssessment(flow: FlowPerformance): string {
 
   if (parts.length === 0) {
     if (!b.convApplicable) return 'Non-revenue flow. Engagement metrics look healthy.';
-    const rating = overallRating(flow);
+    const rating = overallRating(flow, config);
     if (rating === 'good') {
       return `Performing within healthy ranges for a ${b.tierLabel} (open ${formatBenchmarkRange(b.openRateLow, b.openRateHigh)}, click ${formatBenchmarkRange(b.clickRateLow, b.clickRateHigh)}, conv ${formatBenchmarkRange(b.convRateLow, b.convRateHigh)}).`;
     }
@@ -106,21 +107,21 @@ function FlowStatusBadge({ status }: { status: FlowPerformance['flow_status'] })
 
 function pctCell(actual: number | null, low: number, high: number) {
   const status = classifyRate(actual, low, high);
-  const colorMap: Record<MetricStatus, string> = {
-    good: 'text-emerald-700',
-    warning: 'text-amber-600',
-    bad: 'text-red-600',
-    missing: 'text-gray-300',
-  };
+  const styles = metricStatusStyles(status);
   return (
-    <div className="flex flex-col items-center gap-0.5">
-      <span className={`text-sm font-semibold tabular-nums ${colorMap[status]}`}>
+    <div className="flex flex-col items-center gap-1">
+      <span className={cn('text-sm font-semibold tabular-nums', styles.value)}>
         {actual !== null ? formatPctDecimal(actual) : '—'}
       </span>
       {low > 0 || high > 0 ? (
-        <span className="text-[10px] leading-tight text-gray-400 tabular-nums">
-          vs {formatBenchmarkRange(low, high)}
-        </span>
+        <>
+          <span className="text-[10px] leading-tight text-gray-400 tabular-nums">
+            {formatBenchmarkSubline(low, high)}
+          </span>
+          {status !== 'missing' ? (
+            <BenchmarkStatusBadge status={status} direction="higher" />
+          ) : null}
+        </>
       ) : null}
     </div>
   );
@@ -134,6 +135,7 @@ interface ReportFlowTableProps {
 }
 
 export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, subtitleOverride }: ReportFlowTableProps) {
+  const { benchmarks } = usePlatformSettings();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<{ isDown: boolean; startX: number; startScrollLeft: number }>({
     isDown: false,
@@ -223,10 +225,10 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
       <p className="text-sm text-gray-500 mb-2">{subtitle}</p>
       <p className="text-xs text-gray-400 mb-4">
         Percentages shown against ECD Klaviyo healthy benchmark ranges — open{' '}
-        {formatBenchmarkRange(OPEN_RATE_BENCHMARK.low, OPEN_RATE_BENCHMARK.high)}, click{' '}
-        {formatBenchmarkRange(CLICK_RATE_BENCHMARK.low, CLICK_RATE_BENCHMARK.high)}, conversion{' '}
-        {formatBenchmarkRange(RECOVERY_CONV_BENCHMARK.low, RECOVERY_CONV_BENCHMARK.high)} (recovery) or{' '}
-        {formatBenchmarkRange(STANDARD_CONV_BENCHMARK.low, STANDARD_CONV_BENCHMARK.high)} (other revenue flows).
+        {formatBenchmarkRange(benchmarks.openRateLow, benchmarks.openRateHigh)}, click{' '}
+        {formatBenchmarkRange(benchmarks.clickRateLow, benchmarks.clickRateHigh)}, conversion{' '}
+        {formatBenchmarkRange(benchmarks.recoveryConvLow, benchmarks.recoveryConvHigh)} (recovery) or{' '}
+        {formatBenchmarkRange(benchmarks.standardConvLow, benchmarks.standardConvHigh)} (other revenue flows).
       </p>
       <div className="rounded-xl card-shadow overflow-hidden border border-gray-100 bg-white">
         <div
@@ -263,11 +265,11 @@ export default function ReportFlowTable({ flows, snapshots, defaultVisibleRows, 
                   snap?.action_count
                   ?? (Array.isArray(snap?.flow_actions) ? snap.flow_actions.length : null);
                 const rpr = flow.recipients_per_month > 0 ? flow.monthly_revenue_current / flow.recipients_per_month : 0;
-                const rating: MetricStatus = (flow.display_rating as MetricStatus | null | undefined) ?? overallRating(flow);
-                const assessment = flow.display_assessment ?? buildAssessment(flow);
+                const rating: MetricStatus = (flow.display_rating as MetricStatus | null | undefined) ?? overallRating(flow, benchmarks);
+                const assessment = flow.display_assessment ?? buildAssessment(flow, benchmarks);
                 const displayName = flow.display_name ?? flow.flow_name;
                 const nonRevenue = isNonRevenueFlow(flow.flow_name);
-                const flowBenchmarks = getFlowBenchmarks(flow.flow_name);
+                const flowBenchmarks = getFlowBenchmarks(flow.flow_name, benchmarks);
 
                 return (
                   <tr

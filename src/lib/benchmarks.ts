@@ -10,14 +10,65 @@ export const ACCOUNT_CONV_BENCHMARK = { low: 0.01, high: 0.03 } as const;
 export const BOUNCE_BENCHMARK = {
   healthyMax: 0.02,
   warningMax: 0.05,
-  label: 'Healthy: under 2%',
 } as const;
 
 export const SPAM_BENCHMARK = {
   healthyMax: 0.001,
   warningMax: 0.003,
-  label: 'Healthy: under 0.1%',
 } as const;
+
+export interface BenchmarkConfig {
+  openRateLow: number;
+  openRateHigh: number;
+  clickRateLow: number;
+  clickRateHigh: number;
+  recoveryConvLow: number;
+  recoveryConvHigh: number;
+  standardConvLow: number;
+  standardConvHigh: number;
+  accountConvLow: number;
+  accountConvHigh: number;
+  bounceHealthyMax: number;
+  bounceWarningMax: number;
+  spamHealthyMax: number;
+  spamWarningMax: number;
+}
+
+export const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
+  openRateLow: OPEN_RATE_BENCHMARK.low,
+  openRateHigh: OPEN_RATE_BENCHMARK.high,
+  clickRateLow: CLICK_RATE_BENCHMARK.low,
+  clickRateHigh: CLICK_RATE_BENCHMARK.high,
+  recoveryConvLow: RECOVERY_CONV_BENCHMARK.low,
+  recoveryConvHigh: RECOVERY_CONV_BENCHMARK.high,
+  standardConvLow: STANDARD_CONV_BENCHMARK.low,
+  standardConvHigh: STANDARD_CONV_BENCHMARK.high,
+  accountConvLow: ACCOUNT_CONV_BENCHMARK.low,
+  accountConvHigh: ACCOUNT_CONV_BENCHMARK.high,
+  bounceHealthyMax: BOUNCE_BENCHMARK.healthyMax,
+  bounceWarningMax: BOUNCE_BENCHMARK.warningMax,
+  spamHealthyMax: SPAM_BENCHMARK.healthyMax,
+  spamWarningMax: SPAM_BENCHMARK.warningMax,
+};
+
+const BENCHMARK_CONFIG_KEYS = Object.keys(DEFAULT_BENCHMARK_CONFIG) as (keyof BenchmarkConfig)[];
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+/** Merge partial DB JSON with canonical defaults. */
+export function resolveBenchmarkConfig(raw?: Partial<BenchmarkConfig> | null): BenchmarkConfig {
+  if (!raw || typeof raw !== 'object') return { ...DEFAULT_BENCHMARK_CONFIG };
+  const resolved = { ...DEFAULT_BENCHMARK_CONFIG };
+  for (const key of BENCHMARK_CONFIG_KEYS) {
+    const value = raw[key];
+    if (isFiniteNumber(value) && value >= 0) {
+      resolved[key] = value;
+    }
+  }
+  return resolved;
+}
 
 export const REVENUE_TIERS = [
   { min: 500_000, label: 'Strong' },
@@ -28,13 +79,17 @@ export const REVENUE_TIERS = [
 ] as const;
 
 /** Used by flows health score config — mirrors OPEN/CLICK canonical bands. */
-export const DEFAULT_FLOWS_HEALTH_BENCHMARKS = {
-  openRateLow: OPEN_RATE_BENCHMARK.low,
-  openRateHigh: OPEN_RATE_BENCHMARK.high,
-  clickRateLow: CLICK_RATE_BENCHMARK.low,
-  clickRateHigh: CLICK_RATE_BENCHMARK.high,
-  revenueTiers: [...REVENUE_TIERS],
-} as const;
+export function buildFlowsHealthBenchmarks(config: BenchmarkConfig = DEFAULT_BENCHMARK_CONFIG) {
+  return {
+    openRateLow: config.openRateLow,
+    openRateHigh: config.openRateHigh,
+    clickRateLow: config.clickRateLow,
+    clickRateHigh: config.clickRateHigh,
+    revenueTiers: [...REVENUE_TIERS],
+  } as const;
+}
+
+export const DEFAULT_FLOWS_HEALTH_BENCHMARKS = buildFlowsHealthBenchmarks();
 
 const HIGH_INTENT_RECOVERY_PATTERNS = [
   /abandon(ed)?\s*(cart|checkout)/i,
@@ -63,18 +118,22 @@ export function isHighIntentRecoveryFlow(flowName: string): boolean {
   return HIGH_INTENT_RECOVERY_PATTERNS.some(p => p.test(flowName));
 }
 
-export function getFlowBenchmarks(flowName: string): FlowBenchmarkSet {
+export function getFlowBenchmarks(
+  flowName: string,
+  config: BenchmarkConfig = DEFAULT_BENCHMARK_CONFIG,
+): FlowBenchmarkSet {
   const nonRevenue = isNonRevenueFlow(flowName);
   const recovery = !nonRevenue && isHighIntentRecoveryFlow(flowName);
-  const conv = recovery ? RECOVERY_CONV_BENCHMARK : STANDARD_CONV_BENCHMARK;
+  const convLow = recovery ? config.recoveryConvLow : config.standardConvLow;
+  const convHigh = recovery ? config.recoveryConvHigh : config.standardConvHigh;
 
   return {
-    openRateLow: OPEN_RATE_BENCHMARK.low,
-    openRateHigh: OPEN_RATE_BENCHMARK.high,
-    clickRateLow: CLICK_RATE_BENCHMARK.low,
-    clickRateHigh: CLICK_RATE_BENCHMARK.high,
-    convRateLow: nonRevenue ? 0 : conv.low,
-    convRateHigh: nonRevenue ? 0 : conv.high,
+    openRateLow: config.openRateLow,
+    openRateHigh: config.openRateHigh,
+    clickRateLow: config.clickRateLow,
+    clickRateHigh: config.clickRateHigh,
+    convRateLow: nonRevenue ? 0 : convLow,
+    convRateHigh: nonRevenue ? 0 : convHigh,
     convApplicable: !nonRevenue,
     tier: nonRevenue ? 'non_revenue' : recovery ? 'recovery' : 'standard',
     tierLabel: nonRevenue
@@ -120,7 +179,19 @@ export function formatBenchmarkRange(low: number, high: number): string {
 
 export function formatBenchmarkSubline(low: number, high: number): string {
   if (low <= 0 && high <= 0) return '';
-  return `vs ${formatBenchmarkRange(low, high)}`;
+  return `Benchmark: ${formatBenchmarkRange(low, high)}`;
+}
+
+export function formatHealthyBenchmarkUnder(max: number): string {
+  return `Healthy benchmark: under ${formatPctDecimal(max)}`;
+}
+
+export function formatHealthyBenchmarkRange(low: number, high: number): string {
+  return `Healthy benchmark: ${formatBenchmarkRange(low, high)}`;
+}
+
+export function formatDeliverabilityWarningRange(healthyMax: number, warningMax: number): string {
+  return `Warning: ${formatBenchmarkRange(healthyMax, warningMax)} · Concerning: above ${formatPctDecimal(warningMax)}`;
 }
 
 export function formatHealthyLabel(status: MetricStatus): string {
@@ -137,17 +208,73 @@ export function formatHealthyLabel(status: MetricStatus): string {
 }
 
 /** Plain-text block for AI prompts — keep in sync with supabase/functions/_shared/benchmarks.ts */
-export function buildBenchmarkReferenceBlock(): string {
+export function buildBenchmarkReferenceBlock(config: BenchmarkConfig = DEFAULT_BENCHMARK_CONFIG): string {
   return [
     'ECD Klaviyo benchmark reference (use whenever citing a percentage):',
-    `- Open rate: healthy ${formatBenchmarkRange(OPEN_RATE_BENCHMARK.low, OPEN_RATE_BENCHMARK.high)} (Apple MPP inflates opens)`,
-    `- Click rate: healthy ${formatBenchmarkRange(CLICK_RATE_BENCHMARK.low, CLICK_RATE_BENCHMARK.high)}`,
-    `- Conversion (placed order), high-intent recovery (Abandoned Cart/Checkout, Browse Abandonment): ${formatBenchmarkRange(RECOVERY_CONV_BENCHMARK.low, RECOVERY_CONV_BENCHMARK.high)}`,
-    `- Conversion, other revenue flows (Welcome, Post-Purchase, Winback, etc.): ${formatBenchmarkRange(STANDARD_CONV_BENCHMARK.low, STANDARD_CONV_BENCHMARK.high)}`,
+    `- Open rate: healthy ${formatBenchmarkRange(config.openRateLow, config.openRateHigh)} (Apple MPP inflates opens)`,
+    `- Click rate: healthy ${formatBenchmarkRange(config.clickRateLow, config.clickRateHigh)}`,
+    `- Conversion (placed order), high-intent recovery (Abandoned Cart/Checkout, Browse Abandonment): ${formatBenchmarkRange(config.recoveryConvLow, config.recoveryConvHigh)}`,
+    `- Conversion, other revenue flows (Welcome, Post-Purchase, Winback, etc.): ${formatBenchmarkRange(config.standardConvLow, config.standardConvHigh)}`,
     '- Non-revenue/engagement-only flows: judge on open/click only; conversion N/A',
-    `- Account weighted flow conversion: ${formatBenchmarkRange(ACCOUNT_CONV_BENCHMARK.low, ACCOUNT_CONV_BENCHMARK.high)}`,
-    `- Bounce rate: ${BOUNCE_BENCHMARK.label}; warning 2–5%; concerning above 5%`,
-    `- Spam/complaint rate: ${SPAM_BENCHMARK.label}; warning 0.1–0.3%; concerning above 0.3%`,
-    'When citing any percentage, state the relevant benchmark range and whether the result is healthy, below benchmark, or needs attention.',
+    `- Account weighted flow conversion: ${formatBenchmarkRange(config.accountConvLow, config.accountConvHigh)}`,
+    `- Bounce rate: ${formatHealthyBenchmarkUnder(config.bounceHealthyMax)}; ${formatDeliverabilityWarningRange(config.bounceHealthyMax, config.bounceWarningMax)}`,
+    `- Spam/complaint rate: ${formatHealthyBenchmarkUnder(config.spamHealthyMax)}; ${formatDeliverabilityWarningRange(config.spamHealthyMax, config.spamWarningMax)}`,
+    'When citing any percentage, state the relevant benchmark range and whether the result is within benchmark, below benchmark, elevated, or needs attention.',
   ].join('\n');
+}
+
+/** Convert admin form percentages (25 = 25%) to decimal config. */
+export function benchmarkFormToConfig(form: BenchmarkFormValues): BenchmarkConfig {
+  return {
+    openRateLow: form.openRateLow / 100,
+    openRateHigh: form.openRateHigh / 100,
+    clickRateLow: form.clickRateLow / 100,
+    clickRateHigh: form.clickRateHigh / 100,
+    recoveryConvLow: form.recoveryConvLow / 100,
+    recoveryConvHigh: form.recoveryConvHigh / 100,
+    standardConvLow: form.standardConvLow / 100,
+    standardConvHigh: form.standardConvHigh / 100,
+    accountConvLow: form.accountConvLow / 100,
+    accountConvHigh: form.accountConvHigh / 100,
+    bounceHealthyMax: form.bounceHealthyMax / 100,
+    bounceWarningMax: form.bounceWarningMax / 100,
+    spamHealthyMax: form.spamHealthyMax / 100,
+    spamWarningMax: form.spamWarningMax / 100,
+  };
+}
+
+export type BenchmarkFormValues = {
+  openRateLow: number;
+  openRateHigh: number;
+  clickRateLow: number;
+  clickRateHigh: number;
+  recoveryConvLow: number;
+  recoveryConvHigh: number;
+  standardConvLow: number;
+  standardConvHigh: number;
+  accountConvLow: number;
+  accountConvHigh: number;
+  bounceHealthyMax: number;
+  bounceWarningMax: number;
+  spamHealthyMax: number;
+  spamWarningMax: number;
+};
+
+export function benchmarkConfigToForm(config: BenchmarkConfig = DEFAULT_BENCHMARK_CONFIG): BenchmarkFormValues {
+  return {
+    openRateLow: config.openRateLow * 100,
+    openRateHigh: config.openRateHigh * 100,
+    clickRateLow: config.clickRateLow * 100,
+    clickRateHigh: config.clickRateHigh * 100,
+    recoveryConvLow: config.recoveryConvLow * 100,
+    recoveryConvHigh: config.recoveryConvHigh * 100,
+    standardConvLow: config.standardConvLow * 100,
+    standardConvHigh: config.standardConvHigh * 100,
+    accountConvLow: config.accountConvLow * 100,
+    accountConvHigh: config.accountConvHigh * 100,
+    bounceHealthyMax: config.bounceHealthyMax * 100,
+    bounceWarningMax: config.bounceWarningMax * 100,
+    spamHealthyMax: config.spamHealthyMax * 100,
+    spamWarningMax: config.spamWarningMax * 100,
+  };
 }

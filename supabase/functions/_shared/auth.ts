@@ -1,5 +1,19 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
+/** Accept configured service role key or legacy JWT with role=service_role. */
+export function isServiceRoleAuthorization(token: string): boolean {
+  const expected = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
+  if (expected && token === expected) return true;
+  try {
+    const parts = token.split(".");
+    if (parts.length !== 3) return false;
+    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+    return payload?.role === "service_role";
+  } catch {
+    return false;
+  }
+}
+
 /** Resolves the signed-in user id using GoTrue (works reliably in Edge; avoids gateway JWT quirks). */
 export async function getUserIdFromAuthorization(req: Request): Promise<string> {
   const authHeader = req.headers.get("authorization");

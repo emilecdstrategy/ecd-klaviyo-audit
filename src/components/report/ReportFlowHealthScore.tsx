@@ -3,13 +3,15 @@ import type { FlowPerformance, KlaviyoFlowSnapshot } from '../../lib/types';
 import { isNonRevenueFlow } from '../../lib/revenue-calculator';
 import type { FlowsHealthBenchmarks } from '../../lib/report-config/types';
 import {
-  ACCOUNT_CONV_BENCHMARK,
   classifyRate,
+  buildFlowsHealthBenchmarks,
   DEFAULT_FLOWS_HEALTH_BENCHMARKS,
   formatBenchmarkRange,
-  formatHealthyLabel,
+  formatHealthyBenchmarkRange,
   formatPctDecimal,
 } from '../../lib/benchmarks';
+import { formatStatusBadgeLabel } from '../../lib/benchmark-ui';
+import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
 
 interface Props {
   snapshots: KlaviyoFlowSnapshot[];
@@ -60,6 +62,8 @@ function computeCategories(
   performance: FlowPerformance[],
   segmentCount: number,
   benchmarks: Required<FlowsHealthBenchmarks>,
+  accountConvLow: number,
+  accountConvHigh: number,
 ): Category[] {
   const revenueFlows = performance.filter(f => !isNonRevenueFlow(f.flow_name));
   const totalRecipients = performance.reduce((s, f) => s + f.recipients_per_month, 0);
@@ -115,16 +119,16 @@ function computeCategories(
 
   // Conversion Rates (0-10)
   let convScore = 0;
-  if (weightedConv >= ACCOUNT_CONV_BENCHMARK.high * 1.5) convScore = 10;
-  else if (weightedConv >= ACCOUNT_CONV_BENCHMARK.high) convScore = 7;
-  else if (weightedConv >= ACCOUNT_CONV_BENCHMARK.low) convScore = 5;
-  else if (weightedConv >= ACCOUNT_CONV_BENCHMARK.low * 0.7) convScore = 3;
+  if (weightedConv >= accountConvHigh * 1.5) convScore = 10;
+  else if (weightedConv >= accountConvHigh) convScore = 7;
+  else if (weightedConv >= accountConvLow) convScore = 5;
+  else if (weightedConv >= accountConvLow * 0.7) convScore = 3;
   else convScore = 1;
-  const convStatus = classifyRate(weightedConv, ACCOUNT_CONV_BENCHMARK.low, ACCOUNT_CONV_BENCHMARK.high);
+  const convStatus = classifyRate(weightedConv, accountConvLow, accountConvHigh);
   categories.push({
     name: 'Conversion Rates',
     score: convScore, maxScore: 10,
-    assessment: `${formatPctDecimal(weightedConv)} overall vs. ${formatBenchmarkRange(ACCOUNT_CONV_BENCHMARK.low, ACCOUNT_CONV_BENCHMARK.high)} benchmark (${formatHealthyLabel(convStatus)})`,
+    assessment: `${formatPctDecimal(weightedConv)} overall · ${formatHealthyBenchmarkRange(accountConvLow, accountConvHigh)} · ${formatStatusBadgeLabel(convStatus, 'higher')}`,
   });
 
   const clickLow = benchmarks.clickRateLow;
@@ -139,7 +143,7 @@ function computeCategories(
   categories.push({
     name: 'Click-Through Rates',
     score: clickScore, maxScore: 10,
-    assessment: `${formatPctDecimal(weightedClick)} avg vs. ${formatBenchmarkRange(clickLow, clickHigh)} benchmark (${formatHealthyLabel(clickStatus)})`,
+    assessment: `${formatPctDecimal(weightedClick)} avg · ${formatHealthyBenchmarkRange(clickLow, clickHigh)} · ${formatStatusBadgeLabel(clickStatus, 'higher')}`,
   });
 
   const openLow = benchmarks.openRateLow;
@@ -156,8 +160,8 @@ function computeCategories(
     name: 'Open Rates',
     score: openScore, maxScore: 10,
     assessment: weightedOpen >= openHigh
-      ? `${formatPctDecimal(weightedOpen)} avg vs. ${formatBenchmarkRange(openLow, openHigh)} — likely inflated by Apple MPP`
-      : `${formatPctDecimal(weightedOpen)} avg vs. ${formatBenchmarkRange(openLow, openHigh)} benchmark (${formatHealthyLabel(openStatus)})`,
+      ? `${formatPctDecimal(weightedOpen)} avg · ${formatHealthyBenchmarkRange(openLow, openHigh)} — likely inflated by Apple MPP`
+      : `${formatPctDecimal(weightedOpen)} avg · ${formatHealthyBenchmarkRange(openLow, openHigh)} · ${formatStatusBadgeLabel(openStatus, 'higher')}`,
   });
 
   // Flow Hygiene (0-10)
@@ -224,8 +228,19 @@ export default function ReportFlowHealthScore({
   subtitle,
   benchmarks,
 }: Props) {
-  const resolvedBenchmarks = resolveBenchmarks(benchmarks);
-  const categories = computeCategories(snapshots, performance, segmentCount, resolvedBenchmarks);
+  const { benchmarks: platformBenchmarks } = usePlatformSettings();
+  const resolvedBenchmarks = resolveBenchmarks({
+    ...buildFlowsHealthBenchmarks(platformBenchmarks),
+    ...benchmarks,
+  });
+  const categories = computeCategories(
+    snapshots,
+    performance,
+    segmentCount,
+    resolvedBenchmarks,
+    platformBenchmarks.accountConvLow,
+    platformBenchmarks.accountConvHigh,
+  );
   const totalScore = categories.reduce((s, c) => s + c.score, 0);
   const maxTotal = categories.reduce((s, c) => s + c.maxScore, 0);
   const overall = maxTotal > 0 ? Math.round((totalScore / maxTotal) * 100) : 0;

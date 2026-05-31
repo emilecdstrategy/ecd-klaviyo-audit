@@ -15,22 +15,26 @@ import {
   type EntityHighlightStyle,
 } from '../lib/entity-highlight-styles';
 import type { AnnotationSize } from '../lib/types';
+import { DEFAULT_BENCHMARK_CONFIG, type BenchmarkConfig } from '../lib/benchmarks';
 
 export type PlatformSettingsState = {
   annotation_size: AnnotationSize;
   annotations_expanded: boolean;
   entity_highlight_style: EntityHighlightStyle;
+  benchmarks: BenchmarkConfig;
 };
 
 const DEFAULT_SETTINGS: PlatformSettingsState = {
   annotation_size: 'md',
   annotations_expanded: false,
   entity_highlight_style: 'purple',
+  benchmarks: { ...DEFAULT_BENCHMARK_CONFIG },
 };
 
 type PlatformSettingsContextValue = {
   settings: PlatformSettingsState;
   loaded: boolean;
+  benchmarks: BenchmarkConfig;
   entityHighlightStyle: EntityHighlightStyle;
   entityHighlightsEnabled: boolean;
   refreshSettings: () => Promise<void>;
@@ -39,6 +43,7 @@ type PlatformSettingsContextValue = {
 const PlatformSettingsContext = createContext<PlatformSettingsContextValue>({
   settings: DEFAULT_SETTINGS,
   loaded: false,
+  benchmarks: DEFAULT_BENCHMARK_CONFIG,
   entityHighlightStyle: 'purple',
   entityHighlightsEnabled: true,
   refreshSettings: async () => {},
@@ -68,6 +73,7 @@ export function PlatformSettingsProvider({ children }: { children: ReactNode }) 
     () => ({
       settings,
       loaded,
+      benchmarks: settings.benchmarks,
       entityHighlightStyle: settings.entity_highlight_style,
       entityHighlightsEnabled: entityHighlightsEnabled(settings.entity_highlight_style),
       refreshSettings,

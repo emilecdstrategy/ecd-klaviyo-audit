@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getUserIdFromAuthorization } from "../_shared/auth.ts";
+import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { persistAuditAnalysisResults } from "../_shared/audit-analysis-persist.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -365,7 +365,7 @@ serve(async (req) => {
 
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.replace(/^Bearer\s+/i, "");
-  const isServiceRole = token === SUPABASE_SERVICE_ROLE_KEY;
+  const isServiceRole = isServiceRoleAuthorization(token);
   if (!isServiceRole) {
     try {
       await getUserIdFromAuthorization(req);
