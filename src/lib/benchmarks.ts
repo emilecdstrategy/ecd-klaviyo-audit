@@ -1,3 +1,4 @@
+import { classifyCoreFlowName } from './core-flows-matrix';
 import { isNonRevenueFlow } from './revenue-calculator';
 
 /** Canonical Klaviyo email/flow benchmark bands (decimal rates, e.g. 0.25 = 25%). */
@@ -17,6 +18,17 @@ export const SPAM_BENCHMARK = {
   warningMax: 0.003,
 } as const;
 
+/** Target share of total flow revenue by core flow category (decimal, e.g. 0.25 = 25%). */
+export const FLOW_REVENUE_MIX_TARGETS = {
+  welcomeMixTarget: 0.2,
+  abandonedCartMixTarget: 0.3,
+  browseAbandonmentMixTarget: 0.1,
+  postPurchaseMixTarget: 0.1,
+  winbackMixTarget: 0.1,
+  backInStockMixTarget: 0.05,
+  subscriptionMixTarget: 0.05,
+} as const;
+
 export interface BenchmarkConfig {
   openRateLow: number;
   openRateHigh: number;
@@ -32,6 +44,13 @@ export interface BenchmarkConfig {
   bounceWarningMax: number;
   spamHealthyMax: number;
   spamWarningMax: number;
+  welcomeMixTarget: number;
+  abandonedCartMixTarget: number;
+  browseAbandonmentMixTarget: number;
+  postPurchaseMixTarget: number;
+  winbackMixTarget: number;
+  backInStockMixTarget: number;
+  subscriptionMixTarget: number;
 }
 
 export const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
@@ -49,6 +68,13 @@ export const DEFAULT_BENCHMARK_CONFIG: BenchmarkConfig = {
   bounceWarningMax: BOUNCE_BENCHMARK.warningMax,
   spamHealthyMax: SPAM_BENCHMARK.healthyMax,
   spamWarningMax: SPAM_BENCHMARK.warningMax,
+  welcomeMixTarget: FLOW_REVENUE_MIX_TARGETS.welcomeMixTarget,
+  abandonedCartMixTarget: FLOW_REVENUE_MIX_TARGETS.abandonedCartMixTarget,
+  browseAbandonmentMixTarget: FLOW_REVENUE_MIX_TARGETS.browseAbandonmentMixTarget,
+  postPurchaseMixTarget: FLOW_REVENUE_MIX_TARGETS.postPurchaseMixTarget,
+  winbackMixTarget: FLOW_REVENUE_MIX_TARGETS.winbackMixTarget,
+  backInStockMixTarget: FLOW_REVENUE_MIX_TARGETS.backInStockMixTarget,
+  subscriptionMixTarget: FLOW_REVENUE_MIX_TARGETS.subscriptionMixTarget,
 };
 
 const BENCHMARK_CONFIG_KEYS = Object.keys(DEFAULT_BENCHMARK_CONFIG) as (keyof BenchmarkConfig)[];
@@ -116,6 +142,29 @@ export interface FlowBenchmarkSet {
 
 export function isHighIntentRecoveryFlow(flowName: string): boolean {
   return HIGH_INTENT_RECOVERY_PATTERNS.some(p => p.test(flowName));
+}
+
+const FLOW_REVENUE_MIX_BY_CATEGORY: Record<string, keyof BenchmarkConfig> = {
+  'Welcome Series': 'welcomeMixTarget',
+  'Abandoned Cart': 'abandonedCartMixTarget',
+  'Browse Abandonment': 'browseAbandonmentMixTarget',
+  'Post-Purchase': 'postPurchaseMixTarget',
+  'Winback / Re-engagement': 'winbackMixTarget',
+  'Back-in-Stock': 'backInStockMixTarget',
+  'Subscription Lifecycle': 'subscriptionMixTarget',
+};
+
+/** Target revenue share (decimal) for a flow name, or null if unmatched / non-revenue category. */
+export function getFlowRevenueMixTarget(
+  flowName: string,
+  config: BenchmarkConfig = DEFAULT_BENCHMARK_CONFIG,
+): number | null {
+  const category = classifyCoreFlowName(flowName);
+  if (!category) return null;
+  const key = FLOW_REVENUE_MIX_BY_CATEGORY[category];
+  if (!key) return null;
+  const target = config[key];
+  return typeof target === 'number' && Number.isFinite(target) && target >= 0 ? target : null;
 }
 
 export function getFlowBenchmarks(
@@ -240,6 +289,13 @@ export function benchmarkFormToConfig(form: BenchmarkFormValues): BenchmarkConfi
     bounceWarningMax: form.bounceWarningMax / 100,
     spamHealthyMax: form.spamHealthyMax / 100,
     spamWarningMax: form.spamWarningMax / 100,
+    welcomeMixTarget: form.welcomeMixTarget / 100,
+    abandonedCartMixTarget: form.abandonedCartMixTarget / 100,
+    browseAbandonmentMixTarget: form.browseAbandonmentMixTarget / 100,
+    postPurchaseMixTarget: form.postPurchaseMixTarget / 100,
+    winbackMixTarget: form.winbackMixTarget / 100,
+    backInStockMixTarget: form.backInStockMixTarget / 100,
+    subscriptionMixTarget: form.subscriptionMixTarget / 100,
   };
 }
 
@@ -258,6 +314,13 @@ export type BenchmarkFormValues = {
   bounceWarningMax: number;
   spamHealthyMax: number;
   spamWarningMax: number;
+  welcomeMixTarget: number;
+  abandonedCartMixTarget: number;
+  browseAbandonmentMixTarget: number;
+  postPurchaseMixTarget: number;
+  winbackMixTarget: number;
+  backInStockMixTarget: number;
+  subscriptionMixTarget: number;
 };
 
 export function benchmarkConfigToForm(config: BenchmarkConfig = DEFAULT_BENCHMARK_CONFIG): BenchmarkFormValues {
@@ -276,5 +339,12 @@ export function benchmarkConfigToForm(config: BenchmarkConfig = DEFAULT_BENCHMAR
     bounceWarningMax: config.bounceWarningMax * 100,
     spamHealthyMax: config.spamHealthyMax * 100,
     spamWarningMax: config.spamWarningMax * 100,
+    welcomeMixTarget: config.welcomeMixTarget * 100,
+    abandonedCartMixTarget: config.abandonedCartMixTarget * 100,
+    browseAbandonmentMixTarget: config.browseAbandonmentMixTarget * 100,
+    postPurchaseMixTarget: config.postPurchaseMixTarget * 100,
+    winbackMixTarget: config.winbackMixTarget * 100,
+    backInStockMixTarget: config.backInStockMixTarget * 100,
+    subscriptionMixTarget: config.subscriptionMixTarget * 100,
   };
 }

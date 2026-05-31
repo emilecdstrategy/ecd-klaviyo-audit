@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState, type ReactNode } from 'react';
-import { BarChart3, Mail, ShoppingCart, ShieldCheck, RotateCcw, Info } from 'lucide-react';
+import { BarChart3, Mail, ShoppingCart, ShieldCheck, RotateCcw, Info, Workflow } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { getPlatformSettings, updatePlatformSettings } from '../../lib/db';
 import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
@@ -46,6 +46,51 @@ function UsageTags({ tags }: { tags: string[] }) {
           {tag}
         </span>
       ))}
+    </div>
+  );
+}
+
+function SingleRow({
+  label,
+  hint,
+  fieldKey,
+  value,
+  onChange,
+  step,
+  defaultValue,
+  usedIn,
+}: {
+  label: string;
+  hint?: string;
+  fieldKey: keyof BenchmarkFormValues;
+  value: number;
+  onChange: (key: keyof BenchmarkFormValues, value: number) => void;
+  step?: string;
+  defaultValue: number;
+  usedIn?: string[];
+}) {
+  return (
+    <div className="grid grid-cols-1 gap-3 py-3.5 border-b border-gray-50 last:border-0">
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-gray-800">{label}</p>
+        {hint ? <p className="text-xs text-gray-400 mt-0.5">{hint}</p> : null}
+        {usedIn?.length ? <UsageTags tags={usedIn} /> : null}
+      </div>
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1.5">
+          <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Target</span>
+          <CompactPctInput
+            label={`${label} target`}
+            value={value}
+            step={step}
+            onChange={v => onChange(fieldKey, v)}
+          />
+          <span className="text-xs text-gray-400">%</span>
+        </div>
+        <span className="text-[11px] text-gray-400 tabular-nums shrink-0">
+          Default {defaultValue.toFixed(defaultValue < 1 ? 2 : 1)}%
+        </span>
+      </div>
     </div>
   );
 }
@@ -409,6 +454,77 @@ export default function BenchmarkSettingsPanel() {
           defaultHealthy={DEFAULT_FORM.spamHealthyMax}
           defaultWarning={DEFAULT_FORM.spamWarningMax}
           usedIn={['Account snapshot', 'AI prompts']}
+        />
+      </SectionCard>
+
+      <SectionCard
+        icon={Workflow}
+        title="Flow revenue mix"
+        description="Target share of total flow revenue by core flow category. Shown beside each flow in Revenue Breakdown by Flow."
+        className="lg:col-span-2"
+      >
+        <SingleRow
+          label="Abandoned Cart"
+          fieldKey="abandonedCartMixTarget"
+          value={form.abandonedCartMixTarget}
+          onChange={updateField}
+          step="0.1"
+          defaultValue={DEFAULT_FORM.abandonedCartMixTarget}
+          usedIn={['Revenue Breakdown by Flow']}
+        />
+        <SingleRow
+          label="Welcome Series"
+          fieldKey="welcomeMixTarget"
+          value={form.welcomeMixTarget}
+          onChange={updateField}
+          step="0.1"
+          defaultValue={DEFAULT_FORM.welcomeMixTarget}
+          usedIn={['Revenue Breakdown by Flow']}
+        />
+        <SingleRow
+          label="Browse Abandonment"
+          fieldKey="browseAbandonmentMixTarget"
+          value={form.browseAbandonmentMixTarget}
+          onChange={updateField}
+          step="0.1"
+          defaultValue={DEFAULT_FORM.browseAbandonmentMixTarget}
+          usedIn={['Revenue Breakdown by Flow']}
+        />
+        <SingleRow
+          label="Post-Purchase"
+          fieldKey="postPurchaseMixTarget"
+          value={form.postPurchaseMixTarget}
+          onChange={updateField}
+          step="0.1"
+          defaultValue={DEFAULT_FORM.postPurchaseMixTarget}
+          usedIn={['Revenue Breakdown by Flow']}
+        />
+        <SingleRow
+          label="Winback / Re-engagement"
+          fieldKey="winbackMixTarget"
+          value={form.winbackMixTarget}
+          onChange={updateField}
+          step="0.1"
+          defaultValue={DEFAULT_FORM.winbackMixTarget}
+          usedIn={['Revenue Breakdown by Flow']}
+        />
+        <SingleRow
+          label="Back-in-Stock"
+          fieldKey="backInStockMixTarget"
+          value={form.backInStockMixTarget}
+          onChange={updateField}
+          step="0.1"
+          defaultValue={DEFAULT_FORM.backInStockMixTarget}
+          usedIn={['Revenue Breakdown by Flow']}
+        />
+        <SingleRow
+          label="Subscription Lifecycle"
+          fieldKey="subscriptionMixTarget"
+          value={form.subscriptionMixTarget}
+          onChange={updateField}
+          step="0.1"
+          defaultValue={DEFAULT_FORM.subscriptionMixTarget}
+          usedIn={['Revenue Breakdown by Flow']}
         />
       </SectionCard>
       </div>

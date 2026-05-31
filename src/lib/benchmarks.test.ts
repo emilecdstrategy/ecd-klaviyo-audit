@@ -3,6 +3,7 @@ import {
   classifyRate,
   formatBenchmarkRange,
   getFlowBenchmarks,
+  getFlowRevenueMixTarget,
   RECOVERY_CONV_BENCHMARK,
   STANDARD_CONV_BENCHMARK,
 } from './benchmarks';
@@ -31,5 +32,12 @@ describe('benchmarks', () => {
     expect(classifyRate(0.03, 0.02, 0.05)).toBe('good');
     expect(classifyRate(0.015, 0.02, 0.05)).toBe('warning');
     expect(classifyRate(0.01, 0.02, 0.05)).toBe('bad');
+  });
+
+  it('returns mix target for known flow categories', () => {
+    expect(getFlowRevenueMixTarget('Welcome Series - Final')).toBe(0.2);
+    expect(getFlowRevenueMixTarget('Abandoned Cart Flow')).toBe(0.3);
+    expect(getFlowRevenueMixTarget('Yotpo L&R - VIP Tier')).toBeNull();
+    expect(getFlowRevenueMixTarget('Sunset Flow')).toBeNull();
   });
 });

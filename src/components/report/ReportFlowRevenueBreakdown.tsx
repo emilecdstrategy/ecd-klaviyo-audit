@@ -1,6 +1,8 @@
 import type { ReactNode } from 'react';
 import type { FlowPerformance } from '../../lib/types';
-import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
+import { formatCurrency } from '../../lib/revenue-calculator';
+import { getFlowRevenueMixTarget } from '../../lib/benchmarks';
+import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
 
 import type { RevenueBreakdown } from '../../lib/revenue-breakdown';
 import { formatStoreRevenueContext } from '../../lib/revenue-breakdown';
@@ -38,6 +40,7 @@ const TEXT_COLORS = [
 ];
 
 export default function ReportFlowRevenueBreakdown({ performance, title, revenueBreakdown }: Props) {
+  const { benchmarks } = usePlatformSettings();
   const visiblePerformance = performance.filter(f => !f.is_hidden);
   const sorted = [...visiblePerformance].sort((a, b) => b.monthly_revenue_current - a.monthly_revenue_current);
   const totalRevenue = sorted.reduce((s, f) => s + f.monthly_revenue_current, 0);
@@ -75,15 +78,15 @@ export default function ReportFlowRevenueBreakdown({ performance, title, revenue
           const pct = totalRevenue > 0 ? (flow.monthly_revenue_current / totalRevenue) * 100 : 0;
           const barWidth = maxRevenue > 0 ? (flow.monthly_revenue_current / maxRevenue) * 100 : 0;
           const isShortBar = barWidth < 22;
+          const mixTarget = getFlowRevenueMixTarget(flow.flow_name, benchmarks);
+          const targetPct = mixTarget != null ? mixTarget * 100 : null;
+          const meetsTarget = targetPct != null && pct >= targetPct;
           return (
             <div key={flow.id} className="flex items-center gap-3">
-              <div
-                className="w-44 text-right text-sm text-gray-700 font-medium shrink-0 truncate"
-                title={flow.flow_name}
-              >
+              <div className="w-56 shrink-0 text-right text-sm font-medium leading-tight text-gray-700 whitespace-normal break-words">
                 {flow.flow_name}
               </div>
-              <div className="flex-1 flex items-center gap-2 h-7">
+              <div className="flex-1 flex items-center gap-2 h-7 min-w-0">
                 <div
                   className={`${BAR_COLORS[i % BAR_COLORS.length]} rounded-r-md h-full flex items-center`}
                   style={{ width: `${Math.max(barWidth, 3)}%` }}
@@ -100,8 +103,13 @@ export default function ReportFlowRevenueBreakdown({ performance, title, revenue
                   </span>
                 )}
               </div>
-              <div className="w-14 text-right text-sm text-gray-500 shrink-0">
-                {pct.toFixed(1)}%
+              <div className="w-28 shrink-0 text-right text-sm tabular-nums">
+                <span className="text-gray-500">{pct.toFixed(1)}%</span>
+                {targetPct != null ? (
+                  <span className={`ml-1 text-xs ${meetsTarget ? 'text-emerald-600' : 'text-amber-600'}`}>
+                    · target {targetPct.toFixed(targetPct < 1 ? 2 : 1)}%
+                  </span>
+                ) : null}
               </div>
             </div>
           );
@@ -109,10 +117,10 @@ export default function ReportFlowRevenueBreakdown({ performance, title, revenue
 
         {rest.length > 0 && (
           <div className="flex items-center gap-3">
-            <div className="w-44 text-right text-sm text-gray-500 shrink-0">
+            <div className="w-56 shrink-0 text-right text-sm text-gray-500">
               All Other Flows ({rest.length})
             </div>
-            <div className="flex-1 flex items-center gap-2 h-7">
+            <div className="flex-1 flex items-center gap-2 h-7 min-w-0">
               {(() => {
                 const restBarWidth = (restRevenue / maxRevenue) * 100;
                 const isShortBar = restBarWidth < 22;
@@ -137,7 +145,7 @@ export default function ReportFlowRevenueBreakdown({ performance, title, revenue
                 );
               })()}
             </div>
-            <div className="w-14 text-right text-sm text-gray-500 shrink-0">
+            <div className="w-28 shrink-0 text-right text-sm tabular-nums text-gray-500">
               {((restRevenue / totalRevenue) * 100).toFixed(1)}%
             </div>
           </div>
