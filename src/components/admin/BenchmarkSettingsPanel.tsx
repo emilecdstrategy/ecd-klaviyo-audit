@@ -76,14 +76,14 @@ function RangeRow({
   usedIn?: string[];
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 py-3.5 border-b border-gray-50 last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <div className="grid grid-cols-1 gap-3 py-3.5 border-b border-gray-50 last:border-0">
       <div className="min-w-0">
         <p className="text-sm font-medium text-gray-800">{label}</p>
         {hint ? <p className="text-xs text-gray-400 mt-0.5">{hint}</p> : null}
         {usedIn?.length ? <UsageTags tags={usedIn} /> : null}
       </div>
-      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-        <div className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1.5">
           <span className="text-[11px] font-medium text-gray-400 uppercase tracking-wide">Low</span>
           <CompactPctInput
             label={`${label} low`}
@@ -136,14 +136,14 @@ function ThresholdRow({
   usedIn?: string[];
 }) {
   return (
-    <div className="grid grid-cols-1 gap-3 py-3.5 border-b border-gray-50 last:border-0 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+    <div className="grid grid-cols-1 gap-3 py-3.5 border-b border-gray-50 last:border-0">
       <div className="min-w-0">
         <p className="text-sm font-medium text-gray-800">{label}</p>
         {hint ? <p className="text-xs text-gray-400 mt-0.5">{hint}</p> : null}
         {usedIn?.length ? <UsageTags tags={usedIn} /> : null}
       </div>
-      <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-        <div className="flex items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1.5">
+      <div className="flex flex-wrap items-center gap-2">
+        <div className="flex flex-wrap items-center gap-1.5 rounded-lg bg-gray-50 px-2.5 py-1.5">
           <span className="text-[11px] font-medium text-emerald-600 uppercase tracking-wide">Healthy</span>
           <CompactPctInput
             label={`${label} healthy max`}
@@ -174,15 +174,17 @@ function SectionCard({
   icon: Icon,
   title,
   description,
+  className,
   children,
 }: {
   icon: typeof Mail;
   title: string;
   description: string;
+  className?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="bg-white rounded-xl card-shadow overflow-hidden">
+    <section className={`bg-white rounded-xl card-shadow overflow-hidden h-full ${className ?? ''}`}>
       <div className="flex items-start gap-3 px-5 py-4 border-b border-gray-100 bg-gray-50/60">
         <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white border border-gray-200 text-brand-primary">
           <Icon className="h-4 w-4" />
@@ -245,16 +247,19 @@ export default function BenchmarkSettingsPanel() {
 
   if (!loaded) {
     return (
-      <div className="space-y-4 max-w-3xl animate-slide-up">
+      <div className="space-y-4 max-w-6xl animate-slide-up">
         <div className="h-8 w-56 bg-gray-100 rounded animate-pulse" />
-        <div className="h-48 bg-white rounded-xl card-shadow animate-pulse" />
-        <div className="h-48 bg-white rounded-xl card-shadow animate-pulse" />
+        <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+          <div className="h-48 bg-white rounded-xl card-shadow animate-pulse" />
+          <div className="h-48 bg-white rounded-xl card-shadow animate-pulse" />
+          <div className="h-36 bg-white rounded-xl card-shadow animate-pulse lg:col-span-2" />
+        </div>
       </div>
     );
   }
 
   return (
-    <div className="max-w-3xl space-y-6 animate-slide-up">
+    <div className="max-w-6xl space-y-6 animate-slide-up">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <div className="flex items-center gap-2">
@@ -295,6 +300,7 @@ export default function BenchmarkSettingsPanel() {
         </p>
       </div>
 
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <SectionCard
         icon={Mail}
         title="Engagement rates"
@@ -377,6 +383,7 @@ export default function BenchmarkSettingsPanel() {
         icon={ShieldCheck}
         title="Bounce & spam"
         description="Lower is better. Healthy = green, warning = amber, above warning = needs attention."
+        className="lg:col-span-2"
       >
         <ThresholdRow
           label="Bounce rate"
@@ -404,6 +411,7 @@ export default function BenchmarkSettingsPanel() {
           usedIn={['Account snapshot', 'AI prompts']}
         />
       </SectionCard>
+      </div>
 
       <div className="rounded-xl border border-gray-100 bg-white px-4 py-3 text-xs text-gray-500">
         <span className="font-medium text-gray-700">Preview: </span>
