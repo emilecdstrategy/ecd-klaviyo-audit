@@ -23,7 +23,8 @@ type Stage =
   | "profile"
   | "resume_profile_scan"
   | "backfill_revenue_breakdown"
-  | "backfill_deliverability";
+  | "backfill_deliverability"
+  | "backfill_segment_definitions";
 
 type FetchInput = {
   audit_id?: string;
@@ -48,6 +49,8 @@ const MAX_REPORT_IDS = 100;
 const MAX_CAMPAIGN_PAGES = 5;
 const CAMPAIGN_SNAPSHOT_CAP = 500;
 const MAX_LIST_SEGMENT_PAGES = 5;
+const SEGMENTS_WITH_DEFINITIONS_PATH =
+  "/api/segments/?page%5Bsize%5D=10&fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing";
 const METRICS_MAX_PAGES = 5;
 /** Skip optional email HTML fetch if less than this many ms remain before deadline. */
 const MIN_SLACK_MS_EMAIL_HTML = 15_000;
@@ -1028,7 +1031,7 @@ async function runStageConfig(params: {
     const [flows, lists, segments, forms, campaigns, metricsRes] = await Promise.all([
       klaviyoPaged(apiKey, params.revision, "/api/flows/?page%5Bsize%5D=50"),
       klaviyoPaged(apiKey, params.revision, "/api/lists/", MAX_LIST_SEGMENT_PAGES),
-      klaviyoPaged(apiKey, params.revision, "/api/segments/?page%5Bsize%5D=50&fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing", MAX_LIST_SEGMENT_PAGES),
+      klaviyoPaged(apiKey, params.revision, SEGMENTS_WITH_DEFINITIONS_PATH, MAX_LIST_SEGMENT_PAGES),
       klaviyoPaged(apiKey, params.revision, "/api/forms/?page%5Bsize%5D=100"),
       klaviyoPaged(apiKey, params.revision, "/api/campaigns/?filter=equals(messages.channel,'email')", MAX_CAMPAIGN_PAGES),
       klaviyoPaged(apiKey, params.revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", METRICS_MAX_PAGES),
@@ -2014,6 +2017,129 @@ async function runStageBackfillDeliverability(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Stage: backfill_segment_definitions (non-destructive patch)
+// ---------------------------------------------------------------------------
+
+async function runStageBackfillSegmentDefinitions(params: {
+  auditId: string;
+  correlationId: string;
+}): Promise<Response> {
+  const startedAt = Date.now();
+  const sb = assertServiceClient();
+  let clientId: string | null = null;
+  let revision: string = DEFAULT_REVISION;
+
+  try {
+    const { data: audit, error: auditErr } = await sb.from("audits").select("client_id").eq("id", params.auditId).maybeSingle();
+    if (auditErr) throw auditErr;
+    if (!audit?.client_id) throw new Error("audit not found");
+    clientId = audit.client_id as string;
+
+    const { data: conn } = await sb.from("klaviyo_connections")
+      .select("revision")
+      .eq("client_id", clientId).maybeSingle();
+    revision = (conn?.revision as string | null) || DEFAULT_REVISION;
+
+    const apiKey = await resolveApiKey(sb, clientId, null);
+
+    const [segments, metricsRes] = await Promise.all([
+      klaviyoPaged(apiKey, revision, SEGMENTS_WITH_DEFINITIONS_PATH, MAX_LIST_SEGMENT_PAGES),
+      klaviyoPaged(apiKey, revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", METRICS_MAX_PAGES),
+    ]);
+
+    if (!segments.ok) {
+      throw new Error(trimBody(segments.body) ?? "Failed to fetch segments from Klaviyo");
+    }
+
+    const metricNameMap = Object.fromEntries(
+      (metricsRes.ok ? metricsRes.items : []).map((m: any) => [m.id, m.attributes?.name ?? m.id]),
+    );
+    const segmentById = new Map<string, any>(segments.items.map((s: any) => [s.id, s]));
+
+    const { data: snapshots, error: snapErr } = await sb.from("klaviyo_segment_snapshots")
+      .select("id, segment_id, raw")
+      .eq("audit_id", params.auditId);
+    if (snapErr) throw snapErr;
+    if (!snapshots?.length) throw new Error("No segment snapshots found for audit");
+
+    let updated = 0;
+    let withDefinition = 0;
+    for (const row of snapshots) {
+      const live = segmentById.get(row.segment_id);
+      if (!live) continue;
+      const prevRaw = (row.raw && typeof row.raw === "object") ? row.raw as Record<string, unknown> : {};
+      const prevAttrs = (prevRaw.attributes && typeof prevRaw.attributes === "object")
+        ? prevRaw.attributes as Record<string, unknown>
+        : {};
+      const liveAttrs = (live.attributes && typeof live.attributes === "object") ? live.attributes : {};
+      const definition = liveAttrs.definition ?? prevAttrs.definition ?? null;
+      if (definition) withDefinition += 1;
+
+      const nextRaw = {
+        ...prevRaw,
+        ...live,
+        attributes: {
+          ...prevAttrs,
+          ...liveAttrs,
+          definition,
+        },
+        _ecd_metric_names: metricNameMap,
+      };
+
+      await mustSucceed(
+        `update klaviyo_segment_snapshots ${row.id}`,
+        sb.from("klaviyo_segment_snapshots").update({
+          raw: nextRaw,
+          updated_at_klaviyo: liveAttrs.updated
+            ? new Date(String(liveAttrs.updated)).toISOString()
+            : null,
+        }).eq("id", row.id),
+      );
+      updated += 1;
+    }
+
+    await logStageRun(sb, {
+      correlationId: params.correlationId,
+      auditId: params.auditId,
+      clientId,
+      stage: "backfill_segment_definitions",
+      status: updated > 0 ? "success" : "partial",
+      revision,
+      elapsedMs: Date.now() - startedAt,
+      errorMessage: updated === 0 ? "No matching Klaviyo segments found for existing snapshots" : null,
+    });
+
+    return json({
+      ok: true,
+      correlationId: params.correlationId,
+      stage: "backfill_segment_definitions",
+      updated,
+      with_definition: withDefinition,
+      total_snapshots: snapshots.length,
+      elapsed_ms: Date.now() - startedAt,
+    });
+  } catch (e) {
+    const msg = redactSecrets(e instanceof Error ? e.message : "Unknown error");
+    await logStageRun(sb, {
+      correlationId: params.correlationId,
+      auditId: params.auditId,
+      clientId,
+      stage: "backfill_segment_definitions",
+      status: "error",
+      revision,
+      elapsedMs: Date.now() - startedAt,
+      errorCode: "backfill_segment_definitions_failed",
+      errorMessage: msg,
+    });
+    return json({
+      ok: false,
+      error: { code: "backfill_segment_definitions_failed", message: msg },
+      correlationId: params.correlationId,
+    }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -2041,7 +2167,7 @@ serve(async (req) => {
   }
 
   // Stage-specific auth + dispatch.
-  if (stage === "resume_profile_scan" || stage === "reporting" || stage === "profile" || stage === "backfill_revenue_breakdown" || stage === "backfill_deliverability") {
+  if (stage === "resume_profile_scan" || stage === "reporting" || stage === "profile" || stage === "backfill_revenue_breakdown" || stage === "backfill_deliverability" || stage === "backfill_segment_definitions") {
     // These stages are usually chain-invoked with the service role key; accept either the SR key or a signed-in user (for manual retries).
     const auth = req.headers.get("authorization") ?? "";
     const token = auth.replace(/^Bearer\s+/i, "");
@@ -2071,6 +2197,9 @@ serve(async (req) => {
       }
       if (stage === "backfill_deliverability") {
         return await runStageBackfillDeliverability({ auditId, correlationId });
+      }
+      if (stage === "backfill_segment_definitions") {
+        return await runStageBackfillSegmentDefinitions({ auditId, correlationId });
       }
       // stage === "profile" — just kicks the resume chain (used by stage 2 and nudges).
       await chainStage("resume_profile_scan", auditId);
