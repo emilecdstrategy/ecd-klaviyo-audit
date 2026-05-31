@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode } from 'react';
-import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays } from 'lucide-react';
+import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays, Image as ImageIcon, ZoomIn } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
 import { computeAuditTotalRevenueOpportunity, formatCurrency, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../lib/revenue-calculator';
 import { formatStoreRevenueContext } from '../../lib/revenue-breakdown';
@@ -34,6 +34,8 @@ import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
 import ReportBlockEditChrome, { ReportHiddenItemStub, ReportItemHideButton } from './edit/ReportBlockEditChrome';
 import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
+import ImageLightbox from '../ui/ImageLightbox';
+import { uploadRevenueOpportunityImage } from '../../lib/db';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
 import { resolveExecutiveFindings } from '../../lib/findings-normalize';
 import { cn } from '../../lib/utils';
@@ -133,6 +135,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     updateAddOnField,
     updateAddOnRevenue,
     updateAddOnContent,
+    updateAddOnImage,
     updateSectionRevenueOpportunity,
     toggleLayoutSectionHidden,
     toggleAuditSectionHidden,
@@ -143,7 +146,22 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     patchSectionBlock,
   } = useReportEdit();
   const [activeSection, setActiveSection] = useState('summary');
+  const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [uploadingAddOnKey, setUploadingAddOnKey] = useState<string | null>(null);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+
+  const handleAddOnImageUpload = async (itemKey: string, file: File | undefined) => {
+    if (!file) return;
+    setUploadingAddOnKey(itemKey);
+    try {
+      const url = await uploadRevenueOpportunityImage(file);
+      updateAddOnImage(itemKey, url);
+    } catch {
+      /* swallow — surfaced via missing image */
+    } finally {
+      setUploadingAddOnKey(null);
+    }
+  };
 
   const {
     audit,
@@ -1066,45 +1084,112 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               }
             />
             <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {visibleAddOnItems.map((item) => {
                 const itemKey = `${item.template_slug}-${item.display_order}`;
                 return (
-                <div key={itemKey} className="rounded-xl border border-gray-100 p-5 bg-gray-50/40">
-                  <div className="flex items-start justify-between gap-3 mb-3">
-                    <div>
-                      <EditablePlainText
-                        value={item.name}
-                        onSave={v => updateAddOnField(itemKey, 'name', v)}
-                        className="text-sm font-semibold text-gray-900"
-                        as="h4"
+                <div
+                  key={itemKey}
+                  className="group flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-primary/30 hover:shadow-lg hover:shadow-brand-primary/5"
+                >
+                  {item.image_url ? (
+                    <button
+                      type="button"
+                      onClick={() => setLightboxSrc(item.image_url ?? null)}
+                      className="relative block w-full overflow-hidden bg-gray-100"
+                      aria-label={`View ${item.name} screenshot`}
+                    >
+                      <img
+                        src={item.image_url}
+                        alt={item.name}
+                        className="h-44 w-full object-cover transition-transform duration-300 group-hover:scale-[1.03]"
                       />
-                      <EditablePlainText
-                        value={item.description || ''}
-                        onSave={v => updateAddOnField(itemKey, 'description', v)}
-                        className="text-xs text-gray-500 mt-0.5"
-                        as="p"
-                        placeholder="Short description…"
+                      <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[11px] font-medium text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
+                        <ZoomIn className="h-3 w-3" /> View
+                      </span>
+                    </button>
+                  ) : editMode ? (
+                    <label className="flex h-28 w-full cursor-pointer flex-col items-center justify-center gap-1 border-b border-dashed border-gray-200 bg-gray-50 text-gray-400 transition-colors hover:bg-gray-100">
+                      <ImageIcon className="h-5 w-5" />
+                      <span className="text-xs font-medium">
+                        {uploadingAddOnKey === itemKey ? 'Uploading…' : 'Add screenshot'}
+                      </span>
+                      <input
+                        type="file"
+                        accept="image/*"
+                        className="hidden"
+                        disabled={uploadingAddOnKey === itemKey}
+                        onChange={e => {
+                          handleAddOnImageUpload(itemKey, e.target.files?.[0]);
+                          e.target.value = '';
+                        }}
                       />
+                    </label>
+                  ) : null}
+
+                  <div className="flex flex-1 flex-col p-5">
+                    <div className="mb-2.5 flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <EditablePlainText
+                          value={item.name}
+                          onSave={v => updateAddOnField(itemKey, 'name', v)}
+                          className="text-[15px] font-bold leading-snug text-gray-900"
+                          as="h4"
+                        />
+                        <EditablePlainText
+                          value={item.description || ''}
+                          onSave={v => updateAddOnField(itemKey, 'description', v)}
+                          className="text-xs text-gray-500 mt-0.5"
+                          as="p"
+                          placeholder="Short description…"
+                        />
+                      </div>
+                      <div className="shrink-0">
+                        <div className="inline-flex items-baseline gap-1 rounded-full bg-emerald-50 px-2.5 py-1 ring-1 ring-emerald-100">
+                          <EditableCurrency
+                            value={item.revenue_monthly || 0}
+                            onSave={v => updateAddOnRevenue(itemKey, v)}
+                            variant="compact"
+                            inputWidthScale={2}
+                            className="text-sm font-bold text-emerald-700 tabular-nums"
+                          />
+                          <span className="text-[11px] font-semibold text-emerald-600">/mo</span>
+                        </div>
+                      </div>
                     </div>
-                    <div className="text-right shrink-0">
-                      <EditableCurrency
-                        value={item.revenue_monthly || 0}
-                        onSave={v => updateAddOnRevenue(itemKey, v)}
-                        variant="compact"
-                        inputWidthScale={2}
-                        className="justify-end text-sm font-semibold text-emerald-700 tabular-nums"
+                    {item.content && (
+                      <EditableRichText
+                        value={item.content}
+                        onSave={v => updateAddOnContent(itemKey, v)}
+                        className="text-sm leading-relaxed text-gray-700"
                       />
-                      <p className="text-[11px] text-emerald-600">/mo</p>
-                    </div>
+                    )}
+                    {editMode && item.image_url && (
+                      <div className="mt-3 flex items-center gap-3 border-t border-gray-100 pt-3">
+                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900">
+                          <ImageIcon className="h-3.5 w-3.5" />
+                          {uploadingAddOnKey === itemKey ? 'Uploading…' : 'Replace image'}
+                          <input
+                            type="file"
+                            accept="image/*"
+                            className="hidden"
+                            disabled={uploadingAddOnKey === itemKey}
+                            onChange={e => {
+                              handleAddOnImageUpload(itemKey, e.target.files?.[0]);
+                              e.target.value = '';
+                            }}
+                          />
+                        </label>
+                        <button
+                          type="button"
+                          onClick={() => updateAddOnImage(itemKey, null)}
+                          className="text-xs font-medium text-red-600 hover:underline"
+                        >
+                          Remove
+                        </button>
+                      </div>
+                    )}
                   </div>
-                  {item.content && (
-                    <EditableRichText
-                      value={item.content}
-                      onSave={v => updateAddOnContent(itemKey, v)}
-                      className="text-sm leading-relaxed text-gray-700"
-                    />
-                  )}
                 </div>
               );})}
             </div>
@@ -1277,6 +1362,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       </main>
 
       <ReportTrustFooter preparedDate={preparedDateLabel} />
+      <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
     </div>
     </ReportEntityProvider>
   );

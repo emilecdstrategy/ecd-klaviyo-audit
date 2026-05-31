@@ -54,6 +54,8 @@ export interface RevenueOpportunityTemplate {
   /** @deprecated Legacy bullet strings — use `content` instead. */
   bullets: string[];
   default_revenue_monthly: number;
+  /** Optional default screenshot shown on the report add-on card. */
+  image_url?: string | null;
   display_order: number;
   is_active: boolean;
   created_at: string;
@@ -69,6 +71,8 @@ export interface RevenueOpportunityAddOnItem {
   /** @deprecated Legacy bullet strings — use `content` instead. */
   bullets: string[];
   revenue_monthly: number;
+  /** Per-audit screenshot. Falls back to the template default when added. */
+  image_url?: string | null;
   is_hidden?: boolean;
   display_order?: number;
 }

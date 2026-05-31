@@ -96,6 +96,7 @@ type ReportEditContextValue = {
   ) => void;
   updateAddOnRevenue: (itemKey: string, value: number) => void;
   updateAddOnContent: (itemKey: string, value: string) => void;
+  updateAddOnImage: (itemKey: string, value: string | null) => void;
   updateSectionRevenueOpportunity: (sectionKey: string, value: number) => void;
   toggleLayoutSectionHidden: (layoutKey: LayoutSectionKey, hidden: boolean) => void;
   toggleAuditSectionHidden: (sectionKey: string, hidden: boolean) => void;
@@ -136,6 +137,7 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateAddOnField: () => {},
   updateAddOnRevenue: () => {},
   updateAddOnContent: () => {},
+  updateAddOnImage: () => {},
   updateSectionRevenueOpportunity: () => {},
   toggleLayoutSectionHidden: () => {},
   toggleAuditSectionHidden: () => {},
@@ -416,6 +418,28 @@ export function ReportEditProvider({
     [audit, onAuditChange, schedule],
   );
 
+  const updateAddOnImage = useCallback(
+    (itemKey: string, value: string | null) => {
+      const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
+      const rs = { ...((layout.revenue_summary as Record<string, unknown>) ?? {}) };
+      const blocks = { ...((rs.blocks as Record<string, unknown>) ?? {}) };
+      const addOns = { ...((blocks.addOns as Record<string, unknown>) ?? {}) };
+      const items = [...((addOns.items as RevenueOpportunityAddOnItem[]) ?? [])];
+      const idx = items.findIndex(i => `${i.template_slug}-${i.display_order}` === itemKey);
+      if (idx < 0) return;
+      items[idx] = { ...items[idx], image_url: value };
+      addOns.items = items;
+      blocks.addOns = addOns;
+      rs.blocks = blocks;
+      layout.revenue_summary = rs;
+      onAuditChange({ ...audit, layout });
+      schedule('layout-addons', async () => {
+        await updateAudit(audit.id, { layout });
+      });
+    },
+    [audit, onAuditChange, schedule],
+  );
+
   const toggleLayoutSectionHidden = useCallback(
     (layoutKey: LayoutSectionKey, hidden: boolean) => {
       patchLayout(layoutKey, section => ({ ...section, hidden: hidden || undefined }));
@@ -672,6 +696,7 @@ export function ReportEditProvider({
       updateAddOnField,
       updateAddOnRevenue,
       updateAddOnContent,
+      updateAddOnImage,
       updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,
@@ -701,6 +726,7 @@ export function ReportEditProvider({
       updateAddOnField,
       updateAddOnRevenue,
       updateAddOnContent,
+      updateAddOnImage,
       updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,

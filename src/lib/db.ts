@@ -780,11 +780,24 @@ function mapRevenueOpportunityTemplateRow(row: any): RevenueOpportunityTemplate 
     content,
     bullets,
     default_revenue_monthly: Number(row.default_revenue_monthly ?? 0),
+    image_url: row.image_url ?? null,
     display_order: Number(row.display_order ?? 0),
     is_active: Boolean(row.is_active),
     created_at: row.created_at,
     updated_at: row.updated_at,
   };
+}
+
+export async function uploadRevenueOpportunityImage(file: File): Promise<string> {
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
+  const path = `revenue-addons/${crypto.randomUUID()}_${safeName}`;
+  const { error } = await supabase.storage
+    .from('audit-assets')
+    .upload(path, file, { upsert: false, contentType: file.type });
+  if (error) throw error;
+  const { data } = supabase.storage.from('audit-assets').getPublicUrl(path);
+  if (!data.publicUrl) throw new Error('Failed to get public URL');
+  return data.publicUrl;
 }
 
 export async function listRevenueOpportunityTemplates(
