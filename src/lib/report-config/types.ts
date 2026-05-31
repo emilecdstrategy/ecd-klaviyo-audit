@@ -188,6 +188,12 @@ export interface RevenueSummarySectionConfig extends BaseSectionConfig {
 
 export type RevenueSummaryBlockKey = keyof NonNullable<RevenueSummarySectionConfig['blocks']>;
 
+// ----- Deliverability Snapshot -----------------------------------------------
+
+export interface DeliverabilitySnapshotSectionConfig extends BaseSectionConfig {
+  blocks?: Record<string, never>;
+}
+
 // ----- Executive Summary (section 01, hero) ---------------------------------
 
 export interface ExecutiveSummarySectionConfig extends BaseSectionConfig {
@@ -236,6 +242,10 @@ export interface RevenueSummarySectionConfigRoot {
   revenue_summary?: Partial<RevenueSummarySectionConfig>;
 }
 
+export interface DeliverabilitySnapshotSectionConfigRoot {
+  deliverability_snapshot?: Partial<DeliverabilitySnapshotSectionConfig>;
+}
+
 // -----------------------------------------------------------------------------
 // Section key union
 // -----------------------------------------------------------------------------
@@ -243,6 +253,7 @@ export interface RevenueSummarySectionConfigRoot {
 export type SectionKey =
   | 'account_health'
   | 'flows'
+  | 'deliverability_snapshot'
   | 'segmentation'
   | 'signup_forms'
   | 'campaigns'

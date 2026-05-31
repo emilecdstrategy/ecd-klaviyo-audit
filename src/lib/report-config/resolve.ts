@@ -1,6 +1,7 @@
 import type {
   CampaignsBlockKey,
   CampaignsSectionConfig,
+  DeliverabilitySnapshotSectionConfig,
   EmailDesignBlockKey,
   EmailDesignSectionConfig,
   ExecutiveSummaryBlockKey,
@@ -16,6 +17,7 @@ import type {
 } from './types';
 import {
   DEFAULT_CAMPAIGNS_SECTION,
+  DEFAULT_DELIVERABILITY_SNAPSHOT_SECTION,
   DEFAULT_EMAIL_DESIGN_SECTION,
   DEFAULT_EXECUTIVE_SUMMARY_SECTION,
   DEFAULT_FLOWS_SECTION,
@@ -228,6 +230,24 @@ export function isEmailDesignBlockVisible(
   block: EmailDesignBlockKey,
 ): boolean {
   return isBlockVisible(resolved, block);
+}
+
+// -----------------------------------------------------------------------------
+// Deliverability Snapshot
+// -----------------------------------------------------------------------------
+
+export function extractDeliverabilitySnapshotRawConfig(
+  layout: Record<string, unknown> | null | undefined,
+): Partial<DeliverabilitySnapshotSectionConfig> | undefined {
+  return extractSubtree<DeliverabilitySnapshotSectionConfig>(layout, 'deliverability_snapshot');
+}
+
+export function resolveDeliverabilitySnapshotConfig(
+  raw: Partial<DeliverabilitySnapshotSectionConfig> | null | undefined,
+  defaults: DeliverabilitySnapshotSectionConfig = DEFAULT_DELIVERABILITY_SNAPSHOT_SECTION,
+): DeliverabilitySnapshotSectionConfig {
+  if (!raw) return defaults;
+  return deepMerge(defaults, raw);
 }
 
 // -----------------------------------------------------------------------------

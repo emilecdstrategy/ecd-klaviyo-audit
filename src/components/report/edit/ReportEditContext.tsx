@@ -16,6 +16,8 @@ import { normalizeCoreFlowsMatrix, sanitizeStructureNote, type CoreFlowRow } fro
 import { repairEntityMarkers } from '../../../lib/entity-tags';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
+type LayoutSectionKey = 'executive_summary' | 'revenue_summary' | 'deliverability_snapshot';
+
 export type TimelinePhase = {
   phase: string;
   timeframe: string;
@@ -75,7 +77,7 @@ type ReportEditContextValue = {
     value: string,
   ) => void;
   updateLayoutTitle: (
-    layoutKey: 'executive_summary' | 'revenue_summary',
+    layoutKey: LayoutSectionKey,
     field: 'sectionTitle' | 'sectionNumber',
     value: string,
   ) => void;
@@ -95,7 +97,7 @@ type ReportEditContextValue = {
   updateAddOnRevenue: (itemKey: string, value: number) => void;
   updateAddOnContent: (itemKey: string, value: string) => void;
   updateSectionRevenueOpportunity: (sectionKey: string, value: number) => void;
-  toggleLayoutSectionHidden: (layoutKey: 'executive_summary' | 'revenue_summary', hidden: boolean) => void;
+  toggleLayoutSectionHidden: (layoutKey: LayoutSectionKey, hidden: boolean) => void;
   toggleAuditSectionHidden: (sectionKey: string, hidden: boolean) => void;
   toggleExecutiveBlockHidden: (blockKey: string, hidden: boolean) => void;
   toggleRevenueBlockHidden: (blockKey: string, hidden: boolean) => void;
@@ -254,7 +256,7 @@ export function ReportEditProvider({
   );
 
   const patchLayout = useCallback(
-    (layoutKey: 'executive_summary' | 'revenue_summary', patchFn: (section: Record<string, unknown>) => Record<string, unknown>) => {
+    (layoutKey: LayoutSectionKey, patchFn: (section: Record<string, unknown>) => Record<string, unknown>) => {
       const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
       const section = { ...((layout[layoutKey] as Record<string, unknown>) ?? {}) };
       layout[layoutKey] = patchFn(section);
@@ -267,7 +269,7 @@ export function ReportEditProvider({
   );
 
   const updateLayoutTitle = useCallback(
-    (layoutKey: 'executive_summary' | 'revenue_summary', field: 'sectionTitle' | 'sectionNumber', value: string) => {
+    (layoutKey: LayoutSectionKey, field: 'sectionTitle' | 'sectionNumber', value: string) => {
       patchLayout(layoutKey, section => ({ ...section, [field]: value || undefined }));
     },
     [patchLayout],
@@ -415,7 +417,7 @@ export function ReportEditProvider({
   );
 
   const toggleLayoutSectionHidden = useCallback(
-    (layoutKey: 'executive_summary' | 'revenue_summary', hidden: boolean) => {
+    (layoutKey: LayoutSectionKey, hidden: boolean) => {
       patchLayout(layoutKey, section => ({ ...section, hidden: hidden || undefined }));
     },
     [patchLayout],

@@ -1,6 +1,7 @@
 import type {
   AccountHealthSectionConfig,
   CampaignsSectionConfig,
+  DeliverabilitySnapshotSectionConfig,
   EmailDesignSectionConfig,
   ExecutiveSummarySectionConfig,
   FlowsSectionConfig,
@@ -88,7 +89,18 @@ export const DEFAULT_ACCOUNT_HEALTH_SECTION: AccountHealthSectionConfig = {
 };
 
 // -----------------------------------------------------------------------------
-// Segmentation (section 04)
+// Deliverability Snapshot (section 04)
+// -----------------------------------------------------------------------------
+
+export const DEFAULT_DELIVERABILITY_SNAPSHOT_SECTION: DeliverabilitySnapshotSectionConfig = {
+  hidden: false,
+  sectionNumber: '04',
+  sectionTitle: 'Deliverability',
+  sectionSubtitle: undefined,
+};
+
+// -----------------------------------------------------------------------------
+// Segmentation (section 05)
 // -----------------------------------------------------------------------------
 
 export const DEFAULT_SEGMENTATION_SECTION: SegmentationSectionConfig = {

@@ -11,6 +11,7 @@ import ReportFlowTable from './ReportFlowTable';
 import ReportFlowInventoryTable from './ReportFlowInventoryTable';
 import ReportFlowHealthScore from './ReportFlowHealthScore';
 import ReportFlowRevenueBreakdown from './ReportFlowRevenueBreakdown';
+import ReportDeliverabilitySnapshot from './ReportDeliverabilitySnapshot';
 import ReportAccountSnapshot from './ReportAccountSnapshot';
 import ReportSegmentTable from './ReportSegmentTable';
 import ReportFormTable from './ReportFormTable';
@@ -52,17 +53,20 @@ import {
   resolveCampaignsConfig,
   resolveEmailDesignConfig,
   resolveExecutiveSummaryConfig,
+  resolveDeliverabilitySnapshotConfig,
   resolveFlowsConfig,
   resolveRevenueSummaryConfig,
   resolveSegmentationConfig,
   resolveSignupFormsConfig,
+  extractDeliverabilitySnapshotRawConfig,
 } from '../../lib/report-config/resolve';
 import { DEFAULT_REVENUE_SUMMARY_SECTION } from '../../lib/report-config/defaults';
-import type { RevenueSummarySectionConfig } from '../../lib/report-config/types';
+import type { DeliverabilitySnapshotSectionConfig, RevenueSummarySectionConfig } from '../../lib/report-config/types';
 
 const NAV_ITEMS = [
   { id: 'summary', label: 'Summary' },
   { id: 'flows', label: 'Flows' },
+  { id: 'deliverability', label: 'Deliverability' },
   { id: 'segments', label: 'Segments' },
   { id: 'forms', label: 'Signup Forms' },
   { id: 'campaigns', label: 'Campaigns' },
@@ -274,6 +278,10 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       revenueSummaryRaw && typeof revenueSummaryRaw === 'object' ? revenueSummaryRaw : undefined,
     );
 
+    const deliverabilitySnapshotCfg = resolveDeliverabilitySnapshotConfig(
+      extractDeliverabilitySnapshotRawConfig(auditLayout),
+    );
+
     const executiveSummaryCfg = resolveExecutiveSummaryConfig(
       extractExecutiveSummaryRawConfig(auditLayout),
     );
@@ -289,6 +297,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       campaignsCfg,
       emailDesignCfg,
       revenueSummaryCfg,
+      deliverabilitySnapshotCfg,
       executiveSummaryCfg,
     };
   }, [auditLayout, reportSections]);
@@ -304,6 +313,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     campaignsCfg,
     emailDesignCfg,
     revenueSummaryCfg,
+    deliverabilitySnapshotCfg,
     executiveSummaryCfg,
   } = sectionConfigs;
 
@@ -362,32 +372,35 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     () => ({
       summary: Boolean(executiveSummaryCfg.hidden),
       flows: Boolean(flowsCfg.hidden),
+      deliverability: Boolean(deliverabilitySnapshotCfg.hidden),
       segments: Boolean(segmentationCfg.hidden),
       forms: Boolean(signupFormsCfg.hidden),
       campaigns: Boolean(campaignsCfg.hidden),
       email_design: Boolean(emailDesignCfg.hidden),
       opportunity: Boolean(revenueSummaryCfg.hidden),
     }),
-    [executiveSummaryCfg, flowsCfg, segmentationCfg, signupFormsCfg, campaignsCfg, emailDesignCfg, revenueSummaryCfg],
+    [executiveSummaryCfg, flowsCfg, deliverabilitySnapshotCfg, segmentationCfg, signupFormsCfg, campaignsCfg, emailDesignCfg, revenueSummaryCfg],
   );
 
   const sectionDataAvailable = useMemo<Record<string, boolean>>(
     () => ({
       summary: true,
       flows: flowsDataAvailable,
+      deliverability: Boolean(accountSnapshot?.deliverability),
       segments: segmentSnapshots.length > 0,
       forms: formSnapshots.length > 0,
       campaigns: campaignSnapshots.length > 0,
       email_design: emailDesignDataAvailable,
       opportunity: true,
     }),
-    [flowsDataAvailable, segmentSnapshots.length, formSnapshots.length, campaignSnapshots.length, emailDesignDataAvailable],
+    [flowsDataAvailable, accountSnapshot?.deliverability, segmentSnapshots.length, formSnapshots.length, campaignSnapshots.length, emailDesignDataAvailable],
   );
 
   const sectionVisibility = useMemo<Record<string, boolean>>(
     () => ({
       summary: !sectionHiddenFlags.summary,
       flows: flowsDataAvailable && !sectionHiddenFlags.flows,
+      deliverability: Boolean(accountSnapshot?.deliverability) && !sectionHiddenFlags.deliverability,
       segments: segmentSnapshots.length > 0 && !sectionHiddenFlags.segments,
       forms: formSnapshots.length > 0 && !sectionHiddenFlags.forms,
       campaigns: campaignSnapshots.length > 0 && !sectionHiddenFlags.campaigns,
@@ -742,6 +755,32 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 <ReportFlowInventoryTable flows={flowSnapshots as any} scrollable />
               </ReportInventoryLauncher>
             )}
+        </ReportSectionShell>
+
+        <ReportSectionShell
+          id="deliverability"
+          setRef={setRef}
+          label={deliverabilitySnapshotCfg.sectionTitle ?? 'Deliverability'}
+          hidden={sectionHiddenFlags.deliverability}
+          onToggleHidden={h => toggleLayoutSectionHidden('deliverability_snapshot', h)}
+          available={sectionDataAvailable.deliverability}
+        >
+          <ReportSectionHeader
+            number={sectionNumbers['deliverability'] ?? deliverabilitySnapshotCfg.sectionNumber ?? '04'}
+            label={
+              editMode ? (
+                <EditablePlainText
+                  value={deliverabilitySnapshotCfg.sectionTitle ?? 'Deliverability'}
+                  onSave={v => updateLayoutTitle('deliverability_snapshot', 'sectionTitle', v)}
+                  className="text-base font-bold text-gray-900"
+                  as="span"
+                />
+              ) : (
+                deliverabilitySnapshotCfg.sectionTitle ?? 'Deliverability'
+              )
+            }
+          />
+          <ReportDeliverabilitySnapshot deliverability={accountSnapshot?.deliverability} />
         </ReportSectionShell>
 
         <ReportSectionShell

@@ -9,8 +9,6 @@ import {
   UserCheck,
   UserX,
   Clock,
-  MailX,
-  ShieldAlert,
   TrendingUp,
   DollarSign,
   Store,
@@ -25,7 +23,6 @@ import { formatCurrency } from '../../lib/revenue-calculator';
 import type { RevenueBreakdown } from '../../lib/revenue-breakdown';
 import { formatRevenueBreakdownPct } from '../../lib/revenue-breakdown';
 import {
-  classifyDeliverabilityRate,
   classifyRate,
   formatDeliverabilityWarningRange,
   formatHealthyBenchmarkRange,
@@ -51,12 +48,6 @@ function normalizeReportingDiagnostic(raw?: string | null) {
 function formatPct(n: number | null) {
   if (n == null || Number.isNaN(n)) return '—';
   return formatPctDecimal(n);
-}
-
-/** Spam/bounce rates can be tiny; show extra precision when above zero but under 0.01%. */
-function formatRatePct(n: number | null) {
-  if (n == null || Number.isNaN(n)) return '—';
-  return formatPctDecimal(n, { extraPrecisionBelow: 0.01 });
 }
 
 function formatInt(n: number | null) {
@@ -184,14 +175,14 @@ function RevenuePerformance({ breakdown }: { breakdown: RevenueBreakdown }) {
               Klaviyo-Attributed Revenue
             </p>
           </div>
-          {hasTotal && attributedPctOfTotal !== '—' && (
-            <p className="mb-1.5 text-sm font-semibold tabular-nums text-gray-700">
-              ({attributedPctOfTotal} of total)
-            </p>
-          )}
           <p className="text-3xl font-bold tabular-nums tracking-tight text-gray-900">
             {formatCurrency(breakdown.attributed_revenue)}
           </p>
+          {hasTotal && attributedPctOfTotal !== '—' && (
+            <p className="mt-1 text-xs tabular-nums text-gray-500">
+              ({attributedPctOfTotal} of total)
+            </p>
+          )}
         </div>
       </div>
 
@@ -276,19 +267,6 @@ export default function ReportAccountSnapshot({
 
   const perfUnavailableReason = normalizeReportingDiagnostic(reportingDiagnostic) || 'not enough reporting data available';
   const { recentSent, perWeek } = calcWeeklySendFrequency(campaignSnapshots);
-  const deliverabilityWindow = accountSnapshot?.deliverability_campaign_timeframe === 'last_30_days' ? 'last 30 days' : 'last 90 days';
-  const deliverabilityContext = `${deliverabilityWindow} · email campaigns (weighted by recipients)`;
-
-  const bounceStatus = classifyDeliverabilityRate(
-    accountSnapshot?.bounce_rate_90d ?? null,
-    benchmarks.bounceHealthyMax,
-    benchmarks.bounceWarningMax,
-  );
-  const spamStatus = classifyDeliverabilityRate(
-    accountSnapshot?.spam_rate_90d ?? null,
-    benchmarks.spamHealthyMax,
-    benchmarks.spamWarningMax,
-  );
   const convStatus = classifyRate(
     weightedConv,
     benchmarks.accountConvLow,
@@ -390,34 +368,6 @@ export default function ReportAccountSnapshot({
           value={recentSent > 0 ? `${perWeek.toFixed(perWeek < 1 ? 1 : 0)}/wk` : '—'}
           sub={recentSent > 0 ? `${recentSent} campaigns sent (last 30 days)` : 'based on recent sent campaigns'}
         />
-
-        {accountSnapshot?.bounce_rate_90d != null ? (
-          <BenchmarkMetricCard
-            icon={MailX}
-            label="Bounce Rate"
-            value={formatRatePct(accountSnapshot.bounce_rate_90d)}
-            contextLine={deliverabilityContext}
-            benchmarkLine={formatHealthyBenchmarkUnder(benchmarks.bounceHealthyMax)}
-            status={bounceStatus}
-            direction="lower"
-          />
-        ) : (
-          <Card icon={MailX} label="Bounce Rate" value="N/A" sub="not enough campaign data available" />
-        )}
-
-        {accountSnapshot?.spam_rate_90d != null ? (
-          <BenchmarkMetricCard
-            icon={ShieldAlert}
-            label="Spam Rate"
-            value={formatRatePct(accountSnapshot.spam_rate_90d)}
-            contextLine={deliverabilityContext}
-            benchmarkLine={formatHealthyBenchmarkUnder(benchmarks.spamHealthyMax)}
-            status={spamStatus}
-            direction="lower"
-          />
-        ) : (
-          <Card icon={ShieldAlert} label="Spam Rate" value="N/A" sub="not enough campaign data available" />
-        )}
 
         {hasPerf && weightedConv != null ? (
           <BenchmarkMetricCard

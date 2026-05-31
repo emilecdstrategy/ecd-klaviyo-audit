@@ -4,6 +4,7 @@ import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shar
 import { fetchPlatformBenchmarkConfig, getFlowBenchmarks } from "../_shared/benchmarks.ts";
 import { computeCampaignRevenuePerRecipient } from "../_shared/campaign-metrics.ts";
 import { buildRevenueBreakdown } from "../_shared/revenue-breakdown.ts";
+import { buildDeliverabilitySnapshot, extractBounceSpam } from "../_shared/deliverability.ts";
 
 // Stage machine: each stage runs in its own edge invocation with a fresh ~150s
 // budget. `config` is the entry point the frontend calls; subsequent stages
@@ -21,7 +22,8 @@ type Stage =
   | "reporting"
   | "profile"
   | "resume_profile_scan"
-  | "backfill_revenue_breakdown";
+  | "backfill_revenue_breakdown"
+  | "backfill_deliverability";
 
 type FetchInput = {
   audit_id?: string;
@@ -1256,6 +1258,7 @@ async function runStageConfig(params: {
       suppressed_profiles_truncated: null as boolean | null,
       campaigns_truncated: campaignsTruncated,
       profile_scan_status: (params.profileScan === "full" ? "pending" : "skipped") as "pending" | "skipped",
+      deliverability: null as null,
       computed_at: new Date().toISOString(),
     };
     const derivedMetricsSeed = { list_size: 0, monthly_engagement: 0, revenue_per_recipient: null as number | null };
@@ -1423,6 +1426,7 @@ async function runStageReporting(params: {
       "revenue_per_recipient",
       "bounce_rate",
       "spam_complaint_rate",
+      "unsubscribe_rate",
     ];
 
     const bucket = createReportingBucket({ tokensPerMin: REPORTING_TOKENS_PER_MIN, burst: REPORTING_BURST });
@@ -1617,24 +1621,6 @@ async function runStageReporting(params: {
         }
       }
 
-      function extractBounceSpam(rowsIn: any[]): { bounce: number | null; spam: number | null } {
-        if (!Array.isArray(rowsIn) || rowsIn.length === 0) return { bounce: null, spam: null };
-        let denom = 0;
-        let bounceNum = 0;
-        let spamNum = 0;
-        for (const row of rowsIn) {
-          const stats = row?.statistics ?? {};
-          const recipients = Number(stats.recipients ?? 0) || 0;
-          const b = Number(stats.bounce_rate ?? NaN);
-          const s = Number(stats.spam_complaint_rate ?? NaN);
-          if (recipients <= 0) continue;
-          denom += recipients;
-          if (Number.isFinite(b)) bounceNum += b * recipients;
-          if (Number.isFinite(s)) spamNum += s * recipients;
-        }
-        if (denom > 0) return { bounce: bounceNum / denom, spam: spamNum / denom };
-        return { bounce: null, spam: null };
-      }
       const camp90Rows = campaignReports.find((r) => r.timeframe === "last_90_days")?.results
         ?? campaignReports.find((r) => r.timeframe === "last_30_days")?.results
         ?? [];
@@ -1644,6 +1630,8 @@ async function runStageReporting(params: {
     }
 
     // Merge into rollups: update existing seeded rows with results.
+    const camp30Rows = campaignReports.find((r) => r.timeframe === "last_30_days")?.results ?? [];
+    const deliverabilitySnapshot = buildDeliverabilitySnapshot(camp30Rows, "last_30_days");
     const flowRows30 = flowReports.find((r) => r.timeframe === "last_30_days")?.results ?? [];
     const revenueBreakdown = buildRevenueBreakdown({
       totalStoreRevenue,
@@ -1661,6 +1649,7 @@ async function runStageReporting(params: {
         campaignReports.find((r) => r.timeframe === "last_30_days")?.results ?? [],
       ),
       revenue_breakdown: revenueBreakdown,
+      deliverability: deliverabilitySnapshot,
       profile_scan_status: profileScanFull ? "pending" : "skipped",
       computed_at: new Date().toISOString(),
     };
@@ -1898,6 +1887,130 @@ async function runStageBackfillRevenueBreakdown(params: {
 }
 
 // ---------------------------------------------------------------------------
+// Stage: backfill_deliverability (non-destructive patch)
+// ---------------------------------------------------------------------------
+
+async function runStageBackfillDeliverability(params: {
+  auditId: string;
+  correlationId: string;
+}): Promise<Response> {
+  const startedAt = Date.now();
+  const deadlineAtMs = startedAt + 148_000;
+  const sb = assertServiceClient();
+  let clientId: string | null = null;
+  let revision: string = DEFAULT_REVISION;
+
+  const campaignReportStats = [
+    "recipients",
+    "open_rate",
+    "click_rate",
+    "bounce_rate",
+    "spam_complaint_rate",
+    "unsubscribe_rate",
+  ];
+
+  try {
+    const { data: audit, error: auditErr } = await sb.from("audits").select("client_id").eq("id", params.auditId).maybeSingle();
+    if (auditErr) throw auditErr;
+    if (!audit?.client_id) throw new Error("audit not found");
+    clientId = audit.client_id as string;
+
+    const { data: conn } = await sb.from("klaviyo_connections")
+      .select("revision, conversion_metric_id")
+      .eq("client_id", clientId).maybeSingle();
+    revision = (conn?.revision as string | null) || DEFAULT_REVISION;
+    const conversionMetricId = (conn?.conversion_metric_id as string | null) || null;
+    if (!conversionMetricId) throw new Error("No conversion_metric_id on klaviyo_connections");
+
+    const apiKey = await resolveApiKey(sb, clientId, null);
+    const { data: rollups } = await sb.from("klaviyo_reporting_rollups")
+      .select("id, computed")
+      .eq("audit_id", params.auditId);
+    if (!rollups?.length) throw new Error("No reporting rollups found for audit");
+
+    const reportingErrors: Array<{ stage: string; status?: number | null; message: string }> = [];
+    const bucket = createReportingBucket({ tokensPerMin: REPORTING_TOKENS_PER_MIN, burst: REPORTING_BURST });
+
+    const camp30 = await queryValuesReportWithBackoff({
+      apiKey,
+      revision,
+      endpointPath: "/api/campaign-values-reports/",
+      timeframeKey: "last_30_days",
+      conversionMetricId,
+      filter: "contains-any(send_channel,[\"email\"])",
+      statistics: campaignReportStats,
+      groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
+      deadlineAtMs,
+      bucket,
+    });
+
+    let deliverabilitySnapshot = null;
+    if (camp30.ok) {
+      const rows = camp30.body?.data?.attributes?.results ?? [];
+      deliverabilitySnapshot = buildDeliverabilitySnapshot(rows, "last_30_days");
+    } else {
+      reportingErrors.push({
+        stage: "campaign_values_deliverability_last_30_days",
+        status: camp30.status ?? null,
+        message: trimBody(camp30.body) ?? "Campaign values report failed (deliverability backfill)",
+      });
+    }
+
+    for (const row of rollups) {
+      const prevComputed = (row.computed ?? {}) as Record<string, unknown>;
+      const prevSnapshot = ((prevComputed as any).account_snapshot ?? {}) as Record<string, unknown>;
+      const account_snapshot = {
+        ...prevSnapshot,
+        deliverability: deliverabilitySnapshot,
+        computed_at: new Date().toISOString(),
+      };
+      await mustSucceed("patch deliverability", sb.from("klaviyo_reporting_rollups")
+        .update({
+          computed: {
+            ...prevComputed,
+            account_snapshot,
+            deliverability_backfilled_at: new Date().toISOString(),
+          },
+        }).eq("id", row.id));
+    }
+
+    await logStageRun(sb, {
+      correlationId: params.correlationId,
+      auditId: params.auditId,
+      clientId,
+      stage: "backfill_deliverability",
+      status: reportingErrors.length ? "partial" : "success",
+      revision,
+      elapsedMs: Date.now() - startedAt,
+      errorMessage: reportingErrors.length ? JSON.stringify(reportingErrors).slice(0, 1000) : null,
+    });
+
+    return json({
+      ok: true,
+      correlationId: params.correlationId,
+      stage: "backfill_deliverability",
+      deliverability: deliverabilitySnapshot,
+      errors: reportingErrors,
+      elapsed_ms: Date.now() - startedAt,
+    });
+  } catch (e) {
+    const msg = redactSecrets(e instanceof Error ? e.message : "Unknown error");
+    await logStageRun(sb, {
+      correlationId: params.correlationId,
+      auditId: params.auditId,
+      clientId,
+      stage: "backfill_deliverability",
+      status: "error",
+      revision,
+      elapsedMs: Date.now() - startedAt,
+      errorCode: "backfill_deliverability_failed",
+      errorMessage: msg,
+    });
+    return json({ ok: false, error: { code: "backfill_deliverability_failed", message: msg }, correlationId: params.correlationId }, { status: 500 });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Entry point
 // ---------------------------------------------------------------------------
 
@@ -1925,7 +2038,7 @@ serve(async (req) => {
   }
 
   // Stage-specific auth + dispatch.
-  if (stage === "resume_profile_scan" || stage === "reporting" || stage === "profile" || stage === "backfill_revenue_breakdown") {
+  if (stage === "resume_profile_scan" || stage === "reporting" || stage === "profile" || stage === "backfill_revenue_breakdown" || stage === "backfill_deliverability") {
     // These stages are usually chain-invoked with the service role key; accept either the SR key or a signed-in user (for manual retries).
     const auth = req.headers.get("authorization") ?? "";
     const token = auth.replace(/^Bearer\s+/i, "");
@@ -1952,6 +2065,9 @@ serve(async (req) => {
       }
       if (stage === "backfill_revenue_breakdown") {
         return await runStageBackfillRevenueBreakdown({ auditId, correlationId });
+      }
+      if (stage === "backfill_deliverability") {
+        return await runStageBackfillDeliverability({ auditId, correlationId });
       }
       // stage === "profile" — just kicks the resume chain (used by stage 2 and nudges).
       await chainStage("resume_profile_scan", auditId);
