@@ -246,9 +246,15 @@ async function fetchKlaviyoContext(auditId: string, clientId: string): Promise<K
   if (!hasData) return null;
 
   const campaignCount = campaignsRes.data?.length ?? 0;
-  const rollupTruncated = (rollupsRes.data?.computed as { account_snapshot?: { campaigns_truncated?: boolean } } | null)
-    ?.account_snapshot?.campaigns_truncated;
+  const rollupComputed = rollupsRes.data?.computed as {
+    account_snapshot?: {
+      campaigns_truncated?: boolean;
+      revenue_breakdown?: KlaviyoContext["revenueBreakdown"];
+    };
+  } | null;
+  const rollupTruncated = rollupComputed?.account_snapshot?.campaigns_truncated;
   const campaignsTruncated = rollupTruncated === true || campaignCount > 500;
+  const revenueBreakdown = rollupComputed?.account_snapshot?.revenue_breakdown ?? null;
 
   return {
     account: connRes.data ? { name: connRes.data.account_name, timezone: connRes.data.timezone, website_url: connRes.data.website_url } : undefined,
@@ -264,6 +270,7 @@ async function fetchKlaviyoContext(auditId: string, clientId: string): Promise<K
       monthly_revenue_current: fp.monthly_revenue_current,
       email_message_count: fp.email_message_count ?? null,
     })),
+    revenueBreakdown,
   };
 }
 

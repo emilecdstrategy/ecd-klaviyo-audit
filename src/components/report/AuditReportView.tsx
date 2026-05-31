@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode }
 import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
 import { computeAuditTotalRevenueOpportunity, formatCurrency, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../lib/revenue-calculator';
+import { formatStoreRevenueContext } from '../../lib/revenue-breakdown';
 import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
 import { isRevenueOpportunitySectionVisible } from '../../lib/report-config/resolve';
 import { normalizeCoreFlowsMatrix } from '../../lib/core-flows-matrix';
@@ -182,6 +183,17 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   const currentFlowMonthlyRevenue = useMemo(
     () => flowPerformance.reduce((sum, flow) => sum + (flow.monthly_revenue_current ?? 0), 0),
     [flowPerformance],
+  );
+
+  const revenueBreakdown = accountSnapshot?.revenue_breakdown ?? null;
+
+  const currentFlowStoreContext = useMemo(
+    () => formatStoreRevenueContext(
+      currentFlowMonthlyRevenue,
+      revenueBreakdown?.total_store_revenue,
+      revenueBreakdown?.attributed_revenue,
+    ),
+    [currentFlowMonthlyRevenue, revenueBreakdown?.total_store_revenue, revenueBreakdown?.attributed_revenue],
   );
 
   const reportSections = useMemo(
@@ -669,6 +681,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
                 <ReportFlowRevenueBreakdown
                   performance={flowPerformance}
+                  revenueBreakdown={revenueBreakdown}
                   title={
                     editMode ? (
                       <EditablePlainText
@@ -709,6 +722,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 <div className="p-6">
                   <ReportFlowTable
                     flows={flowPerformance}
+                    revenueBreakdown={revenueBreakdown}
                     defaultVisibleRows={flowsCfg.blocks.flowTable?.defaultVisibleRows}
                     subtitleOverride={flowsCfg.blocks.flowTable?.subtitleOverride}
                   />
@@ -958,7 +972,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 {currentFlowMonthlyRevenue > 0 ? formatCurrency(currentFlowMonthlyRevenue) : 'N/A'}<span className="text-base font-normal">{currentFlowMonthlyRevenue > 0 ? '/mo' : ''}</span>
               </p>
               <p className="text-xs text-gray-400">
-                {currentFlowMonthlyRevenue > 0 ? 'Based on Klaviyo flow reporting data' : 'Not available for this audit (missing metrics scope)'}
+                {currentFlowMonthlyRevenue > 0 ? (
+                  <>
+                    Based on Klaviyo flow reporting data (last 30 days)
+                    {currentFlowStoreContext ? (
+                      <span className="mt-1 block text-sm font-medium text-gray-600">{currentFlowStoreContext}</span>
+                    ) : null}
+                  </>
+                ) : 'Not available for this audit (missing metrics scope)'}
               </p>
             </div>
             <div className="relative overflow-hidden rounded-2xl border border-brand-primary/20 bg-white p-6 shadow-sm">

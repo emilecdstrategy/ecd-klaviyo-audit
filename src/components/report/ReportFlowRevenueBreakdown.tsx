@@ -2,9 +2,13 @@ import type { ReactNode } from 'react';
 import type { FlowPerformance } from '../../lib/types';
 import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
 
+import type { RevenueBreakdown } from '../../lib/revenue-breakdown';
+import { formatStoreRevenueContext } from '../../lib/revenue-breakdown';
+
 interface Props {
   performance: FlowPerformance[];
   title?: ReactNode;
+  revenueBreakdown?: RevenueBreakdown | null;
 }
 
 const BAR_COLORS = [
@@ -33,11 +37,17 @@ const TEXT_COLORS = [
   'text-lime-700',
 ];
 
-export default function ReportFlowRevenueBreakdown({ performance, title }: Props) {
+export default function ReportFlowRevenueBreakdown({ performance, title, revenueBreakdown }: Props) {
   const visiblePerformance = performance.filter(f => !f.is_hidden);
   const sorted = [...visiblePerformance].sort((a, b) => b.monthly_revenue_current - a.monthly_revenue_current);
   const totalRevenue = sorted.reduce((s, f) => s + f.monthly_revenue_current, 0);
   if (totalRevenue <= 0) return null;
+
+  const storeContext = formatStoreRevenueContext(
+    totalRevenue,
+    revenueBreakdown?.total_store_revenue,
+    revenueBreakdown?.attributed_revenue,
+  );
 
   const topN = 10;
   const top = sorted.slice(0, topN);
@@ -53,7 +63,11 @@ export default function ReportFlowRevenueBreakdown({ performance, title }: Props
         Top {top.length} revenue-generating flows account for{' '}
         <span className="font-semibold text-gray-800">{formatCurrency(topRevenue)}</span>{' '}
         ({totalRevenue > 0 ? ((topRevenue / totalRevenue) * 100).toFixed(1) : 0}%) of total{' '}
-        {formatCurrency(totalRevenue)} flow revenue.
+        {formatCurrency(totalRevenue)} flow revenue
+        {storeContext ? (
+          <span className="text-gray-600"> · {storeContext}</span>
+        ) : null}
+        .
       </p>
 
       <div className="space-y-2.5">

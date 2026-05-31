@@ -1,4 +1,6 @@
 import type { FlowPerformance } from '../../lib/types';
+import type { RevenueBreakdown } from '../../lib/revenue-breakdown';
+import { formatStoreRevenueContext } from '../../lib/revenue-breakdown';
 import { formatCurrency, isNonRevenueFlow } from '../../lib/revenue-calculator';
 import {
   classifyRate,
@@ -82,9 +84,10 @@ interface ReportFlowTableProps {
   flows: FlowPerformance[];
   defaultVisibleRows?: number;
   subtitleOverride?: string;
+  revenueBreakdown?: RevenueBreakdown | null;
 }
 
-export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOverride }: ReportFlowTableProps) {
+export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOverride, revenueBreakdown }: ReportFlowTableProps) {
   const { benchmarks } = usePlatformSettings();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<{ isDown: boolean; startX: number; startScrollLeft: number }>({
@@ -132,6 +135,11 @@ export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOve
 
   const totalRecipients = sorted.reduce((s, f) => s + f.recipients_per_month, 0);
   const totalRevenue = sorted.reduce((s, f) => s + f.monthly_revenue_current, 0);
+  const totalRevenueStoreContext = formatStoreRevenueContext(
+    totalRevenue,
+    revenueBreakdown?.total_store_revenue,
+    revenueBreakdown?.attributed_revenue,
+  );
 
   const revenueGenerators = sorted.filter(f => f.monthly_revenue_current > 0);
   const computedSubtitle = `${revenueGenerators.length} flows generating ${totalRevenue > 0 ? ((revenueGenerators.reduce((s, f) => s + f.monthly_revenue_current, 0) / totalRevenue) * 100).toFixed(1) : 0}% of total flow revenue.`;
@@ -263,7 +271,12 @@ export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOve
                 <td />
                 <td />
                 <td />
-                <td className="px-4 py-4 text-right text-sm font-bold text-gray-900 tabular-nums">{formatCurrency(totalRevenue)}</td>
+                <td className="px-4 py-4 text-right text-sm font-bold text-gray-900 tabular-nums">
+                  <div>{formatCurrency(totalRevenue)}</div>
+                  {totalRevenueStoreContext ? (
+                    <div className="mt-0.5 text-[10px] font-normal text-gray-500">{totalRevenueStoreContext}</div>
+                  ) : null}
+                </td>
                 <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-600">
                   ${totalRecipients > 0 ? (totalRevenue / totalRecipients).toFixed(2) : '0.00'}
                 </td>

@@ -40,6 +40,15 @@ export type KlaviyoContext = {
     email_message_count?: number | null;
   }>;
   campaigns_truncated?: boolean;
+  revenueBreakdown?: {
+    total_store_revenue: number | null;
+    attributed_revenue: number;
+    campaign_revenue: number;
+    flow_revenue: number;
+    email_revenue: number;
+    sms_revenue: number;
+    timeframe: "last_30_days";
+  } | null;
 };
 
 export function buildAuditSystemPrompt() {
@@ -104,11 +113,17 @@ export function buildAuditSystemPrompt() {
     "Example strength: '`flow:Abandoned Checkout` generated $9,246 from 1,187 recipients with a 3.11% conversion rate, comfortably above the 2–6% benchmark for high-intent recovery flows.'",
     "Example strength: '`flow:Browse Abandonment` has an 83.6% open rate (benchmark 25–45%, likely inflated by Apple MPP) and $5,034 in revenue.'",
     "",
+    "REVENUE SHARE CONTEXT — CRITICAL:",
+    "When citing a dollar revenue figure in strengths or section summary_text, also express its share of total store revenue and/or Klaviyo-attributed revenue using the precomputed values in klaviyo_data.revenue_context and top_flows[].pct_of_store_revenue / pct_of_attributed_revenue.",
+    "NEVER invent or calculate percentages yourself. Use ONLY the provided pct fields.",
+    "Phrase naturally: '$55,319 (~13% of total store revenue)' or '$55,319 (~42% of Klaviyo-attributed revenue, ~13% of total store revenue)'.",
+    "All revenue figures in the data are last 30 days unless stated otherwise.",
+    "",
     "STRENGTHS: Return 3-6 items in the strengths array.",
     "These appear as the 'What's Working' block on the client report (after Account Snapshot, before Key Findings).",
     "Each item is a single sentence with a bold lead phrase followed by supporting detail.",
     "Format: '**Bold claim**, specific evidence from the data.'",
-    "Example strengths: '**Abandoned Cart/Checkout flows** drive 57.5% of all flow revenue ($41,858), which is a strong foundation to build on', '`flow:Browse Abandonment` has an 83.6% open rate (benchmark 25–45%) and $5,034 in revenue, performing well on engagement'.",
+    "Example strengths: '**Abandoned Cart/Checkout flows** drive 57.5% of all flow revenue ($41,858, ~10% of total store revenue), which is a strong foundation to build on', '`flow:Browse Abandonment` has an 83.6% open rate (benchmark 25–45%) and $5,034 in revenue (~1.2% of total store revenue), performing well on engagement'.",
     "Be specific: use actual flow names (via entity tags), dollar amounts, percentages, and recipient counts from the data.",
     "Do NOT be generic. Every bullet must reference concrete data from this specific Klaviyo account.",
     "Use **bold** for category labels and metrics. Use entity tags for specific Klaviyo asset names.",
@@ -286,6 +301,53 @@ function summarizeSubscriptionFlowCandidates(
   return `Soft-matched subscription lifecycle flows: ${lines.join("; ")}`;
 }
 
+function pctLabel(part: number, whole: number | null | undefined): string | null {
+  if (!Number.isFinite(part) || !Number.isFinite(whole) || !whole || whole <= 0) return null;
+  return `${((part / whole) * 100).toFixed(2)}%`;
+}
+
+function buildRevenueContext(klaviyo: KlaviyoContext): Record<string, unknown> | null {
+  const rb = klaviyo.revenueBreakdown;
+  if (!rb) return null;
+  const totalFlowRevenue = (klaviyo.flowPerformance ?? []).reduce(
+    (s, f) => s + (Number(f.monthly_revenue_current) || 0),
+    0,
+  );
+  return {
+    timeframe: rb.timeframe ?? "last_30_days",
+    total_store_revenue: rb.total_store_revenue,
+    attributed_revenue: rb.attributed_revenue,
+    campaign_revenue: rb.campaign_revenue,
+    flow_revenue: rb.flow_revenue,
+    email_revenue: rb.email_revenue,
+    sms_revenue: rb.sms_revenue,
+    total_flow_revenue_sum: totalFlowRevenue,
+    total_flow_revenue_pct_of_store: pctLabel(totalFlowRevenue, rb.total_store_revenue),
+    total_flow_revenue_pct_of_attributed: pctLabel(totalFlowRevenue, rb.attributed_revenue),
+    attributed_pct_of_store: pctLabel(rb.attributed_revenue, rb.total_store_revenue),
+  };
+}
+
+function buildTopFlowsWithPct(klaviyo: KlaviyoContext) {
+  const rb = klaviyo.revenueBreakdown;
+  const totalStore = rb?.total_store_revenue ?? null;
+  const attributed = rb?.attributed_revenue ?? null;
+  return [...(klaviyo.flowPerformance ?? [])]
+    .sort((a, b) => (b.monthly_revenue_current ?? 0) - (a.monthly_revenue_current ?? 0))
+    .slice(0, 8)
+    .map((f) => {
+      const revenue = f.monthly_revenue_current ?? 0;
+      return {
+        name: f.flow_name,
+        revenue,
+        recipients: f.recipients_per_month ?? 0,
+        conv: f.actual_conv_rate ?? 0,
+        pct_of_store_revenue: pctLabel(revenue, totalStore),
+        pct_of_attributed_revenue: pctLabel(revenue, attributed),
+      };
+    });
+}
+
 function buildScopedKlaviyoData(
   klaviyo: KlaviyoContext,
   requestedKeys: readonly string[],
@@ -311,6 +373,8 @@ function buildScopedKlaviyoData(
   if (needsAll) {
     scoped.lists_summary = summarizeLists(klaviyo.lists);
   }
+  const revenueContext = buildRevenueContext(klaviyo);
+  if (revenueContext) scoped.revenue_context = revenueContext;
   return scoped;
 }
 
@@ -336,14 +400,8 @@ export function buildAuditUserPrompt(
         campaigns_truncated: campaignsCapped,
         segment_count: klaviyo.segments?.length ?? 0,
         form_count: klaviyo.forms?.length ?? 0,
-        top_flows: (klaviyo.flowPerformance ?? [])
-          .slice(0, 8)
-          .map((f) => ({
-            name: f.flow_name,
-            revenue: f.monthly_revenue_current ?? 0,
-            recipients: f.recipients_per_month ?? 0,
-            conv: f.actual_conv_rate ?? 0,
-          })),
+        revenue_context: buildRevenueContext(klaviyo),
+        top_flows: buildTopFlowsWithPct(klaviyo),
       };
     } else {
       klaviyoSection = buildScopedKlaviyoData(klaviyo, requested, benchmarkConfig);
@@ -413,7 +471,7 @@ export function buildAuditUserPrompt(
 
   if (mode !== "sections_only") {
     payload.required_top_level_fields = {
-      strengths: "Array of 3-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages WITH benchmark ranges and health assessment. Write naturally, no em-dashes, use commas and plain language.",
+      strengths: "Array of 3-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages WITH benchmark ranges and health assessment. When citing revenue dollars, include pct_of_store_revenue from revenue_context/top_flows. Write naturally, no em-dashes, use commas and plain language.",
       findings: "Array of exactly 5 strings. Each is a problem statement ranked by impact. Bold lead phrase plus evidence. When citing percentages, include benchmark range. No dollar amounts or revenue language.",
       implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
     };
