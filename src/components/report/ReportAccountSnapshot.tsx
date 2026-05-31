@@ -377,11 +377,18 @@ export default function ReportAccountSnapshot({
                     ].filter(Boolean).join(' · ')
           }
         />
+
         <Card
-          icon={Clock}
-          label="Send Frequency"
-          value={recentSent > 0 ? `${perWeek.toFixed(perWeek < 1 ? 1 : 0)}/wk` : '—'}
-          sub={recentSent > 0 ? `${recentSent} campaigns sent (last 30 days)` : 'based on recent sent campaigns'}
+          icon={DollarSign}
+          label="Revenue / Recipient"
+          value={hasPerf && revenuePerRecipient != null ? `$${revenuePerRecipient.toFixed(2)}` : 'N/A'}
+          sub={hasPerf ? 'across all flows' : perfUnavailableReason}
+        />
+        <Card
+          icon={Megaphone}
+          label="Campaign Rev / Recipient"
+          value={hasCampaignRpr ? `$${campaignRevenuePerRecipient!.toFixed(2)}` : 'N/A'}
+          sub={hasCampaignRpr ? 'last 30 days · email campaigns' : perfUnavailableReason}
         />
 
         {accountSnapshot?.bounce_rate_90d != null ? (
@@ -427,16 +434,10 @@ export default function ReportAccountSnapshot({
         )}
 
         <Card
-          icon={DollarSign}
-          label="Revenue / Recipient"
-          value={hasPerf && revenuePerRecipient != null ? `$${revenuePerRecipient.toFixed(2)}` : 'N/A'}
-          sub={hasPerf ? 'across all flows' : perfUnavailableReason}
-        />
-        <Card
-          icon={Megaphone}
-          label="Campaign Rev / Recipient"
-          value={hasCampaignRpr ? `$${campaignRevenuePerRecipient!.toFixed(2)}` : 'N/A'}
-          sub={hasCampaignRpr ? 'last 30 days · email campaigns' : perfUnavailableReason}
+          icon={Clock}
+          label="Send Frequency"
+          value={recentSent > 0 ? `${perWeek.toFixed(perWeek < 1 ? 1 : 0)}/wk` : '—'}
+          sub={recentSent > 0 ? `${recentSent} campaigns sent (last 30 days)` : 'based on recent sent campaigns'}
         />
       </div>
 
