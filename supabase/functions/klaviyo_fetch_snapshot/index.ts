@@ -1028,7 +1028,7 @@ async function runStageConfig(params: {
     const [flows, lists, segments, forms, campaigns, metricsRes] = await Promise.all([
       klaviyoPaged(apiKey, params.revision, "/api/flows/?page%5Bsize%5D=50"),
       klaviyoPaged(apiKey, params.revision, "/api/lists/", MAX_LIST_SEGMENT_PAGES),
-      klaviyoPaged(apiKey, params.revision, "/api/segments/", MAX_LIST_SEGMENT_PAGES),
+      klaviyoPaged(apiKey, params.revision, "/api/segments/?page%5Bsize%5D=50&fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing", MAX_LIST_SEGMENT_PAGES),
       klaviyoPaged(apiKey, params.revision, "/api/forms/?page%5Bsize%5D=100"),
       klaviyoPaged(apiKey, params.revision, "/api/campaigns/?filter=equals(messages.channel,'email')", MAX_CAMPAIGN_PAGES),
       klaviyoPaged(apiKey, params.revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", METRICS_MAX_PAGES),
@@ -1128,6 +1128,9 @@ async function runStageConfig(params: {
     }
 
     if (segments.ok) {
+      const metricNameMap = Object.fromEntries(
+        (metricsRes.ok ? metricsRes.items : []).map((m: any) => [m.id, m.attributes?.name ?? m.id]),
+      );
       const rows = segments.items.map((s: any) => ({
         audit_id: params.auditId,
         client_id: params.clientId,
@@ -1135,7 +1138,7 @@ async function runStageConfig(params: {
         name: s.attributes?.name ?? "",
         created_at_klaviyo: s.attributes?.created ?? null,
         updated_at_klaviyo: s.attributes?.updated ?? null,
-        raw: s,
+        raw: { ...s, _ecd_metric_names: metricNameMap },
       }));
       if (rows.length) await mustSucceed("insert klaviyo_segment_snapshots", sb.from("klaviyo_segment_snapshots").insert(rows));
     }

@@ -14,6 +14,7 @@ import ReportFlowRevenueBreakdown from './ReportFlowRevenueBreakdown';
 import ReportDeliverabilitySnapshot from './ReportDeliverabilitySnapshot';
 import ReportAccountSnapshot from './ReportAccountSnapshot';
 import ReportSegmentTable from './ReportSegmentTable';
+import ReportSegmentCriteria from './ReportSegmentCriteria';
 import ReportFormTable from './ReportFormTable';
 import ReportCampaignTable from './ReportCampaignTable';
 import ReportInventoryLauncher from './ReportInventoryLauncher';
@@ -33,7 +34,7 @@ import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
 import ReportBlockEditChrome, { ReportHiddenItemStub, ReportItemHideButton } from './edit/ReportBlockEditChrome';
 import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
-import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem } from '../../lib/types';
+import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
 import { resolveExecutiveFindings } from '../../lib/findings-normalize';
 import { cn } from '../../lib/utils';
 import type { AuditReportBundle } from '../../hooks/useAuditReportData';
@@ -738,6 +739,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                     revenueBreakdown={revenueBreakdown}
                     defaultVisibleRows={flowsCfg.blocks.flowTable?.defaultVisibleRows}
                     subtitleOverride={flowsCfg.blocks.flowTable?.subtitleOverride}
+                    totalFlowCount={flowSnapshots.filter((f: { is_hidden?: boolean }) => !f.is_hidden).length}
                   />
                 </div>
               </div>
@@ -823,6 +825,10 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 </div>
               );
             })()}
+
+            {isSegmentationBlockVisible(segmentationCfg, 'segmentTable') && segmentSnapshots.length > 0 && (
+              <ReportSegmentCriteria segments={segmentSnapshots as KlaviyoSegmentSnapshot[]} />
+            )}
 
             {isSegmentationBlockVisible(segmentationCfg, 'segmentTable') && (
               <ReportInventoryLauncher

@@ -3,6 +3,10 @@ import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useExpandableTableClip } from '../../hooks/useExpandableTableClip';
 import { cn } from '../../lib/utils';
 import type { KlaviyoSegmentSnapshot } from '../../lib/types';
+import {
+  buildSegmentSignalTags,
+  parseSegmentDefinition,
+} from '../../lib/segment-definition';
 
 const COLLAPSED_COUNT = 2;
 
@@ -37,20 +41,24 @@ export default function ReportSegmentTable({
         )}
         style={needsExpand ? { maxHeight } : undefined}
       >
-        <table className="w-full min-w-[760px] text-sm border-collapse">
+        <table className="w-full min-w-[960px] text-sm border-collapse">
           <thead>
             <tr className="border-b border-gray-100">
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Segment</th>
+              <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Criteria</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Created</th>
               <th className="px-4 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Updated</th>
             </tr>
           </thead>
           <tbody>
-            {rows.map((s, i) => (
+            {rows.map((s, i) => {
+              const parsed = parseSegmentDefinition(s);
+              const tags = buildSegmentSignalTags(parsed.signals);
+              return (
               <tr key={s.id} className={`border-b border-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
-                <td className="px-4 py-3">
+                <td className="px-4 py-3 align-top">
                   <div className="min-w-0">
-                    <p className="text-sm font-semibold text-gray-900 truncate">
+                    <p className="text-sm font-semibold text-gray-900">
                       {s.display_name || s.name || '—'}
                     </p>
                     {s.display_notes ? (
@@ -60,17 +68,37 @@ export default function ReportSegmentTable({
                     )}
                   </div>
                 </td>
-                <td className="px-4 py-3 text-xs text-gray-600">
+                <td className="px-4 py-3 align-top max-w-md">
+                  {parsed.available ? (
+                    <div className="space-y-1.5">
+                      {tags.length > 0 ? (
+                        <div className="flex flex-wrap gap-1">
+                          {tags.slice(0, 3).map(tag => (
+                            <span key={tag} className="rounded bg-gray-100 px-1.5 py-0.5 text-[10px] font-medium text-gray-600">
+                              {tag}
+                            </span>
+                          ))}
+                        </div>
+                      ) : null}
+                      <p className="text-xs text-gray-600 leading-relaxed line-clamp-3">
+                        {parsed.criteriaLines.join(' · ')}
+                      </p>
+                    </div>
+                  ) : (
+                    <span className="text-xs text-gray-400 italic">Not synced</span>
+                  )}
+                </td>
+                <td className="px-4 py-3 align-top text-xs text-gray-600">
                   {s.created_at_klaviyo ? new Date(s.created_at_klaviyo).toLocaleDateString() : '—'}
                 </td>
-                <td className="px-4 py-3 text-xs text-gray-600">
+                <td className="px-4 py-3 align-top text-xs text-gray-600">
                   {s.updated_at_klaviyo ? new Date(s.updated_at_klaviyo).toLocaleDateString() : '—'}
                 </td>
               </tr>
-            ))}
+            );})}
             {rows.length === 0 && (
               <tr>
-                <td colSpan={3} className="px-4 py-8 text-center text-sm text-gray-500">
+                <td colSpan={4} className="px-4 py-8 text-center text-sm text-gray-500">
                   No segments found in Klaviyo for this audit.
                 </td>
               </tr>

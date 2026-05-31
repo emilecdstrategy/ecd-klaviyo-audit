@@ -85,9 +85,10 @@ interface ReportFlowTableProps {
   defaultVisibleRows?: number;
   subtitleOverride?: string;
   revenueBreakdown?: RevenueBreakdown | null;
+  totalFlowCount?: number | null;
 }
 
-export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOverride, revenueBreakdown }: ReportFlowTableProps) {
+export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOverride, revenueBreakdown, totalFlowCount }: ReportFlowTableProps) {
   const { benchmarks } = usePlatformSettings();
   const scrollRef = useRef<HTMLDivElement | null>(null);
   const dragStateRef = useRef<{ isDown: boolean; startX: number; startScrollLeft: number }>({
@@ -142,7 +143,13 @@ export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOve
   );
 
   const revenueGenerators = sorted.filter(f => f.monthly_revenue_current > 0);
-  const computedSubtitle = `${revenueGenerators.length} flows generating ${totalRevenue > 0 ? ((revenueGenerators.reduce((s, f) => s + f.monthly_revenue_current, 0) / totalRevenue) * 100).toFixed(1) : 0}% of total flow revenue.`;
+  const activitySubtitle =
+    totalFlowCount != null && totalFlowCount > 0
+      ? `${sorted.length} flow${sorted.length === 1 ? '' : 's'} with email activity in the last 30 days (of ${totalFlowCount} total).`
+      : null;
+  const computedSubtitle =
+    activitySubtitle ??
+    `${revenueGenerators.length} flows generating ${totalRevenue > 0 ? ((revenueGenerators.reduce((s, f) => s + f.monthly_revenue_current, 0) / totalRevenue) * 100).toFixed(1) : 0}% of total flow revenue.`;
   const subtitle = subtitleOverride || computedSubtitle;
 
   const handleMouseDown = (e: MouseEvent<HTMLDivElement>) => {
