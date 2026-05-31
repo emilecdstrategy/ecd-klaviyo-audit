@@ -15,6 +15,7 @@ import {
   ArrowUp,
   ArrowDown,
   Palette,
+  BarChart3,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -40,10 +41,12 @@ import {
 import type { IndustryEmailLibrary, RevenueOpportunityTemplate } from '../lib/types';
 import { usePlatformSettings } from '../contexts/PlatformSettingsContext';
 import PlatformReportSettingsPanel from '../components/admin/PlatformReportSettingsPanel';
+import BenchmarkSettingsPanel from '../components/admin/BenchmarkSettingsPanel';
 
 const TABS = [
   { id: 'users', label: 'Users', icon: Users },
   { id: 'report_display', label: 'Report Display', icon: Palette },
+  { id: 'klaviyo_benchmarks', label: 'Klaviyo Benchmarks', icon: BarChart3 },
   { id: 'email_library', label: 'Email Library', icon: ImageIcon },
   { id: 'revenue_opportunities', label: 'Revenue Opportunities', icon: TrendingUp },
   { id: 'settings', label: 'API Connection', icon: Key },
@@ -101,6 +104,7 @@ export default function AdminArea() {
 
         {tab === 'users' && <UsersTab />}
         {tab === 'report_display' && <PlatformReportSettingsPanel />}
+        {tab === 'klaviyo_benchmarks' && <BenchmarkSettingsPanel />}
         {tab === 'email_library' && <EmailLibraryTab />}
         {tab === 'revenue_opportunities' && <RevenueOpportunitiesTab />}
         {tab === 'settings' && <SettingsTab />}
