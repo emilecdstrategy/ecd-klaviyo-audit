@@ -36,7 +36,7 @@ import {
 const FLOW_SNAPSHOT_SELECT =
   'id, audit_id, client_id, flow_id, name, status, trigger_type, archived, created_at_klaviyo, updated_at_klaviyo, fetched_at, action_count:raw->attributes->action_count, flow_actions:raw->relationships->flow_actions->data';
 const SEGMENT_SNAPSHOT_SELECT =
-  'id, audit_id, client_id, segment_id, name, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order';
+  'id, audit_id, client_id, segment_id, name, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order, raw';
 const FORM_SNAPSHOT_SELECT =
   'id, audit_id, client_id, form_id, name, status, ab_test, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order';
 const CAMPAIGN_SNAPSHOT_SELECT =
