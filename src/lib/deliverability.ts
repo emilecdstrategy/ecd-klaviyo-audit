@@ -81,7 +81,8 @@ export type DeliverabilityScoreResult = {
   score: number;
   grade: DeliverabilityGrade;
   gradeClassName: string;
-  gaugeClassName: string;
+  ringClassName: string;
+  scoreTextClassName: string;
 };
 
 function metricScore(rate: number | null | undefined, threshold: DeliverabilityThreshold): number | null {
@@ -122,15 +123,39 @@ export function computeDeliverabilityScore(
   const score = Math.round(raw * 100);
 
   if (score >= 80) {
-    return { score, grade: 'Good', gradeClassName: 'bg-emerald-100 text-emerald-800', gaugeClassName: 'text-emerald-500' };
+    return {
+      score,
+      grade: 'Good',
+      gradeClassName: 'bg-emerald-100 text-emerald-800',
+      ringClassName: 'stroke-emerald-500',
+      scoreTextClassName: 'text-emerald-600',
+    };
   }
   if (score >= 60) {
-    return { score, grade: 'Fair', gradeClassName: 'bg-amber-100 text-amber-800', gaugeClassName: 'text-amber-400' };
+    return {
+      score,
+      grade: 'Fair',
+      gradeClassName: 'bg-amber-100 text-amber-800',
+      ringClassName: 'stroke-amber-400',
+      scoreTextClassName: 'text-amber-600',
+    };
   }
   if (score >= 40) {
-    return { score, grade: 'Needs Work', gradeClassName: 'bg-orange-100 text-orange-800', gaugeClassName: 'text-orange-400' };
+    return {
+      score,
+      grade: 'Needs Work',
+      gradeClassName: 'bg-orange-100 text-orange-800',
+      ringClassName: 'stroke-orange-400',
+      scoreTextClassName: 'text-orange-600',
+    };
   }
-  return { score, grade: 'Poor', gradeClassName: 'bg-red-100 text-red-800', gaugeClassName: 'text-red-400' };
+  return {
+    score,
+    grade: 'Poor',
+    gradeClassName: 'bg-red-100 text-red-800',
+    ringClassName: 'stroke-red-400',
+    scoreTextClassName: 'text-red-500',
+  };
 }
 
 /** Format a rate stored as 0-1 fraction for display (handles tiny spam rates). */

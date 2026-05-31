@@ -7,40 +7,38 @@ import {
   meetsRecommended,
 } from '../../lib/deliverability';
 
-function DeliverabilityGauge({ score, gaugeClassName }: { score: number; gaugeClassName: string }) {
-  const radius = 52;
+function DeliverabilityGauge({
+  score,
+  ringClassName,
+  scoreTextClassName,
+}: {
+  score: number;
+  ringClassName: string;
+  scoreTextClassName: string;
+}) {
+  const radius = 54;
   const circumference = 2 * Math.PI * radius;
-  const arcLength = circumference * 0.75;
-  const offset = arcLength - (Math.min(100, Math.max(0, score)) / 100) * arcLength;
+  const dashOffset = circumference - (Math.min(100, Math.max(0, score)) / 100) * circumference;
 
   return (
     <div className="relative h-36 w-36 shrink-0">
-      <svg viewBox="0 0 120 120" className="h-full w-full -rotate-[135deg]">
+      <svg viewBox="0 0 120 120" className="h-full w-full -rotate-90">
+        <circle cx="60" cy="60" r={radius} fill="none" stroke="#f3f4f6" strokeWidth="10" />
         <circle
           cx="60"
           cy="60"
           r={radius}
           fill="none"
-          stroke="#e5e7eb"
+          className={ringClassName}
           strokeWidth="10"
-          strokeDasharray={`${arcLength} ${circumference}`}
           strokeLinecap="round"
-        />
-        <circle
-          cx="60"
-          cy="60"
-          r={radius}
-          fill="none"
-          className={gaugeClassName}
-          stroke="currentColor"
-          strokeWidth="10"
-          strokeDasharray={`${arcLength} ${circumference}`}
-          strokeDashoffset={offset}
-          strokeLinecap="round"
+          strokeDasharray={circumference}
+          strokeDashoffset={dashOffset}
         />
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
-        <span className="text-4xl font-bold tabular-nums tracking-tight text-gray-900">{score}</span>
+        <span className={`text-3xl font-extrabold tabular-nums ${scoreTextClassName}`}>{score}</span>
+        <span className="text-xs text-gray-400">/ 100</span>
       </div>
     </div>
   );
@@ -80,7 +78,11 @@ export default function ReportDeliverabilitySnapshot({
 
       <div className="flex flex-col gap-6 px-6 py-6 lg:flex-row lg:items-center">
         <div className="flex items-center gap-5">
-          <DeliverabilityGauge score={scoreResult.score} gaugeClassName={scoreResult.gaugeClassName} />
+          <DeliverabilityGauge
+            score={scoreResult.score}
+            ringClassName={scoreResult.ringClassName}
+            scoreTextClassName={scoreResult.scoreTextClassName}
+          />
           <div>
             <p className="text-sm text-gray-600">
               Your score is{' '}

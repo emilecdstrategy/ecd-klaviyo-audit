@@ -193,18 +193,29 @@ export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOve
           onMouseUp={stopDragging}
           onMouseLeave={stopDragging}
         >
-          <table className="w-full min-w-[840px] text-sm">
+          <table className="w-full min-w-[920px] table-fixed text-sm">
+            <colgroup>
+              <col style={{ width: '11%' }} />
+              <col style={{ width: '6%' }} />
+              <col style={{ width: '8%' }} />
+              <col style={{ width: '17%' }} />
+              <col style={{ width: '17%' }} />
+              <col style={{ width: '17%' }} />
+              <col style={{ width: '10%' }} />
+              <col style={{ width: '7%' }} />
+              <col style={{ width: '5%' }} />
+            </colgroup>
             <thead>
               <tr className="bg-gray-50">
                 <th className={`${thClass} text-left`}>Flow</th>
-                <th className={`${thClass} text-center w-16`}>Status</th>
-                <th className={`${thClass} text-right w-24`}>Recipients</th>
-                <th className={`${thClass} text-center w-20`}>Open Rate</th>
-                <th className={`${thClass} text-center w-20`}>Click Rate</th>
-                <th className={`${thClass} text-center w-20`}>Conv Rate</th>
-                <th className={`${thClass} text-right w-20`}>Revenue</th>
-                <th className={`${thClass} text-right w-16`}>RPR</th>
-                <th className={`${thClass} text-center w-14`}>Rating</th>
+                <th className={`${thClass} text-center`}>Status</th>
+                <th className={`${thClass} text-right`}>Recipients</th>
+                <th className={`${thClass} text-center`}>Open Rate</th>
+                <th className={`${thClass} text-center`}>Click Rate</th>
+                <th className={`${thClass} text-center`}>Conv Rate</th>
+                <th className={`${thClass} text-right`}>Revenue</th>
+                <th className={`${thClass} text-right`}>RPR</th>
+                <th className={`${thClass} text-center`}>Rating</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-50">
@@ -223,10 +234,15 @@ export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOve
                       flow.flow_status === 'missing' && 'opacity-75',
                     )}
                   >
-                    <td className="py-4 pl-6 pr-4">
-                      <p className="text-sm font-medium text-gray-900 leading-tight">{displayName}</p>
+                    <td className="py-4 pl-6 pr-2 overflow-hidden">
+                      <p
+                        className="text-sm font-medium text-gray-900 leading-tight truncate"
+                        title={displayName}
+                      >
+                        {displayName}
+                      </p>
                       {nonRevenue && (
-                        <span className="inline-block mt-0.5 text-[9px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
+                        <span className="inline-block mt-0.5 max-w-full truncate text-[9px] font-semibold uppercase tracking-wider text-gray-400 bg-gray-50 px-1.5 py-0.5 rounded">
                           Engagement only
                         </span>
                       )}
@@ -237,13 +253,13 @@ export default function ReportFlowTable({ flows, defaultVisibleRows, subtitleOve
                     <td className="px-4 py-4 text-right text-sm tabular-nums text-gray-700">
                       {flow.recipients_per_month.toLocaleString()}
                     </td>
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-3 py-4 text-center align-top">
                       {pctCell(flow.actual_open_rate, flowBenchmarks.openRateLow, flowBenchmarks.openRateHigh)}
                     </td>
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-3 py-4 text-center align-top">
                       {pctCell(flow.actual_click_rate, flowBenchmarks.clickRateLow, flowBenchmarks.clickRateHigh)}
                     </td>
-                    <td className="px-4 py-4 text-center">
+                    <td className="px-3 py-4 text-center align-top">
                       {nonRevenue
                         ? <span className="text-sm text-gray-300">N/A</span>
                         : pctCell(flow.actual_conv_rate, flowBenchmarks.convRateLow, flowBenchmarks.convRateHigh)}
