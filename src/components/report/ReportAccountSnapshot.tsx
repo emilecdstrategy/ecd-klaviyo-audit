@@ -182,13 +182,13 @@ function RevenuePerformance({ breakdown }: { breakdown: RevenueBreakdown }) {
             <DollarSign className="h-3.5 w-3.5 text-gray-400" strokeWidth={2} />
             <p className="text-[10px] font-bold uppercase tracking-wider text-gray-500">
               Klaviyo-Attributed Revenue
-              {hasTotal && attributedPctOfTotal !== '—' && (
-                <span className="ml-1 font-normal normal-case text-gray-400">
-                  ({attributedPctOfTotal} of total)
-                </span>
-              )}
             </p>
           </div>
+          {hasTotal && attributedPctOfTotal !== '—' && (
+            <p className="mb-1.5 text-sm font-semibold tabular-nums text-gray-700">
+              ({attributedPctOfTotal} of total)
+            </p>
+          )}
           <p className="text-3xl font-bold tabular-nums tracking-tight text-gray-900">
             {formatCurrency(breakdown.attributed_revenue)}
           </p>
