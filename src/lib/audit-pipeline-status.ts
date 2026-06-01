@@ -41,9 +41,9 @@ export type AuditPipelineStatus = {
 };
 
 const GENERATING_MAX_AGE_MS = 6 * 60 * 60 * 1000;
-/** Large lists can take many hours across chained edge invocations. */
-const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
 const PROFILE_NUDGE_STALE_MS = 90_000;
+/** Only show the manual "paused" UI after this long without profile progress. */
+const PROFILE_PAUSED_STALE_MS = 5 * 60 * 1000;
 
 function auditHasAnalysisContent(
   executiveSummary: string | null | undefined,
@@ -119,8 +119,6 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   const aiJobFailed = aiJobStatus === 'failed';
   const aiJobError = aiJobFailed ? (aiJob?.error_message ?? 'AI analysis failed') : null;
 
-  const age = Date.now() - new Date(audit.created_at).getTime();
-
   const configRun = stageRuns.find(run => run.stage === 'config' || !run.stage);
   const reportingRun = stageRuns.find(run => run.stage === 'reporting');
   const reportingDone = reportingRun && ['success', 'partial', 'error', 'timeout'].includes(reportingRun.status);
@@ -132,10 +130,14 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
     && profileUpdatedMs
     && Date.now() - profileUpdatedMs > PROFILE_NUDGE_STALE_MS,
   );
+  const profilePaused = Boolean(
+    profileActive
+    && profileUpdatedMs
+    && Date.now() - profileUpdatedMs > PROFILE_PAUSED_STALE_MS,
+  );
   const klaviyoComplete = Boolean(
     configRun?.status === 'success' && reportingDone && !profileActive,
   );
-  const isStale = !klaviyoComplete && age > STALE_AFTER_MS;
   const needsProfileResume = Boolean(profileActive);
 
   let phase: AuditPipelinePhase = 'starting';
@@ -177,8 +179,7 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   }
 
   const needsAiResume = klaviyoComplete && !aiServerActive && !aiJobFailed;
-  const showPipelineUi = needsProfileResume || needsAiResume || aiJobFailed || aiServerActive || !isStale;
-  const profilePaused = Boolean(needsProfileResume && (profileChainStale || isStale));
+  const showPipelineUi = needsProfileResume || needsAiResume || aiJobFailed || aiServerActive;
 
   return {
     isGenerating: showPipelineUi && !profilePaused,
