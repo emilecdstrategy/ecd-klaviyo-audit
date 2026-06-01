@@ -75,8 +75,8 @@ export default function AuditWorkspace() {
 
         const pipeline = await fetchAuditPipelineStatus(id);
         if (!cancelled) {
-          setAnalysisInProgress(pipeline.isGenerating);
-          if (!pipeline.isGenerating) clearAuditGenerationActive(id);
+          setAnalysisInProgress(pipeline.showPipelineUi);
+          if (!pipeline.showPipelineUi) clearAuditGenerationActive(id);
         }
 
         if (report.audit.audit_method === 'api') {

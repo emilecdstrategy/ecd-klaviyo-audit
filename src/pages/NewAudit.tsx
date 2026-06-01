@@ -22,6 +22,7 @@ import { supabase } from '../lib/supabase';
 import {
   clearAuditGenerationActive,
   markAuditGenerationActive,
+  nudgeProfileScan,
   waitForServerAuditAnalysis,
 } from '../lib/audit-pipeline-status';
 import { setAuditWizardCloseGuard } from '../lib/audit-wizard-guard';
@@ -135,12 +136,12 @@ async function waitForProfileJobComplete(
     }
     if (staleCount >= 3) {
       staleCount = 0;
-      invokeKlaviyoSnapshot({ mode: 'resume_profile_scan', audit_id: auditId }).catch(() => {});
+      nudgeProfileScan(auditId).catch(() => {});
     }
     // Nudge resume periodically in case chain calls were dropped (large accounts)
     if (Date.now() - lastResumeAssist > 90_000) {
       lastResumeAssist = Date.now();
-      invokeKlaviyoSnapshot({ mode: 'resume_profile_scan', audit_id: auditId }).catch(() => {});
+      nudgeProfileScan(auditId).catch(() => {});
     }
     await new Promise((r) => setTimeout(r, 2000));
   }

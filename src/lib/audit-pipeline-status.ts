@@ -24,7 +24,12 @@ export type AuditPipelinePhase =
 export type AuditPipelineStatus = {
   isGenerating: boolean;
   isStalled: boolean;
+  /** True when the profile scan job exists but is not complete yet. */
+  needsProfileResume: boolean;
+  /** True when Klaviyo data is ready but AI has not finished writing sections. */
   needsAiResume: boolean;
+  /** Show the in-progress / resume UI instead of an empty report shell. */
+  showPipelineUi: boolean;
   aiServerActive: boolean;
   aiJobFailed: boolean;
   aiJobError: string | null;
@@ -36,7 +41,9 @@ export type AuditPipelineStatus = {
 };
 
 const GENERATING_MAX_AGE_MS = 6 * 60 * 60 * 1000;
-const STALE_AFTER_MS = 2 * 60 * 60 * 1000;
+/** Large lists can take many hours across chained edge invocations. */
+const STALE_AFTER_MS = 6 * 60 * 60 * 1000;
+const PROFILE_NUDGE_STALE_MS = 90_000;
 
 function auditHasAnalysisContent(
   executiveSummary: string | null | undefined,
@@ -93,7 +100,9 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
     return {
       isGenerating: false,
       isStalled: false,
+      needsProfileResume: false,
       needsAiResume: false,
+      showPipelineUi: false,
       aiServerActive: false,
       aiJobFailed: false,
       aiJobError: null,
@@ -117,10 +126,17 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   const reportingDone = reportingRun && ['success', 'partial', 'error', 'timeout'].includes(reportingRun.status);
   const profileActive = profileJob && ['pending', 'running'].includes(profileJob.status);
   const profileScanTotal = profileJob?.total_profiles != null ? Number(profileJob.total_profiles) : null;
+  const profileUpdatedMs = profileJob?.updated_at ? new Date(profileJob.updated_at).getTime() : null;
+  const profileChainStale = Boolean(
+    profileActive
+    && profileUpdatedMs
+    && Date.now() - profileUpdatedMs > PROFILE_NUDGE_STALE_MS,
+  );
   const klaviyoComplete = Boolean(
     configRun?.status === 'success' && reportingDone && !profileActive,
   );
   const isStale = !klaviyoComplete && age > STALE_AFTER_MS;
+  const needsProfileResume = Boolean(profileActive);
 
   let phase: AuditPipelinePhase = 'starting';
   let progress = 10;
@@ -161,20 +177,34 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   }
 
   const needsAiResume = klaviyoComplete && !aiServerActive && !aiJobFailed;
+  const showPipelineUi = needsProfileResume || needsAiResume || aiJobFailed || aiServerActive || !isStale;
 
   return {
-    isGenerating: !isStale || klaviyoComplete,
-    isStalled: isStale,
+    isGenerating: showPipelineUi && !isStale,
+    isStalled: isStale && needsProfileResume,
+    needsProfileResume,
     needsAiResume: needsAiResume || aiJobFailed,
+    showPipelineUi,
     aiServerActive,
     aiJobFailed,
     aiJobError,
     phase,
     progress,
-    label,
+    label: profileChainStale && phase === 'profile_scan'
+      ? `${label} (resuming on server…)`
+      : label,
     stageRuns,
     profileScanTotal,
   };
+}
+
+/** Kick the server-side profile scan chain (safe to call repeatedly). */
+export async function nudgeProfileScan(auditId: string): Promise<void> {
+  await supabase.auth.refreshSession().catch(() => {});
+  const { error } = await supabase.functions.invoke('klaviyo_fetch_snapshot', {
+    body: { stage: 'resume_profile_scan', audit_id: auditId },
+  });
+  if (error) throw new Error(error.message || 'Failed to resume profile scan');
 }
 
 export async function startServerAuditAnalysis(auditId: string): Promise<void> {

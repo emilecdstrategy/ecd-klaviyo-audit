@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
-import { fetchAuditPipelineStatus, type AuditPipelineStatus } from '../../lib/audit-pipeline-status';
+import { fetchAuditPipelineStatus, nudgeProfileScan, type AuditPipelineStatus } from '../../lib/audit-pipeline-status';
 import { isAuditAiResumeInFlight, resumeAuditAnalysis } from '../../lib/resume-audit-analysis';
 
 type AuditGenerationStatusProps = {
@@ -23,13 +23,17 @@ function stepState(progress: number, minProgress: number, nextMin?: number) {
   return { done, active };
 }
 
+const PROFILE_NUDGE_INTERVAL_MS = 90_000;
+
 export default function AuditGenerationStatus({ auditId, onComplete, compact = false }: AuditGenerationStatusProps) {
   const [status, setStatus] = useState<AuditPipelineStatus | null>(null);
   const [loadError, setLoadError] = useState('');
   const [resumeError, setResumeError] = useState('');
   const [resumeLabel, setResumeLabel] = useState('');
   const [resumeProgress, setResumeProgress] = useState<number | null>(null);
+  const [manualResumePending, setManualResumePending] = useState(false);
   const resumeStartedRef = useRef(false);
+  const lastProfileNudgeRef = useRef(0);
 
   const pollStatus = useCallback(async () => {
     const next = await fetchAuditPipelineStatus(auditId);
@@ -46,7 +50,7 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
       try {
         const next = await pollStatus();
         if (cancelled) return;
-        if (!next.isGenerating && !next.isStalled) {
+        if (!next.showPipelineUi) {
           onComplete?.();
           if (intervalId) window.clearInterval(intervalId);
         }
@@ -63,6 +67,24 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
       if (intervalId) window.clearInterval(intervalId);
     };
   }, [auditId, onComplete, pollStatus]);
+
+  useEffect(() => {
+    if (!status?.needsProfileResume || status.isStalled) return;
+
+    const maybeNudge = async () => {
+      if (Date.now() - lastProfileNudgeRef.current < PROFILE_NUDGE_INTERVAL_MS) return;
+      lastProfileNudgeRef.current = Date.now();
+      try {
+        await nudgeProfileScan(auditId);
+      } catch {
+        // polling will retry
+      }
+    };
+
+    maybeNudge();
+    const intervalId = window.setInterval(maybeNudge, PROFILE_NUDGE_INTERVAL_MS);
+    return () => window.clearInterval(intervalId);
+  }, [auditId, status?.isStalled, status?.needsProfileResume]);
 
   useEffect(() => {
     if (!status?.needsAiResume) return;
@@ -102,10 +124,32 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
   if (status.isStalled) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 px-6 py-5 text-center">
-        <h2 className="text-lg font-semibold text-gray-900">Analysis did not finish</h2>
+        <h2 className="text-lg font-semibold text-gray-900">Profile scan paused</h2>
         <p className="mt-2 text-sm text-gray-600 max-w-lg mx-auto">
-          Klaviyo data collection stopped before completing. Try running a new audit for this client, or contact support if the issue persists.
+          Klaviyo config and reporting finished, but the full audience scan stopped before completing
+          {status.profileScanTotal ? ` (${status.profileScanTotal.toLocaleString()} profiles scanned so far)` : ''}.
+          This can happen if the browser tab was closed during the initial run. Click resume to continue on the server.
         </p>
+        {resumeError && (
+          <p className="mt-3 text-sm text-red-600 max-w-lg mx-auto">{resumeError}</p>
+        )}
+        <button
+          type="button"
+          disabled={manualResumePending}
+          onClick={() => {
+            setManualResumePending(true);
+            setResumeError('');
+            nudgeProfileScan(auditId)
+              .then(() => pollStatus())
+              .catch((e: unknown) => {
+                setResumeError(e instanceof Error ? e.message : 'Failed to resume profile scan');
+              })
+              .finally(() => setManualResumePending(false));
+          }}
+          className="mt-4 inline-flex items-center justify-center rounded-lg gradient-bg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
+        >
+          {manualResumePending ? 'Resuming…' : 'Resume profile scan'}
+        </button>
       </div>
     );
   }
@@ -123,7 +167,7 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
       </p>
       <p className="text-xs text-gray-400 mb-6 max-w-md mx-auto">
         {klaviyoStillRunning
-          ? 'You can close this page — Klaviyo collection continues on the server. Reopen this audit anytime to check progress.'
+          ? 'You can close this page — progress is saved. Reopen this audit anytime; we will keep nudging the server-side profile scan until it finishes.'
           : 'Klaviyo data is ready. AI analysis runs on the server — you can close this page and reopen anytime to check progress.'}
       </p>
       {resumeError && (
