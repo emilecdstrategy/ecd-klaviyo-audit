@@ -122,7 +122,7 @@ function AppRoutes() {
                 open
                 title="New Audit"
                 onClose={closeAuditWizardModal}
-                className="max-w-5xl"
+                className="max-w-7xl"
               >
                 <NewAudit asModal />
               </Modal>

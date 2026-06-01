@@ -12,6 +12,8 @@ interface AuditWizardStepperProps {
 }
 
 export default function AuditWizardStepper({ steps, currentStep }: AuditWizardStepperProps) {
+  const compact = steps.length >= 5;
+
   return (
     <div className="flex w-full min-w-0 items-center overflow-hidden">
       {steps.map((step, i) => {
@@ -21,7 +23,10 @@ export default function AuditWizardStepper({ steps, currentStep }: AuditWizardSt
 
         return (
           <Fragment key={i}>
-            <div className="flex min-w-0 flex-[2_1_0%] items-center gap-2 sm:gap-3">
+            <div
+              className={`flex min-w-0 items-center gap-2 sm:gap-2.5 ${compact ? 'flex-[1_1_0%]' : 'flex-[2_1_0%]'}`}
+              title={compact ? `${step.label} — ${step.description}` : undefined}
+            >
               <div
                 className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full text-sm font-semibold transition-all ${
                   isCompleted
@@ -35,16 +40,18 @@ export default function AuditWizardStepper({ steps, currentStep }: AuditWizardSt
               </div>
               <div className="min-w-0">
                 <p
-                  className={`truncate text-xs font-medium sm:text-sm ${isCurrent ? 'text-gray-900' : 'text-gray-500'}`}
+                  className={`text-xs font-medium sm:text-sm ${compact ? 'leading-snug' : 'truncate'} ${isCurrent ? 'text-gray-900' : 'text-gray-500'}`}
                 >
                   {step.label}
                 </p>
-                <p className="hidden truncate text-xs text-gray-400 sm:block">{step.description}</p>
+                {!compact && (
+                  <p className="hidden truncate text-xs text-gray-400 sm:block">{step.description}</p>
+                )}
               </div>
             </div>
             {i < steps.length - 1 && (
               <div
-                className={`mx-1 h-px min-h-px min-w-2 flex-[1_1_0%] self-center sm:mx-2 sm:min-w-4 ${lineCompleted ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                className={`h-px min-h-px self-center bg-gray-200 ${compact ? 'mx-1 min-w-2 flex-[0.5_1_0%] sm:mx-1.5' : 'mx-1 min-w-2 flex-[1_1_0%] self-center sm:mx-2 sm:min-w-4'} ${lineCompleted ? '!bg-brand-primary' : ''}`}
                 aria-hidden
               />
             )}
