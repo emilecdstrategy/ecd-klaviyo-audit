@@ -47,11 +47,6 @@ export function defaultEmailDesignRevenue(totalOpportunityExcludingEmailDesign: 
   return Math.max(300, Math.round(totalOpportunityExcludingEmailDesign * 0.1));
 }
 
-type RevenueAddOnLike = {
-  revenue_monthly?: number;
-  is_hidden?: boolean;
-};
-
 type RevenueSectionLike = {
   revenue_opportunity?: number;
   section_key?: string;
@@ -60,7 +55,7 @@ type RevenueSectionLike = {
 
 export function computeAuditTotalRevenueOpportunity(
   sections: RevenueSectionLike[],
-  layout: unknown,
+  _layout?: unknown,
 ): number {
   const sectionTotal = sections
     .filter(section => section.section_key && isRevenueOpportunitySection(section.section_key))
@@ -71,13 +66,5 @@ export function computeAuditTotalRevenueOpportunity(
       ),
     )
     .reduce((sum, section) => sum + (Number(section.revenue_opportunity) || 0), 0);
-  const layoutObj = (layout as Record<string, unknown> | null | undefined) ?? {};
-  const revenueSummary = layoutObj.revenue_summary as Record<string, unknown> | undefined;
-  const blocks = revenueSummary?.blocks as Record<string, unknown> | undefined;
-  const addOns = blocks?.addOns as Record<string, unknown> | undefined;
-  const items = Array.isArray(addOns?.items) ? (addOns.items as RevenueAddOnLike[]) : [];
-  const addOnTotal = items
-    .filter(item => item && !item.is_hidden)
-    .reduce((sum, item) => sum + (Number(item.revenue_monthly) || 0), 0);
-  return sectionTotal + addOnTotal;
+  return sectionTotal;
 }

@@ -380,7 +380,11 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           description: template.description || undefined,
           content: template.content || resolveRevenueOpportunityContent(template),
           bullets: [],
-          revenue_monthly: Number(template.default_revenue_monthly ?? 0),
+          revenue_monthly: 0,
+          one_time_price: template.one_time_price ?? null,
+          one_time_label: template.one_time_label ?? null,
+          monthly_price: template.monthly_price ?? null,
+          monthly_label: template.monthly_label ?? null,
           display_order: template.display_order ?? (index + 1) * 10,
           is_hidden: false,
         }));

@@ -53,7 +53,16 @@ export interface RevenueOpportunityTemplate {
   content: string;
   /** @deprecated Legacy bullet strings — use `content` instead. */
   bullets: string[];
+  /** @deprecated Legacy revenue estimate — use pricing fields instead. */
   default_revenue_monthly: number;
+  /** ECD one-time implementation price (headline amount). */
+  one_time_price?: number | null;
+  /** Optional qualifier for one-time price (ranges, tiers, etc.). */
+  one_time_label?: string | null;
+  /** ECD monthly retainer price (headline amount). */
+  monthly_price?: number | null;
+  /** Optional qualifier for monthly price (e.g. "$12,000+/mo"). */
+  monthly_label?: string | null;
   /** Optional default screenshot shown on the report add-on card. */
   image_url?: string | null;
   /** Optional link to full service docs or slides (opens in a new tab). */
@@ -72,7 +81,16 @@ export interface RevenueOpportunityAddOnItem {
   content?: string;
   /** @deprecated Legacy bullet strings — use `content` instead. */
   bullets: string[];
+  /** @deprecated Legacy revenue estimate — use pricing fields instead. */
   revenue_monthly: number;
+  /** ECD one-time implementation price (headline amount). */
+  one_time_price?: number | null;
+  /** Optional qualifier for one-time price (ranges, tiers, etc.). */
+  one_time_label?: string | null;
+  /** ECD monthly retainer price (headline amount). */
+  monthly_price?: number | null;
+  /** Optional qualifier for monthly price (e.g. "$12,000+/mo"). */
+  monthly_label?: string | null;
   /** Per-audit screenshot. Falls back to the template default when added. */
   image_url?: string | null;
   /** Per-audit link to full service docs or slides. */

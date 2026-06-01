@@ -95,6 +95,11 @@ type ReportEditContextValue = {
     value: string,
   ) => void;
   updateAddOnRevenue: (itemKey: string, value: number) => void;
+  updateAddOnPrice: (
+    itemKey: string,
+    field: 'one_time_price' | 'one_time_label' | 'monthly_price' | 'monthly_label',
+    value: number | string | null,
+  ) => void;
   updateAddOnContent: (itemKey: string, value: string) => void;
   updateAddOnImage: (itemKey: string, value: string | null) => void;
   updateSectionRevenueOpportunity: (sectionKey: string, value: number) => void;
@@ -136,6 +141,7 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateTimelineItem: () => {},
   updateAddOnField: () => {},
   updateAddOnRevenue: () => {},
+  updateAddOnPrice: () => {},
   updateAddOnContent: () => {},
   updateAddOnImage: () => {},
   updateSectionRevenueOpportunity: () => {},
@@ -395,6 +401,36 @@ export function ReportEditProvider({
       });
     },
     [audit, onAuditChange, sections, schedule],
+  );
+
+  const updateAddOnPrice = useCallback(
+    (
+      itemKey: string,
+      field: 'one_time_price' | 'one_time_label' | 'monthly_price' | 'monthly_label',
+      value: number | string | null,
+    ) => {
+      const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
+      const rs = { ...((layout.revenue_summary as Record<string, unknown>) ?? {}) };
+      const blocks = { ...((rs.blocks as Record<string, unknown>) ?? {}) };
+      const addOns = { ...((blocks.addOns as Record<string, unknown>) ?? {}) };
+      const items = [...((addOns.items as RevenueOpportunityAddOnItem[]) ?? [])];
+      const idx = items.findIndex(i => `${i.template_slug}-${i.display_order}` === itemKey);
+      if (idx < 0) return;
+      const nextValue =
+        field === 'one_time_label' || field === 'monthly_label'
+          ? (typeof value === 'string' ? (value.trim() || null) : null)
+          : (value == null || value === '' ? null : Number(value));
+      items[idx] = { ...items[idx], [field]: nextValue };
+      addOns.items = items;
+      blocks.addOns = addOns;
+      rs.blocks = blocks;
+      layout.revenue_summary = rs;
+      onAuditChange({ ...audit, layout });
+      schedule('layout-addons', async () => {
+        await updateAudit(audit.id, { layout });
+      });
+    },
+    [audit, onAuditChange, schedule],
   );
 
   const updateAddOnContent = useCallback(
@@ -696,6 +732,7 @@ export function ReportEditProvider({
       updateTimelineItem,
       updateAddOnField,
       updateAddOnRevenue,
+      updateAddOnPrice,
       updateAddOnContent,
       updateAddOnImage,
       updateSectionRevenueOpportunity,
@@ -726,6 +763,7 @@ export function ReportEditProvider({
       updateTimelineItem,
       updateAddOnField,
       updateAddOnRevenue,
+      updateAddOnPrice,
       updateAddOnContent,
       updateAddOnImage,
       updateSectionRevenueOpportunity,

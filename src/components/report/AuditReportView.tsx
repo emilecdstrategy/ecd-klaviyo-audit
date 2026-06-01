@@ -1,5 +1,5 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode } from 'react';
-import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays, Image as ImageIcon, ZoomIn, ExternalLink, Play } from 'lucide-react';
+import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
 import { computeAuditTotalRevenueOpportunity, formatCurrency } from '../../lib/revenue-calculator';
 import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
@@ -34,7 +34,9 @@ import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction 
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
 import ImageLightbox from '../ui/ImageLightbox';
 import DemoPopupModal, { type DemoPopupState } from '../ui/DemoPopupModal';
-import { addOnHasCustomerAgentDemo, resolveCustomerAgentDemoUrl } from '../../lib/customer-agent-demo';
+import { resolveCustomerAgentDemoUrl } from '../../lib/customer-agent-demo';
+import { splitAddOnsByPricing } from '../../lib/addon-pricing';
+import ReportAddOnCard from './ReportAddOnCard';
 import { uploadRevenueOpportunityImage } from '../../lib/db';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
 import { resolveExecutiveFindings } from '../../lib/findings-normalize';
@@ -74,6 +76,7 @@ const NAV_ITEMS = [
   { id: 'forms', label: 'Signup Forms' },
   { id: 'campaigns', label: 'Campaigns' },
   { id: 'email_design', label: 'Email Design' },
+  { id: 'addons', label: 'Add-Ons' },
   { id: 'opportunity', label: 'Revenue Opportunity' },
 ];
 
@@ -133,13 +136,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     updateLayoutTitle,
     updateBlockTitle,
     updateAddOnField,
-    updateAddOnRevenue,
+    updateAddOnPrice,
     updateAddOnContent,
     updateAddOnImage,
     updateSectionRevenueOpportunity,
     toggleLayoutSectionHidden,
     toggleAuditSectionHidden,
     toggleExecutiveBlockHidden,
+    toggleRevenueBlockHidden,
     toggleFlowsBlockHidden,
     toggleTimelinePhaseHidden,
     updateSectionBlockField,
@@ -333,6 +337,10 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
           content: resolveRevenueOpportunityContent(item),
           bullets: Array.isArray(item.bullets) ? item.bullets.map(value => String(value)) : [],
           revenue_monthly: Number(item.revenue_monthly ?? 0),
+          one_time_price: item.one_time_price != null ? Number(item.one_time_price) : null,
+          one_time_label: item.one_time_label ?? null,
+          monthly_price: item.monthly_price != null ? Number(item.monthly_price) : null,
+          monthly_label: item.monthly_label ?? null,
           display_order: typeof item.display_order === 'number' ? item.display_order : (index + 1) * 10,
           is_hidden: Boolean(item.is_hidden),
         }))
@@ -340,6 +348,13 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
         .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
       : [];
   }, [revenueSummaryCfg]);
+
+  const { oneTime: oneTimeAddOns, monthly: monthlyAddOns } = useMemo(
+    () => splitAddOnsByPricing(visibleAddOnItems),
+    [visibleAddOnItems],
+  );
+  const hasPricedAddOns = oneTimeAddOns.length > 0 || monthlyAddOns.length > 0;
+  const addOnsSectionAvailable = hasPricedAddOns || (editMode && visibleAddOnItems.length > 0);
 
   const customerAgentDemoUrl = useMemo(
     () => resolveCustomerAgentDemoUrl(client?.website_url),
@@ -366,6 +381,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       forms: Boolean(signupFormsCfg.hidden),
       campaigns: Boolean(campaignsCfg.hidden),
       email_design: Boolean(emailDesignCfg.hidden),
+      addons: Boolean(revenueSummaryCfg.blocks.addOns?.hidden),
       opportunity: Boolean(revenueSummaryCfg.hidden),
     }),
     [executiveSummaryCfg, flowsCfg, deliverabilitySnapshotCfg, segmentationCfg, signupFormsCfg, campaignsCfg, emailDesignCfg, revenueSummaryCfg],
@@ -380,6 +396,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       forms: formSnapshots.length > 0,
       campaigns: campaignSnapshots.length > 0,
       email_design: emailDesignDataAvailable,
+      addons: addOnsSectionAvailable,
       opportunity: true,
     }),
     [flowsDataAvailable, accountSnapshot?.deliverability, segmentSnapshots.length, formSnapshots.length, campaignSnapshots.length, emailDesignDataAvailable],
@@ -394,6 +411,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       forms: formSnapshots.length > 0 && !sectionHiddenFlags.forms,
       campaigns: campaignSnapshots.length > 0 && !sectionHiddenFlags.campaigns,
       email_design: emailDesignDataAvailable && !sectionHiddenFlags.email_design,
+      addons: addOnsSectionAvailable && !sectionHiddenFlags.addons,
       opportunity: !sectionHiddenFlags.opportunity,
     }),
     [
@@ -403,6 +421,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       formSnapshots.length,
       campaignSnapshots.length,
       emailDesignDataAvailable,
+      addOnsSectionAvailable,
     ],
   );
 
@@ -984,6 +1003,113 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
         </ReportSectionShell>
 
         <ReportSectionShell
+          id="addons"
+          setRef={setRef}
+          label={revenueSummaryCfg.blocks.addOns?.title ?? 'Recommended Klaviyo Add-Ons'}
+          hidden={sectionHiddenFlags.addons}
+          onToggleHidden={h => toggleRevenueBlockHidden('addOns', h)}
+          available={addOnsSectionAvailable}
+          actions={onManageRevenueOpportunities ? [revenueOpportunitiesAction(onManageRevenueOpportunities)] : undefined}
+        >
+          {revenueSummaryCfg.blocks.addOns && revenueSummaryCfg.blocks.addOns.hidden !== true && (
+            <>
+              <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+                <ReportBlockHeader
+                  icon={
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
+                      <BarChart3 className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
+                    </div>
+                  }
+                  title={
+                    <EditablePlainText
+                      value={revenueSummaryCfg.blocks.addOns.title ?? 'Recommended Klaviyo Add-Ons'}
+                      onSave={v => updateBlockTitle('revenue_summary', 'addOns', 'title', v)}
+                      className="text-base font-bold text-gray-900"
+                      as="span"
+                    />
+                  }
+                  subtitle={
+                    <EditablePlainText
+                      value={(revenueSummaryCfg.blocks.addOns.subtitle ?? '').trim() || 'ECD services and Klaviyo add-ons selected for this audit.'}
+                      onSave={v => updateBlockTitle('revenue_summary', 'addOns', 'subtitle', v)}
+                      className="text-sm text-gray-500"
+                      as="span"
+                    />
+                  }
+                />
+                <div className="space-y-8 p-6">
+                  {oneTimeAddOns.length > 0 && (
+                    <div>
+                      <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-gray-500">
+                        One-Time Implementations
+                      </h3>
+                      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                        {oneTimeAddOns.map(slice => (
+                          <ReportAddOnCard
+                            key={`${slice.item.template_slug}-${slice.item.display_order}-one-time`}
+                            slice={slice}
+                            customerAgentDemoUrl={customerAgentDemoUrl}
+                            uploadingAddOnKey={uploadingAddOnKey}
+                            onImageUpload={handleAddOnImageUpload}
+                            onLightbox={setLightboxSrc}
+                            onDemoOpen={(url, title) => setDemoPopup({ url, title })}
+                            updateAddOnField={updateAddOnField}
+                            updateAddOnContent={updateAddOnContent}
+                            updateAddOnImage={updateAddOnImage}
+                            updateAddOnPrice={updateAddOnPrice}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {monthlyAddOns.length > 0 && (
+                    <div>
+                      <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-gray-500">
+                        Monthly Retainers
+                      </h3>
+                      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                        {monthlyAddOns.map(slice => (
+                          <ReportAddOnCard
+                            key={`${slice.item.template_slug}-${slice.item.display_order}-monthly`}
+                            slice={slice}
+                            customerAgentDemoUrl={customerAgentDemoUrl}
+                            uploadingAddOnKey={uploadingAddOnKey}
+                            onImageUpload={handleAddOnImageUpload}
+                            onLightbox={setLightboxSrc}
+                            onDemoOpen={(url, title) => setDemoPopup({ url, title })}
+                            updateAddOnField={updateAddOnField}
+                            updateAddOnContent={updateAddOnContent}
+                            updateAddOnImage={updateAddOnImage}
+                            updateAddOnPrice={updateAddOnPrice}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {!hasPricedAddOns && editMode && visibleAddOnItems.length > 0 && (
+                    <p className="text-sm text-amber-700 rounded-lg bg-amber-50 border border-amber-100 px-4 py-3">
+                      Add-ons are selected but none have pricing yet. Set one-time or monthly prices in the audit editor.
+                    </p>
+                  )}
+                </div>
+              </div>
+              {visibleAddOnItems.length === 0 && editMode && onManageRevenueOpportunities && (
+                <div className="mb-6 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-6 py-10 text-center">
+                  <p className="text-sm text-gray-600">No add-ons selected for this audit yet.</p>
+                  <button
+                    type="button"
+                    onClick={onManageRevenueOpportunities}
+                    className="mt-3 text-sm font-medium text-brand-primary hover:underline"
+                  >
+                    Add from templates
+                  </button>
+                </div>
+              )}
+            </>
+          )}
+        </ReportSectionShell>
+
+        <ReportSectionShell
           id="opportunity"
           setRef={setRef}
           label={revenueSummaryCfg.sectionTitle ?? 'Revenue Opportunity'}
@@ -999,192 +1125,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
           />
 
           {/* Breakdown by Area hidden */}
-
-          {revenueSummaryCfg.blocks.addOns && revenueSummaryCfg.blocks.addOns.hidden !== true && visibleAddOnItems.length > 0 && (
-          <div className="mb-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
-            <ReportBlockHeader
-              icon={
-                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
-                  <BarChart3 className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
-                </div>
-              }
-              title={
-                <EditablePlainText
-                  value={revenueSummaryCfg.blocks.addOns.title ?? 'Recommended Klaviyo Add-Ons'}
-                  onSave={v => updateBlockTitle('revenue_summary', 'addOns', 'title', v)}
-                  className="text-base font-bold text-gray-900"
-                  as="span"
-                />
-              }
-              subtitle={
-                <EditablePlainText
-                  value={(revenueSummaryCfg.blocks.addOns.subtitle ?? '').trim() || 'Optional platform opportunities selected for this audit.'}
-                  onSave={v => updateBlockTitle('revenue_summary', 'addOns', 'subtitle', v)}
-                  className="text-sm text-gray-500"
-                  as="span"
-                />
-              }
-            />
-            <div className="p-6">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {visibleAddOnItems.map((item) => {
-                const itemKey = `${item.template_slug}-${item.display_order}`;
-                const showDemoCta = addOnHasCustomerAgentDemo(item.template_slug) && Boolean(customerAgentDemoUrl);
-                return (
-                <div
-                  key={itemKey}
-                  className="group flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-primary/30 hover:shadow-lg hover:shadow-brand-primary/5"
-                >
-                  <div className="flex flex-1 flex-col p-5">
-                    <div className="mb-2.5 flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <EditablePlainText
-                          value={item.name}
-                          onSave={v => updateAddOnField(itemKey, 'name', v)}
-                          className="text-[15px] font-bold leading-snug text-gray-900"
-                          as="h4"
-                        />
-                        <EditablePlainText
-                          value={item.description || ''}
-                          onSave={v => updateAddOnField(itemKey, 'description', v)}
-                          className="text-xs text-gray-500 mt-0.5"
-                          as="p"
-                          placeholder="Short description…"
-                        />
-                      </div>
-                      <div className="shrink-0">
-                        <div className="inline-flex items-baseline gap-1 rounded-full bg-emerald-50 px-2.5 py-1 ring-1 ring-emerald-100">
-                          <EditableCurrency
-                            value={item.revenue_monthly || 0}
-                            onSave={v => updateAddOnRevenue(itemKey, v)}
-                            variant="compact"
-                            inputWidthScale={2}
-                            className="text-sm font-bold text-emerald-700 tabular-nums"
-                          />
-                          <span className="text-[11px] font-semibold text-emerald-600">/mo</span>
-                        </div>
-                      </div>
-                    </div>
-                    {item.content && (
-                      <EditableRichText
-                        value={item.content}
-                        onSave={v => updateAddOnContent(itemKey, v)}
-                        className="text-sm leading-relaxed text-gray-700"
-                      />
-                    )}
-                    {item.image_url ? (
-                      <button
-                        type="button"
-                        onClick={() => setLightboxSrc(item.image_url ?? null)}
-                        className="relative mt-4 block w-full overflow-hidden rounded-lg border border-gray-100 bg-gray-50"
-                        aria-label={`View ${item.name} screenshot`}
-                      >
-                        <img
-                          src={item.image_url}
-                          alt={item.name}
-                          className="block w-full h-auto object-contain"
-                        />
-                        <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[11px] font-medium text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
-                          <ZoomIn className="h-3 w-3" /> View full size
-                        </span>
-                      </button>
-                    ) : editMode ? (
-                      <label className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-gray-400 transition-colors hover:bg-gray-100">
-                        <ImageIcon className="h-5 w-5" />
-                        <span className="text-xs font-medium">
-                          {uploadingAddOnKey === itemKey ? 'Uploading…' : 'Add screenshot'}
-                        </span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          disabled={uploadingAddOnKey === itemKey}
-                          onChange={e => {
-                            handleAddOnImageUpload(itemKey, e.target.files?.[0]);
-                            e.target.value = '';
-                          }}
-                        />
-                      </label>
-                    ) : null}
-                    {editMode && item.image_url && (
-                      <div className="mt-3 flex items-center gap-3 border-t border-gray-100 pt-3">
-                        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900">
-                          <ImageIcon className="h-3.5 w-3.5" />
-                          {uploadingAddOnKey === itemKey ? 'Uploading…' : 'Replace image'}
-                          <input
-                            type="file"
-                            accept="image/*"
-                            className="hidden"
-                            disabled={uploadingAddOnKey === itemKey}
-                            onChange={e => {
-                              handleAddOnImageUpload(itemKey, e.target.files?.[0]);
-                              e.target.value = '';
-                            }}
-                          />
-                        </label>
-                        <button
-                          type="button"
-                          onClick={() => updateAddOnImage(itemKey, null)}
-                          className="text-xs font-medium text-red-600 hover:underline"
-                        >
-                          Remove
-                        </button>
-                      </div>
-                    )}
-                    {(showDemoCta || item.details_url?.trim() || editMode) && (
-                      <div className="mt-4 flex flex-col items-end gap-2 border-t border-gray-100 pt-4">
-                        {editMode && (
-                          <EditablePlainText
-                            value={item.details_url ?? ''}
-                            onSave={v => updateAddOnField(itemKey, 'details_url', v)}
-                            className="w-full text-right text-xs text-gray-500"
-                            as="p"
-                            placeholder="Details doc URL (opens in new tab)…"
-                          />
-                        )}
-                        {showDemoCta && customerAgentDemoUrl && (
-                          <button
-                            type="button"
-                            onClick={() => setDemoPopup({ url: customerAgentDemoUrl, title: item.name })}
-                            className="inline-flex items-center gap-1.5 rounded-lg gradient-bg px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
-                          >
-                            <Play className="h-3.5 w-3.5 shrink-0 fill-current" aria-hidden />
-                            View live demo
-                          </button>
-                        )}
-                        {item.details_url?.trim() && (
-                          <a
-                            href={item.details_url.trim()}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-3 py-1.5 text-xs font-semibold text-gray-700 shadow-sm transition-colors hover:border-brand-primary/30 hover:bg-white hover:text-brand-primary"
-                          >
-                            View more details
-                            <ExternalLink className="h-3.5 w-3.5 shrink-0 opacity-70" aria-hidden />
-                          </a>
-                        )}
-                      </div>
-                    )}
-                  </div>
-                </div>
-              );})}
-            </div>
-            </div>
-          </div>
-          )}
-
-          {revenueSummaryCfg.blocks.addOns && revenueSummaryCfg.blocks.addOns.hidden !== true && visibleAddOnItems.length === 0 && editMode && onManageRevenueOpportunities && (
-            <div className="mb-6 rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-6 py-10 text-center">
-              <p className="text-sm text-gray-600">No revenue add-ons selected for this audit yet.</p>
-              <button
-                type="button"
-                onClick={onManageRevenueOpportunities}
-                className="mt-3 text-sm font-medium text-brand-primary hover:underline"
-              >
-                Add opportunities from templates
-              </button>
-            </div>
-          )}
 
           {revenueSummaryCfg.blocks.totalBanner && revenueSummaryCfg.blocks.totalBanner.hidden !== true && (
           <div className="relative overflow-hidden rounded-3xl text-center shadow-xl shadow-brand-primary/20 ring-1 ring-white/20">

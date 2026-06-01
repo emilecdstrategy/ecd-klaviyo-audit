@@ -225,7 +225,7 @@ export const DEFAULT_REVENUE_SUMMARY_SECTION: RevenueSummarySectionConfig = {
     addOns: {
       hidden: false,
       title: 'Recommended Klaviyo Add-Ons',
-      subtitle: 'Optional platform opportunities selected for this audit.',
+      subtitle: 'ECD services and Klaviyo add-ons selected for this audit.',
       items: [],
     },
     timeline: {

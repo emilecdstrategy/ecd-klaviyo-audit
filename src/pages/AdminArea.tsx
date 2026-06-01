@@ -713,7 +713,10 @@ function RevenueOpportunitiesTab() {
     name: '',
     description: '',
     content: '',
-    defaultRevenue: '',
+    oneTimePrice: '',
+    oneTimeLabel: '',
+    monthlyPrice: '',
+    monthlyLabel: '',
     isActive: true,
   });
   const toHandle = (name: string) =>
@@ -763,7 +766,11 @@ function RevenueOpportunitiesTab() {
         name: entry.name.trim(),
         description: entry.description.trim(),
         content: entry.content.trim(),
-        default_revenue_monthly: Number(entry.default_revenue_monthly || 0),
+        one_time_price: entry.one_time_price ?? null,
+        one_time_label: entry.one_time_label?.trim() || null,
+        monthly_price: entry.monthly_price ?? null,
+        monthly_label: entry.monthly_label?.trim() || null,
+        default_revenue_monthly: 0,
         image_url: entry.image_url ?? null,
         details_url: entry.details_url?.trim() || null,
         display_order: Number(entry.display_order || 0),
@@ -806,7 +813,11 @@ function RevenueOpportunitiesTab() {
         description: newEntry.description.trim(),
         content: newEntry.content.trim(),
         bullets: [],
-        default_revenue_monthly: Number(newEntry.defaultRevenue || 0),
+        default_revenue_monthly: 0,
+        one_time_price: newEntry.oneTimePrice ? Number(newEntry.oneTimePrice) : null,
+        one_time_label: newEntry.oneTimeLabel.trim() || null,
+        monthly_price: newEntry.monthlyPrice ? Number(newEntry.monthlyPrice) : null,
+        monthly_label: newEntry.monthlyLabel.trim() || null,
         display_order: nextDisplayOrder,
         is_active: newEntry.isActive,
       });
@@ -814,7 +825,10 @@ function RevenueOpportunitiesTab() {
         name: '',
         description: '',
         content: '',
-        defaultRevenue: '',
+        oneTimePrice: '',
+        oneTimeLabel: '',
+        monthlyPrice: '',
+        monthlyLabel: '',
         isActive: true,
       });
       await reload();
@@ -921,17 +935,48 @@ function RevenueOpportunitiesTab() {
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Default Revenue ($/mo)</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">One-time price ($)</label>
             <input
               type="text"
               inputMode="decimal"
               placeholder="0"
-              value={newEntry.defaultRevenue}
-              onChange={e => setNewEntry(prev => ({ ...prev, defaultRevenue: e.target.value.replace(/[^0-9.]/g, '') }))}
+              value={newEntry.oneTimePrice}
+              onChange={e => setNewEntry(prev => ({ ...prev, oneTimePrice: e.target.value.replace(/[^0-9.]/g, '') }))}
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700 mt-6 cursor-pointer select-none">
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">One-time price note</label>
+            <input
+              type="text"
+              value={newEntry.oneTimeLabel}
+              onChange={e => setNewEntry(prev => ({ ...prev, oneTimeLabel: e.target.value }))}
+              placeholder="e.g. Full $2,500 · Mini $500"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Monthly retainer ($)</label>
+            <input
+              type="text"
+              inputMode="decimal"
+              placeholder="0"
+              value={newEntry.monthlyPrice}
+              onChange={e => setNewEntry(prev => ({ ...prev, monthlyPrice: e.target.value.replace(/[^0-9.]/g, '') }))}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Monthly price note</label>
+            <input
+              type="text"
+              value={newEntry.monthlyLabel}
+              onChange={e => setNewEntry(prev => ({ ...prev, monthlyLabel: e.target.value }))}
+              placeholder="e.g. $12,000+/mo"
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            />
+          </div>
+          <label className="flex items-center gap-2 text-sm text-gray-700 mt-2 cursor-pointer select-none md:col-span-2">
             <button
               type="button"
               role="switch"
@@ -1097,24 +1142,62 @@ function RevenueOpportunitiesTab() {
                   />
                   <p className="mt-1 text-[11px] text-gray-400">Powers the &quot;View more details&quot; button on the report card (opens in a new tab).</p>
                 </div>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Default Revenue ($/mo)</label>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">One-time price ($)</label>
                     <input
                       type="text"
                       inputMode="decimal"
                       placeholder="0"
-                      value={entry.default_revenue_monthly ? String(entry.default_revenue_monthly) : ''}
+                      value={entry.one_time_price ? String(entry.one_time_price) : ''}
                       onChange={e => {
                         const raw = e.target.value.replace(/[^0-9.]/g, '');
                         setEntries(prev => prev.map(p => (
-                          p.id === entry.id ? { ...p, default_revenue_monthly: raw === '' ? 0 : Number(raw) } : p
+                          p.id === entry.id ? { ...p, one_time_price: raw === '' ? null : Number(raw) } : p
                         )));
                       }}
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                     />
                   </div>
-                  <label className="flex items-center gap-2 text-sm text-gray-700 mt-6 cursor-pointer select-none">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">One-time price note</label>
+                    <input
+                      type="text"
+                      value={entry.one_time_label ?? ''}
+                      onChange={e => setEntries(prev => prev.map(p => (
+                        p.id === entry.id ? { ...p, one_time_label: e.target.value || null } : p
+                      )))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Monthly retainer ($)</label>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      placeholder="0"
+                      value={entry.monthly_price ? String(entry.monthly_price) : ''}
+                      onChange={e => {
+                        const raw = e.target.value.replace(/[^0-9.]/g, '');
+                        setEntries(prev => prev.map(p => (
+                          p.id === entry.id ? { ...p, monthly_price: raw === '' ? null : Number(raw) } : p
+                        )));
+                      }}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500 mb-1">Monthly price note</label>
+                    <input
+                      type="text"
+                      value={entry.monthly_label ?? ''}
+                      onChange={e => setEntries(prev => prev.map(p => (
+                        p.id === entry.id ? { ...p, monthly_label: e.target.value || null } : p
+                      )))}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    />
+                  </div>
+                  <label className="flex items-center gap-2 text-sm text-gray-700 mt-2 cursor-pointer select-none md:col-span-2">
                     <button
                       type="button"
                       role="switch"

@@ -18,6 +18,10 @@ function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
       content: resolveRevenueOpportunityContent(item),
       bullets: Array.isArray(item.bullets) ? item.bullets.map(v => String(v)) : [],
       revenue_monthly: Number(item.revenue_monthly ?? 0),
+      one_time_price: item.one_time_price != null ? Number(item.one_time_price) : null,
+      one_time_label: item.one_time_label ? String(item.one_time_label) : null,
+      monthly_price: item.monthly_price != null ? Number(item.monthly_price) : null,
+      monthly_label: item.monthly_label ? String(item.monthly_label) : null,
       image_url: item.image_url ?? null,
       details_url: item.details_url ?? null,
       is_hidden: Boolean(item.is_hidden),
@@ -211,17 +215,70 @@ export default function RevenueAddOnItemsEditor({
                     className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                   />
                 </div>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <div>
-                  <label className="block text-[11px] font-medium text-gray-500 mb-1">Revenue ($/mo)</label>
+                  <label className="block text-[11px] font-medium text-gray-500 mb-1">One-time price ($)</label>
                   <input
                     type="text"
                     inputMode="decimal"
                     placeholder="0"
-                    value={item.revenue_monthly ? String(item.revenue_monthly) : ''}
+                    value={item.one_time_price != null && item.one_time_price > 0 ? String(item.one_time_price) : ''}
                     onChange={e => {
                       const raw = e.target.value.replace(/[^0-9.]/g, '');
                       const next = addOnItems.slice();
-                      next[index] = { ...item, revenue_monthly: raw === '' ? 0 : Number(raw) };
+                      next[index] = {
+                        ...item,
+                        one_time_price: raw === '' ? null : Number(raw),
+                      };
+                      writeItems(next);
+                    }}
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-500 mb-1">One-time price note</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. Full $2,500 · Mini $500"
+                    value={item.one_time_label ?? ''}
+                    onChange={e => {
+                      const next = addOnItems.slice();
+                      next[index] = { ...item, one_time_label: e.target.value.trim() || null };
+                      writeItems(next);
+                    }}
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-500 mb-1">Monthly retainer ($)</label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    placeholder="0"
+                    value={item.monthly_price != null && item.monthly_price > 0 ? String(item.monthly_price) : ''}
+                    onChange={e => {
+                      const raw = e.target.value.replace(/[^0-9.]/g, '');
+                      const next = addOnItems.slice();
+                      next[index] = {
+                        ...item,
+                        monthly_price: raw === '' ? null : Number(raw),
+                      };
+                      writeItems(next);
+                    }}
+                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[11px] font-medium text-gray-500 mb-1">Monthly price note</label>
+                  <input
+                    type="text"
+                    placeholder="e.g. $12,000+/mo"
+                    value={item.monthly_label ?? ''}
+                    onChange={e => {
+                      const next = addOnItems.slice();
+                      next[index] = { ...item, monthly_label: e.target.value.trim() || null };
                       writeItems(next);
                     }}
                     className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
@@ -384,7 +441,11 @@ export default function RevenueAddOnItemsEditor({
                 description: template.description || undefined,
                 content: template.content || resolveRevenueOpportunityContent(template),
                 bullets: [],
-                revenue_monthly: Number(template.default_revenue_monthly ?? 0),
+                revenue_monthly: 0,
+                one_time_price: template.one_time_price ?? null,
+                one_time_label: template.one_time_label ?? null,
+                monthly_price: template.monthly_price ?? null,
+                monthly_label: template.monthly_label ?? null,
                 image_url: template.image_url ?? null,
                 details_url: template.details_url ?? null,
                 is_hidden: false,
