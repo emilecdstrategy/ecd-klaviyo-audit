@@ -8,6 +8,22 @@ function pickImageFile(files: FileList | null | undefined): File | undefined {
   return file.type.startsWith('image/') ? file : undefined;
 }
 
+function pickImageFromClipboard(data: DataTransfer | ClipboardEvent['clipboardData']): File | undefined {
+  const fromFiles = pickImageFile(data?.files);
+  if (fromFiles) return fromFiles;
+
+  if (data && 'items' in data && data.items) {
+    for (const item of data.items) {
+      if (item.type.startsWith('image/')) {
+        const blob = item.getAsFile();
+        if (blob) return blob;
+      }
+    }
+  }
+
+  return undefined;
+}
+
 export type ImageUploadZoneProps = {
   onFile: (file: File) => void;
   uploading?: boolean;
@@ -28,7 +44,7 @@ export default function ImageUploadZone({
   onFile,
   uploading = false,
   label = 'Add screenshot',
-  hint = 'Click to upload, drag & drop, or paste (Ctrl+V)',
+  hint = 'Drag & drop, paste with Ctrl+V, or browse',
   className,
   compact = false,
   previewUrl,
@@ -42,7 +58,10 @@ export default function ImageUploadZone({
   const inputRef = useRef<HTMLInputElement>(null);
   const zoneRef = useRef<HTMLDivElement>(null);
   const [dragOver, setDragOver] = useState(false);
-  const [pasteActive, setPasteActive] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+
+  const pasteReady = focused || hovered;
 
   const handleFile = useCallback(
     (file: File | undefined) => {
@@ -50,6 +69,14 @@ export default function ImageUploadZone({
       onFile(file);
     },
     [disabled, onFile, uploading],
+  );
+
+  const openFilePicker = useCallback(
+    (e: React.MouseEvent) => {
+      e.stopPropagation();
+      if (!disabled && !uploading) inputRef.current?.click();
+    },
+    [disabled, uploading],
   );
 
   const onDragEnter = (e: DragEvent) => {
@@ -75,26 +102,26 @@ export default function ImageUploadZone({
     e.preventDefault();
     e.stopPropagation();
     setDragOver(false);
-    handleFile(pickImageFile(e.dataTransfer.files));
+    handleFile(pickImageFromClipboard(e.dataTransfer));
   };
 
   const onPaste = useCallback(
     (e: ClipboardEvent) => {
-      if (!pasteActive || disabled || uploading) return;
-      const file = pickImageFile(e.clipboardData?.files);
+      if (!pasteReady || disabled || uploading) return;
+      const file = pickImageFromClipboard(e.clipboardData);
       if (file) {
         e.preventDefault();
         handleFile(file);
       }
     },
-    [disabled, handleFile, pasteActive, uploading],
+    [disabled, handleFile, pasteReady, uploading],
   );
 
   useEffect(() => {
-    if (!pasteActive) return;
+    if (!pasteReady) return;
     window.addEventListener('paste', onPaste);
     return () => window.removeEventListener('paste', onPaste);
-  }, [onPaste, pasteActive]);
+  }, [onPaste, pasteReady]);
 
   if (previewUrl) {
     return (
@@ -112,7 +139,7 @@ export default function ImageUploadZone({
             {!disabled && (
               <button
                 type="button"
-                onClick={() => inputRef.current?.click()}
+                onClick={openFilePicker}
                 disabled={uploading}
                 className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900 disabled:opacity-50"
               >
@@ -148,61 +175,79 @@ export default function ImageUploadZone({
   }
 
   return (
-    <div
-      ref={zoneRef}
-      tabIndex={disabled || uploading ? -1 : 0}
-      role="button"
-      aria-label={label}
-      onFocus={() => setPasteActive(true)}
-      onBlur={() => {
-        window.setTimeout(() => {
-          if (!zoneRef.current?.contains(document.activeElement)) {
-            setPasteActive(false);
+    <div className={cn('space-y-2', className)}>
+      <div
+        ref={zoneRef}
+        tabIndex={disabled || uploading ? -1 : 0}
+        role="region"
+        aria-label={label}
+        onFocus={() => setFocused(true)}
+        onBlur={() => {
+          window.setTimeout(() => {
+            if (!zoneRef.current?.contains(document.activeElement)) {
+              setFocused(false);
+            }
+          }, 0);
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => {
+          setHovered(false);
+          if (document.activeElement !== zoneRef.current) {
+            setFocused(false);
           }
-        }, 0);
-      }}
-      onMouseEnter={() => setPasteActive(true)}
-      onMouseLeave={() => {
-        if (document.activeElement !== zoneRef.current) {
-          setPasteActive(false);
-        }
-      }}
-      onDragEnter={onDragEnter}
-      onDragLeave={onDragLeave}
-      onDragOver={onDragOver}
-      onDrop={onDrop}
-      onKeyDown={e => {
-        if (e.key === 'Enter' || e.key === ' ') {
-          e.preventDefault();
-          inputRef.current?.click();
-        }
-      }}
-      onClick={() => {
-        if (!disabled && !uploading) inputRef.current?.click();
-      }}
-      className={cn(
-        'flex cursor-pointer flex-col items-center justify-center rounded-xl border border-dashed transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand-primary/30',
-        compact ? 'gap-1 px-3 py-4' : 'gap-1.5 px-4 py-8',
-        dragOver
-          ? 'border-brand-primary bg-brand-primary/5 text-brand-primary'
-          : 'border-gray-200 bg-gray-50 text-gray-400 hover:border-gray-300 hover:bg-gray-100',
-        (disabled || uploading) && 'cursor-not-allowed opacity-60',
-        className,
-      )}
-    >
-      {children ?? (
-        <>
-          <ImageIcon className={cn(compact ? 'h-4 w-4' : 'h-5 w-5')} />
-          <span className={cn('font-medium text-center', compact ? 'text-[11px]' : 'text-xs')}>
-            {uploading ? 'Uploading…' : label}
-          </span>
-          {!uploading && (
-            <span className={cn('text-center text-gray-400', compact ? 'text-[10px]' : 'text-[11px]')}>
-              {hint}
+        }}
+        onDragEnter={onDragEnter}
+        onDragLeave={onDragLeave}
+        onDragOver={onDragOver}
+        onDrop={onDrop}
+        onClick={() => zoneRef.current?.focus()}
+        className={cn(
+          'flex cursor-default flex-col items-center justify-center rounded-xl border border-dashed transition-colors outline-none focus-visible:ring-2 focus-visible:ring-brand-primary/30',
+          compact ? 'gap-1 px-3 py-4' : 'gap-1.5 px-4 py-8',
+          dragOver
+            ? 'border-brand-primary bg-brand-primary/5 text-brand-primary'
+            : focused
+              ? 'border-brand-primary/40 bg-brand-primary/[0.03] text-gray-500'
+              : 'border-gray-200 bg-gray-50 text-gray-400 hover:border-gray-300 hover:bg-gray-100',
+          (disabled || uploading) && 'cursor-not-allowed opacity-60',
+        )}
+      >
+        {children ?? (
+          <>
+            <ImageIcon className={cn(compact ? 'h-4 w-4' : 'h-5 w-5')} />
+            <span className={cn('font-medium text-center', compact ? 'text-[11px]' : 'text-xs')}>
+              {uploading ? 'Uploading…' : label}
             </span>
-          )}
-        </>
+            {!uploading && (
+              <span className={cn('text-center text-gray-400', compact ? 'text-[10px]' : 'text-[11px]')}>
+                {hint}
+              </span>
+            )}
+            {!uploading && pasteReady && (
+              <span className="text-center text-[10px] font-medium text-brand-primary/80">
+                Ready — press Ctrl+V to paste
+              </span>
+            )}
+          </>
+        )}
+      </div>
+
+      {!uploading && !disabled && (
+        <div className="flex justify-center">
+          <button
+            type="button"
+            onClick={openFilePicker}
+            className={cn(
+              'inline-flex items-center gap-1.5 font-medium text-brand-primary hover:underline',
+              compact ? 'text-[11px]' : 'text-xs',
+            )}
+          >
+            <ImageIcon className={compact ? 'h-3 w-3' : 'h-3.5 w-3.5'} />
+            Browse files
+          </button>
+        </div>
       )}
+
       <input
         ref={inputRef}
         type="file"

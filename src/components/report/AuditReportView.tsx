@@ -1079,7 +1079,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             ) : editMode ? (
               <ImageUploadZone
                 label="Add attribution screenshot"
-                hint="Click to upload, drag & drop, or paste (Ctrl+V)"
                 uploading={uploadingAttribution}
                 onFile={handleAttributionImageUpload}
               />

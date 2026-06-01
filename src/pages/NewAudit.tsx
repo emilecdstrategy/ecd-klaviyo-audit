@@ -801,7 +801,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               previewUrl={attributionPreviewUrl}
               previewAlt="Attribution model screenshot preview"
               label="Add attribution screenshot"
-              hint="Click to upload, drag & drop, or paste (Ctrl+V)"
               onFile={file => setAttributionScreenshot(file)}
               onRemove={
                 attributionScreenshot
