@@ -115,7 +115,7 @@ UPDATE public.revenue_opportunity_templates SET
 
 **Format:** 100% Done-For-You
 
-***What''s Included:***
+**What's Included:**
 - Up to 5 email campaigns per month
 - Up to 3–4 SMS campaigns per month
 - One monthly strategy call
@@ -135,7 +135,7 @@ UPDATE public.revenue_opportunity_templates SET
 
 **Format:** 100% Done-For-You
 
-***Includes Everything in Tier 1, Plus:***
+**Includes Everything in Tier 1, Plus:**
 
 - Up to 10 email campaigns per month
 - Up to 4–5 SMS campaigns per month
@@ -143,7 +143,7 @@ UPDATE public.revenue_opportunity_templates SET
 - Full promotional calendar planning
 - Monthly performance reporting with insights and recommendations
 
-***Why Upgrade:***
+**Why Upgrade:**
 Transition from reactive execution to proactive strategy with a consistent campaign cadence',
   updated_at = now()
 WHERE slug = 'ongoing_account_management_tier_2';
@@ -157,7 +157,7 @@ UPDATE public.revenue_opportunity_templates SET
 
 **Format:** 100% Done-For-You
 
-***Includes Everything in Tier 2, Plus:***
+**Includes Everything in Tier 2, Plus:**
 
 - Up to 25 email campaigns per month
 - Up to 6–7 SMS campaigns per month
@@ -167,7 +167,7 @@ UPDATE public.revenue_opportunity_templates SET
 - Full popup management, including design updates and testing
 - Bug fixes and real-time troubleshooting across email, SMS, and popups
 
-***Why Upgrade:***
+**Why Upgrade:**
 Maximize ROI with continuous testing, optimization, and retention-focused improvements',
   updated_at = now()
 WHERE slug = 'ongoing_account_management_tier_3';
@@ -181,7 +181,7 @@ UPDATE public.revenue_opportunity_templates SET
 
 **Format:** 100% Done-For-You
 
-***Includes Everything in Tier 3, Plus:***
+**Includes Everything in Tier 3, Plus:**
 - Up to 40 email + SMS campaigns per month
 - Bi-weekly and quarterly strategy meetings with senior strategists
 - On-demand creative requests with defined turnaround times
@@ -191,7 +191,7 @@ UPDATE public.revenue_opportunity_templates SET
 - Quarterly CX audits across the full retention funnel
 - Dedicated communication channel and priority support
 
-***Why Upgrade***
+**Why Upgrade**
 Gain a dedicated performance partner embedded into your growth strategy every week',
   updated_at = now()
 WHERE slug = 'ongoing_account_management_tier_4';

@@ -1,5 +1,9 @@
 import type { ReactNode } from 'react';
-import { parseRichAuditBlocks, repairFlattenedMarkdown } from '../../lib/audit-markdown';
+import {
+  parseRichAuditBlocks,
+  prepareAuditMarkdown,
+  tokenizeInlineMarkdown,
+} from '../../lib/audit-markdown';
 import { prepareAuditText, type EntityType } from '../../lib/entity-tags';
 import { useReportEntities } from '../report/edit/ReportEntityContext';
 import EntityTagChip from './EntityTagChip';
@@ -18,30 +22,31 @@ export function renderInlineMarkdown(
       ? prepareAuditText(text, lookup, false)
       : text;
   const nodes: ReactNode[] = [];
-  const regex = /(`(flow|campaign|segment|form):([^`]+)`|\*\*(.+?)\*\*|\*(.+?)\*)/g;
-  let last = 0;
-  let match: RegExpExecArray | null;
   let key = 0;
 
-  while ((match = regex.exec(processed)) !== null) {
-    if (match.index > last) nodes.push(processed.slice(last, match.index));
-    if (match[2] !== undefined && match[3] !== undefined) {
-      if (highlightsEnabled) {
-        nodes.push(
-          <EntityTagChip key={key++} type={match[2] as EntityType} name={match[3]} />,
-        );
-      } else {
-        nodes.push(match[3]);
-      }
-    } else if (match[4] !== undefined) {
-      nodes.push(<strong key={key++}>{match[4]}</strong>);
-    } else if (match[5] !== undefined) {
-      nodes.push(<em key={key++}>{match[5]}</em>);
+  for (const token of tokenizeInlineMarkdown(processed)) {
+    switch (token.type) {
+      case 'entity':
+        if (highlightsEnabled) {
+          nodes.push(
+            <EntityTagChip key={key++} type={token.entityType} name={token.name} />,
+          );
+        } else {
+          nodes.push(token.name);
+        }
+        break;
+      case 'bold':
+        nodes.push(<strong key={key++}>{token.value}</strong>);
+        break;
+      case 'italic':
+        nodes.push(<em key={key++}>{token.value}</em>);
+        break;
+      default:
+        nodes.push(token.value);
+        break;
     }
-    last = regex.lastIndex;
   }
 
-  if (last < processed.length) nodes.push(processed.slice(last));
   return nodes;
 }
 
@@ -106,7 +111,7 @@ export function RichAuditContent({
   const entityLookup = entityLookupProp ?? ctxLookup;
   const autoTagEntities = autoTagProp ?? ctxAutoTag;
   const highlightsEnabled = highlightsEnabledProp ?? entityHighlightsEnabled;
-  const blocks = parseRichAuditBlocks(repairFlattenedMarkdown(text || ''));
+  const blocks = parseRichAuditBlocks(prepareAuditMarkdown(text || ''));
 
   if (!blocks.length) return null;
 

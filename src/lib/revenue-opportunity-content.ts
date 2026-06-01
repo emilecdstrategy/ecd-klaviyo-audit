@@ -3,7 +3,7 @@ import type { RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from './
 type ContentSource = Pick<RevenueOpportunityAddOnItem, 'content' | 'bullets'>
   | Pick<RevenueOpportunityTemplate, 'content' | 'bullets'>;
 
-import { repairFlattenedMarkdown } from './audit-markdown';
+import { prepareAuditMarkdown } from './audit-markdown';
 
 /** Markdown body for a revenue opportunity — prefers `content`, falls back to legacy `bullets` array. */
 export function resolveRevenueOpportunityContent(item: ContentSource): string {
@@ -14,5 +14,5 @@ export function resolveRevenueOpportunityContent(item: ContentSource): string {
       if (!bullets.length) return '';
       return bullets.map(bullet => `- ${bullet}`).join('\n');
     })();
-  return repairFlattenedMarkdown(raw);
+  return prepareAuditMarkdown(raw);
 }

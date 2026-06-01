@@ -11,6 +11,54 @@ import {
 
 const ENTITY_TYPES = ['flow', 'campaign', 'segment', 'form'] as const;
 
+const INLINE_MARKDOWN_REGEX =
+  /(`(flow|campaign|segment|form):([^`]+)`|\*\*([^*]+?)\*\*|\*([^*]+?)\*)/g;
+
+export type InlineMarkdownToken =
+  | { type: 'text'; value: string }
+  | { type: 'bold'; value: string }
+  | { type: 'italic'; value: string }
+  | { type: 'entity'; entityType: EntityType; name: string };
+
+/** Fix legacy triple-asterisk bold markers (e.g. ***Why Upgrade:***) to standard **bold**. */
+export function normalizeInlineMarkdown(text: string): string {
+  if (!text) return text;
+
+  return text.replace(/\*{3,}([^*\n]+?)\*{2,3}/g, '**$1**');
+}
+
+export function prepareAuditMarkdown(text: string): string {
+  return repairFlattenedMarkdown(normalizeInlineMarkdown(text || ''));
+}
+
+export function tokenizeInlineMarkdown(text: string): InlineMarkdownToken[] {
+  const normalized = normalizeInlineMarkdown(text);
+  const tokens: InlineMarkdownToken[] = [];
+  let last = 0;
+  let match: RegExpExecArray | null;
+
+  INLINE_MARKDOWN_REGEX.lastIndex = 0;
+  while ((match = INLINE_MARKDOWN_REGEX.exec(normalized)) !== null) {
+    if (match.index > last) {
+      tokens.push({ type: 'text', value: normalized.slice(last, match.index) });
+    }
+    if (match[2] !== undefined && match[3] !== undefined) {
+      tokens.push({ type: 'entity', entityType: match[2] as EntityType, name: match[3] });
+    } else if (match[4] !== undefined) {
+      tokens.push({ type: 'bold', value: match[4] });
+    } else if (match[5] !== undefined) {
+      tokens.push({ type: 'italic', value: match[5] });
+    }
+    last = INLINE_MARKDOWN_REGEX.lastIndex;
+  }
+
+  if (last < normalized.length) {
+    tokens.push({ type: 'text', value: normalized.slice(last) });
+  }
+
+  return tokens;
+}
+
 function entitySpan(type: EntityType, name: string): string {
   const safe = name
     .replace(/&/g, '&amp;')
@@ -25,15 +73,20 @@ export function mdToHtml(md: string): string {
 }
 
 function inlineMdToHtml(md: string): string {
-  let html = md;
-
-  html = html.replace(/`(flow|campaign|segment|form):([^`]+)`/g, (_, type: EntityType, name: string) =>
-    entitySpan(type, name),
-  );
-
-  return html
-    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>');
+  return tokenizeInlineMarkdown(md)
+    .map(token => {
+      switch (token.type) {
+        case 'entity':
+          return entitySpan(token.entityType, token.name);
+        case 'bold':
+          return `<strong>${token.value}</strong>`;
+        case 'italic':
+          return `<em>${token.value}</em>`;
+        default:
+          return token.value;
+      }
+    })
+    .join('');
 }
 
 /** Repair legacy content where bullet lines were saved without newlines between them. */
@@ -54,7 +107,7 @@ export function repairFlattenedMarkdown(text: string): string {
 
 /** Convert markdown blocks to HTML for contentEditable editors (lists, paragraphs, inline bold). */
 export function markdownToEditorHtml(md: string): string {
-  const normalized = repairFlattenedMarkdown(md);
+  const normalized = prepareAuditMarkdown(md);
   const blocks = parseRichAuditBlocks(normalized);
   if (!blocks.length) return inlineMdToHtml(normalized);
 
@@ -178,7 +231,7 @@ export function htmlToMd(html: string): string {
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  return repairEntityMarkers(md);
+  return repairEntityMarkers(normalizeInlineMarkdown(md));
 }
 
 export type RichAuditBlock =
