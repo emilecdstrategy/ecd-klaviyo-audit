@@ -32,6 +32,7 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
   const [resumeLabel, setResumeLabel] = useState('');
   const [resumeProgress, setResumeProgress] = useState<number | null>(null);
   const [manualResumePending, setManualResumePending] = useState(false);
+  const [resumeKickedOff, setResumeKickedOff] = useState(false);
   const resumeStartedRef = useRef(false);
   const lastProfileNudgeRef = useRef(0);
 
@@ -87,6 +88,21 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
   }, [auditId, status?.isStalled, status?.needsProfileResume]);
 
   useEffect(() => {
+    if (!status?.isStalled || resumeKickedOff) return;
+    setManualResumePending(true);
+    setResumeError('');
+    nudgeProfileScan(auditId)
+      .then(() => {
+        setResumeKickedOff(true);
+        return pollStatus();
+      })
+      .catch((e: unknown) => {
+        setResumeError(e instanceof Error ? e.message : 'Failed to resume profile scan');
+      })
+      .finally(() => setManualResumePending(false));
+  }, [auditId, pollStatus, resumeKickedOff, status?.isStalled]);
+
+  useEffect(() => {
     if (!status?.needsAiResume) return;
     if (resumeStartedRef.current || isAuditAiResumeInFlight(auditId)) return;
 
@@ -121,14 +137,14 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
     );
   }
 
-  if (status.isStalled) {
+  if (status.isStalled && !resumeKickedOff) {
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 px-6 py-5 text-center">
         <h2 className="text-lg font-semibold text-gray-900">Profile scan paused</h2>
         <p className="mt-2 text-sm text-gray-600 max-w-lg mx-auto">
           Klaviyo config and reporting finished, but the full audience scan stopped before completing
           {status.profileScanTotal ? ` (${status.profileScanTotal.toLocaleString()} profiles scanned so far)` : ''}.
-          This can happen if the browser tab was closed during the initial run. Click resume to continue on the server.
+          A server watchdog will retry automatically every few minutes — or click resume now.
         </p>
         {resumeError && (
           <p className="mt-3 text-sm text-red-600 max-w-lg mx-auto">{resumeError}</p>
@@ -140,7 +156,10 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
             setManualResumePending(true);
             setResumeError('');
             nudgeProfileScan(auditId)
-              .then(() => pollStatus())
+              .then(() => {
+                setResumeKickedOff(true);
+                return pollStatus();
+              })
               .catch((e: unknown) => {
                 setResumeError(e instanceof Error ? e.message : 'Failed to resume profile scan');
               })
@@ -148,7 +167,7 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
           }}
           className="mt-4 inline-flex items-center justify-center rounded-lg gradient-bg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
         >
-          {manualResumePending ? 'Resuming…' : 'Resume profile scan'}
+          {manualResumePending ? 'Starting on server…' : 'Resume profile scan'}
         </button>
       </div>
     );
@@ -167,7 +186,7 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
       </p>
       <p className="text-xs text-gray-400 mb-6 max-w-md mx-auto">
         {klaviyoStillRunning
-          ? 'You can close this page — progress is saved. Reopen this audit anytime; we will keep nudging the server-side profile scan until it finishes.'
+          ? 'You can close this page — a server watchdog keeps the profile scan moving automatically. Reopen anytime to check progress.'
           : 'Klaviyo data is ready. AI analysis runs on the server — you can close this page and reopen anytime to check progress.'}
       </p>
       {resumeError && (

@@ -24,5 +24,8 @@ verify_jwt = false
 [functions.audit_finalize_analysis]
 verify_jwt = false
 
+[functions.profile_scan_watchdog]
+verify_jwt = false
+
 [functions.klaviyo_test_connection]
 verify_jwt = false

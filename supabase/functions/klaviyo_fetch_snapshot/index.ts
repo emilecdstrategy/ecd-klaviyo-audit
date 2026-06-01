@@ -427,12 +427,24 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
   }
   const claimed = (Array.isArray(claimRows) ? claimRows[0] : claimRows) as Record<string, unknown> | null | undefined;
   if (!claimed) {
-    const { data: job } = await sb.from("klaviyo_profile_scan_jobs").select("status").eq("audit_id", auditId).maybeSingle();
+    const { data: job } = await sb.from("klaviyo_profile_scan_jobs")
+      .select("status, updated_at")
+      .eq("audit_id", auditId)
+      .maybeSingle();
     if (!job) return json({ ok: false, error: { code: "not_found", message: "No profile scan job" }, correlationId }, { status: 404 });
     if (job.status === "complete") return json({ ok: true, correlationId, profile_metrics_status: "complete" });
     if (job.status === "skipped") return json({ ok: true, correlationId, profile_metrics_status: "complete" });
     if (job.status === "failed") return json({ ok: false, correlationId, profile_metrics_status: "failed" });
-    return json({ ok: true, correlationId, profile_metrics_status: "skipped", reason: "already_running" });
+    const updatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
+    const staleRunning = job.status === "running" && updatedMs > 0 && Date.now() - updatedMs >= 90_000;
+    if (staleRunning) {
+      await sb.from("klaviyo_profile_scan_jobs").update({
+        status: "pending",
+        updated_at: new Date().toISOString(),
+      }).eq("audit_id", auditId);
+      return handleResumeProfileScan(auditId, correlationId);
+    }
+    return json({ ok: true, correlationId, profile_metrics_status: "in_progress", reason: "already_running" });
   }
 
   const startedAt = Date.now();

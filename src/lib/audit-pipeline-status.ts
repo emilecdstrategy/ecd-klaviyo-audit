@@ -178,10 +178,11 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
 
   const needsAiResume = klaviyoComplete && !aiServerActive && !aiJobFailed;
   const showPipelineUi = needsProfileResume || needsAiResume || aiJobFailed || aiServerActive || !isStale;
+  const profilePaused = Boolean(needsProfileResume && (profileChainStale || isStale));
 
   return {
-    isGenerating: showPipelineUi && !isStale,
-    isStalled: isStale && needsProfileResume,
+    isGenerating: showPipelineUi && !profilePaused,
+    isStalled: profilePaused,
     needsProfileResume,
     needsAiResume: needsAiResume || aiJobFailed,
     showPipelineUi,
@@ -198,13 +199,25 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   };
 }
 
-/** Kick the server-side profile scan chain (safe to call repeatedly). */
+/** Kick the server-side profile scan chain (returns once the worker is dispatched). */
 export async function nudgeProfileScan(auditId: string): Promise<void> {
   await supabase.auth.refreshSession().catch(() => {});
-  const { error } = await supabase.functions.invoke('klaviyo_fetch_snapshot', {
+  const invokePromise = supabase.functions.invoke('klaviyo_fetch_snapshot', {
     body: { stage: 'resume_profile_scan', audit_id: auditId },
   });
-  if (error) throw new Error(error.message || 'Failed to resume profile scan');
+  const result = await Promise.race([
+    invokePromise,
+    new Promise<{ data: null; error: null }>(resolve => {
+      window.setTimeout(() => resolve({ data: null, error: null }), 8_000);
+    }),
+  ]);
+
+  if (result.error) {
+    const status = (result.error as { context?: { status?: number } }).context?.status;
+    // Edge worker still running past gateway timeout — scan continues server-side.
+    if (Number(status) === 546 || Number(status) === 504) return;
+    throw new Error(result.error.message || 'Failed to resume profile scan');
+  }
 }
 
 export async function startServerAuditAnalysis(auditId: string): Promise<void> {
