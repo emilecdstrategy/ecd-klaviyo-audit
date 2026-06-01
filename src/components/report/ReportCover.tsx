@@ -1,15 +1,20 @@
 import ReportBrandMark from './ReportBrandMark';
 import SiteFavicon from '../ui/SiteFavicon';
+import { formatCurrency } from '../../lib/revenue-calculator';
 
 export default function ReportCover({
   companyName,
   preparedDate,
   websiteUrl,
+  totalRevenueOpportunity,
 }: {
   companyName: string;
   preparedDate: string;
   websiteUrl?: string | null;
+  totalRevenueOpportunity?: number;
 }) {
+  const showOpportunity = typeof totalRevenueOpportunity === 'number' && totalRevenueOpportunity > 0;
+
   return (
     <div className="relative mb-10 overflow-hidden rounded-3xl text-white shadow-xl shadow-brand-primary/15 ring-1 ring-white/10">
       <div
@@ -53,6 +58,18 @@ export default function ReportCover({
             and where revenue is being left on the table.
           </p>
         </div>
+
+        {showOpportunity && (
+          <div className="absolute bottom-6 right-6 text-right sm:bottom-10 sm:right-12 lg:bottom-12 lg:right-14">
+            <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">
+              Identified opportunity
+            </p>
+            <p className="mt-1 text-2xl font-extrabold tabular-nums tracking-tight text-white sm:text-3xl">
+              {formatCurrency(totalRevenueOpportunity)}
+              <span className="ml-1 text-sm font-semibold text-white/70 sm:text-base">/mo</span>
+            </p>
+          </div>
+        )}
       </div>
     </div>
   );

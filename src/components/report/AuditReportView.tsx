@@ -1,10 +1,8 @@
 import { useState, useEffect, useLayoutEffect, useRef, useMemo, type ReactNode } from 'react';
-import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays, Image as ImageIcon, ZoomIn, ExternalLink } from 'lucide-react';
+import { TrendingUp, AlertTriangle, CheckCircle2, ChevronRight, Maximize2, X, LayoutDashboard, BarChart3, Activity, CalendarDays, Image as ImageIcon, ZoomIn, ExternalLink, Play } from 'lucide-react';
 import { SECTION_LABELS } from '../../lib/constants';
-import { computeAuditTotalRevenueOpportunity, formatCurrency, REVENUE_OPPORTUNITY_SECTION_KEYS } from '../../lib/revenue-calculator';
-import { formatStoreRevenueContext } from '../../lib/revenue-breakdown';
+import { computeAuditTotalRevenueOpportunity, formatCurrency } from '../../lib/revenue-calculator';
 import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
-import { isRevenueOpportunitySectionVisible } from '../../lib/report-config/resolve';
 import { normalizeCoreFlowsMatrix } from '../../lib/core-flows-matrix';
 import AnnotationLayer from '../audit/AnnotationLayer';
 import ReportFlowTable from './ReportFlowTable';
@@ -35,6 +33,8 @@ import ReportBlockEditChrome, { ReportHiddenItemStub, ReportItemHideButton } fro
 import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
 import ImageLightbox from '../ui/ImageLightbox';
+import DemoPopupModal, { type DemoPopupState } from '../ui/DemoPopupModal';
+import { addOnHasCustomerAgentDemo, resolveCustomerAgentDemoUrl } from '../../lib/customer-agent-demo';
 import { uploadRevenueOpportunityImage } from '../../lib/db';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
 import { resolveExecutiveFindings } from '../../lib/findings-normalize';
@@ -147,6 +147,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   } = useReportEdit();
   const [activeSection, setActiveSection] = useState('summary');
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
+  const [demoPopup, setDemoPopup] = useState<DemoPopupState | null>(null);
   const [uploadingAddOnKey, setUploadingAddOnKey] = useState<string | null>(null);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
@@ -203,21 +204,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
   const isPreview = audit.status === 'draft' || audit.status === 'in_review';
 
-  const currentFlowMonthlyRevenue = useMemo(
-    () => flowPerformance.reduce((sum, flow) => sum + (flow.monthly_revenue_current ?? 0), 0),
-    [flowPerformance],
-  );
-
   const revenueBreakdown = accountSnapshot?.revenue_breakdown ?? null;
-
-  const currentFlowStoreContext = useMemo(
-    () => formatStoreRevenueContext(
-      currentFlowMonthlyRevenue,
-      revenueBreakdown?.total_store_revenue,
-      revenueBreakdown?.attributed_revenue,
-    ),
-    [currentFlowMonthlyRevenue, revenueBreakdown?.total_store_revenue, revenueBreakdown?.attributed_revenue],
-  );
 
   const reportSections = useMemo(
     () => sections.filter(section => section.section_key !== 'revenue_summary' && section.status !== 'draft'),
@@ -354,27 +341,10 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       : [];
   }, [revenueSummaryCfg]);
 
-  const revenueBreakdownSections = useMemo(
-    () =>
-      REVENUE_OPPORTUNITY_SECTION_KEYS
-        .map(key => sections.find(section => section.section_key === key))
-        .filter((section): section is AuditSection => !!section)
-        .filter(section =>
-          isRevenueOpportunitySectionVisible(
-            section.section_key,
-            (section.section_config as Record<string, unknown> | null | undefined) ?? null,
-          ),
-        )
-        .filter(section => editMode || section.revenue_opportunity > 0),
-    [sections, editMode],
+  const customerAgentDemoUrl = useMemo(
+    () => resolveCustomerAgentDemoUrl(client?.website_url),
+    [client?.website_url],
   );
-
-  const addOnTotalRevenue = useMemo(
-    () => visibleAddOnItems.reduce((sum, item) => sum + (Number(item.revenue_monthly) || 0), 0),
-    [visibleAddOnItems],
-  );
-
-  const hasAddOnBreakdown = visibleAddOnItems.length > 0 && (editMode || addOnTotalRevenue > 0);
 
   const totalRevenue = useMemo(() => {
     if (!editMode && typeof audit.total_revenue_opportunity === 'number') {
@@ -547,6 +517,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             companyName={client.company_name}
             preparedDate={preparedDateLabel}
             websiteUrl={client.website_url}
+            totalRevenueOpportunity={totalRevenue}
           />
 
             <ReportSectionHeader
@@ -1027,35 +998,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             onSaveLabel={v => updateLayoutTitle('revenue_summary', 'sectionTitle', v)}
           />
 
-          {revenueSummaryCfg.blocks.metrics && revenueSummaryCfg.blocks.metrics.hidden !== true && (
-          <div className="mb-6 grid grid-cols-1 gap-5 lg:grid-cols-2">
-            <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider mb-2">Current Email Revenue</p>
-              <p className="text-3xl font-bold text-gray-400 mb-1">
-                {currentFlowMonthlyRevenue > 0 ? formatCurrency(currentFlowMonthlyRevenue) : 'N/A'}<span className="text-base font-normal">{currentFlowMonthlyRevenue > 0 ? '/mo' : ''}</span>
-              </p>
-              <p className="text-xs text-gray-400">
-                {currentFlowMonthlyRevenue > 0 ? (
-                  <>
-                    Based on Klaviyo flow reporting data (last 30 days)
-                    {currentFlowStoreContext ? (
-                      <span className="mt-1 block text-sm font-medium text-gray-600">{currentFlowStoreContext}</span>
-                    ) : null}
-                  </>
-                ) : 'Not available for this audit (missing metrics scope)'}
-              </p>
-            </div>
-            <div className="relative overflow-hidden rounded-2xl border border-brand-primary/20 bg-white p-6 shadow-sm">
-              <div className="absolute top-0 right-0 w-24 h-24 bg-brand-primary/5 rounded-bl-full" />
-              <p className="text-xs font-semibold text-brand-primary uppercase tracking-wider mb-2">Potential Email Revenue</p>
-              <p className="text-3xl font-bold text-gray-900 mb-1">
-                {formatCurrency((currentFlowMonthlyRevenue > 0 ? currentFlowMonthlyRevenue : 0) + totalRevenue)}<span className="text-base font-normal text-gray-500">/mo</span>
-              </p>
-              <p className="text-xs text-emerald-600 font-medium">+{formatCurrency(totalRevenue)}/mo identified opportunity</p>
-            </div>
-          </div>
-          )}
-
           {/* Breakdown by Area hidden */}
 
           {revenueSummaryCfg.blocks.addOns && revenueSummaryCfg.blocks.addOns.hidden !== true && visibleAddOnItems.length > 0 && (
@@ -1087,6 +1029,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {visibleAddOnItems.map((item) => {
                 const itemKey = `${item.template_slug}-${item.display_order}`;
+                const showDemoCta = addOnHasCustomerAgentDemo(item.template_slug) && Boolean(customerAgentDemoUrl);
                 return (
                 <div
                   key={itemKey}
@@ -1188,7 +1131,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                         </button>
                       </div>
                     )}
-                    {(item.details_url?.trim() || editMode) && (
+                    {(showDemoCta || item.details_url?.trim() || editMode) && (
                       <div className="mt-4 flex flex-col items-end gap-2 border-t border-gray-100 pt-4">
                         {editMode && (
                           <EditablePlainText
@@ -1198,6 +1141,16 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                             as="p"
                             placeholder="Details doc URL (opens in new tab)…"
                           />
+                        )}
+                        {showDemoCta && customerAgentDemoUrl && (
+                          <button
+                            type="button"
+                            onClick={() => setDemoPopup({ url: customerAgentDemoUrl, title: item.name })}
+                            className="inline-flex items-center gap-1.5 rounded-lg gradient-bg px-4 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+                          >
+                            <Play className="h-3.5 w-3.5 shrink-0 fill-current" aria-hidden />
+                            View live demo
+                          </button>
                         )}
                         {item.details_url?.trim() && (
                           <a
@@ -1270,45 +1223,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                   as="span"
                 />
               </p>
-
-              {editMode && (
-                <p className="mb-6 text-xs font-medium text-white/60">
-                  Edit each section&apos;s $/mo below — add-on amounts roll up into one total and are editable in the add-ons section above.
-                </p>
-              )}
-
-              {(revenueBreakdownSections.length > 0 || hasAddOnBreakdown || editMode) && (
-                <div className="mx-auto mb-10 grid max-w-3xl grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                  {revenueBreakdownSections.map(s => (
-                    <div
-                      key={s.id}
-                      className="group min-w-0 overflow-hidden rounded-2xl border border-white/20 bg-white/10 p-4 text-left shadow-lg shadow-black/10 backdrop-blur-md transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/15"
-                    >
-                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">
-                        {SECTION_LABELS[s.section_key]}
-                      </p>
-                      <EditableCurrency
-                        value={s.revenue_opportunity}
-                        onSave={v => updateSectionRevenueOpportunity(s.section_key, v)}
-                        variant="on-dark"
-                        className="text-xl font-bold tabular-nums text-white sm:text-2xl"
-                      />
-                      <p className="mt-0.5 text-xs text-white/50">per month</p>
-                    </div>
-                  ))}
-                  {hasAddOnBreakdown && (
-                    <div className="group min-w-0 overflow-hidden rounded-2xl border border-white/20 bg-white/10 p-4 text-left shadow-lg shadow-black/10 backdrop-blur-md transition-transform duration-200 hover:-translate-y-0.5 hover:bg-white/15">
-                      <p className="mb-1.5 text-[11px] font-semibold uppercase tracking-wide text-white/60">
-                        Add-ons
-                      </p>
-                      <p className="text-xl font-bold tabular-nums text-white sm:text-2xl">
-                        {formatCurrency(addOnTotalRevenue)}
-                      </p>
-                      <p className="mt-0.5 text-xs text-white/50">add-ons · per month</p>
-                    </div>
-                  )}
-                </div>
-              )}
 
               {revenueSummaryCfg.blocks.totalBanner?.disclaimer !== null && (
                 <div className="mx-auto max-w-2xl rounded-2xl border border-white/15 bg-black/10 px-5 py-4 backdrop-blur-sm">
@@ -1386,6 +1300,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
       <ReportTrustFooter preparedDate={preparedDateLabel} />
       <ImageLightbox src={lightboxSrc} onClose={() => setLightboxSrc(null)} />
+      <DemoPopupModal demo={demoPopup} onClose={() => setDemoPopup(null)} />
     </div>
     </ReportEntityProvider>
   );

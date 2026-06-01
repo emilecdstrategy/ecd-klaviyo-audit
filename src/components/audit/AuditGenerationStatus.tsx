@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
-import { fetchAuditPipelineStatus, nudgeProfileScan, type AuditPipelineStatus } from '../../lib/audit-pipeline-status';
+import { fetchAuditPipelineStatus, nudgeProfileScan, startServerAuditAnalysis, type AuditPipelineStatus } from '../../lib/audit-pipeline-status';
 import { isAuditAiResumeInFlight, resumeAuditAnalysis } from '../../lib/resume-audit-analysis';
 
 type AuditGenerationStatusProps = {
@@ -91,16 +91,25 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
     if (!status?.isStalled || resumeKickedOff) return;
     setManualResumePending(true);
     setResumeError('');
-    nudgeProfileScan(auditId)
+    const resume = status.aiStalled
+      ? startServerAuditAnalysis(auditId)
+      : nudgeProfileScan(auditId);
+    resume
       .then(() => {
         setResumeKickedOff(true);
         return pollStatus();
       })
       .catch((e: unknown) => {
-        setResumeError(e instanceof Error ? e.message : 'Failed to resume profile scan');
+        setResumeError(
+          e instanceof Error
+            ? e.message
+            : status.aiStalled
+              ? 'Failed to resume AI analysis'
+              : 'Failed to resume profile scan',
+        );
       })
       .finally(() => setManualResumePending(false));
-  }, [auditId, pollStatus, resumeKickedOff, status?.isStalled]);
+  }, [auditId, pollStatus, resumeKickedOff, status?.aiStalled, status?.isStalled]);
 
   useEffect(() => {
     if (!status?.needsAiResume) return;
@@ -138,13 +147,16 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
   }
 
   if (status.isStalled && !resumeKickedOff) {
+    const isAi = status.aiStalled;
     return (
       <div className="rounded-xl border border-amber-200 bg-amber-50 px-6 py-5 text-center">
-        <h2 className="text-lg font-semibold text-gray-900">Profile scan paused</h2>
+        <h2 className="text-lg font-semibold text-gray-900">
+          {isAi ? 'AI analysis paused' : 'Profile scan paused'}
+        </h2>
         <p className="mt-2 text-sm text-gray-600 max-w-lg mx-auto">
-          Klaviyo config and reporting finished, but the full audience scan stopped before completing
-          {status.profileScanTotal ? ` (${status.profileScanTotal.toLocaleString()} profiles scanned so far)` : ''}.
-          A server watchdog will retry automatically every few minutes — or click resume now.
+          {isAi
+            ? 'Klaviyo data is ready but the AI step stopped before saving results. A server watchdog will retry automatically every few minutes — or click resume now.'
+            : `Klaviyo config and reporting finished, but the full audience scan stopped before completing${status.profileScanTotal ? ` (${status.profileScanTotal.toLocaleString()} profiles scanned so far)` : ''}. A server watchdog will retry automatically every few minutes — or click resume now.`}
         </p>
         {resumeError && (
           <p className="mt-3 text-sm text-red-600 max-w-lg mx-auto">{resumeError}</p>
@@ -155,19 +167,32 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
           onClick={() => {
             setManualResumePending(true);
             setResumeError('');
-            nudgeProfileScan(auditId)
+            const resume = isAi
+              ? startServerAuditAnalysis(auditId)
+              : nudgeProfileScan(auditId);
+            resume
               .then(() => {
                 setResumeKickedOff(true);
                 return pollStatus();
               })
               .catch((e: unknown) => {
-                setResumeError(e instanceof Error ? e.message : 'Failed to resume profile scan');
+                setResumeError(
+                  e instanceof Error
+                    ? e.message
+                    : isAi
+                      ? 'Failed to resume AI analysis'
+                      : 'Failed to resume profile scan',
+                );
               })
               .finally(() => setManualResumePending(false));
           }}
           className="mt-4 inline-flex items-center justify-center rounded-lg gradient-bg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-60"
         >
-          {manualResumePending ? 'Starting on server…' : 'Resume profile scan'}
+          {manualResumePending
+            ? 'Starting on server…'
+            : isAi
+              ? 'Resume AI analysis'
+              : 'Resume profile scan'}
         </button>
       </div>
     );
@@ -187,7 +212,7 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
       <p className="text-xs text-gray-400 mb-6 max-w-md mx-auto">
         {klaviyoStillRunning
           ? 'You can close this page — a server watchdog keeps the profile scan moving automatically. Reopen anytime to check progress.'
-          : 'Klaviyo data is ready. AI analysis runs on the server — you can close this page and reopen anytime to check progress.'}
+          : 'Klaviyo data is ready. AI analysis runs on the server — a watchdog retries if it stalls. You can close this page and reopen anytime.'}
       </p>
       {resumeError && (
         <p className="text-sm text-red-600 mb-4 max-w-md mx-auto">{resumeError}</p>

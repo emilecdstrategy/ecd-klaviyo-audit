@@ -1,6 +1,6 @@
 /**
- * Scheduled worker: resumes stale Klaviyo profile scans without a browser tab open.
- * Runs every 2 minutes via Supabase cron (see config.toml).
+ * Scheduled worker: resumes stale Klaviyo profile scans and AI analysis jobs
+ * without a browser tab open. Runs every 2 minutes via pg_cron.
  */
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -15,6 +15,19 @@ function json(data: unknown, init: ResponseInit = {}) {
     headers: { "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) },
     ...init,
   });
+}
+
+function chainAuditFinalize(auditId: string) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
+  fetch(`${SUPABASE_URL}/functions/v1/audit_finalize_analysis`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+      apikey: SUPABASE_SERVICE_ROLE_KEY,
+    },
+    body: JSON.stringify({ audit_id: auditId }),
+  }).catch(() => {});
 }
 
 function chainResumeProfileScan(auditId: string) {
@@ -49,20 +62,31 @@ serve(async (req) => {
   }
 
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
-  const { data: jobs, error } = await sb
-    .from("klaviyo_profile_scan_jobs")
-    .select("audit_id, status, updated_at")
-    .in("status", ["pending", "running"]);
+  const [{ data: profileJobs, error: profileErr }, { data: aiJobs, error: aiErr }] = await Promise.all([
+    sb
+      .from("klaviyo_profile_scan_jobs")
+      .select("audit_id, status, updated_at")
+      .in("status", ["pending", "running"]),
+    sb
+      .from("audit_analysis_jobs")
+      .select("audit_id, status, updated_at")
+      .in("status", ["pending", "running"]),
+  ]);
 
-  if (error) {
-    return json({ ok: false, error: error.message }, { status: 500 });
+  if (profileErr) {
+    return json({ ok: false, error: profileErr.message }, { status: 500 });
+  }
+  if (aiErr && aiErr.code !== "PGRST205") {
+    return json({ ok: false, error: aiErr.message }, { status: 500 });
   }
 
   const now = Date.now();
-  let reset = 0;
-  let resumed = 0;
+  let profileReset = 0;
+  let profileResumed = 0;
+  let aiReset = 0;
+  let aiResumed = 0;
 
-  for (const job of jobs ?? []) {
+  for (const job of profileJobs ?? []) {
     const updatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
     const stale = !updatedMs || now - updatedMs >= STALE_AFTER_MS;
     if (!stale) continue;
@@ -72,12 +96,33 @@ serve(async (req) => {
         status: "pending",
         updated_at: new Date().toISOString(),
       }).eq("audit_id", job.audit_id);
-      reset += 1;
+      profileReset += 1;
     }
 
     chainResumeProfileScan(String(job.audit_id));
-    resumed += 1;
+    profileResumed += 1;
   }
 
-  return json({ ok: true, checked: jobs?.length ?? 0, reset, resumed });
+  for (const job of aiJobs ?? []) {
+    const updatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
+    const stale = !updatedMs || now - updatedMs >= STALE_AFTER_MS;
+    if (!stale) continue;
+
+    if (job.status === "running") {
+      await sb.from("audit_analysis_jobs").update({
+        status: "pending",
+        updated_at: new Date().toISOString(),
+      }).eq("audit_id", job.audit_id);
+      aiReset += 1;
+    }
+
+    chainAuditFinalize(String(job.audit_id));
+    aiResumed += 1;
+  }
+
+  return json({
+    ok: true,
+    profile: { checked: profileJobs?.length ?? 0, reset: profileReset, resumed: profileResumed },
+    ai: { checked: aiJobs?.length ?? 0, reset: aiReset, resumed: aiResumed },
+  });
 });

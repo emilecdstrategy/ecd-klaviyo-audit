@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { parseRichAuditBlocks } from '../../lib/audit-markdown';
+import { parseRichAuditBlocks, repairFlattenedMarkdown } from '../../lib/audit-markdown';
 import { prepareAuditText, type EntityType } from '../../lib/entity-tags';
 import { useReportEntities } from '../report/edit/ReportEntityContext';
 import EntityTagChip from './EntityTagChip';
@@ -106,7 +106,7 @@ export function RichAuditContent({
   const entityLookup = entityLookupProp ?? ctxLookup;
   const autoTagEntities = autoTagProp ?? ctxAutoTag;
   const highlightsEnabled = highlightsEnabledProp ?? entityHighlightsEnabled;
-  const blocks = parseRichAuditBlocks(text || '');
+  const blocks = parseRichAuditBlocks(repairFlattenedMarkdown(text || ''));
 
   if (!blocks.length) return null;
 

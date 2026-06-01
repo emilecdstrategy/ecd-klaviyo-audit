@@ -38,6 +38,8 @@ export type AuditPipelineStatus = {
   label: string;
   stageRuns: KlaviyoRunRow[];
   profileScanTotal: number | null;
+  profileStalled: boolean;
+  aiStalled: boolean;
 };
 
 const GENERATING_MAX_AGE_MS = 6 * 60 * 60 * 1000;
@@ -81,7 +83,7 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
       .maybeSingle(),
     supabase
       .from('audit_analysis_jobs')
-      .select('status, step_index, error_message')
+      .select('status, step_index, error_message, updated_at')
       .eq('audit_id', auditId)
       .maybeSingle(),
   ]);
@@ -111,11 +113,20 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
       label: 'Analysis complete',
       stageRuns,
       profileScanTotal: profileJob?.total_profiles ?? null,
+      profileStalled: false,
+      aiStalled: false,
     };
   }
 
   const aiJobStatus = aiJob?.status ?? null;
-  const aiServerActive = aiJobStatus === 'pending' || aiJobStatus === 'running';
+  const aiJobUpdatedMs = aiJob?.updated_at ? new Date(aiJob.updated_at).getTime() : null;
+  const aiJobStale = Boolean(
+    aiJob
+    && ['pending', 'running'].includes(aiJob.status)
+    && aiJobUpdatedMs
+    && Date.now() - aiJobUpdatedMs > PROFILE_PAUSED_STALE_MS,
+  );
+  const aiServerActive = (aiJobStatus === 'pending' || aiJobStatus === 'running') && !aiJobStale;
   const aiJobFailed = aiJobStatus === 'failed';
   const aiJobError = aiJobFailed ? (aiJob?.error_message ?? 'AI analysis failed') : null;
 
@@ -180,10 +191,11 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
 
   const needsAiResume = klaviyoComplete && !aiServerActive && !aiJobFailed;
   const showPipelineUi = needsProfileResume || needsAiResume || aiJobFailed || aiServerActive;
+  const aiStalled = Boolean(aiJobStale && klaviyoComplete && aiJobStatus !== 'complete');
 
   return {
-    isGenerating: showPipelineUi && !profilePaused,
-    isStalled: profilePaused,
+    isGenerating: showPipelineUi && !profilePaused && !aiStalled,
+    isStalled: profilePaused || aiStalled,
     needsProfileResume,
     needsAiResume: needsAiResume || aiJobFailed,
     showPipelineUi,
@@ -197,6 +209,8 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
       : label,
     stageRuns,
     profileScanTotal,
+    profileStalled: profilePaused,
+    aiStalled,
   };
 }
 
@@ -222,10 +236,21 @@ export async function nudgeProfileScan(auditId: string): Promise<void> {
 }
 
 export async function startServerAuditAnalysis(auditId: string): Promise<void> {
-  const { error } = await supabase.functions.invoke('audit_finalize_analysis', {
+  const invokePromise = supabase.functions.invoke('audit_finalize_analysis', {
     body: { audit_id: auditId },
   });
-  if (error) throw new Error(error.message || 'Failed to start server AI analysis');
+  const result = await Promise.race([
+    invokePromise,
+    new Promise<{ data: null; error: null }>(resolve => {
+      window.setTimeout(() => resolve({ data: null, error: null }), 8_000);
+    }),
+  ]);
+
+  if (result.error) {
+    const status = (result.error as { context?: { status?: number } }).context?.status;
+    if (Number(status) === 546 || Number(status) === 504) return;
+    throw new Error(result.error.message || 'Failed to start server AI analysis');
+  }
 }
 
 export async function waitForServerAuditAnalysis(

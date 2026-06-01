@@ -238,6 +238,19 @@ async function runPipeline(auditId: string, correlationId: string): Promise<Resp
     return json({ ok: true, correlationId, status: "complete" });
   }
 
+  const jobUpdatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
+  const jobStale = job.status === "running" && jobUpdatedMs > 0 && Date.now() - jobUpdatedMs >= 90_000;
+  if (job.status === "running" && !jobStale) {
+    return json({ ok: true, correlationId, status: "in_progress", reason: "already_running" });
+  }
+  if (jobStale) {
+    await sb.from("audit_analysis_jobs").update({
+      status: "pending",
+      updated_at: new Date().toISOString(),
+    }).eq("audit_id", auditId);
+    job = { ...job, status: "pending" };
+  }
+
   const { wizard, hasRefine } = await buildWizardData(sb, auditId);
   const steps = buildStepPlan(hasRefine);
   const stepIndex = Number(job.step_index) || 0;

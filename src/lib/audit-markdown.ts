@@ -21,18 +21,52 @@ function entitySpan(type: EntityType, name: string): string {
 }
 
 export function mdToHtml(md: string): string {
+  return markdownToEditorHtml(md);
+}
+
+function inlineMdToHtml(md: string): string {
   let html = md;
 
   html = html.replace(/`(flow|campaign|segment|form):([^`]+)`/g, (_, type: EntityType, name: string) =>
     entitySpan(type, name),
   );
 
-  html = html
+  return html
     .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\*(.+?)\*/g, '<em>$1</em>')
-    .replace(/\n/g, '<br>');
+    .replace(/\*(.+?)\*/g, '<em>$1</em>');
+}
 
-  return html;
+/** Repair legacy content where bullet lines were saved without newlines between them. */
+export function repairFlattenedMarkdown(text: string): string {
+  if (!text?.trim()) return text || '';
+  const bulletMarkers = text.match(/- /g)?.length ?? 0;
+  const newlines = text.match(/\n/g)?.length ?? 0;
+  if (bulletMarkers < 2 && newlines > 0) return text;
+
+  let repaired = text;
+  if (bulletMarkers >= 2 && newlines < bulletMarkers) {
+    repaired = repaired.replace(/([^\n])- (?=[A-Za-z*])/g, '$1\n- ');
+  }
+  repaired = repaired.replace(/([a-z.])(ECD Pricing:)/gi, '$1\n\n$2');
+  repaired = repaired.replace(/(ECD Pricing:)- (?=[A-Za-z*])/g, '$1\n- ');
+  return repaired.replace(/\n{3,}/g, '\n\n').trim();
+}
+
+/** Convert markdown blocks to HTML for contentEditable editors (lists, paragraphs, inline bold). */
+export function markdownToEditorHtml(md: string): string {
+  const normalized = repairFlattenedMarkdown(md);
+  const blocks = parseRichAuditBlocks(normalized);
+  if (!blocks.length) return inlineMdToHtml(normalized);
+
+  return blocks
+    .map(block => {
+      if (block.type === 'list') {
+        const items = block.items.map(item => `<li>${inlineMdToHtml(item)}</li>`).join('');
+        return `<ul>${items}</ul>`;
+      }
+      return `<div>${inlineMdToHtml(block.text)}</div>`;
+    })
+    .join('');
 }
 
 function decodeHtmlEntities(text: string): string {
@@ -61,7 +95,7 @@ export function bulletsArrayToEditorHtml(bullets: string[]): string {
   const items = bullets
     .map(v => v.trim())
     .filter(Boolean)
-    .map(bullet => `<li>${mdToHtml(bullet)}</li>`);
+    .map(bullet => `<li>${inlineMdToHtml(bullet)}</li>`);
 
   if (!items.length) return '';
   return `<ul>${items.join('')}</ul>`;
@@ -93,10 +127,10 @@ export function auditTextToEditorHtml(
     const plain = lookup?.size
       ? stripEntityMarkers(prepareAuditText(text || '', lookup, false))
       : stripEntityMarkers(text || '');
-    return mdToHtml(plain);
+    return markdownToEditorHtml(plain);
   }
   const processed = lookup?.size ? prepareAuditText(text || '', lookup, autoTag) : (text || '');
-  return mdToHtml(processed);
+  return markdownToEditorHtml(processed);
 }
 
 export function htmlToMd(html: string): string {
@@ -128,6 +162,8 @@ export function htmlToMd(html: string): string {
   md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, inner: string) => `- ${inlineHtmlToMd(inner).trim()}\n`);
 
   md = md
+    .replace(/<\/(div|p|h[1-6]|blockquote|section|article|header|footer|tr)>/gi, '\n')
+    .replace(/<(div|p|h[1-6]|blockquote|section|article|header|footer|tr)(\s[^>]*)?>/gi, '\n')
     .replace(/<br\s*\/?>/gi, '\n')
     .replace(/<strong>(.*?)<\/strong>/gi, '**$1**')
     .replace(/<b>(.*?)<\/b>/gi, '**$1**')
@@ -138,7 +174,9 @@ export function htmlToMd(html: string): string {
     .replace(/&amp;/g, '&')
     .replace(/&lt;/g, '<')
     .replace(/&gt;/g, '>')
-    .replace(/&nbsp;/g, ' ');
+    .replace(/&nbsp;/g, ' ')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
 
   return repairEntityMarkers(md);
 }
