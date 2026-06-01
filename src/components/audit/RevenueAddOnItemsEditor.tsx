@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, GripVertical, Image as ImageIcon, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, GripVertical, Plus } from 'lucide-react';
 import type { Audit, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../../lib/types';
 import { listRevenueOpportunityTemplates, updateAudit, uploadRevenueOpportunityImage } from '../../lib/db';
 import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
 import { scheduleSavedToast, useToast } from '../ui/Toast';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
+import ImageUploadZone from '../ui/ImageUploadZone';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 
 function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
@@ -316,48 +317,24 @@ export default function RevenueAddOnItemsEditor({
 
               <div>
                 <label className="block text-[11px] font-medium text-gray-500 mb-1">Screenshot</label>
-                <div className="flex items-start gap-3">
-                  {item.image_url ? (
-                    <img
-                      src={item.image_url}
-                      alt=""
-                      className="h-16 w-24 shrink-0 rounded-md border border-gray-200 object-cover"
-                    />
-                  ) : (
-                    <div className="flex h-16 w-24 shrink-0 items-center justify-center rounded-md border border-dashed border-gray-200 bg-gray-50 text-gray-300">
-                      <ImageIcon className="h-5 w-5" />
-                    </div>
-                  )}
-                  <div className="flex flex-col gap-1.5">
-                    <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                      <ImageIcon className="h-3.5 w-3.5" />
-                      {uploadingIndex === index ? 'Uploading…' : item.image_url ? 'Replace' : 'Upload'}
-                      <input
-                        type="file"
-                        accept="image/*"
-                        className="hidden"
-                        disabled={uploadingIndex === index}
-                        onChange={e => {
-                          handleImageUpload(index, e.target.files?.[0]);
-                          e.target.value = '';
-                        }}
-                      />
-                    </label>
-                    {item.image_url && (
-                      <button
-                        type="button"
-                        onClick={() => {
+                <ImageUploadZone
+                  compact
+                  previewUrl={item.image_url}
+                  previewAlt={`${item.name} screenshot`}
+                  label={item.image_url ? 'Replace screenshot' : 'Upload screenshot'}
+                  uploading={uploadingIndex === index}
+                  onFile={file => handleImageUpload(index, file)}
+                  onRemove={
+                    item.image_url
+                      ? () => {
                           const next = addOnItems.slice();
                           next[index] = { ...item, image_url: null };
                           writeItems(next);
-                        }}
-                        className="text-left text-[11px] font-medium text-red-600 hover:underline"
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                </div>
+                        }
+                      : undefined
+                  }
+                  className="max-w-md"
+                />
               </div>
 
               <div>

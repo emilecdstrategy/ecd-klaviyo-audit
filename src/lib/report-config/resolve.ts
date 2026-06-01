@@ -1,6 +1,7 @@
 import type {
   CampaignsBlockKey,
   CampaignsSectionConfig,
+  AttributionModelSectionConfig,
   DeliverabilitySnapshotSectionConfig,
   EmailDesignBlockKey,
   EmailDesignSectionConfig,
@@ -16,6 +17,7 @@ import type {
   SignupFormsSectionConfig,
 } from './types';
 import {
+  DEFAULT_ATTRIBUTION_MODEL_SECTION,
   DEFAULT_CAMPAIGNS_SECTION,
   DEFAULT_DELIVERABILITY_SNAPSHOT_SECTION,
   DEFAULT_EMAIL_DESIGN_SECTION,
@@ -246,6 +248,24 @@ export function resolveDeliverabilitySnapshotConfig(
   raw: Partial<DeliverabilitySnapshotSectionConfig> | null | undefined,
   defaults: DeliverabilitySnapshotSectionConfig = DEFAULT_DELIVERABILITY_SNAPSHOT_SECTION,
 ): DeliverabilitySnapshotSectionConfig {
+  if (!raw) return defaults;
+  return deepMerge(defaults, raw);
+}
+
+// -----------------------------------------------------------------------------
+// Attribution Model
+// -----------------------------------------------------------------------------
+
+export function extractAttributionModelRawConfig(
+  layout: Record<string, unknown> | null | undefined,
+): Partial<AttributionModelSectionConfig> | undefined {
+  return extractSubtree<AttributionModelSectionConfig>(layout, 'attribution_model');
+}
+
+export function resolveAttributionModelConfig(
+  raw: Partial<AttributionModelSectionConfig> | null | undefined,
+  defaults: AttributionModelSectionConfig = DEFAULT_ATTRIBUTION_MODEL_SECTION,
+): AttributionModelSectionConfig {
   if (!raw) return defaults;
   return deepMerge(defaults, raw);
 }

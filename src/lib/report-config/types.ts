@@ -194,6 +194,12 @@ export interface DeliverabilitySnapshotSectionConfig extends BaseSectionConfig {
   blocks?: Record<string, never>;
 }
 
+// ----- Attribution Model -----------------------------------------------------
+
+export interface AttributionModelSectionConfig extends BaseSectionConfig {
+  screenshot_url?: string | null;
+}
+
 // ----- Executive Summary (section 01, hero) ---------------------------------
 
 export interface ExecutiveSummarySectionConfig extends BaseSectionConfig {

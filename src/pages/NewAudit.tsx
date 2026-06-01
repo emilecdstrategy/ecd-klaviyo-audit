@@ -11,13 +11,14 @@ import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import { useAuth } from '../contexts/AuthContext';
 import { formatClientListMeta } from '../lib/client-display';
-import { createAudit, createAuditSections, createClient, ensureClientCreator, findClientByCompanyName, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates } from '../lib/db';
+import { createAudit, createAuditSections, createClient, ensureClientCreator, findClientByCompanyName, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates, uploadReportScreenshot } from '../lib/db';
 import { resolveRevenueOpportunityContent } from '../lib/revenue-opportunity-content';
 import type { Audit, AuditContext, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import SiteFavicon from '../components/ui/SiteFavicon';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
+import ImageUploadZone from '../components/ui/ImageUploadZone';
 import { supabase } from '../lib/supabase';
 import {
   clearAuditGenerationActive,
@@ -33,6 +34,7 @@ const CONTEXT_CHAR_HARD = 30_000;
 const STEPS = [
   { label: 'Prospect Details', description: 'Basic information' },
   { label: 'API Connection', description: 'Connect Klaviyo data' },
+  { label: 'Attribution Model', description: 'Optional screenshot' },
   { label: 'Client Context', description: 'Optional notes for the AI' },
   { label: 'Run Analysis', description: 'AI-powered audit' },
 ];
@@ -201,6 +203,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     custom_instructions: '',
   });
 
+  const [attributionScreenshot, setAttributionScreenshot] = useState<File | null>(null);
+  const [attributionPreviewUrl, setAttributionPreviewUrl] = useState<string | null>(null);
+
   const [clients, setClients] = useState<Client[]>([]);
   const [revenueTemplates, setRevenueTemplates] = useState<RevenueOpportunityTemplate[]>([]);
   const selectedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
@@ -231,6 +236,16 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  useEffect(() => {
+    if (!attributionScreenshot) {
+      setAttributionPreviewUrl(null);
+      return;
+    }
+    const url = URL.createObjectURL(attributionScreenshot);
+    setAttributionPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [attributionScreenshot]);
 
   // If opened from a client detail, preselect that client.
   useEffect(() => {
@@ -388,7 +403,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           display_order: template.display_order ?? (index + 1) * 10,
           is_hidden: false,
         }));
-      const initialLayout = selectedAddOnItems.length > 0
+      const initialLayout: Record<string, unknown> = selectedAddOnItems.length > 0
         ? {
             revenue_summary: {
               blocks: {
@@ -398,7 +413,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               },
             },
           }
-        : undefined;
+        : {};
       const audit = await createAudit({
         client_id: clientId,
         title,
@@ -412,8 +427,25 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         created_by: user?.id || '',
         show_recommendations: true,
         context: contextPayload,
-        layout: initialLayout,
+        layout: Object.keys(initialLayout).length > 0 ? initialLayout : undefined,
       } as any);
+
+      if (attributionScreenshot) {
+        setAnalysisStage('Uploading attribution screenshot…');
+        try {
+          const url = await uploadReportScreenshot(attributionScreenshot, 'attribution');
+          const layout = {
+            ...(initialLayout as Record<string, unknown>),
+            attribution_model: {
+              sectionTitle: 'Attribution Model',
+              screenshot_url: url,
+            },
+          };
+          await updateAudit(audit.id, { layout });
+        } catch {
+          /* optional — audit can continue without screenshot */
+        }
+      }
 
       setCurrentAuditId(audit.id);
       markAuditGenerationActive(audit.id);
@@ -607,6 +639,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     if (step === 0) return form.companyName;
     if (step === 1) return hasSavedKlaviyoConnection || form.apiKey;
     if (step === 2) return true;
+    if (step === 3) return true;
     return true;
   };
 
@@ -748,6 +781,38 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {step === 2 && (
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Attribution Model</h2>
+                <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+                  Optional. Upload a screenshot of the client&apos;s Klaviyo attribution settings. It will appear as a dedicated section in the report.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setError(''); setStep(3); }}
+                className="text-sm text-brand-primary font-medium hover:underline whitespace-nowrap"
+              >
+                Skip this step
+              </button>
+            </div>
+            <ImageUploadZone
+              previewUrl={attributionPreviewUrl}
+              previewAlt="Attribution model screenshot preview"
+              label="Add attribution screenshot"
+              hint="Click to upload, drag & drop, or paste (Ctrl+V)"
+              onFile={file => setAttributionScreenshot(file)}
+              onRemove={
+                attributionScreenshot
+                  ? () => setAttributionScreenshot(null)
+                  : undefined
+              }
+            />
+          </div>
+        )}
+
+        {step === 3 && (
           <div className="bg-white rounded-xl p-6 card-shadow space-y-6 animate-slide-up">
             {error ? (
               <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
@@ -761,7 +826,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               </div>
               <button
                 type="button"
-                onClick={() => { setError(''); setStep(3); }}
+                onClick={() => { setError(''); setStep(4); }}
                 className="text-sm text-brand-primary font-medium hover:underline whitespace-nowrap"
               >
                 Skip this step
@@ -895,7 +960,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {step === 3 && (
+        {step === 4 && (
           <div className="bg-white rounded-xl p-8 card-shadow text-center animate-slide-up">
             {error && (
               <div className="mb-4 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg text-left">
@@ -1077,11 +1142,11 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {step < 3 && (
+        {step < 4 && (
           <div className="flex justify-end mt-6">
             <button
               onClick={() => {
-                if (step === 2) setError('');
+                if (step === 3) setError('');
                 setStep(step + 1);
               }}
               disabled={!canProceed()}

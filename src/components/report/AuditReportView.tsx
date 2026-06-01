@@ -33,11 +33,12 @@ import ReportBlockEditChrome, { ReportHiddenItemStub, ReportItemHideButton } fro
 import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction } from './edit/ReportSectionEditChrome';
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
 import ImageLightbox from '../ui/ImageLightbox';
+import ImageUploadZone from '../ui/ImageUploadZone';
 import DemoPopupModal, { type DemoPopupState } from '../ui/DemoPopupModal';
 import { resolveCustomerAgentDemoUrl } from '../../lib/customer-agent-demo';
 import { splitAddOnsByPricing } from '../../lib/addon-pricing';
 import ReportAddOnCard from './ReportAddOnCard';
-import { uploadRevenueOpportunityImage } from '../../lib/db';
+import { uploadReportScreenshot, uploadRevenueOpportunityImage } from '../../lib/db';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
 import { resolveExecutiveFindings } from '../../lib/findings-normalize';
 import { cn } from '../../lib/utils';
@@ -64,6 +65,8 @@ import {
   resolveSegmentationConfig,
   resolveSignupFormsConfig,
   extractDeliverabilitySnapshotRawConfig,
+  extractAttributionModelRawConfig,
+  resolveAttributionModelConfig,
 } from '../../lib/report-config/resolve';
 import { DEFAULT_REVENUE_SUMMARY_SECTION } from '../../lib/report-config/defaults';
 import type { DeliverabilitySnapshotSectionConfig, RevenueSummarySectionConfig } from '../../lib/report-config/types';
@@ -76,6 +79,7 @@ const NAV_ITEMS = [
   { id: 'forms', label: 'Signup Forms' },
   { id: 'campaigns', label: 'Campaigns' },
   { id: 'email_design', label: 'Email Design' },
+  { id: 'attribution', label: 'Attribution Model' },
   { id: 'addons', label: 'Add-Ons' },
   { id: 'opportunity', label: 'Revenue Opportunity' },
 ];
@@ -139,6 +143,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     updateAddOnPrice,
     updateAddOnContent,
     updateAddOnImage,
+    updateAttributionScreenshot,
     updateSectionRevenueOpportunity,
     toggleLayoutSectionHidden,
     toggleAuditSectionHidden,
@@ -153,6 +158,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [demoPopup, setDemoPopup] = useState<DemoPopupState | null>(null);
   const [uploadingAddOnKey, setUploadingAddOnKey] = useState<string | null>(null);
+  const [uploadingAttribution, setUploadingAttribution] = useState(false);
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
 
   const handleAddOnImageUpload = async (itemKey: string, file: File | undefined) => {
@@ -165,6 +171,19 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       /* swallow — surfaced via missing image */
     } finally {
       setUploadingAddOnKey(null);
+    }
+  };
+
+  const handleAttributionImageUpload = async (file: File | undefined) => {
+    if (!file) return;
+    setUploadingAttribution(true);
+    try {
+      const url = await uploadReportScreenshot(file, 'attribution');
+      updateAttributionScreenshot(url);
+    } catch {
+      /* swallow */
+    } finally {
+      setUploadingAttribution(false);
     }
   };
 
@@ -292,6 +311,10 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       extractDeliverabilitySnapshotRawConfig(auditLayout),
     );
 
+    const attributionModelCfg = resolveAttributionModelConfig(
+      extractAttributionModelRawConfig(auditLayout),
+    );
+
     const executiveSummaryCfg = resolveExecutiveSummaryConfig(
       extractExecutiveSummaryRawConfig(auditLayout),
     );
@@ -308,6 +331,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       emailDesignCfg,
       revenueSummaryCfg,
       deliverabilitySnapshotCfg,
+      attributionModelCfg,
       executiveSummaryCfg,
     };
   }, [auditLayout, reportSections]);
@@ -324,6 +348,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     emailDesignCfg,
     revenueSummaryCfg,
     deliverabilitySnapshotCfg,
+    attributionModelCfg,
     executiveSummaryCfg,
   } = sectionConfigs;
 
@@ -371,6 +396,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   const flowsDataAvailable = flowSnapshots.length > 0 || flowPerformance.length > 0;
   const emailDesignDataAvailable =
     Boolean(emailDesign?.client_email_html || emailDesign?.ecd_example) || editMode;
+  const attributionSectionAvailable =
+    Boolean(attributionModelCfg.screenshot_url?.trim()) || editMode;
 
   const sectionHiddenFlags = useMemo<Record<string, boolean>>(
     () => ({
@@ -381,10 +408,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       forms: Boolean(signupFormsCfg.hidden),
       campaigns: Boolean(campaignsCfg.hidden),
       email_design: Boolean(emailDesignCfg.hidden),
+      attribution: Boolean(attributionModelCfg.hidden),
       addons: Boolean(revenueSummaryCfg.blocks.addOns?.hidden),
       opportunity: Boolean(revenueSummaryCfg.hidden),
     }),
-    [executiveSummaryCfg, flowsCfg, deliverabilitySnapshotCfg, segmentationCfg, signupFormsCfg, campaignsCfg, emailDesignCfg, revenueSummaryCfg],
+    [executiveSummaryCfg, flowsCfg, deliverabilitySnapshotCfg, segmentationCfg, signupFormsCfg, campaignsCfg, emailDesignCfg, attributionModelCfg, revenueSummaryCfg],
   );
 
   const sectionDataAvailable = useMemo<Record<string, boolean>>(
@@ -396,10 +424,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       forms: formSnapshots.length > 0,
       campaigns: campaignSnapshots.length > 0,
       email_design: emailDesignDataAvailable,
+      attribution: attributionSectionAvailable,
       addons: addOnsSectionAvailable,
       opportunity: true,
     }),
-    [flowsDataAvailable, accountSnapshot?.deliverability, segmentSnapshots.length, formSnapshots.length, campaignSnapshots.length, emailDesignDataAvailable],
+    [flowsDataAvailable, accountSnapshot?.deliverability, segmentSnapshots.length, formSnapshots.length, campaignSnapshots.length, emailDesignDataAvailable, attributionSectionAvailable, addOnsSectionAvailable],
   );
 
   const sectionVisibility = useMemo<Record<string, boolean>>(
@@ -411,6 +440,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       forms: formSnapshots.length > 0 && !sectionHiddenFlags.forms,
       campaigns: campaignSnapshots.length > 0 && !sectionHiddenFlags.campaigns,
       email_design: emailDesignDataAvailable && !sectionHiddenFlags.email_design,
+      attribution: attributionSectionAvailable && !sectionHiddenFlags.attribution,
       addons: addOnsSectionAvailable && !sectionHiddenFlags.addons,
       opportunity: !sectionHiddenFlags.opportunity,
     }),
@@ -421,6 +451,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       formSnapshots.length,
       campaignSnapshots.length,
       emailDesignDataAvailable,
+      attributionSectionAvailable,
       addOnsSectionAvailable,
     ],
   );
@@ -1000,6 +1031,60 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               )}
             </div>
           ) : null}
+        </ReportSectionShell>
+
+        <ReportSectionShell
+          id="attribution"
+          setRef={setRef}
+          label={attributionModelCfg.sectionTitle ?? 'Attribution Model'}
+          hidden={sectionHiddenFlags.attribution}
+          onToggleHidden={h => toggleLayoutSectionHidden('attribution_model', h)}
+          available={attributionSectionAvailable}
+        >
+          <ReportSectionHeader
+            number={sectionNumbers.attribution ?? '—'}
+            label={attributionModelCfg.sectionTitle ?? 'Attribution Model'}
+            onSaveLabel={
+              editMode
+                ? v => updateLayoutTitle('attribution_model', 'sectionTitle', v)
+                : undefined
+            }
+          />
+          <div className="mt-6">
+            {attributionModelCfg.screenshot_url ? (
+              editMode ? (
+                <ImageUploadZone
+                  previewUrl={attributionModelCfg.screenshot_url}
+                  previewAlt="Attribution model screenshot"
+                  uploading={uploadingAttribution}
+                  onFile={handleAttributionImageUpload}
+                  onRemove={() => updateAttributionScreenshot(null)}
+                  onPreviewClick={() => setLightboxSrc(attributionModelCfg.screenshot_url ?? '')}
+                  className="mt-0"
+                />
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => setLightboxSrc(attributionModelCfg.screenshot_url ?? '')}
+                  className="block w-full overflow-hidden rounded-xl border border-gray-100 bg-gray-50"
+                  aria-label="View attribution model screenshot"
+                >
+                  <img
+                    src={attributionModelCfg.screenshot_url}
+                    alt="Attribution model settings"
+                    className="block w-full h-auto object-contain"
+                  />
+                </button>
+              )
+            ) : editMode ? (
+              <ImageUploadZone
+                label="Add attribution screenshot"
+                hint="Click to upload, drag & drop, or paste (Ctrl+V)"
+                uploading={uploadingAttribution}
+                onFile={handleAttributionImageUpload}
+              />
+            ) : null}
+          </div>
         </ReportSectionShell>
 
         <ReportSectionShell

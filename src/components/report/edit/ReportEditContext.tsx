@@ -16,7 +16,7 @@ import { normalizeCoreFlowsMatrix, sanitizeStructureNote, type CoreFlowRow } fro
 import { repairEntityMarkers } from '../../../lib/entity-tags';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
-type LayoutSectionKey = 'executive_summary' | 'revenue_summary' | 'deliverability_snapshot';
+type LayoutSectionKey = 'executive_summary' | 'revenue_summary' | 'deliverability_snapshot' | 'attribution_model';
 
 export type TimelinePhase = {
   phase: string;
@@ -102,6 +102,7 @@ type ReportEditContextValue = {
   ) => void;
   updateAddOnContent: (itemKey: string, value: string) => void;
   updateAddOnImage: (itemKey: string, value: string | null) => void;
+  updateAttributionScreenshot: (value: string | null) => void;
   updateSectionRevenueOpportunity: (sectionKey: string, value: number) => void;
   toggleLayoutSectionHidden: (layoutKey: LayoutSectionKey, hidden: boolean) => void;
   toggleAuditSectionHidden: (sectionKey: string, hidden: boolean) => void;
@@ -144,6 +145,7 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateAddOnPrice: () => {},
   updateAddOnContent: () => {},
   updateAddOnImage: () => {},
+  updateAttributionScreenshot: () => {},
   updateSectionRevenueOpportunity: () => {},
   toggleLayoutSectionHidden: () => {},
   toggleAuditSectionHidden: () => {},
@@ -477,6 +479,22 @@ export function ReportEditProvider({
     [audit, onAuditChange, schedule],
   );
 
+  const updateAttributionScreenshot = useCallback(
+    (value: string | null) => {
+      const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
+      const section = {
+        ...((layout.attribution_model as Record<string, unknown>) ?? {}),
+        screenshot_url: value,
+      };
+      layout.attribution_model = section;
+      onAuditChange({ ...audit, layout });
+      schedule('layout-attribution', async () => {
+        await updateAudit(audit.id, { layout });
+      });
+    },
+    [audit, onAuditChange, schedule],
+  );
+
   const toggleLayoutSectionHidden = useCallback(
     (layoutKey: LayoutSectionKey, hidden: boolean) => {
       patchLayout(layoutKey, section => ({ ...section, hidden: hidden || undefined }));
@@ -735,6 +753,7 @@ export function ReportEditProvider({
       updateAddOnPrice,
       updateAddOnContent,
       updateAddOnImage,
+      updateAttributionScreenshot,
       updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,
@@ -766,6 +785,7 @@ export function ReportEditProvider({
       updateAddOnPrice,
       updateAddOnContent,
       updateAddOnImage,
+      updateAttributionScreenshot,
       updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,

@@ -1,5 +1,6 @@
 import type {
   AccountHealthSectionConfig,
+  AttributionModelSectionConfig,
   CampaignsSectionConfig,
   DeliverabilitySnapshotSectionConfig,
   EmailDesignSectionConfig,
@@ -97,6 +98,18 @@ export const DEFAULT_DELIVERABILITY_SNAPSHOT_SECTION: DeliverabilitySnapshotSect
   sectionNumber: '04',
   sectionTitle: 'Deliverability',
   sectionSubtitle: undefined,
+};
+
+// -----------------------------------------------------------------------------
+// Attribution Model
+// -----------------------------------------------------------------------------
+
+export const DEFAULT_ATTRIBUTION_MODEL_SECTION: AttributionModelSectionConfig = {
+  hidden: false,
+  sectionNumber: undefined,
+  sectionTitle: 'Attribution Model',
+  sectionSubtitle: undefined,
+  screenshot_url: null,
 };
 
 // -----------------------------------------------------------------------------

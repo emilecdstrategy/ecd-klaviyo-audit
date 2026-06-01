@@ -1,4 +1,4 @@
-import { Image as ImageIcon, ZoomIn, ExternalLink, Play } from 'lucide-react';
+import { ZoomIn, ExternalLink, Play } from 'lucide-react';
 import type { AddOnPricingSlice } from '../../lib/addon-pricing';
 import { formatAddOnPrice } from '../../lib/addon-pricing';
 import { addOnHasCustomerAgentDemo } from '../../lib/customer-agent-demo';
@@ -6,6 +6,7 @@ import EditablePlainText from './edit/EditablePlainText';
 import EditableRichText from './edit/EditableRichText';
 import EditableCurrency from './edit/EditableCurrency';
 import { useReportEdit } from './edit/ReportEditContext';
+import ImageUploadZone from '../ui/ImageUploadZone';
 
 type ReportAddOnCardProps = {
   slice: AddOnPricingSlice;
@@ -108,7 +109,20 @@ export default function ReportAddOnCard({
             className="text-sm leading-relaxed text-gray-700"
           />
         )}
-        {item.image_url ? (
+        {editMode ? (
+          <div className="mt-4">
+            <ImageUploadZone
+              previewUrl={item.image_url}
+              previewAlt={`${item.name} screenshot`}
+              label="Add screenshot"
+              uploading={uploadingAddOnKey === itemKey}
+              onFile={file => onImageUpload(itemKey, file)}
+              onRemove={item.image_url ? () => updateAddOnImage(itemKey, null) : undefined}
+              onPreviewClick={item.image_url ? () => onLightbox(item.image_url ?? '') : undefined}
+              className="rounded-lg"
+            />
+          </div>
+        ) : item.image_url ? (
           <button
             type="button"
             onClick={() => onLightbox(item.image_url ?? '')}
@@ -120,49 +134,7 @@ export default function ReportAddOnCard({
               <ZoomIn className="h-3 w-3" /> View full size
             </span>
           </button>
-        ) : editMode ? (
-          <label className="mt-4 flex cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border border-dashed border-gray-200 bg-gray-50 px-4 py-8 text-gray-400 transition-colors hover:bg-gray-100">
-            <ImageIcon className="h-5 w-5" />
-            <span className="text-xs font-medium">
-              {uploadingAddOnKey === itemKey ? 'Uploading…' : 'Add screenshot'}
-            </span>
-            <input
-              type="file"
-              accept="image/*"
-              className="hidden"
-              disabled={uploadingAddOnKey === itemKey}
-              onChange={e => {
-                onImageUpload(itemKey, e.target.files?.[0]);
-                e.target.value = '';
-              }}
-            />
-          </label>
         ) : null}
-        {editMode && item.image_url && (
-          <div className="mt-3 flex items-center gap-3 border-t border-gray-100 pt-3">
-            <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-medium text-gray-600 hover:text-gray-900">
-              <ImageIcon className="h-3.5 w-3.5" />
-              {uploadingAddOnKey === itemKey ? 'Uploading…' : 'Replace image'}
-              <input
-                type="file"
-                accept="image/*"
-                className="hidden"
-                disabled={uploadingAddOnKey === itemKey}
-                onChange={e => {
-                  onImageUpload(itemKey, e.target.files?.[0]);
-                  e.target.value = '';
-                }}
-              />
-            </label>
-            <button
-              type="button"
-              onClick={() => updateAddOnImage(itemKey, null)}
-              className="text-xs font-medium text-red-600 hover:underline"
-            >
-              Remove
-            </button>
-          </div>
-        )}
         {(showDemoCta || item.details_url?.trim() || editMode) && (
           <div className="mt-4 flex flex-col items-end gap-2 border-t border-gray-100 pt-4">
             {editMode && (

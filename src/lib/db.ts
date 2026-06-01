@@ -793,9 +793,9 @@ function mapRevenueOpportunityTemplateRow(row: any): RevenueOpportunityTemplate 
   };
 }
 
-export async function uploadRevenueOpportunityImage(file: File): Promise<string> {
+export async function uploadReportScreenshot(file: File, prefix: string): Promise<string> {
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_');
-  const path = `revenue-addons/${crypto.randomUUID()}_${safeName}`;
+  const path = `${prefix}/${crypto.randomUUID()}_${safeName}`;
   const { error } = await supabase.storage
     .from('audit-assets')
     .upload(path, file, { upsert: false, contentType: file.type });
@@ -803,6 +803,10 @@ export async function uploadRevenueOpportunityImage(file: File): Promise<string>
   const { data } = supabase.storage.from('audit-assets').getPublicUrl(path);
   if (!data.publicUrl) throw new Error('Failed to get public URL');
   return data.publicUrl;
+}
+
+export async function uploadRevenueOpportunityImage(file: File): Promise<string> {
+  return uploadReportScreenshot(file, 'revenue-addons');
 }
 
 export async function listRevenueOpportunityTemplates(
