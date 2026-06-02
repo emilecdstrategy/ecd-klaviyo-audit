@@ -47,7 +47,7 @@ export default function ReportSectionEditChrome({
 
   return (
     <div className="relative">
-      <div className="absolute right-0 top-0 z-20 flex items-center gap-1.5">
+      <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
         {actions?.map(action => (
           <button
             key={action.label}
