@@ -297,15 +297,20 @@ async function runPipeline(
     return json({ ok: true, correlationId, status: "skipped", reason: "not_api_audit" });
   }
   if (!highlightRegen && String(audit.executive_summary ?? "").trim()) {
-    await sb.from("audit_analysis_jobs").upsert({
-      audit_id: auditId,
-      client_id: audit.client_id,
-      status: "complete",
-      step_index: 999,
-      partial_state: {},
-      updated_at: new Date().toISOString(),
-    }, { onConflict: "audit_id" });
-    return json({ ok: true, correlationId, status: "complete", reason: "already_analyzed" });
+    const { data: activeJob } = await sb
+      .from("audit_analysis_jobs")
+      .select("status, partial_state")
+      .eq("audit_id", auditId)
+      .maybeSingle();
+    const partial = (activeJob?.partial_state ?? {}) as Record<string, unknown>;
+    const highlightJobActive = Boolean(
+      partial.highlightRegen
+      && activeJob
+      && ["pending", "running"].includes(String(activeJob.status)),
+    );
+    if (!highlightJobActive) {
+      return json({ ok: true, correlationId, status: "complete", reason: "already_analyzed" });
+    }
   }
 
   let job;
@@ -313,22 +318,39 @@ async function runPipeline(
     if (!String(audit.executive_summary ?? "").trim()) {
       return json({ ok: false, error: { code: "bad_request", message: "Audit has no analysis to regenerate" }, correlationId }, { status: 400 });
     }
-    const partialState = await seedPartialFromAudit(sb, auditId);
-    const { data: upserted, error: upsertErr } = await sb
+    const { data: existingHighlightJob } = await sb
       .from("audit_analysis_jobs")
-      .upsert({
-        audit_id: auditId,
-        client_id: audit.client_id,
-        status: "pending",
-        step_index: 0,
-        partial_state: partialState,
-        error_message: null,
-        updated_at: new Date().toISOString(),
-      }, { onConflict: "audit_id" })
       .select("*")
-      .single();
-    if (upsertErr) throw upsertErr;
-    job = upserted!;
+      .eq("audit_id", auditId)
+      .maybeSingle();
+    const existingPartial = (existingHighlightJob?.partial_state ?? {}) as Record<string, unknown>;
+    const continuingHighlight = Boolean(
+      existingHighlightJob
+      && existingPartial.highlightRegen
+      && ["pending", "running"].includes(String(existingHighlightJob.status))
+      && Number(existingHighlightJob.step_index) > 0
+      && Number(existingHighlightJob.step_index) < 999,
+    );
+    if (continuingHighlight) {
+      job = existingHighlightJob!;
+    } else {
+      const partialState = await seedPartialFromAudit(sb, auditId);
+      const { data: upserted, error: upsertErr } = await sb
+        .from("audit_analysis_jobs")
+        .upsert({
+          audit_id: auditId,
+          client_id: audit.client_id,
+          status: "pending",
+          step_index: 0,
+          partial_state: partialState,
+          error_message: null,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: "audit_id" })
+        .select("*")
+        .single();
+      if (upsertErr) throw upsertErr;
+      job = upserted!;
+    }
   } else {
     const { job: initialJob } = await ensureJob(sb, auditId, audit.client_id as string);
     job = initialJob;
@@ -349,7 +371,7 @@ async function runPipeline(
     if (resetErr) throw resetErr;
     job = reset!;
   }
-  if (job.status === "complete") {
+  if (job.status === "complete" && !highlightRegen) {
     return json({ ok: true, correlationId, status: "complete" });
   }
 
@@ -368,15 +390,34 @@ async function runPipeline(
 
   const { wizard, hasRefine } = await buildWizardData(sb, auditId);
   const steps = buildStepPlan(hasRefine, highlightRegen);
-  const stepIndex = Number(job.step_index) || 0;
+  let stepIndex = Number(job.step_index) || 0;
   const patchOnlySectionKeys = new Set<string>();
 
   if (stepIndex >= steps.length) {
-    await sb.from("audit_analysis_jobs").update({
-      status: "complete",
-      updated_at: new Date().toISOString(),
-    }).eq("audit_id", auditId);
-    return json({ ok: true, correlationId, status: "complete" });
+    if (highlightRegen) {
+      const partialState = await seedPartialFromAudit(sb, auditId);
+      const { data: restarted, error: restartErr } = await sb
+        .from("audit_analysis_jobs")
+        .update({
+          status: "pending",
+          step_index: 0,
+          partial_state: partialState,
+          error_message: null,
+          updated_at: new Date().toISOString(),
+        })
+        .eq("audit_id", auditId)
+        .select("*")
+        .single();
+      if (restartErr) throw restartErr;
+      job = restarted!;
+      stepIndex = 0;
+    } else {
+      await sb.from("audit_analysis_jobs").update({
+        status: "complete",
+        updated_at: new Date().toISOString(),
+      }).eq("audit_id", auditId);
+      return json({ ok: true, correlationId, status: "complete" });
+    }
   }
 
   await sb.from("audit_analysis_jobs").update({

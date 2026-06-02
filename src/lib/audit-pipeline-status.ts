@@ -338,7 +338,19 @@ export async function waitForServerAuditAnalysis(
     if ((status.needsAiResume || status.aiJobFailed) && !status.aiServerActive) {
       if (!nudgeSent || status.aiJobFailed) {
         nudgeSent = true;
-        await startServerAuditAnalysis(auditId);
+        const { data: aiJob } = await supabase
+          .from('audit_analysis_jobs')
+          .select('partial_state')
+          .eq('audit_id', auditId)
+          .maybeSingle();
+        const highlightJob = Boolean(
+          (aiJob?.partial_state as Record<string, unknown> | undefined)?.highlightRegen,
+        );
+        if (highlightJob) {
+          await regenerateAuditForHighlights(auditId);
+        } else {
+          await startServerAuditAnalysis(auditId);
+        }
       }
     }
     await new Promise(resolve => setTimeout(resolve, 3000));

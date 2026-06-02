@@ -190,7 +190,15 @@ const SECTION_ITEM_SCHEMA = {
 export const AI_OUTPUT_JSON_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["schemaVersion", "executiveSummary", "strengths", "findings", "implementationTimeline", "sections"],
+  required: [
+    "schemaVersion",
+    "executiveSummary",
+    "strengths",
+    "findings",
+    "implementationTimeline",
+    "sections",
+    "addOnPlacements",
+  ],
   properties: {
     schemaVersion: { type: "string" },
     executiveSummary: { type: "string", minLength: 80, maxLength: 4000 },
@@ -243,7 +251,14 @@ export const AI_SECTIONS_ONLY_SCHEMA = {
 export const AI_TOP_LEVEL_ONLY_SCHEMA = {
   type: "object",
   additionalProperties: false,
-  required: ["schemaVersion", "executiveSummary", "strengths", "findings", "implementationTimeline"],
+  required: [
+    "schemaVersion",
+    "executiveSummary",
+    "strengths",
+    "findings",
+    "implementationTimeline",
+    "addOnPlacements",
+  ],
   properties: {
     schemaVersion: { type: "string" },
     executiveSummary: { type: "string", minLength: 80, maxLength: 4000 },

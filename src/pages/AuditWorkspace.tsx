@@ -12,6 +12,7 @@ import {
   clearAuditGenerationActive,
   fetchAuditPipelineStatus,
   regenerateAuditForHighlights,
+  waitForServerAuditAnalysis,
 } from '../lib/audit-pipeline-status';
 import AddOnHighlightRegenModal from '../components/audit/AddOnHighlightRegenModal';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
@@ -336,8 +337,12 @@ export default function AuditWorkspace() {
               await regenerateAuditForHighlights(audit.id);
               setHighlightRegenOpen(false);
               setAnalysisInProgress(true);
+              await waitForServerAuditAnalysis(audit.id, { maxWaitMs: 8 * 60 * 1000 });
+              setReloadKey(key => key + 1);
+              setAnalysisInProgress(false);
             } catch (e) {
               toast(e instanceof Error ? e.message : 'Regeneration failed');
+              setAnalysisInProgress(false);
             } finally {
               setHighlightRegenRunning(false);
             }

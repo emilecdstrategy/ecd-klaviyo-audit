@@ -58,7 +58,16 @@ export async function resumeAuditAnalysis(
     const hasPriorAnalysis =
       Boolean(audit?.executive_summary?.trim()) && audit?.audit_method === 'api';
 
-    if (hasPriorAnalysis && (pipeline.aiJobFailed || pipeline.needsAiResume)) {
+    const { data: aiJob } = await supabase
+      .from('audit_analysis_jobs')
+      .select('partial_state')
+      .eq('audit_id', auditId)
+      .maybeSingle();
+    const highlightJobActive = Boolean(
+      (aiJob?.partial_state as Record<string, unknown> | undefined)?.highlightRegen,
+    );
+
+    if (highlightJobActive && (pipeline.aiJobFailed || pipeline.needsAiResume)) {
       await regenerateAuditForHighlights(auditId);
     } else if (pipeline.needsAiResume || pipeline.aiJobFailed) {
       await startServerAuditAnalysis(auditId);

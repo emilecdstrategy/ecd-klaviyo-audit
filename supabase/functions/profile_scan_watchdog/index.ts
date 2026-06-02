@@ -9,6 +9,7 @@ import { isServiceRoleAuthorization } from "../_shared/auth.ts";
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const STALE_AFTER_MS = 90_000;
+const HIGHLIGHT_REGEN_STALE_AFTER_MS = 4 * 60 * 1000;
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
@@ -17,7 +18,7 @@ function json(data: unknown, init: ResponseInit = {}) {
   });
 }
 
-function chainAuditFinalize(auditId: string) {
+function chainAuditFinalize(auditId: string, mode?: string) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
   fetch(`${SUPABASE_URL}/functions/v1/audit_finalize_analysis`, {
     method: "POST",
@@ -26,7 +27,7 @@ function chainAuditFinalize(auditId: string) {
       Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
       apikey: SUPABASE_SERVICE_ROLE_KEY,
     },
-    body: JSON.stringify({ audit_id: auditId }),
+    body: JSON.stringify({ audit_id: auditId, ...(mode ? { mode } : {}) }),
   }).catch(() => {});
 }
 
@@ -69,7 +70,7 @@ serve(async (req) => {
       .in("status", ["pending", "running"]),
     sb
       .from("audit_analysis_jobs")
-      .select("audit_id, status, updated_at")
+      .select("audit_id, status, updated_at, step_index, partial_state")
       .in("status", ["pending", "running"]),
   ]);
 
@@ -104,8 +105,11 @@ serve(async (req) => {
   }
 
   for (const job of aiJobs ?? []) {
+    const partial = (job.partial_state ?? {}) as Record<string, unknown>;
+    const isHighlightRegen = partial.highlightRegen === true;
+    const staleAfterMs = isHighlightRegen ? HIGHLIGHT_REGEN_STALE_AFTER_MS : STALE_AFTER_MS;
     const updatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
-    const stale = !updatedMs || now - updatedMs >= STALE_AFTER_MS;
+    const stale = !updatedMs || now - updatedMs >= staleAfterMs;
     if (!stale) continue;
 
     if (job.status === "running") {
@@ -116,7 +120,7 @@ serve(async (req) => {
       aiReset += 1;
     }
 
-    chainAuditFinalize(String(job.audit_id));
+    chainAuditFinalize(String(job.audit_id), isHighlightRegen ? "highlight_regen" : undefined);
     aiResumed += 1;
   }
 
