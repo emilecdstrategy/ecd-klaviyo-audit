@@ -38,6 +38,7 @@ import DemoPopupModal, { type DemoPopupState } from '../ui/DemoPopupModal';
 import { resolveCustomerAgentDemoUrl } from '../../lib/customer-agent-demo';
 import { splitAddOnsByPricing } from '../../lib/addon-pricing';
 import ReportAddOnCard from './ReportAddOnCard';
+import { AttributionModelHelpTrigger } from './AttributionModelHelpModal';
 import { uploadReportScreenshot, uploadRevenueOpportunityImage } from '../../lib/db';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
 import { resolveExecutiveFindings } from '../../lib/findings-normalize';
@@ -1050,6 +1051,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 : undefined
             }
           />
+          {editMode && (
+            <div className="mt-4 flex flex-wrap items-center gap-3">
+              <AttributionModelHelpTrigger />
+              <p className="text-xs text-gray-500">
+                Need a screenshot? Follow the guide — skip this section if the account already matches ECD standards.
+              </p>
+            </div>
+          )}
           <div className="mt-6">
             {attributionModelCfg.screenshot_url ? (
               editMode ? (
