@@ -64,5 +64,5 @@ export function resolveExecutiveFindings(findings?: string[], concerns?: string[
       : Array.isArray(concerns)
         ? concerns
         : [];
-  return repairSplitFindings(base).slice(0, 5);
+  return repairSplitFindings(base);
 }

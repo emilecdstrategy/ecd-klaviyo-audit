@@ -48,6 +48,20 @@ function parseExecutiveSummary(raw: string): ExecutivePayload {
   return { text: raw };
 }
 
+const DEFAULT_FINDING_SLOTS = 5;
+
+function materializeFindings(payload: ExecutivePayload): string[] {
+  const findings = [...(payload.findings ?? [])];
+  if (findings.length > 0) return findings;
+  return Array.from({ length: DEFAULT_FINDING_SLOTS }, () => '');
+}
+
+function materializeFindingsHidden(payload: ExecutivePayload, length: number): boolean[] {
+  const hidden = [...(payload.findingsHidden ?? [])];
+  while (hidden.length < length) hidden.push(false);
+  return hidden.slice(0, length);
+}
+
 function serializeExecutive(payload: ExecutivePayload, fallbackRaw: string): string {
   if (
     payload.findings?.length ||
@@ -69,6 +83,8 @@ type ReportEditContextValue = {
   editMode: boolean;
   saveStatus: SaveStatus;
   updateFinding: (index: number, value: string) => void;
+  addFinding: () => void;
+  removeFinding: (index: number) => void;
   updateStrength: (index: number, value: string) => void;
   updateExecText: (value: string) => void;
   updateSectionField: (
@@ -222,10 +238,41 @@ export function ReportEditProvider({
   const updateFinding = useCallback(
     (index: number, value: string) => {
       const prev = getExecPayload();
-      const findings = [...(prev.findings ?? [])];
+      const findings = materializeFindings(prev);
       while (findings.length <= index) findings.push('');
       findings[index] = repairEntityMarkers(value);
-      saveExecutive({ findings });
+      saveExecutive({
+        findings,
+        findingsHidden: materializeFindingsHidden(prev, findings.length),
+      });
+    },
+    [getExecPayload, saveExecutive],
+  );
+
+  const addFinding = useCallback(() => {
+    const prev = getExecPayload();
+    const findings = materializeFindings(prev);
+    const findingsHidden = materializeFindingsHidden(prev, findings.length);
+    findings.push('');
+    findingsHidden.push(false);
+    saveExecutive({ findings, findingsHidden });
+  }, [getExecPayload, saveExecutive]);
+
+  const removeFinding = useCallback(
+    (index: number) => {
+      const prev = getExecPayload();
+      let findings = materializeFindings(prev);
+      let findingsHidden = materializeFindingsHidden(prev, findings.length);
+      if (index < 0 || index >= findings.length) return;
+
+      if (findings.length <= 1) {
+        findings = [''];
+        findingsHidden = [false];
+      } else {
+        findings = findings.filter((_, i) => i !== index);
+        findingsHidden = findingsHidden.filter((_, i) => i !== index);
+      }
+      saveExecutive({ findings, findingsHidden });
     },
     [getExecPayload, saveExecutive],
   );
@@ -741,6 +788,8 @@ export function ReportEditProvider({
       editMode,
       saveStatus,
       updateFinding,
+      addFinding,
+      removeFinding,
       updateStrength,
       updateExecText,
       updateSectionField,
@@ -773,6 +822,8 @@ export function ReportEditProvider({
       editMode,
       saveStatus,
       updateFinding,
+      addFinding,
+      removeFinding,
       updateStrength,
       updateExecText,
       updateSectionField,

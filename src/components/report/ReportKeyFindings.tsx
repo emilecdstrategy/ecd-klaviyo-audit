@@ -1,4 +1,4 @@
-import { AlertCircle } from 'lucide-react';
+import { AlertCircle, Plus, Trash2 } from 'lucide-react';
 import EditableRichText from './edit/EditableRichText';
 import EditablePlainText from './edit/EditablePlainText';
 import { useReportEdit } from './edit/ReportEditContext';
@@ -18,11 +18,18 @@ export default function ReportKeyFindings({
   findingsHidden?: boolean[];
   blockHidden?: boolean;
 }) {
-  const { editMode, updateFinding, updateBlockTitle, toggleFindingHidden, toggleExecutiveBlockHidden } = useReportEdit();
+  const {
+    editMode,
+    updateFinding,
+    addFinding,
+    removeFinding,
+    updateBlockTitle,
+    toggleFindingHidden,
+    toggleExecutiveBlockHidden,
+  } = useReportEdit();
   const displayFindings = findings.length > 0 ? findings : ['', '', '', '', ''];
 
   const visibleEntries = displayFindings
-    .slice(0, 5)
     .map((finding, index) => ({ finding, index, hidden: Boolean(findingsHidden[index]) }))
     .filter(entry => editMode || (!entry.hidden && entry.finding.trim().length > 0));
 
@@ -61,7 +68,7 @@ export default function ReportKeyFindings({
         />
 
         <ol className="divide-y divide-gray-100">
-          {displayFindings.slice(0, 5).map((finding, i) => {
+          {displayFindings.map((finding, i) => {
             const hidden = Boolean(findingsHidden[i]);
             if (!editMode && hidden) return null;
             if (!editMode && !finding.trim()) return null;
@@ -95,11 +102,23 @@ export default function ReportKeyFindings({
                   className="min-w-0 text-base leading-relaxed text-gray-700"
                   placeholder="Describe a specific problem or gap…"
                 />
-                <ReportItemHideButton
-                  hidden={hidden}
-                  onToggleHidden={() => toggleFindingHidden(i, true)}
-                  title="Hide this finding"
-                />
+                <div className="flex shrink-0 flex-col gap-1">
+                  <ReportItemHideButton
+                    hidden={hidden}
+                    onToggleHidden={() => toggleFindingHidden(i, true)}
+                    title="Hide this finding"
+                  />
+                  {displayFindings.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => removeFinding(i)}
+                      title="Remove this finding"
+                      className="flex h-7 w-7 items-center justify-center rounded-md border border-gray-200 bg-white text-gray-400 hover:border-red-200 hover:text-red-600"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
+                </div>
               </li>
             );
           })}
@@ -107,6 +126,19 @@ export default function ReportKeyFindings({
             <li className="px-6 py-8 text-center text-sm text-gray-500">No key findings for this audit.</li>
           )}
         </ol>
+
+        {editMode && (
+          <div className="border-t border-gray-100 px-6 py-4">
+            <button
+              type="button"
+              onClick={addFinding}
+              className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 bg-gray-50/80 px-3 py-2 text-sm font-medium text-gray-700 hover:border-brand-primary/40 hover:bg-brand-primary/5 hover:text-brand-primary"
+            >
+              <Plus className="h-4 w-4" />
+              Add finding
+            </button>
+          </div>
+        )}
       </div>
     </ReportBlockEditChrome>
   );
