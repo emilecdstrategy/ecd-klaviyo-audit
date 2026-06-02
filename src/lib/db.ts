@@ -682,6 +682,48 @@ export async function getAuditEmailDesign(auditId: string): Promise<AuditEmailDe
   return (data ?? null) as AuditEmailDesign | null;
 }
 
+export type FetchClientCampaignEmailResult = {
+  html: string;
+  name: string | null;
+  campaignId: string;
+};
+
+export async function fetchClientCampaignEmail(
+  auditId: string,
+  campaignId: string,
+  opts?: { persist?: boolean },
+): Promise<FetchClientCampaignEmailResult> {
+  await supabase.auth.refreshSession().catch(() => {});
+  const { data, error } = await supabase.functions.invoke<{
+    ok?: boolean;
+    html?: string;
+    name?: string | null;
+    campaign_id?: string;
+    error?: { message?: string; code?: string };
+  }>('klaviyo_fetch_snapshot', {
+    body: {
+      stage: 'fetch_campaign_email',
+      audit_id: auditId,
+      campaign_id: campaignId,
+      persist: Boolean(opts?.persist),
+    },
+  });
+
+  if (error) {
+    throw new Error(error.message || 'Failed to fetch campaign email');
+  }
+  if (!data?.ok || !data.html) {
+    const msg = data?.error?.message || 'No email HTML found for this campaign';
+    throw new Error(msg);
+  }
+
+  return {
+    html: data.html,
+    name: data.name ?? null,
+    campaignId: data.campaign_id ?? campaignId,
+  };
+}
+
 export async function upsertAuditEmailDesign(
   auditId: string,
   updates: Partial<Omit<AuditEmailDesign, 'id' | 'created_at' | 'ecd_example'>>,

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { Mail, Maximize2, X as XIcon, Palette } from 'lucide-react';
+import { Mail, Maximize2, RefreshCw, X as XIcon, Palette } from 'lucide-react';
 import AnnotationLayer from './AnnotationLayer';
+import ClientEmailPickerModal from './ClientEmailPickerModal';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import type { Annotation, Audit, AuditEmailDesign, AuditSection, IndustryEmailLibrary } from '../../lib/types';
 import {
@@ -34,6 +35,7 @@ export default function EmailDesignEditor({
   const [fullscreen, setFullscreen] = useState(false);
   const [globalAnnotationSize, setGlobalAnnotationSize] = useState<'sm' | 'md' | 'lg'>('md');
   const [globalAnnotationsExpanded, setGlobalAnnotationsExpanded] = useState(false);
+  const [clientEmailPickerOpen, setClientEmailPickerOpen] = useState(false);
 
   useEffect(() => {
     setSelectedEcdId(emailDesign?.ecd_example_id || '');
@@ -111,6 +113,26 @@ export default function EmailDesignEditor({
     } catch { /* ignore */ }
   };
 
+  const handleClientEmailSelected = async (updated: AuditEmailDesign) => {
+    if (!section) {
+      onEmailDesignChange(updated);
+      return;
+    }
+    const currentSide = annotations.filter(
+      a => a.audit_section_id === section.id && a.side === 'current',
+    );
+    for (const ann of currentSide) {
+      try {
+        await deleteAnnotation(ann.id);
+      } catch { /* ignore */ }
+    }
+    const updatedAnns = annotations.filter(
+      a => !(a.audit_section_id === section.id && a.side === 'current'),
+    );
+    onAnnotationsChange(updatedAnns);
+    onEmailDesignChange(updated);
+  };
+
   return (
     <div className="space-y-6">
       <div>
@@ -155,8 +177,17 @@ export default function EmailDesignEditor({
           handleRemoveAnnotation={handleRemoveAnnotation}
           markerSize={globalAnnotationSize}
           alwaysShowLabels={globalAnnotationsExpanded}
+          onChangeClientEmail={() => setClientEmailPickerOpen(true)}
         />
       </div>
+
+      <ClientEmailPickerModal
+        open={clientEmailPickerOpen}
+        auditId={audit.id}
+        currentCampaignId={emailDesign?.client_campaign_id ?? null}
+        onClose={() => setClientEmailPickerOpen(false)}
+        onSelected={ed => void handleClientEmailSelected(ed)}
+      />
 
       {section && onSectionUpdate && (
         <div className="rounded-xl border border-gray-100 bg-white p-6 card-shadow lg:hidden">
@@ -277,6 +308,7 @@ function EmailDesignGrid({
   maxHeight,
   markerSize = 'md',
   alwaysShowLabels = false,
+  onChangeClientEmail,
 }: {
   emailDesign: AuditEmailDesign | null;
   ecdExample: IndustryEmailLibrary | null;
@@ -286,18 +318,33 @@ function EmailDesignGrid({
   maxHeight?: number;
   markerSize?: 'sm' | 'md' | 'lg';
   alwaysShowLabels?: boolean;
+  onChangeClientEmail?: () => void;
 }) {
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_1px_1fr] gap-0">
       <div className="min-w-0 space-y-3 px-4">
-        <div className="flex items-center gap-2">
-          <div className="w-2 h-2 rounded-full bg-red-500" />
-          <h4 className="text-sm font-semibold text-gray-800">
-            Client&apos;s Email
-            {emailDesign?.client_campaign_name && (
-              <span className="ml-1 text-xs font-normal text-gray-400">({emailDesign.client_campaign_name})</span>
-            )}
-          </h4>
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="w-2 h-2 rounded-full bg-red-500 shrink-0" />
+            <h4 className="text-sm font-semibold text-gray-800 truncate">
+              Client&apos;s Email
+              {emailDesign?.client_campaign_name && (
+                <span className="ml-1 text-xs font-normal text-gray-400">
+                  ({emailDesign.client_campaign_name})
+                </span>
+              )}
+            </h4>
+          </div>
+          {onChangeClientEmail && (
+            <button
+              type="button"
+              onClick={onChangeClientEmail}
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-700 hover:bg-gray-50"
+            >
+              <RefreshCw className="h-3 w-3" />
+              Change client email
+            </button>
+          )}
         </div>
         {emailDesign?.client_email_html ? (
           <AnnotationLayer

@@ -24,7 +24,8 @@ type Stage =
   | "resume_profile_scan"
   | "backfill_revenue_breakdown"
   | "backfill_deliverability"
-  | "backfill_segment_definitions";
+  | "backfill_segment_definitions"
+  | "fetch_campaign_email";
 
 type FetchInput = {
   audit_id?: string;
@@ -32,6 +33,8 @@ type FetchInput = {
   api_key?: string;
   revision?: string;
   stage?: Stage;
+  campaign_id?: string;
+  persist?: boolean;
   // Legacy alias kept for old clients that only know `mode: "resume_profile_scan"`.
   mode?: "resume_profile_scan";
   profile_scan?: "full" | "fast";
@@ -987,6 +990,120 @@ async function resolveApiKey(
 }
 
 // ---------------------------------------------------------------------------
+// Campaign email HTML (email design comparison)
+// ---------------------------------------------------------------------------
+
+async function fetchCampaignEmailHtml(
+  apiKey: string,
+  revision: string,
+  campaignId: string,
+): Promise<string | null> {
+  const msgRes = await fetchWithRetry(
+    () => klaviyoFetch(apiKey, revision, `/api/campaigns/${campaignId}/campaign-messages/`),
+    3,
+  );
+  const messages = msgRes.ok ? (msgRes.body?.data ?? []) : [];
+  for (const msg of messages) {
+    const htmlBody = msg?.attributes?.content?.html;
+    if (htmlBody) return htmlBody;
+    const templateId = msg?.relationships?.template?.data?.id;
+    if (templateId) {
+      const tplRes = await fetchWithRetry(
+        () => klaviyoFetch(apiKey, revision, `/api/templates/${templateId}/`),
+        3,
+      );
+      if (tplRes.ok && tplRes.body?.data?.attributes?.html) {
+        return tplRes.body.data.attributes.html;
+      }
+    }
+  }
+  return null;
+}
+
+async function runStageFetchCampaignEmail(params: {
+  auditId: string;
+  campaignId: string;
+  persist: boolean;
+  correlationId: string;
+}): Promise<Response> {
+  const sb = assertServiceClient();
+
+  const { data: audit, error: auditErr } = await sb
+    .from("audits")
+    .select("client_id")
+    .eq("id", params.auditId)
+    .maybeSingle();
+  if (auditErr) throw auditErr;
+  if (!audit?.client_id) {
+    return json({
+      ok: false,
+      error: { code: "not_found", message: "Audit not found" },
+      correlationId: params.correlationId,
+    }, { status: 404 });
+  }
+  const clientId = audit.client_id as string;
+
+  const { data: snap } = await sb
+    .from("klaviyo_campaign_snapshots")
+    .select("name, campaign_id")
+    .eq("audit_id", params.auditId)
+    .eq("campaign_id", params.campaignId)
+    .maybeSingle();
+
+  const { data: conn } = await sb
+    .from("klaviyo_connections")
+    .select("revision")
+    .eq("client_id", clientId)
+    .maybeSingle();
+  const revision = (conn?.revision as string | null) || DEFAULT_REVISION;
+
+  const apiKey = await resolveApiKey(sb, clientId, null);
+  const html = await fetchCampaignEmailHtml(apiKey, revision, params.campaignId);
+
+  if (!html) {
+    return json({
+      ok: false,
+      error: {
+        code: "no_html",
+        message: "No email HTML found for this campaign (inline content and template were empty).",
+      },
+      correlationId: params.correlationId,
+      campaign_id: params.campaignId,
+    }, { status: 200 });
+  }
+
+  let campaignName = (snap?.name as string | null) ?? null;
+  if (!campaignName) {
+    const campRes = await fetchWithRetry(
+      () => klaviyoFetch(apiKey, revision, `/api/campaigns/${params.campaignId}/`),
+      3,
+    );
+    if (campRes.ok && campRes.body?.data?.attributes?.name) {
+      campaignName = campRes.body.data.attributes.name;
+    }
+  }
+
+  if (params.persist) {
+    await sb.from("audit_email_design").upsert({
+      audit_id: params.auditId,
+      client_email_html: html,
+      client_campaign_name: campaignName,
+      client_campaign_id: params.campaignId,
+    }, { onConflict: "audit_id" }).select();
+  }
+
+  return json({
+    ok: true,
+    correlationId: params.correlationId,
+    stage: "fetch_campaign_email",
+    html,
+    campaign_id: params.campaignId,
+    name: campaignName,
+    persisted: params.persist,
+  });
+}
+
+// ---------------------------------------------------------------------------
 // Stage 1: config
 // ---------------------------------------------------------------------------
 
@@ -1099,21 +1216,7 @@ async function runStageConfig(params: {
             });
           const recentCampaign = sentCampaigns[0];
           if (recentCampaign) {
-            const msgRes = await klaviyoFetch(apiKey, params.revision, `/api/campaigns/${recentCampaign.id}/campaign-messages/`);
-            const messages = msgRes.ok ? (msgRes.body?.data ?? []) : [];
-            let emailHtml: string | null = null;
-            for (const msg of messages) {
-              const htmlBody = msg?.attributes?.content?.html;
-              if (htmlBody) { emailHtml = htmlBody; break; }
-              const templateId = msg?.relationships?.template?.data?.id;
-              if (templateId) {
-                const tplRes = await klaviyoFetch(apiKey, params.revision, `/api/templates/${templateId}/`);
-                if (tplRes.ok && tplRes.body?.data?.attributes?.html) {
-                  emailHtml = tplRes.body.data.attributes.html;
-                  break;
-                }
-              }
-            }
+            const emailHtml = await fetchCampaignEmailHtml(apiKey, params.revision, recentCampaign.id);
             if (emailHtml) {
               await sb.from("audit_email_design").upsert({
                 audit_id: params.auditId,
@@ -2219,6 +2322,32 @@ serve(async (req) => {
     } catch (e) {
       const msg = redactSecrets(e instanceof Error ? e.message : "Unknown error");
       return json({ ok: false, error: { code: `${stage}_failed`, message: msg }, correlationId }, { status: 500 });
+    }
+  }
+
+  if (stage === "fetch_campaign_email") {
+    try {
+      await requireAuthenticatedUser(req);
+    } catch (e) {
+      return json({ ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId }, { status: 401 });
+    }
+
+    const auditId = (bodyJson.audit_id ?? "").trim();
+    const campaignId = (bodyJson.campaign_id ?? "").trim();
+    if (!auditId || !campaignId) {
+      return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id or campaign_id" }, correlationId }, { status: 400 });
+    }
+
+    try {
+      return await runStageFetchCampaignEmail({
+        auditId,
+        campaignId,
+        persist: Boolean(bodyJson.persist),
+        correlationId,
+      });
+    } catch (e) {
+      const msg = redactSecrets(e instanceof Error ? e.message : "Unknown error");
+      return json({ ok: false, error: { code: "fetch_campaign_email_failed", message: msg }, correlationId }, { status: 500 });
     }
   }
 
