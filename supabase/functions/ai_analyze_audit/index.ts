@@ -493,6 +493,7 @@ serve(async (req) => {
         findings: validation.value.findings ?? [],
         strengths: validation.value.strengths ?? [],
         implementationTimeline: validation.value.implementationTimeline ?? [],
+        addOnPlacements: validation.value.addOnPlacements ?? [],
         sections: validation.value.sections,
       },
       { status: 200 },

@@ -1,6 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { CheckCircle2, Loader2 } from 'lucide-react';
-import { fetchAuditPipelineStatus, nudgeProfileScan, startServerAuditAnalysis, type AuditPipelineStatus } from '../../lib/audit-pipeline-status';
+import {
+  fetchAuditPipelineStatus,
+  nudgeProfileScan,
+  regenerateAuditForHighlights,
+  startServerAuditAnalysis,
+  type AuditPipelineStatus,
+} from '../../lib/audit-pipeline-status';
+import { supabase } from '../../lib/supabase';
 import { isAuditAiResumeInFlight, resumeAuditAnalysis } from '../../lib/resume-audit-analysis';
 
 type AuditGenerationStatusProps = {
@@ -168,7 +175,17 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
             setManualResumePending(true);
             setResumeError('');
             const resume = isAi
-              ? startServerAuditAnalysis(auditId)
+              ? (async () => {
+                const { data: audit } = await supabase
+                  .from('audits')
+                  .select('executive_summary, audit_method')
+                  .eq('id', auditId)
+                  .maybeSingle();
+                if (audit?.executive_summary?.trim() && audit.audit_method === 'api') {
+                  return regenerateAuditForHighlights(auditId);
+                }
+                return startServerAuditAnalysis(auditId);
+              })()
               : nudgeProfileScan(auditId);
             resume
               .then(() => {

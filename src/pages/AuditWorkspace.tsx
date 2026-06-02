@@ -8,7 +8,12 @@ import WorkspacePublishBar from '../components/audit/WorkspacePublishBar';
 import { mergeReportBundle, type AuditReportBundle } from '../hooks/useAuditReportData';
 import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
 import AuditGenerationStatus from '../components/audit/AuditGenerationStatus';
-import { clearAuditGenerationActive, fetchAuditPipelineStatus } from '../lib/audit-pipeline-status';
+import {
+  clearAuditGenerationActive,
+  fetchAuditPipelineStatus,
+  regenerateAuditForHighlights,
+} from '../lib/audit-pipeline-status';
+import AddOnHighlightRegenModal from '../components/audit/AddOnHighlightRegenModal';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, Client } from '../lib/types';
 import {
@@ -52,6 +57,8 @@ export default function AuditWorkspace() {
   const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
   const [analysisInProgress, setAnalysisInProgress] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [highlightRegenOpen, setHighlightRegenOpen] = useState(false);
+  const [highlightRegenRunning, setHighlightRegenRunning] = useState(false);
 
   const emailDesignSection = sections.find(section => section.section_key === 'email_design');
 
@@ -310,10 +317,32 @@ export default function AuditWorkspace() {
               onClose={() => setRevenueDrawerOpen(false)}
               title="Revenue opportunities"
             >
-              <RevenueAddOnItemsEditor audit={audit} onAuditChange={setAudit} />
+              <RevenueAddOnItemsEditor
+                audit={audit}
+                onAuditChange={setAudit}
+                onHighlightChanged={() => setHighlightRegenOpen(true)}
+              />
             </EmailDesignDrawer>
           </Suspense>
         )}
+        <AddOnHighlightRegenModal
+          open={highlightRegenOpen}
+          running={highlightRegenRunning}
+          onDismiss={() => setHighlightRegenOpen(false)}
+          onConfirm={async () => {
+            if (!audit?.id) return;
+            setHighlightRegenRunning(true);
+            try {
+              await regenerateAuditForHighlights(audit.id);
+              setHighlightRegenOpen(false);
+              setAnalysisInProgress(true);
+            } catch (e) {
+              toast(e instanceof Error ? e.message : 'Regeneration failed');
+            } finally {
+              setHighlightRegenRunning(false);
+            }
+          }}
+        />
       </div>
     </ReportEditProvider>
   );

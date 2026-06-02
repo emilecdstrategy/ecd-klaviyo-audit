@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, GripVertical, Plus } from 'lucide-react';
+import { ArrowDown, ArrowUp, GripVertical, Plus, Star } from 'lucide-react';
 import type { Audit, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../../lib/types';
 import { listRevenueOpportunityTemplates, updateAudit, uploadRevenueOpportunityImage } from '../../lib/db';
 import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
@@ -26,6 +26,11 @@ function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
       image_url: item.image_url ?? null,
       details_url: item.details_url ?? null,
       is_hidden: Boolean(item.is_hidden),
+      highlighted: Boolean(item.highlighted),
+      related_section_keys: Array.isArray(item.related_section_keys)
+        ? item.related_section_keys.map(v => String(v))
+        : undefined,
+      presenter_note: item.presenter_note ? String(item.presenter_note) : undefined,
       display_order: typeof item.display_order === 'number' ? item.display_order : (index + 1) * 10,
     }))
     .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
@@ -34,9 +39,12 @@ function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
 export default function RevenueAddOnItemsEditor({
   audit,
   onAuditChange,
+  onHighlightChanged,
 }: {
   audit: Audit;
   onAuditChange: (next: Audit) => void;
+  /** Fired after highlight toggle saves when audit already has AI content (post-run). */
+  onHighlightChanged?: () => void;
 }) {
   const [templates, setTemplates] = useState<RevenueOpportunityTemplate[]>([]);
   const [selectedTemplateSlug, setSelectedTemplateSlug] = useState('');
@@ -86,7 +94,18 @@ export default function RevenueAddOnItemsEditor({
     }
   }, [availableTemplates, selectedTemplateSlug]);
 
-  const writeItems = (nextItems: RevenueOpportunityAddOnItem[]) => {
+  const toggleHighlighted = (index: number) => {
+    const next = addOnItems.slice();
+    const item = next[index];
+    if (!item) return;
+    next[index] = { ...item, highlighted: !item.highlighted };
+    writeItems(next, { highlightChanged: true });
+  };
+
+  const writeItems = (
+    nextItems: RevenueOpportunityAddOnItem[],
+    opts?: { highlightChanged?: boolean },
+  ) => {
     const withOrder = nextItems.map((item, index) => ({
       ...item,
       content: item.content?.trim() || resolveRevenueOpportunityContent(item),
@@ -114,6 +133,14 @@ export default function RevenueAddOnItemsEditor({
       try {
         await updateAudit(audit.id, { layout: nextLayout });
         scheduleSavedToast(toast);
+        if (
+          opts?.highlightChanged &&
+          onHighlightChanged &&
+          audit.audit_method === 'api' &&
+          String(audit.executive_summary ?? '').trim()
+        ) {
+          onHighlightChanged();
+        }
       } catch {
         toast('Could not save');
       }
@@ -181,6 +208,19 @@ export default function RevenueAddOnItemsEditor({
                   <span className="text-[11px] uppercase tracking-wide font-semibold">Position {index + 1}</span>
                 </div>
                 <div className="flex items-center gap-1">
+                  <button
+                    type="button"
+                    title={item.highlighted ? 'Remove highlight' : 'Highlight for report'}
+                    aria-pressed={Boolean(item.highlighted)}
+                    onClick={() => toggleHighlighted(index)}
+                    className={`p-1.5 rounded border transition-colors ${
+                      item.highlighted
+                        ? 'border-amber-300 bg-amber-100 text-amber-700'
+                        : 'border-gray-200 text-gray-400 hover:border-amber-200 hover:text-amber-600'
+                    }`}
+                  >
+                    <Star className={`w-3.5 h-3.5 ${item.highlighted ? 'fill-current' : ''}`} />
+                  </button>
                   <button
                     type="button"
                     onClick={() => moveItem(index, -1)}

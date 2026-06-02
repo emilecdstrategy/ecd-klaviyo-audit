@@ -118,6 +118,7 @@ type ReportEditContextValue = {
   ) => void;
   updateAddOnContent: (itemKey: string, value: string) => void;
   updateAddOnImage: (itemKey: string, value: string | null) => void;
+  toggleAddOnHighlighted: (itemKey: string, highlighted: boolean) => void;
   updateAttributionScreenshot: (value: string | null) => void;
   updateSectionRevenueOpportunity: (sectionKey: string, value: number) => void;
   toggleLayoutSectionHidden: (layoutKey: LayoutSectionKey, hidden: boolean) => void;
@@ -526,6 +527,32 @@ export function ReportEditProvider({
     [audit, onAuditChange, schedule],
   );
 
+  const toggleAddOnHighlighted = useCallback(
+    (itemKey: string, highlighted: boolean) => {
+      const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
+      const rs = { ...((layout.revenue_summary as Record<string, unknown>) ?? {}) };
+      const blocks = { ...((rs.blocks as Record<string, unknown>) ?? {}) };
+      const addOns = { ...((blocks.addOns as Record<string, unknown>) ?? {}) };
+      const items = [...((addOns.items as RevenueOpportunityAddOnItem[]) ?? [])];
+      const idx = items.findIndex(i => `${i.template_slug}-${i.display_order}` === itemKey);
+      if (idx < 0) return;
+      items[idx] = {
+        ...items[idx],
+        highlighted,
+        ...(highlighted ? {} : { related_section_keys: undefined, presenter_note: undefined }),
+      };
+      addOns.items = items;
+      blocks.addOns = addOns;
+      rs.blocks = blocks;
+      layout.revenue_summary = rs;
+      onAuditChange({ ...audit, layout });
+      schedule('layout-addons', async () => {
+        await updateAudit(audit.id, { layout });
+      });
+    },
+    [audit, onAuditChange, schedule],
+  );
+
   const updateAttributionScreenshot = useCallback(
     (value: string | null) => {
       const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
@@ -802,6 +829,7 @@ export function ReportEditProvider({
       updateAddOnPrice,
       updateAddOnContent,
       updateAddOnImage,
+      toggleAddOnHighlighted,
       updateAttributionScreenshot,
       updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
@@ -836,6 +864,7 @@ export function ReportEditProvider({
       updateAddOnPrice,
       updateAddOnContent,
       updateAddOnImage,
+      toggleAddOnHighlighted,
       updateAttributionScreenshot,
       updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,

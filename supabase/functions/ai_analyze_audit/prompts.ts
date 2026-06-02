@@ -20,6 +20,8 @@ type WizardData = {
   profileAudienceScan?: "full" | "skipped";
   /** Whether to treat subscription lifecycle as a core flow in the flows rubric. */
   clientSellsSubscriptions?: boolean;
+  /** Highlighted ECD add-ons selected for this audit (emphasis in narrative + placements). */
+  highlightedAddOns?: Array<{ template_slug: string; name: string; description?: string }>;
 };
 
 export type KlaviyoContext = {
@@ -469,11 +471,30 @@ export function buildAuditUserPrompt(
     );
   }
 
+  const highlighted = Array.isArray(data.highlightedAddOns)
+    ? data.highlightedAddOns.filter((a) => a?.template_slug && a?.name)
+    : [];
+  if (highlighted.length > 0) {
+    payload.highlighted_add_ons = highlighted;
+    payload.highlighted_add_on_instructions = [
+      "The client selected these ECD add-on services to emphasize in this audit.",
+      "Weave relevant add-ons into findings and implementationTimeline items where they naturally address a gap (do not force every add-on into every finding).",
+      "Return addOnPlacements: for EACH highlighted add-on, pick 1-3 report section_keys where a presenter should demo that service (account_health, flows, segmentation, campaigns, email_design, signup_forms).",
+      "Each placement needs a one-line presenter_note (what to show the client, tied to this account's data).",
+    ];
+  }
+
   if (mode !== "sections_only") {
     payload.required_top_level_fields = {
       strengths: "Array of 3-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages WITH benchmark ranges and health assessment. When citing revenue dollars, include pct_of_store_revenue from revenue_context/top_flows. Write naturally, no em-dashes, use commas and plain language.",
       findings: "Array of exactly 5 strings. Each is a problem statement ranked by impact. Bold lead phrase plus evidence. When citing percentages, include benchmark range. No dollar amounts or revenue language.",
       implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
+      ...(highlighted.length > 0
+        ? {
+          addOnPlacements:
+            "Array of {template_slug, section_keys, presenter_note} for each highlighted add-on listed in highlighted_add_ons.",
+        }
+        : {}),
     };
   }
   if (mode === "top_level_only") {

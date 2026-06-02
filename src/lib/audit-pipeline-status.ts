@@ -97,8 +97,54 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
 
   const stageRuns = (runs ?? []) as KlaviyoRunRow[];
   const sectionRows = sections ?? [];
+  const aiJobStatus = aiJob?.status ?? null;
+  const aiRegenInProgress = Boolean(
+    aiJob && (aiJobStatus === 'pending' || aiJobStatus === 'running'),
+  );
+  const hasAnalysisContent = auditHasAnalysisContent(audit.executive_summary, sectionRows);
 
-  if (auditHasAnalysisContent(audit.executive_summary, sectionRows) || audit.audit_method !== 'api') {
+  if (hasAnalysisContent && audit.audit_method === 'api' && aiRegenInProgress) {
+    const stepIndex = Number(aiJob?.step_index) || 0;
+    return {
+      isGenerating: true,
+      isStalled: false,
+      needsProfileResume: false,
+      needsAiResume: false,
+      showPipelineUi: true,
+      aiServerActive: true,
+      aiJobFailed: false,
+      aiJobError: null,
+      phase: 'ai_analysis',
+      progress: 62 + Math.min(33, stepIndex * 5),
+      label: 'Regenerating report for highlighted add-ons…',
+      stageRuns,
+      profileScanTotal: profileJob?.total_profiles ?? null,
+      profileStalled: false,
+      aiStalled: false,
+    };
+  }
+
+  if (hasAnalysisContent && audit.audit_method === 'api' && aiJobStatus === 'failed') {
+    return {
+      isGenerating: false,
+      isStalled: false,
+      needsProfileResume: false,
+      needsAiResume: true,
+      showPipelineUi: true,
+      aiServerActive: false,
+      aiJobFailed: true,
+      aiJobError: aiJob?.error_message ?? 'Regeneration failed',
+      phase: 'ai_analysis',
+      progress: 60,
+      label: 'Add-on regeneration failed — retry',
+      stageRuns,
+      profileScanTotal: profileJob?.total_profiles ?? null,
+      profileStalled: false,
+      aiStalled: false,
+    };
+  }
+
+  if (hasAnalysisContent || audit.audit_method !== 'api') {
     return {
       isGenerating: false,
       isStalled: false,
@@ -118,7 +164,6 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
     };
   }
 
-  const aiJobStatus = aiJob?.status ?? null;
   const aiJobUpdatedMs = aiJob?.updated_at ? new Date(aiJob.updated_at).getTime() : null;
   const aiJobStale = Boolean(
     aiJob
@@ -232,6 +277,25 @@ export async function nudgeProfileScan(auditId: string): Promise<void> {
     // Edge worker still running past gateway timeout — scan continues server-side.
     if (Number(status) === 546 || Number(status) === 504) return;
     throw new Error(result.error.message || 'Failed to resume profile scan');
+  }
+}
+
+export async function regenerateAuditForHighlights(auditId: string): Promise<void> {
+  await supabase.auth.refreshSession().catch(() => {});
+  const invokePromise = supabase.functions.invoke('audit_finalize_analysis', {
+    body: { audit_id: auditId, mode: 'highlight_regen' },
+  });
+  const result = await Promise.race([
+    invokePromise,
+    new Promise<{ data: null; error: null }>(resolve => {
+      window.setTimeout(() => resolve({ data: null, error: null }), 8_000);
+    }),
+  ]);
+
+  if (result.error) {
+    const status = (result.error as { context?: { status?: number } }).context?.status;
+    if (Number(status) === 546 || Number(status) === 504) return;
+    throw new Error(result.error.message || 'Failed to start highlight regeneration');
   }
 }
 

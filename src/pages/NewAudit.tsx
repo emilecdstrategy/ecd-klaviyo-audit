@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Loader2,
   Sparkles,
+  Star,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
@@ -195,6 +196,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     apiKey: '',
     clientSellsSubscriptions: false,
     selectedAddOnSlugs: [] as string[],
+    highlightedAddOnSlugs: [] as string[],
   });
 
   const [auditContextForm, setAuditContextForm] = useState({
@@ -301,6 +303,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         apiKey: '',
         clientSellsSubscriptions: prev.clientSellsSubscriptions,
         selectedAddOnSlugs: prev.selectedAddOnSlugs,
+        highlightedAddOnSlugs: prev.highlightedAddOnSlugs,
       }));
     }
   };
@@ -402,6 +405,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           monthly_label: template.monthly_label ?? null,
           display_order: template.display_order ?? (index + 1) * 10,
           is_hidden: false,
+          highlighted: form.highlightedAddOnSlugs.includes(template.slug),
         }));
       const initialLayout: Record<string, unknown> = selectedAddOnItems.length > 0
         ? {
@@ -915,12 +919,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                   <div className="space-y-2">
                     {revenueTemplates.map(template => {
                       const checked = form.selectedAddOnSlugs.includes(template.slug);
+                      const highlighted = form.highlightedAddOnSlugs.includes(template.slug);
                       return (
                         <div
                           key={template.id}
                           className={`rounded-lg border px-3 py-2.5 transition-colors ${
                             checked
-                              ? 'border-brand-primary/30 bg-brand-primary/5'
+                              ? highlighted
+                                ? 'border-amber-300/60 bg-amber-50/50'
+                                : 'border-brand-primary/30 bg-brand-primary/5'
                               : 'border-gray-100 bg-white'
                           }`}
                         >
@@ -931,23 +938,55 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                                 <p className="text-xs text-gray-500 mt-0.5">{template.description}</p>
                               )}
                             </div>
-                            <button
-                              type="button"
-                              role="switch"
-                              aria-checked={checked}
-                              onClick={() => {
-                                setForm(prev => {
-                                  const current = prev.selectedAddOnSlugs;
-                                  const next = checked
-                                    ? current.filter(slug => slug !== template.slug)
-                                    : [...current, template.slug];
-                                  return { ...prev, selectedAddOnSlugs: next };
-                                });
-                              }}
-                              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${checked ? 'bg-brand-primary' : 'bg-gray-200'}`}
-                            >
-                              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
-                            </button>
+                            <div className="flex shrink-0 items-center gap-2">
+                              {checked && (
+                                <button
+                                  type="button"
+                                  title={highlighted ? 'Remove highlight' : 'Highlight for report'}
+                                  aria-pressed={highlighted}
+                                  onClick={() => {
+                                    setForm(prev => {
+                                      const current = prev.highlightedAddOnSlugs;
+                                      const next = highlighted
+                                        ? current.filter(slug => slug !== template.slug)
+                                        : [...current, template.slug];
+                                      return { ...prev, highlightedAddOnSlugs: next };
+                                    });
+                                  }}
+                                  className={`flex h-8 w-8 items-center justify-center rounded-lg border transition-colors ${
+                                    highlighted
+                                      ? 'border-amber-300 bg-amber-100 text-amber-700'
+                                      : 'border-gray-200 bg-white text-gray-400 hover:border-amber-200 hover:text-amber-600'
+                                  }`}
+                                >
+                                  <Star className={`h-4 w-4 ${highlighted ? 'fill-current' : ''}`} />
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                role="switch"
+                                aria-checked={checked}
+                                onClick={() => {
+                                  setForm(prev => {
+                                    const current = prev.selectedAddOnSlugs;
+                                    const next = checked
+                                      ? current.filter(slug => slug !== template.slug)
+                                      : [...current, template.slug];
+                                    const highlightedNext = checked
+                                      ? prev.highlightedAddOnSlugs.filter(slug => slug !== template.slug)
+                                      : prev.highlightedAddOnSlugs;
+                                    return {
+                                      ...prev,
+                                      selectedAddOnSlugs: next,
+                                      highlightedAddOnSlugs: highlightedNext,
+                                    };
+                                  });
+                                }}
+                                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${checked ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                              >
+                                <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+                              </button>
+                            </div>
                           </div>
                         </div>
                       );

@@ -97,6 +97,12 @@ export interface RevenueOpportunityAddOnItem {
   details_url?: string | null;
   is_hidden?: boolean;
   display_order?: number;
+  /** Admin-selected emphasis for this audit (wizard or post-run). */
+  highlighted?: boolean;
+  /** AI-assigned report sections where a presenter should demo this add-on. */
+  related_section_keys?: string[];
+  /** Short AI note for the presenter at those sections. */
+  presenter_note?: string;
 }
 
 export interface FlowPerformance {

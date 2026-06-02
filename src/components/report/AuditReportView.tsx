@@ -42,6 +42,7 @@ import { AttributionModelHelpTrigger } from './AttributionModelHelpModal';
 import { uploadReportScreenshot, uploadRevenueOpportunityImage } from '../../lib/db';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
 import { resolveExecutiveFindings } from '../../lib/findings-normalize';
+import { buildSectionDemoMap } from '../../lib/addon-highlight';
 import { cn } from '../../lib/utils';
 import type { AuditReportBundle } from '../../hooks/useAuditReportData';
 import {
@@ -369,11 +370,21 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
           monthly_label: item.monthly_label ?? null,
           display_order: typeof item.display_order === 'number' ? item.display_order : (index + 1) * 10,
           is_hidden: Boolean(item.is_hidden),
+          highlighted: Boolean(item.highlighted),
+          related_section_keys: Array.isArray(item.related_section_keys)
+            ? item.related_section_keys.map(v => String(v))
+            : undefined,
+          presenter_note: item.presenter_note ? String(item.presenter_note) : undefined,
         }))
         .filter(item => !item.is_hidden)
         .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
       : [];
   }, [revenueSummaryCfg]);
+
+  const sectionDemoMap = useMemo(
+    () => buildSectionDemoMap(visibleAddOnItems),
+    [visibleAddOnItems],
+  );
 
   const { oneTime: oneTimeAddOns, monthly: monthlyAddOns } = useMemo(
     () => splitAddOnsByPricing(visibleAddOnItems),
@@ -653,6 +664,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['flows'] ?? flowsCfg.sectionNumber ?? '03'}
               label={flowsCfg.sectionTitle ?? 'Flows'}
+              demoMarkers={sectionDemoMap.get('flows')}
             />
 
             {((isFlowsBlockVisible(flowsCfg, 'narrative') || isFlowsBlockVisible(flowsCfg, 'rubric')) || editMode) && (() => {
@@ -836,6 +848,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['segments'] ?? segmentationCfg.sectionNumber ?? '04'}
               label={segmentationCfg.sectionTitle ?? 'Segments'}
+              demoMarkers={sectionDemoMap.get('segmentation')}
             />
 
             {(isSegmentationBlockVisible(segmentationCfg, 'narrative') ||
@@ -895,6 +908,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['forms'] ?? signupFormsCfg.sectionNumber ?? '05'}
               label={signupFormsCfg.sectionTitle ?? 'Signup Forms'}
+              demoMarkers={sectionDemoMap.get('signup_forms')}
             />
 
             {(isSignupFormsBlockVisible(signupFormsCfg, 'narrative') ||
@@ -950,6 +964,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['campaigns'] ?? campaignsCfg.sectionNumber ?? '06'}
               label={campaignsCfg.sectionTitle ?? 'Campaigns'}
+              demoMarkers={sectionDemoMap.get('campaigns')}
             />
 
             {(isCampaignsBlockVisible(campaignsCfg, 'narrative') ||
@@ -1008,6 +1023,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               <ReportSectionHeader
                 number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
                 label={emailDesignCfg.sectionTitle ?? 'Email Design'}
+                demoMarkers={sectionDemoMap.get('email_design')}
               />
               <EmailDesignSection
                 emailDesign={emailDesign}

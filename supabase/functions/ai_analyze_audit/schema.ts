@@ -34,6 +34,12 @@ export type AITimelinePhase = {
   items: string[];
 };
 
+export type AIAddOnPlacement = {
+  template_slug: string;
+  section_keys: SectionKey[];
+  presenter_note: string;
+};
+
 export type AIOutput = {
   schemaVersion: string;
   executiveSummary: string;
@@ -41,7 +47,24 @@ export type AIOutput = {
   strengths: string[];
   implementationTimeline: AITimelinePhase[];
   sections: AISection[];
+  addOnPlacements?: AIAddOnPlacement[];
 };
+
+const ADD_ON_PLACEMENT_ITEM_SCHEMA = {
+  type: "object",
+  additionalProperties: false,
+  required: ["template_slug", "section_keys", "presenter_note"],
+  properties: {
+    template_slug: { type: "string", minLength: 1, maxLength: 120 },
+    section_keys: {
+      type: "array",
+      minItems: 1,
+      maxItems: 6,
+      items: { type: "string", enum: AUDIT_SECTION_KEYS },
+    },
+    presenter_note: { type: "string", minLength: 10, maxLength: 280 },
+  },
+} as const;
 
 const SECTION_ITEM_SCHEMA = {
   type: "object",
@@ -200,6 +223,10 @@ export const AI_OUTPUT_JSON_SCHEMA = {
       },
     },
     sections: { type: "array", minItems: 1, items: SECTION_ITEM_SCHEMA },
+    addOnPlacements: {
+      type: "array",
+      items: ADD_ON_PLACEMENT_ITEM_SCHEMA,
+    },
   },
 } as const;
 
@@ -248,10 +275,33 @@ export const AI_TOP_LEVEL_ONLY_SCHEMA = {
         },
       },
     },
+    addOnPlacements: {
+      type: "array",
+      items: ADD_ON_PLACEMENT_ITEM_SCHEMA,
+    },
   },
 } as const;
 
 type ValidationResult = { ok: true; value: AIOutput } | { ok: false; errors: string[] };
+
+function normalizeAddOnPlacements(raw: unknown): AIAddOnPlacement[] {
+  if (!Array.isArray(raw)) return [];
+  const out: AIAddOnPlacement[] = [];
+  for (const item of raw) {
+    if (!item || typeof item !== "object") continue;
+    const row = item as Record<string, unknown>;
+    const slug = String(row.template_slug ?? "").trim();
+    const note = String(row.presenter_note ?? "").trim();
+    const keys = Array.isArray(row.section_keys)
+      ? row.section_keys.map((k) => String(k).trim()).filter((k): k is SectionKey =>
+        (AUDIT_SECTION_KEYS as readonly string[]).includes(k)
+      )
+      : [];
+    if (!slug || !note || keys.length === 0) continue;
+    out.push({ template_slug: slug, section_keys: [...new Set(keys)], presenter_note: note });
+  }
+  return out;
+}
 export type ValidationMode = "full" | "sections_only" | "top_level_only";
 
 export function validateOutput(
@@ -328,6 +378,7 @@ export function validateOutput(
         items: p.items.map((i: string) => i.trim()),
       })),
       sections: needsSections ? requiredSectionKeys.map((k) => byKey.get(k)!) : [],
+      addOnPlacements: normalizeAddOnPlacements((out as Record<string, unknown>).addOnPlacements),
     },
   };
 }

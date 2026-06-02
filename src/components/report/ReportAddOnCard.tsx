@@ -1,4 +1,4 @@
-import { ZoomIn, ExternalLink, Play } from 'lucide-react';
+import { ZoomIn, ExternalLink, Play, Star } from 'lucide-react';
 import type { AddOnPricingSlice } from '../../lib/addon-pricing';
 import { formatAddOnPrice } from '../../lib/addon-pricing';
 import { cn } from '../../lib/utils';
@@ -96,7 +96,7 @@ export default function ReportAddOnCard({
   updateAddOnImage,
   updateAddOnPrice,
 }: ReportAddOnCardProps) {
-  const { editMode } = useReportEdit();
+  const { editMode, toggleAddOnHighlighted } = useReportEdit();
   const item = slice.item;
   const itemKey = `${item.template_slug}-${item.display_order}`;
   const showDemoCta = addOnHasCustomerAgentDemo(item.template_slug) && Boolean(customerAgentDemoUrl);
@@ -109,10 +109,42 @@ export default function ReportAddOnCard({
   const showCtaColumn = showDemoCta || Boolean(item.details_url?.trim()) || editMode;
   const showFooter = showPriceBlock || showCtaColumn;
 
+  const isHighlighted = Boolean(item.highlighted);
+
   return (
-    <div className="group flex flex-col overflow-hidden rounded-2xl border border-gray-200 bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:border-brand-primary/30 hover:shadow-lg hover:shadow-brand-primary/5">
+    <div
+      className={cn(
+        'group flex flex-col overflow-hidden rounded-2xl border bg-white shadow-sm transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg',
+        isHighlighted
+          ? 'border-amber-300/70 ring-2 ring-amber-200/60 hover:border-amber-400 hover:shadow-amber-100/50'
+          : 'border-gray-200 hover:border-brand-primary/30 hover:shadow-brand-primary/5',
+      )}
+    >
       <div className="flex flex-1 flex-col p-5">
         <div className="mb-2.5 min-w-0">
+          <div className="mb-2 flex flex-wrap items-center gap-2">
+            {isHighlighted && (
+              <span className="inline-flex items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-800">
+                <Star className="h-3 w-3 fill-amber-600 text-amber-600" />
+                Highlighted
+              </span>
+            )}
+            {editMode && (
+              <button
+                type="button"
+                title={isHighlighted ? 'Remove highlight' : 'Highlight for report'}
+                onClick={() => toggleAddOnHighlighted(itemKey, !isHighlighted)}
+                className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                  isHighlighted
+                    ? 'border-amber-300 bg-amber-50 text-amber-800'
+                    : 'border-gray-200 text-gray-500 hover:border-amber-200 hover:text-amber-700'
+                }`}
+              >
+                <Star className={`h-3 w-3 ${isHighlighted ? 'fill-current' : ''}`} />
+                {isHighlighted ? 'Unhighlight' : 'Highlight'}
+              </button>
+            )}
+          </div>
           <EditablePlainText
             value={item.name}
             onSave={v => updateAddOnField(itemKey, 'name', v)}

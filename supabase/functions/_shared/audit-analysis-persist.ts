@@ -32,25 +32,81 @@ export function computeAuditTotalRevenueOpportunity(
   return sectionTotal + addOnTotal;
 }
 
+export type AddOnPlacementPersist = {
+  template_slug: string;
+  section_keys: string[];
+  presenter_note: string;
+};
+
 type PartialState = {
   executiveSummary?: string;
   findings?: string[];
   strengths?: string[];
   implementationTimeline?: unknown[];
   sections?: Array<Record<string, unknown>>;
+  addOnPlacements?: AddOnPlacementPersist[];
 };
+
+function mergeAddOnPlacementsIntoLayout(
+  layout: unknown,
+  placements: AddOnPlacementPersist[] | undefined,
+): Record<string, unknown> {
+  const layoutObj = { ...((layout as Record<string, unknown> | null | undefined) ?? {}) };
+  if (!placements?.length) return layoutObj;
+
+  const bySlug = new Map(placements.map((p) => [p.template_slug, p]));
+  const revenueSummary = { ...((layoutObj.revenue_summary as Record<string, unknown> | undefined) ?? {}) };
+  const blocks = { ...((revenueSummary.blocks as Record<string, unknown> | undefined) ?? {}) };
+  const addOns = { ...((blocks.addOns as Record<string, unknown> | undefined) ?? {}) };
+  const items = Array.isArray(addOns.items) ? [...(addOns.items as Array<Record<string, unknown>>)] : [];
+
+  for (let i = 0; i < items.length; i++) {
+    const slug = String(items[i]?.template_slug ?? "").trim();
+    const placement = bySlug.get(slug);
+    if (!placement) continue;
+    items[i] = {
+      ...items[i],
+      related_section_keys: placement.section_keys,
+      presenter_note: placement.presenter_note,
+    };
+  }
+
+  addOns.items = items;
+  blocks.addOns = addOns;
+  revenueSummary.blocks = blocks;
+  layoutObj.revenue_summary = revenueSummary;
+  return layoutObj;
+}
 
 export async function persistAuditAnalysisResults(
   sb: SupabaseClient,
   auditId: string,
   partial: PartialState,
+  options?: {
+    patchOnlySectionKeys?: string[];
+    preserveStrengthsFromAudit?: boolean;
+  },
 ): Promise<void> {
   const { data: audit, error: auditErr } = await sb
     .from("audits")
-    .select("id, layout, client_id")
+    .select("id, layout, client_id, executive_summary")
     .eq("id", auditId)
     .single();
   if (auditErr || !audit) throw auditErr ?? new Error("Audit not found");
+
+  let preservedStrengths: string[] | null = null;
+  if (options?.preserveStrengthsFromAudit) {
+    try {
+      const parsed = JSON.parse(String(audit.executive_summary ?? ""));
+      if (parsed && typeof parsed === "object" && Array.isArray(parsed.strengths)) {
+        preservedStrengths = parsed.strengths.map((s: string) => String(s));
+      }
+    } catch {
+      preservedStrengths = null;
+    }
+  }
+
+  const strengthsForExec = preservedStrengths ?? (partial.strengths ?? []);
 
   const { data: sectionRows, error: sectionsErr } = await sb
     .from("audit_sections")
@@ -60,17 +116,23 @@ export async function persistAuditAnalysisResults(
 
   const patches = partial.sections ?? [];
   const patchByKey = new Map(patches.map((p) => [String(p.section_key), p]));
+  const patchOnly = options?.patchOnlySectionKeys?.length
+    ? new Set(options.patchOnlySectionKeys)
+    : null;
 
   for (const section of sectionRows ?? []) {
     const patch = patchByKey.get(section.section_key);
     if (!patch || section.section_key === "email_design") continue;
+    if (patchOnly && !patchOnly.has(section.section_key)) continue;
     const { section_key: _sk, ...rest } = patch;
     await sb.from("audit_sections").update(rest).eq("id", section.id);
   }
 
   const mergedSections = (sectionRows ?? []).map((section) => {
     const patch = patchByKey.get(section.section_key);
-    return patch ? { ...section, ...patch } : section;
+    if (!patch) return section;
+    if (patchOnly && !patchOnly.has(section.section_key)) return section;
+    return { ...section, ...patch };
   });
 
   const opportunityBaseBeforeEmail = computeAuditTotalRevenueOpportunity(
@@ -82,7 +144,7 @@ export async function persistAuditAnalysisResults(
 
   const emailSection = (sectionRows ?? []).find((s) => s.section_key === "email_design");
   const emailPatch = patchByKey.get("email_design");
-  if (emailSection && emailPatch) {
+  if (emailSection && emailPatch && (!patchOnly || patchOnly.has("email_design"))) {
     const aiEmailRevenue = Number(emailPatch.revenue_opportunity) || 0;
     const emailRevenue = aiEmailRevenue > 0
       ? aiEmailRevenue
@@ -94,6 +156,7 @@ export async function persistAuditAnalysisResults(
   const patchedSections = mergedSections.map((section) => {
     const patch = patchByKey.get(section.section_key);
     if (!patch) return section;
+    if (patchOnly && !patchOnly.has(section.section_key)) return section;
     if (section.section_key === "email_design") {
       const aiEmailRevenue = Number(patch.revenue_opportunity) || 0;
       return {
@@ -107,19 +170,21 @@ export async function persistAuditAnalysisResults(
     return { ...section, ...patch };
   });
 
-  const totalOpportunity = computeAuditTotalRevenueOpportunity(patchedSections, audit.layout);
+  const mergedLayout = mergeAddOnPlacementsIntoLayout(audit.layout, partial.addOnPlacements);
+  const totalOpportunity = computeAuditTotalRevenueOpportunity(patchedSections, mergedLayout);
 
-  const execPayload = (partial.strengths?.length || partial.findings?.length || partial.implementationTimeline?.length)
+  const execPayload = (strengthsForExec.length || partial.findings?.length || partial.implementationTimeline?.length)
     ? JSON.stringify({
       text: partial.executiveSummary ?? "",
       findings: partial.findings ?? [],
-      strengths: partial.strengths ?? [],
+      strengths: strengthsForExec,
       timeline: partial.implementationTimeline ?? [],
     })
     : (partial.executiveSummary ?? "");
 
   await sb.from("audits").update({
     executive_summary: execPayload,
+    layout: mergedLayout,
     total_revenue_opportunity: totalOpportunity,
     updated_at: new Date().toISOString(),
   }).eq("id", auditId);
@@ -127,7 +192,7 @@ export async function persistAuditAnalysisResults(
   try {
     const { data: client } = await sb.from("clients").select("industry").eq("id", audit.client_id).maybeSingle();
     const industry = (client?.industry ?? "").trim();
-    if (industry) {
+    if (industry && !patchOnly) {
       const { data: ecdExample } = await sb
         .from("industry_email_library")
         .select("id, default_annotations")

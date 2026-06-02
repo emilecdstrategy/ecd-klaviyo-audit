@@ -52,11 +52,27 @@ function auditContextHasContent(context: unknown): boolean {
   );
 }
 
-type StepKind = "top_level" | "section" | "refine" | "persist";
+type StepKind = "top_level" | "section" | "sections_for_highlight" | "refine" | "persist";
 
 type StepDef = { kind: StepKind; keys?: string[] };
 
-function buildStepPlan(hasRefine: boolean): StepDef[] {
+const AUDIT_SECTION_KEYS_ALL = [
+  "account_health",
+  "flows",
+  "segmentation",
+  "campaigns",
+  "email_design",
+  "signup_forms",
+];
+
+function buildStepPlan(hasRefine: boolean, highlightRegen = false): StepDef[] {
+  if (highlightRegen) {
+    return [
+      { kind: "top_level" },
+      { kind: "sections_for_highlight" },
+      { kind: "persist" },
+    ];
+  }
   const steps: StepDef[] = [{ kind: "top_level" }];
   for (const keys of SECTION_BATCHES) steps.push({ kind: "section", keys });
   if (hasRefine) steps.push({ kind: "refine" });
@@ -64,7 +80,26 @@ function buildStepPlan(hasRefine: boolean): StepDef[] {
   return steps;
 }
 
-async function chainSelf(auditId: string) {
+function extractHighlightedAddOns(layout: unknown) {
+  const layoutObj = (layout as Record<string, unknown> | null | undefined) ?? {};
+  const revenueSummary = layoutObj.revenue_summary as Record<string, unknown> | undefined;
+  const blocks = revenueSummary?.blocks as Record<string, unknown> | undefined;
+  const addOns = blocks?.addOns as Record<string, unknown> | undefined;
+  const items = Array.isArray(addOns?.items) ? addOns.items : [];
+  return items
+    .filter((item) => item && typeof item === "object" && (item as Record<string, unknown>).highlighted === true)
+    .map((item) => {
+      const row = item as Record<string, unknown>;
+      return {
+        template_slug: String(row.template_slug ?? ""),
+        name: String(row.name ?? ""),
+        description: row.description ? String(row.description) : undefined,
+      };
+    })
+    .filter((a) => a.template_slug && a.name);
+}
+
+async function chainSelf(auditId: string, mode?: string) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
   try {
     await Promise.race([
@@ -75,7 +110,7 @@ async function chainSelf(auditId: string) {
           Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
           apikey: SUPABASE_SERVICE_ROLE_KEY,
         },
-        body: JSON.stringify({ audit_id: auditId }),
+        body: JSON.stringify({ audit_id: auditId, ...(mode ? { mode } : {}) }),
       }),
       sleep(4_000),
     ]);
@@ -118,10 +153,61 @@ async function invokeAiWithRetry(body: Record<string, unknown>, label: string) {
   throw last instanceof Error ? last : new Error(`${label} failed`);
 }
 
+async function seedPartialFromAudit(sb: ReturnType<typeof assertServiceClient>, auditId: string) {
+  const { data: audit } = await sb.from("audits").select("executive_summary").eq("id", auditId).single();
+  let strengths: string[] = [];
+  let findings: string[] = [];
+  let implementationTimeline: unknown[] = [];
+  let executiveSummary = "";
+  try {
+    const parsed = JSON.parse(String(audit?.executive_summary ?? ""));
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      strengths = Array.isArray(parsed.strengths) ? parsed.strengths.map((s: string) => String(s)) : [];
+      findings = Array.isArray(parsed.findings) ? parsed.findings.map((s: string) => String(s)) : [];
+      implementationTimeline = Array.isArray(parsed.timeline) ? parsed.timeline : [];
+      executiveSummary = typeof parsed.text === "string" ? parsed.text : "";
+    }
+  } catch {
+    executiveSummary = String(audit?.executive_summary ?? "");
+  }
+
+  const { data: sectionRows } = await sb
+    .from("audit_sections")
+    .select(
+      "section_key, current_state_title, optimized_state_title, current_state_notes, optimized_notes, ai_findings, summary_text, revenue_opportunity, confidence, section_details",
+    )
+    .eq("audit_id", auditId);
+
+  const sections = (sectionRows ?? [])
+    .filter((s) => s.section_key && s.section_key !== "revenue_summary")
+    .map((s) => ({
+      section_key: s.section_key,
+      current_state_title: s.current_state_title ?? "",
+      optimized_state_title: s.optimized_state_title ?? "",
+      current_state_notes: s.current_state_notes ?? "",
+      optimized_notes: s.optimized_notes ?? "",
+      ai_findings: s.ai_findings ?? "",
+      summary_text: s.summary_text ?? "",
+      revenue_opportunity: Number(s.revenue_opportunity) || 0,
+      confidence: s.confidence ?? "medium",
+      section_details: s.section_details ?? {},
+    }));
+
+  return {
+    executiveSummary,
+    findings,
+    strengths,
+    implementationTimeline,
+    sections,
+    _preservedStrengths: strengths,
+    highlightRegen: true,
+  };
+}
+
 async function buildWizardData(sb: ReturnType<typeof assertServiceClient>, auditId: string) {
   const { data: audit, error: auditErr } = await sb
     .from("audits")
-    .select("id, client_id, list_size, aov, monthly_traffic, context")
+    .select("id, client_id, list_size, aov, monthly_traffic, context, layout")
     .eq("id", auditId)
     .single();
   if (auditErr || !audit) throw auditErr ?? new Error("Audit not found");
@@ -161,6 +247,7 @@ async function buildWizardData(sb: ReturnType<typeof assertServiceClient>, audit
       auditContext: context,
       profileAudienceScan,
       clientSellsSubscriptions: Boolean((context as Record<string, unknown> | null)?.sells_subscriptions),
+      highlightedAddOns: extractHighlightedAddOns(audit.layout),
     },
     hasRefine: auditContextHasContent(context),
   };
@@ -191,8 +278,13 @@ async function ensureJob(sb: ReturnType<typeof assertServiceClient>, auditId: st
   return { job: inserted, created: true };
 }
 
-async function runPipeline(auditId: string, correlationId: string): Promise<Response> {
+async function runPipeline(
+  auditId: string,
+  correlationId: string,
+  options?: { mode?: string },
+): Promise<Response> {
   const sb = assertServiceClient();
+  const highlightRegen = options?.mode === "highlight_regen";
 
   const { data: audit, error: auditErr } = await sb
     .from("audits")
@@ -204,7 +296,7 @@ async function runPipeline(auditId: string, correlationId: string): Promise<Resp
   if (audit.audit_method !== "api") {
     return json({ ok: true, correlationId, status: "skipped", reason: "not_api_audit" });
   }
-  if (String(audit.executive_summary ?? "").trim()) {
+  if (!highlightRegen && String(audit.executive_summary ?? "").trim()) {
     await sb.from("audit_analysis_jobs").upsert({
       audit_id: auditId,
       client_id: audit.client_id,
@@ -216,8 +308,31 @@ async function runPipeline(auditId: string, correlationId: string): Promise<Resp
     return json({ ok: true, correlationId, status: "complete", reason: "already_analyzed" });
   }
 
-  const { job: initialJob } = await ensureJob(sb, auditId, audit.client_id as string);
-  let job = initialJob;
+  let job;
+  if (highlightRegen) {
+    if (!String(audit.executive_summary ?? "").trim()) {
+      return json({ ok: false, error: { code: "bad_request", message: "Audit has no analysis to regenerate" }, correlationId }, { status: 400 });
+    }
+    const partialState = await seedPartialFromAudit(sb, auditId);
+    const { data: upserted, error: upsertErr } = await sb
+      .from("audit_analysis_jobs")
+      .upsert({
+        audit_id: auditId,
+        client_id: audit.client_id,
+        status: "pending",
+        step_index: 0,
+        partial_state: partialState,
+        error_message: null,
+        updated_at: new Date().toISOString(),
+      }, { onConflict: "audit_id" })
+      .select("*")
+      .single();
+    if (upsertErr) throw upsertErr;
+    job = upserted!;
+  } else {
+    const { job: initialJob } = await ensureJob(sb, auditId, audit.client_id as string);
+    job = initialJob;
+  }
   if (job.status === "failed") {
     const { data: reset, error: resetErr } = await sb
       .from("audit_analysis_jobs")
@@ -252,8 +367,9 @@ async function runPipeline(auditId: string, correlationId: string): Promise<Resp
   }
 
   const { wizard, hasRefine } = await buildWizardData(sb, auditId);
-  const steps = buildStepPlan(hasRefine);
+  const steps = buildStepPlan(hasRefine, highlightRegen);
   const stepIndex = Number(job.step_index) || 0;
+  const patchOnlySectionKeys = new Set<string>();
 
   if (stepIndex >= steps.length) {
     await sb.from("audit_analysis_jobs").update({
@@ -276,9 +392,41 @@ async function runPipeline(auditId: string, correlationId: string): Promise<Resp
       const result = await invokeAiWithRetry({ ...wizard, requestedSectionKeys: [], aiMode: "top_level_only" }, "top-level");
       partial.executiveSummary = result.executiveSummary;
       partial.findings = result.findings ?? [];
-      partial.strengths = result.strengths ?? [];
       partial.implementationTimeline = result.implementationTimeline ?? [];
-      partial.sections = Array.isArray(partial.sections) ? partial.sections : [];
+      partial.addOnPlacements = result.addOnPlacements ?? [];
+      if (highlightRegen) {
+        partial.strengths = partial._preservedStrengths ?? partial.strengths ?? [];
+      } else {
+        partial.strengths = result.strengths ?? [];
+        partial.sections = Array.isArray(partial.sections) ? partial.sections : [];
+      }
+    } else if (step.kind === "sections_for_highlight") {
+      const placements = Array.isArray(partial.addOnPlacements)
+        ? partial.addOnPlacements as Array<{ section_keys?: string[] }>
+        : [];
+      const keys = [
+        ...new Set(
+          placements.flatMap((p) =>
+            Array.isArray(p.section_keys)
+              ? p.section_keys.filter((k) => AUDIT_SECTION_KEYS_ALL.includes(String(k)))
+              : [],
+          ),
+        ),
+      ];
+      if (keys.length > 0) {
+        const result = await invokeAiWithRetry({
+          ...wizard,
+          requestedSectionKeys: keys,
+          aiMode: "sections_only",
+        }, `highlight sections ${keys.join(",")}`);
+        const existing = Array.isArray(partial.sections)
+          ? partial.sections as Array<Record<string, unknown>>
+          : [];
+        const regenKeys = new Set(keys);
+        const kept = existing.filter((s) => !regenKeys.has(String(s.section_key ?? "")));
+        partial.sections = [...kept, ...(result.sections ?? [])];
+        for (const k of keys) patchOnlySectionKeys.add(k);
+      }
     } else if (step.kind === "section" && step.keys) {
       const result = await invokeAiWithRetry({
         ...wizard,
@@ -311,13 +459,30 @@ async function runPipeline(auditId: string, correlationId: string): Promise<Resp
         partial.sections = result.sections;
       }
     } else if (step.kind === "persist") {
-      await persistAuditAnalysisResults(sb, auditId, {
-        executiveSummary: String(partial.executiveSummary ?? ""),
-        findings: (partial.findings as string[]) ?? [],
-        strengths: (partial.strengths as string[]) ?? [],
-        implementationTimeline: (partial.implementationTimeline as unknown[]) ?? [],
-        sections: (partial.sections as Array<Record<string, unknown>>) ?? [],
-      });
+      await persistAuditAnalysisResults(
+        sb,
+        auditId,
+        {
+          executiveSummary: String(partial.executiveSummary ?? ""),
+          findings: (partial.findings as string[]) ?? [],
+          strengths: (partial.strengths as string[]) ?? [],
+          implementationTimeline: (partial.implementationTimeline as unknown[]) ?? [],
+          sections: (partial.sections as Array<Record<string, unknown>>) ?? [],
+          addOnPlacements: Array.isArray(partial.addOnPlacements)
+            ? partial.addOnPlacements as Array<{
+              template_slug: string;
+              section_keys: string[];
+              presenter_note: string;
+            }>
+            : [],
+        },
+        highlightRegen
+          ? {
+            patchOnlySectionKeys: [...patchOnlySectionKeys],
+            preserveStrengthsFromAudit: true,
+          }
+          : undefined,
+      );
       await sb.from("audit_analysis_jobs").update({
         status: "complete",
         step_index: steps.length,
@@ -338,7 +503,7 @@ async function runPipeline(auditId: string, correlationId: string): Promise<Resp
     }).eq("audit_id", auditId);
 
     if (nextIndex < steps.length) {
-      await chainSelf(auditId);
+      await chainSelf(auditId, highlightRegen ? "highlight_regen" : undefined);
     }
 
     return json({
@@ -364,7 +529,7 @@ serve(async (req) => {
   if (req.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
 
   const correlationId = crypto.randomUUID();
-  let body: { audit_id?: string };
+  let body: { audit_id?: string; mode?: string };
   try {
     body = await req.json();
   } catch {
@@ -372,6 +537,7 @@ serve(async (req) => {
   }
 
   const auditId = (body.audit_id ?? "").trim();
+  const mode = (body.mode ?? "").trim();
   if (!auditId) {
     return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id" }, correlationId }, { status: 400 });
   }
@@ -392,7 +558,7 @@ serve(async (req) => {
   }
 
   try {
-    return await runPipeline(auditId, correlationId);
+    return await runPipeline(auditId, correlationId, { mode: mode || undefined });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     return json({ ok: false, error: { code: "pipeline_failed", message: msg }, correlationId }, { status: 500 });
