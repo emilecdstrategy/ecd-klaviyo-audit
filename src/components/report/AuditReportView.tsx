@@ -386,12 +386,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     [visibleAddOnItems],
   );
 
-  const { oneTime: oneTimeAddOns, monthly: monthlyAddOns } = useMemo(
+  const { oneTime: oneTimeAddOns, monthly: monthlyAddOns, unpriced: unpricedAddOns } = useMemo(
     () => splitAddOnsByPricing(visibleAddOnItems),
     [visibleAddOnItems],
   );
   const hasPricedAddOns = oneTimeAddOns.length > 0 || monthlyAddOns.length > 0;
-  const addOnsSectionAvailable = hasPricedAddOns || (editMode && visibleAddOnItems.length > 0);
+  const addOnsSectionAvailable = visibleAddOnItems.length > 0;
 
   const customerAgentDemoUrl = useMemo(
     () => resolveCustomerAgentDemoUrl(client?.website_url),
@@ -1195,9 +1195,36 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       </div>
                     </div>
                   )}
-                  {!hasPricedAddOns && editMode && visibleAddOnItems.length > 0 && (
+                  {unpricedAddOns.length > 0 && (
+                    <div>
+                      {hasPricedAddOns && (
+                        <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-gray-500">
+                          Additional recommendations
+                        </h3>
+                      )}
+                      <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
+                        {unpricedAddOns.map(slice => (
+                          <ReportAddOnCard
+                            key={`${slice.item.template_slug}-${slice.item.display_order}-unpriced`}
+                            slice={slice}
+                            customerAgentDemoUrl={customerAgentDemoUrl}
+                            uploadingAddOnKey={uploadingAddOnKey}
+                            onImageUpload={handleAddOnImageUpload}
+                            onLightbox={setLightboxSrc}
+                            onDemoOpen={(url, title) => setDemoPopup({ url, title })}
+                            updateAddOnField={updateAddOnField}
+                            updateAddOnContent={updateAddOnContent}
+                            updateAddOnImage={updateAddOnImage}
+                            updateAddOnPrice={updateAddOnPrice}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {unpricedAddOns.length > 0 && editMode && (
                     <p className="text-sm text-amber-700 rounded-lg bg-amber-50 border border-amber-100 px-4 py-3">
-                      Add-ons are selected but none have pricing yet. Set one-time or monthly prices in the audit editor.
+                      Cards without one-time or monthly pricing still appear on the report (without a price
+                      block). Add prices in Revenue opportunities if you want them listed with ECD fees.
                     </p>
                   )}
                 </div>

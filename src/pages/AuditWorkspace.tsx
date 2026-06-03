@@ -15,12 +15,14 @@ import {
   waitForServerAuditAnalysis,
 } from '../lib/audit-pipeline-status';
 import AddOnHighlightRegenModal from '../components/audit/AddOnHighlightRegenModal';
+import { getAddOnItemsFromLayout, getHighlightedAddOns } from '../lib/addon-highlight';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, Client } from '../lib/types';
 import {
   getAuditReportBundleById,
   listIndustryEmailLibrary,
   publishAudit,
+  updateAudit,
   updateAuditStatus,
   updateAuditSection,
 } from '../lib/db';
@@ -60,6 +62,23 @@ export default function AuditWorkspace() {
   const [reloadKey, setReloadKey] = useState(0);
   const [highlightRegenOpen, setHighlightRegenOpen] = useState(false);
   const [highlightRegenRunning, setHighlightRegenRunning] = useState(false);
+  const [highlightChangesPending, setHighlightChangesPending] = useState(false);
+
+  const highlightedAddOnNames = useMemo(
+    () => getHighlightedAddOns(getAddOnItemsFromLayout(audit?.layout)).map(item => item.name),
+    [audit?.layout],
+  );
+
+  const closeRevenueDrawer = () => {
+    setRevenueDrawerOpen(false);
+    if (
+      highlightChangesPending &&
+      audit?.audit_method === 'api' &&
+      String(audit.executive_summary ?? '').trim()
+    ) {
+      setHighlightRegenOpen(true);
+    }
+  };
 
   const emailDesignSection = sections.find(section => section.section_key === 'email_design');
 
@@ -264,7 +283,10 @@ export default function AuditWorkspace() {
                   <AuditReportView
                     data={mergedReportData}
                     onManageEmailDesign={() => setEmailDesignDrawerOpen(true)}
-                    onManageRevenueOpportunities={() => setRevenueDrawerOpen(true)}
+                    onManageRevenueOpportunities={() => {
+                      setHighlightChangesPending(false);
+                      setRevenueDrawerOpen(true);
+                    }}
                   />
                 </Suspense>
               )}
@@ -315,13 +337,13 @@ export default function AuditWorkspace() {
           <Suspense fallback={null}>
             <EmailDesignDrawer
               open={revenueDrawerOpen}
-              onClose={() => setRevenueDrawerOpen(false)}
+              onClose={closeRevenueDrawer}
               title="Revenue opportunities"
             >
               <RevenueAddOnItemsEditor
                 audit={audit}
                 onAuditChange={setAudit}
-                onHighlightChanged={() => setHighlightRegenOpen(true)}
+                onHighlightChanged={() => setHighlightChangesPending(true)}
               />
             </EmailDesignDrawer>
           </Suspense>
@@ -329,13 +351,21 @@ export default function AuditWorkspace() {
         <AddOnHighlightRegenModal
           open={highlightRegenOpen}
           running={highlightRegenRunning}
-          onDismiss={() => setHighlightRegenOpen(false)}
+          highlightedNames={highlightedAddOnNames}
+          onDismiss={() => {
+            setHighlightRegenOpen(false);
+            setHighlightChangesPending(false);
+          }}
           onConfirm={async () => {
             if (!audit?.id) return;
             setHighlightRegenRunning(true);
             try {
+              if (audit.layout) {
+                await updateAudit(audit.id, { layout: audit.layout });
+              }
               await regenerateAuditForHighlights(audit.id);
               setHighlightRegenOpen(false);
+              setHighlightChangesPending(false);
               setAnalysisInProgress(true);
               await waitForServerAuditAnalysis(audit.id, { maxWaitMs: 8 * 60 * 1000 });
               setReloadKey(key => key + 1);

@@ -3,11 +3,13 @@ import { AlertTriangle, Loader2, Sparkles } from 'lucide-react';
 export default function AddOnHighlightRegenModal({
   open,
   running,
+  highlightedNames = [],
   onConfirm,
   onDismiss,
 }: {
   open: boolean;
   running?: boolean;
+  highlightedNames?: string[];
   onConfirm: () => void;
   onDismiss: () => void;
 }) {
@@ -29,10 +31,21 @@ export default function AddOnHighlightRegenModal({
           <div className="min-w-0">
             <h3 className="text-base font-semibold text-gray-900">Regenerate for highlighted add-ons?</h3>
             <p className="mt-2 text-sm text-gray-600 leading-relaxed">
-              Highlighted add-ons changed after this audit was generated. We can re-run AI for the
+              Highlighted add-ons changed. We can re-run AI using your current selection for the
               executive summary, Key Findings, implementation timeline, and only the report sections
-              related to those add-ons.
+              tied to highlighted add-ons.
             </p>
+            {highlightedNames.length > 0 ? (
+              <p className="mt-2 text-sm text-amber-900">
+                <span className="font-medium">Highlighted now:</span>{' '}
+                {highlightedNames.join(', ')}
+              </p>
+            ) : (
+              <p className="mt-2 text-sm text-gray-600">
+                No add-ons are highlighted right now — regeneration will remove demo markers and
+                de-emphasize add-ons in the narrative.
+              </p>
+            )}
             <p className="mt-2 text-xs text-gray-500">
               Manual edits to those areas will be overwritten. What&apos;s Working and unrelated sections
               are preserved. Add-on pricing and screenshots stay as-is.

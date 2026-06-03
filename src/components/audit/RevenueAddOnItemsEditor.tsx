@@ -43,7 +43,7 @@ export default function RevenueAddOnItemsEditor({
 }: {
   audit: Audit;
   onAuditChange: (next: Audit) => void;
-  /** Fired after highlight toggle saves when audit already has AI content (post-run). */
+  /** Fired when highlight toggles change (audit already has AI content). */
   onHighlightChanged?: () => void;
 }) {
   const [templates, setTemplates] = useState<RevenueOpportunityTemplate[]>([]);
@@ -128,19 +128,28 @@ export default function RevenueAddOnItemsEditor({
       },
     };
     onAuditChange({ ...audit, layout: nextLayout });
+
+    const canPromptHighlightRegen =
+      audit.audit_method === 'api' && String(audit.executive_summary ?? '').trim();
+
+    if (opts?.highlightChanged) {
+      if (canPromptHighlightRegen) onHighlightChanged?.();
+      void (async () => {
+        try {
+          await updateAudit(audit.id, { layout: nextLayout });
+          scheduleSavedToast(toast);
+        } catch {
+          toast('Could not save');
+        }
+      })();
+      return;
+    }
+
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
     saveTimer.current = window.setTimeout(async () => {
       try {
         await updateAudit(audit.id, { layout: nextLayout });
         scheduleSavedToast(toast);
-        if (
-          opts?.highlightChanged &&
-          onHighlightChanged &&
-          audit.audit_method === 'api' &&
-          String(audit.executive_summary ?? '').trim()
-        ) {
-          onHighlightChanged();
-        }
       } catch {
         toast('Could not save');
       }

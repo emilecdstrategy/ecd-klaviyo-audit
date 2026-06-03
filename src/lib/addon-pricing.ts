@@ -29,9 +29,12 @@ export function addOnHasPricing(item: RevenueOpportunityAddOnItem): boolean {
 export function splitAddOnsByPricing(items: RevenueOpportunityAddOnItem[]): {
   oneTime: AddOnPricingSlice[];
   monthly: AddOnPricingSlice[];
+  /** Visible in report but no one-time/monthly price set (e.g. Klaviyo platform add-ons). */
+  unpriced: AddOnPricingSlice[];
 } {
   const oneTime: AddOnPricingSlice[] = [];
   const monthly: AddOnPricingSlice[] = [];
+  const unpriced: AddOnPricingSlice[] = [];
 
   for (const item of items) {
     if (hasOneTimePricing(item)) {
@@ -50,9 +53,12 @@ export function splitAddOnsByPricing(items: RevenueOpportunityAddOnItem[]): {
         label: item.monthly_label?.trim() || null,
       });
     }
+    if (!addOnHasPricing(item)) {
+      unpriced.push({ item, unit: 'one_time', amount: null, label: null });
+    }
   }
 
-  return { oneTime, monthly };
+  return { oneTime, monthly, unpriced };
 }
 
 export function formatAddOnPrice(
