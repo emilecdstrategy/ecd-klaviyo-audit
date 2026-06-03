@@ -41,7 +41,7 @@ import ReportAddOnCard from './ReportAddOnCard';
 import { AttributionModelHelpTrigger } from './AttributionModelHelpModal';
 import { uploadReportScreenshot, uploadRevenueOpportunityImage } from '../../lib/db';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
-import { getExecutiveFindingsForEdit, resolveExecutiveFindings } from '../../lib/findings-normalize';
+import { normalizeWorkspaceKeyFindings, resolveExecutiveFindings } from '../../lib/findings-normalize';
 // import { buildSectionDemoMap } from '../../lib/addon-highlight';
 import { cn } from '../../lib/utils';
 import type { AuditReportBundle } from '../../hooks/useAuditReportData';
@@ -261,7 +261,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       // plain text — keep as-is
     }
     const aiFindings = editMode
-      ? getExecutiveFindingsForEdit(rawFindings, aiConcerns)
+      ? normalizeWorkspaceKeyFindings(rawFindings, aiConcerns)
       : resolveExecutiveFindings(rawFindings, aiConcerns);
     return {
       execText,

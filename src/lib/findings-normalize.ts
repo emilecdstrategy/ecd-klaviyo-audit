@@ -56,9 +56,7 @@ export function repairSplitFindings(items: string[]): string[] {
   return out.map(repairBrokenBoldMarkers);
 }
 
-export const EXECUTIVE_FINDING_EDIT_SLOTS = 5;
-
-/** Findings list for workspace edit — preserves blank rows and explicit `findings` arrays. */
+/** Raw findings for workspace mutations (concerns fallback when no stored findings). */
 export function getExecutiveFindingsForEdit(
   findings?: string[],
   concerns?: string[],
@@ -67,7 +65,24 @@ export function getExecutiveFindingsForEdit(
   if (Array.isArray(concerns) && concerns.some((c) => c.trim())) {
     return repairSplitFindings(concerns);
   }
-  return Array.from({ length: EXECUTIVE_FINDING_EDIT_SLOTS }, () => '');
+  return [];
+}
+
+/**
+ * Findings shown in the workspace editor — real copy only, plus at most one trailing
+ * empty row after "Add finding" (no padded blank slots).
+ */
+export function normalizeWorkspaceKeyFindings(
+  findings?: string[],
+  concerns?: string[],
+): string[] {
+  if (Array.isArray(findings) && findings.some((f) => f.trim())) {
+    const filled = findings.filter((f) => f.trim());
+    const hasTrailingDraft =
+      findings.length > filled.length && !findings[findings.length - 1]?.trim();
+    return hasTrailingDraft ? [...filled, ''] : filled;
+  }
+  return resolveExecutiveFindings(findings, concerns);
 }
 
 /** Resolve numbered findings for display or save (findings preferred, concerns fallback). */

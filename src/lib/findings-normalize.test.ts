@@ -6,6 +6,7 @@ import {
   getExecutiveFindingsForEdit,
   isFindingContinuation,
   mergeFindingContinuation,
+  normalizeWorkspaceKeyFindings,
   repairSplitFindings,
   resolveExecutiveFindings,
 } from './findings-normalize';
@@ -31,10 +32,15 @@ describe('findings-normalize', () => {
     expect(repairSplitFindings(items)).toEqual(items);
   });
 
-  it('getExecutiveFindingsForEdit preserves blank rows and explicit findings arrays', () => {
+  it('getExecutiveFindingsForEdit returns stored arrays without padding empty slots', () => {
     expect(getExecutiveFindingsForEdit(['One', ''], [])).toEqual(['One', '']);
-    expect(getExecutiveFindingsForEdit(['', ''], [])).toEqual(['', '']);
-    expect(getExecutiveFindingsForEdit(undefined, [])).toHaveLength(5);
+    expect(getExecutiveFindingsForEdit(undefined, [])).toEqual([]);
+  });
+
+  it('normalizeWorkspaceKeyFindings hides padded blanks but keeps one trailing draft row', () => {
+    expect(normalizeWorkspaceKeyFindings(['One', 'Two', ''], [])).toEqual(['One', 'Two', '']);
+    expect(normalizeWorkspaceKeyFindings(['', '', ''], [])).toEqual([]);
+    expect(normalizeWorkspaceKeyFindings(['Only'], [])).toEqual(['Only']);
   });
 
   it('resolveExecutiveFindings prefers findings then falls back to concerns', () => {

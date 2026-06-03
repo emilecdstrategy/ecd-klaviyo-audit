@@ -13,7 +13,7 @@ import { scheduleSavedToast, useToast } from '../../ui/Toast';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
 import { computeAuditTotalRevenueOpportunity } from '../../../lib/revenue-calculator';
 import { normalizeCoreFlowsMatrix, sanitizeStructureNote, type CoreFlowRow } from '../../../lib/core-flows-matrix';
-import { getExecutiveFindingsForEdit } from '../../../lib/findings-normalize';
+import { getExecutiveFindingsForEdit, normalizeWorkspaceKeyFindings } from '../../../lib/findings-normalize';
 import { repairEntityMarkers } from '../../../lib/entity-tags';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
@@ -51,7 +51,7 @@ function parseExecutiveSummary(raw: string): ExecutivePayload {
 }
 
 function materializeFindings(payload: ExecutivePayload): string[] {
-  return getExecutiveFindingsForEdit(payload.findings, payload.concerns);
+  return normalizeWorkspaceKeyFindings(payload.findings, payload.concerns);
 }
 
 function materializeFindingsHidden(payload: ExecutivePayload, length: number): boolean[] {
@@ -250,10 +250,11 @@ export function ReportEditProvider({
 
   const addFinding = useCallback(() => {
     const prev = getExecPayload();
-    const findings = materializeFindings(prev);
-    const findingsHidden = materializeFindingsHidden(prev, findings.length);
+    const findings = getExecutiveFindingsForEdit(prev.findings, prev.concerns).filter((f) => f.trim());
+    while (findings.length > 0 && !findings[findings.length - 1].trim()) findings.pop();
     findings.push('');
-    findingsHidden.push(false);
+    const findingsHidden = materializeFindingsHidden(prev, findings.length);
+    while (findingsHidden.length < findings.length) findingsHidden.push(false);
     saveExecutive({ findings, findingsHidden });
   }, [getExecPayload, saveExecutive]);
 
@@ -265,8 +266,8 @@ export function ReportEditProvider({
       if (index < 0 || index >= findings.length) return;
 
       if (findings.length <= 1) {
-        findings = [''];
-        findingsHidden = [false];
+        findings = [];
+        findingsHidden = [];
       } else {
         findings = findings.filter((_, i) => i !== index);
         findingsHidden = findingsHidden.filter((_, i) => i !== index);

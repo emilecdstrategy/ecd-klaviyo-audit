@@ -27,7 +27,7 @@ export default function ReportKeyFindings({
     toggleFindingHidden,
     toggleExecutiveBlockHidden,
   } = useReportEdit();
-  const displayFindings = findings.length > 0 ? findings : ['', '', '', '', ''];
+  const displayFindings = findings;
 
   const visibleEntries = displayFindings
     .map((finding, index) => ({ finding, index, hidden: Boolean(findingsHidden[index]) }))
@@ -71,7 +71,10 @@ export default function ReportKeyFindings({
           {displayFindings.map((finding, i) => {
             const hidden = Boolean(findingsHidden[i]);
             if (!editMode && hidden) return null;
-            if (!editMode && !finding.trim()) return null;
+            if (!finding.trim()) {
+              if (!editMode) return null;
+              if (i !== displayFindings.length - 1) return null;
+            }
 
             if (editMode && hidden) {
               return (
