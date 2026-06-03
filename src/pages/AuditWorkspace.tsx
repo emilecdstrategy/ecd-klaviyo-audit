@@ -280,12 +280,6 @@ export default function AuditWorkspace() {
             <EmailDesignDrawer
               open={emailDesignDrawerOpen}
               onClose={() => setEmailDesignDrawerOpen(false)}
-              revenueValue={emailDesignSection?.revenue_opportunity}
-              onRevenueChange={
-                emailDesignSection
-                  ? value => handleSectionUpdate(emailDesignSection.id, { revenue_opportunity: value })
-                  : undefined
-              }
             >
               <EmailDesignEditor
                 audit={audit}

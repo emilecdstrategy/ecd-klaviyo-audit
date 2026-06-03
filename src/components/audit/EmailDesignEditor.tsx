@@ -189,20 +189,6 @@ export default function EmailDesignEditor({
         onSelected={ed => void handleClientEmailSelected(ed)}
       />
 
-      {section && onSectionUpdate && (
-        <div className="rounded-xl border border-gray-100 bg-white p-6 card-shadow lg:hidden">
-          <label className="block text-xs font-medium text-gray-500 uppercase tracking-wide mb-1.5">
-            Revenue Opportunity ($/mo)
-          </label>
-          <input
-            type="number"
-            value={section.revenue_opportunity}
-            onChange={e => onSectionUpdate({ revenue_opportunity: Number(e.target.value) })}
-            className="w-full max-w-xs px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-          />
-        </div>
-      )}
-
       {fullscreen && (
         <div className="fixed inset-0 z-[60] bg-[#f7f7f8] overflow-y-auto">
           <div className="sticky top-0 z-10 flex items-center justify-between px-6 py-3 bg-white/95 backdrop-blur border-b border-gray-100">
@@ -241,15 +227,11 @@ export function EmailDesignDrawer({
   onClose,
   title = 'Email design & benchmark',
   children,
-  revenueValue,
-  onRevenueChange,
 }: {
   open: boolean;
   onClose: () => void;
   title?: string;
   children: ReactNode;
-  revenueValue?: number;
-  onRevenueChange?: (value: number) => void;
 }) {
   if (!open) return null;
   return (
@@ -264,25 +246,6 @@ export function EmailDesignDrawer({
         <div className="flex shrink-0 items-center justify-between gap-4 border-b border-gray-100 px-5 py-3">
           <h3 className="min-w-0 truncate text-sm font-semibold text-gray-900">{title}</h3>
           <div className="flex shrink-0 items-center gap-4">
-            {onRevenueChange != null && (
-              <div className="hidden items-center gap-2.5 sm:flex">
-                <label
-                  htmlFor="email-design-revenue-opportunity"
-                  className="whitespace-nowrap text-xs font-medium text-gray-500"
-                >
-                  Revenue Opportunity ($/mo)
-                </label>
-                <input
-                  id="email-design-revenue-opportunity"
-                  type="number"
-                  min={0}
-                  step={50}
-                  value={revenueValue ?? 0}
-                  onChange={e => onRevenueChange(Number(e.target.value))}
-                  className="h-9 w-[7.5rem] rounded-lg border border-gray-200 bg-white px-3 text-sm tabular-nums text-gray-900 focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
-                />
-              </div>
-            )}
             <button
               type="button"
               onClick={onClose}

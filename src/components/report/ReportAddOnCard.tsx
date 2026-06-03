@@ -44,7 +44,7 @@ function AddOnPriceBlock({
   updateAddOnPrice: ReportAddOnCardProps['updateAddOnPrice'];
 }) {
   return (
-    <div className="inline-flex min-w-[10.5rem] max-w-[12rem] flex-col items-start rounded-xl bg-indigo-50 px-3.5 py-2 ring-1 ring-indigo-100">
+    <div className="inline-flex min-w-[12.5rem] max-w-[14.5rem] flex-col items-start rounded-xl bg-indigo-50 px-3.5 py-2 ring-1 ring-indigo-100">
       {editMode ? (
         <>
           <div className="flex items-baseline gap-0.5">
@@ -69,7 +69,7 @@ function AddOnPriceBlock({
         </>
       ) : (
         <>
-          <span className="text-sm font-bold tabular-nums text-indigo-900">
+          <span className="whitespace-nowrap text-sm font-bold tabular-nums text-indigo-900">
             {priceDisplay.headline}
             {slice.unit === 'monthly' && slice.amount != null && slice.amount > 0 && !slice.label?.includes('/mo') ? (
               <span className="text-[11px] font-semibold text-indigo-600">/mo</span>
@@ -183,7 +183,7 @@ export default function ReportAddOnCard({
         {showFooter && (
           <div
             className={cn(
-              'mt-4 flex items-end gap-4 border-t border-gray-100 pt-4',
+              'mt-4 flex items-center gap-4 border-t border-gray-100 pt-4',
               showPriceBlock && showCtaColumn ? 'justify-between' : showCtaColumn ? 'justify-end' : 'justify-start',
             )}
           >
@@ -200,7 +200,7 @@ export default function ReportAddOnCard({
             ) : null}
 
             {showCtaColumn ? (
-              <div className="flex min-w-0 flex-col items-end gap-2">
+              <div className="flex min-w-0 flex-col items-end justify-center gap-2">
                 {editMode && (
                   <EditablePlainText
                     value={item.details_url ?? ''}

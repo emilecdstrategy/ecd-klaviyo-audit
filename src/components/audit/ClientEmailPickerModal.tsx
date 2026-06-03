@@ -116,10 +116,6 @@ export default function ClientEmailPickerModal({
 
   const handleSetClientEmail = async () => {
     if (!highlightedId || !cachedPreview) return;
-    const ok = window.confirm(
-      'Switching the client email will remove all annotations on the current (client) email. Continue?',
-    );
-    if (!ok) return;
 
     setCommitting(true);
     setCommitError(null);
