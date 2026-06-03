@@ -103,6 +103,7 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   );
   const hasAnalysisContent = auditHasAnalysisContent(audit.executive_summary, sectionRows);
 
+  /* Highlight-targeted regen UI disabled — re-enable with regenerateAuditForHighlights.
   if (hasAnalysisContent && audit.audit_method === 'api' && aiRegenInProgress) {
     const stepIndex = Number(aiJob?.step_index) || 0;
     return {
@@ -125,24 +126,30 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   }
 
   if (hasAnalysisContent && audit.audit_method === 'api' && aiJobStatus === 'failed') {
-    return {
-      isGenerating: false,
-      isStalled: false,
-      needsProfileResume: false,
-      needsAiResume: true,
-      showPipelineUi: true,
-      aiServerActive: false,
-      aiJobFailed: true,
-      aiJobError: aiJob?.error_message ?? 'Regeneration failed',
-      phase: 'ai_analysis',
-      progress: 60,
-      label: 'Add-on regeneration failed — retry',
-      stageRuns,
-      profileScanTotal: profileJob?.total_profiles ?? null,
-      profileStalled: false,
-      aiStalled: false,
-    };
+    const partial = (aiJob?.partial_state ?? {}) as Record<string, unknown>;
+    if (partial.highlightRegen) {
+      // Ignore stale highlight-regen job failures; report content is already present.
+    } else {
+      return {
+        isGenerating: false,
+        isStalled: false,
+        needsProfileResume: false,
+        needsAiResume: true,
+        showPipelineUi: true,
+        aiServerActive: false,
+        aiJobFailed: true,
+        aiJobError: aiJob?.error_message ?? 'Regeneration failed',
+        phase: 'ai_analysis',
+        progress: 60,
+        label: 'Add-on regeneration failed — retry',
+        stageRuns,
+        profileScanTotal: profileJob?.total_profiles ?? null,
+        profileStalled: false,
+        aiStalled: false,
+      };
+    }
   }
+  */
 
   if (hasAnalysisContent || audit.audit_method !== 'api') {
     return {
@@ -280,23 +287,16 @@ export async function nudgeProfileScan(auditId: string): Promise<void> {
   }
 }
 
-export async function regenerateAuditForHighlights(auditId: string): Promise<void> {
+/** Highlight-targeted AI regen disabled — layout highlight flags are visual only for now. */
+export async function regenerateAuditForHighlights(_auditId: string): Promise<void> {
+  return;
+  /* Re-enable when highlight AI + demo placements return:
   await supabase.auth.refreshSession().catch(() => {});
   const invokePromise = supabase.functions.invoke('audit_finalize_analysis', {
     body: { audit_id: auditId, mode: 'highlight_regen' },
   });
-  const result = await Promise.race([
-    invokePromise,
-    new Promise<{ data: null; error: null }>(resolve => {
-      window.setTimeout(() => resolve({ data: null, error: null }), 8_000);
-    }),
-  ]);
-
-  if (result.error) {
-    const status = (result.error as { context?: { status?: number } }).context?.status;
-    if (Number(status) === 546 || Number(status) === 504) return;
-    throw new Error(result.error.message || 'Failed to start highlight regeneration');
-  }
+  ...
+  */
 }
 
 export async function startServerAuditAnalysis(auditId: string): Promise<void> {
@@ -338,19 +338,7 @@ export async function waitForServerAuditAnalysis(
     if ((status.needsAiResume || status.aiJobFailed) && !status.aiServerActive) {
       if (!nudgeSent || status.aiJobFailed) {
         nudgeSent = true;
-        const { data: aiJob } = await supabase
-          .from('audit_analysis_jobs')
-          .select('partial_state')
-          .eq('audit_id', auditId)
-          .maybeSingle();
-        const highlightJob = Boolean(
-          (aiJob?.partial_state as Record<string, unknown> | undefined)?.highlightRegen,
-        );
-        if (highlightJob) {
-          await regenerateAuditForHighlights(auditId);
-        } else {
-          await startServerAuditAnalysis(auditId);
-        }
+        await startServerAuditAnalysis(auditId);
       }
     }
     await new Promise(resolve => setTimeout(resolve, 3000));

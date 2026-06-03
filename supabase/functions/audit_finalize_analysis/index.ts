@@ -247,7 +247,7 @@ async function buildWizardData(sb: ReturnType<typeof assertServiceClient>, audit
       auditContext: context,
       profileAudienceScan,
       clientSellsSubscriptions: Boolean((context as Record<string, unknown> | null)?.sells_subscriptions),
-      highlightedAddOns: extractHighlightedAddOns(audit.layout),
+      // highlightedAddOns: extractHighlightedAddOns(audit.layout),
     },
     hasRefine: auditContextHasContent(context),
   };
@@ -285,6 +285,9 @@ async function runPipeline(
 ): Promise<Response> {
   const sb = assertServiceClient();
   const highlightRegen = options?.mode === "highlight_regen";
+  if (highlightRegen) {
+    return json({ ok: true, correlationId, status: "skipped", reason: "highlight_regen_disabled" });
+  }
 
   const { data: audit, error: auditErr } = await sb
     .from("audits")

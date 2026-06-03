@@ -2,11 +2,9 @@ import {
   clearAuditGenerationActive,
   fetchAuditPipelineStatus,
   markAuditGenerationActive,
-  regenerateAuditForHighlights,
   startServerAuditAnalysis,
   waitForServerAuditAnalysis,
 } from './audit-pipeline-status';
-import { supabase } from './supabase';
 
 const RESUME_LOCK_PREFIX = 'ecd-ai-resume-lock:';
 
@@ -50,26 +48,7 @@ export async function resumeAuditAnalysis(
   markAuditGenerationActive(auditId);
 
   try {
-    const { data: audit } = await supabase
-      .from('audits')
-      .select('executive_summary, audit_method')
-      .eq('id', auditId)
-      .maybeSingle();
-    const hasPriorAnalysis =
-      Boolean(audit?.executive_summary?.trim()) && audit?.audit_method === 'api';
-
-    const { data: aiJob } = await supabase
-      .from('audit_analysis_jobs')
-      .select('partial_state')
-      .eq('audit_id', auditId)
-      .maybeSingle();
-    const highlightJobActive = Boolean(
-      (aiJob?.partial_state as Record<string, unknown> | undefined)?.highlightRegen,
-    );
-
-    if (highlightJobActive && (pipeline.aiJobFailed || pipeline.needsAiResume)) {
-      await regenerateAuditForHighlights(auditId);
-    } else if (pipeline.needsAiResume || pipeline.aiJobFailed) {
+    if (pipeline.needsAiResume || pipeline.aiJobFailed) {
       await startServerAuditAnalysis(auditId);
     }
 

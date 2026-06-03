@@ -1,17 +1,17 @@
 import EditablePlainText from './edit/EditablePlainText';
-import SectionDemoMarker from './SectionDemoMarker';
-import type { SectionDemoMarker as SectionDemoMarkerData } from '../../lib/addon-highlight';
+// import SectionDemoMarker from './SectionDemoMarker';
+// import type { SectionDemoMarker as SectionDemoMarkerData } from '../../lib/addon-highlight';
 
 export default function ReportSectionHeader({
   number,
   label,
   onSaveLabel,
-  demoMarkers,
+  // demoMarkers,
 }: {
   number: string;
   label: string;
   onSaveLabel?: (value: string) => void;
-  demoMarkers?: SectionDemoMarkerData[];
+  // demoMarkers?: SectionDemoMarkerData[];
 }) {
   return (
     <div className="mb-8">
@@ -31,7 +31,8 @@ export default function ReportSectionHeader({
         />
       </div>
     </div>
-    {demoMarkers && demoMarkers.length > 0 ? <SectionDemoMarker markers={demoMarkers} /> : null}
+    {/* Demo placement chips disabled — re-enable with SectionDemoMarker when highlight AI returns */}
+    {/* {demoMarkers && demoMarkers.length > 0 ? <SectionDemoMarker markers={demoMarkers} /> : null} */}
     </div>
   );
 }

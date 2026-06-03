@@ -11,18 +11,13 @@ import AuditGenerationStatus from '../components/audit/AuditGenerationStatus';
 import {
   clearAuditGenerationActive,
   fetchAuditPipelineStatus,
-  regenerateAuditForHighlights,
-  waitForServerAuditAnalysis,
 } from '../lib/audit-pipeline-status';
-import AddOnHighlightRegenModal from '../components/audit/AddOnHighlightRegenModal';
-import { getAddOnItemsFromLayout, getHighlightedAddOns } from '../lib/addon-highlight';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, Client } from '../lib/types';
 import {
   getAuditReportBundleById,
   listIndustryEmailLibrary,
   publishAudit,
-  updateAudit,
   updateAuditStatus,
   updateAuditSection,
 } from '../lib/db';
@@ -60,26 +55,6 @@ export default function AuditWorkspace() {
   const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
   const [analysisInProgress, setAnalysisInProgress] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
-  const [highlightRegenOpen, setHighlightRegenOpen] = useState(false);
-  const [highlightRegenRunning, setHighlightRegenRunning] = useState(false);
-  const [highlightChangesPending, setHighlightChangesPending] = useState(false);
-
-  const highlightedAddOnNames = useMemo(
-    () => getHighlightedAddOns(getAddOnItemsFromLayout(audit?.layout)).map(item => item.name),
-    [audit?.layout],
-  );
-
-  const closeRevenueDrawer = () => {
-    setRevenueDrawerOpen(false);
-    if (
-      highlightChangesPending &&
-      audit?.audit_method === 'api' &&
-      String(audit.executive_summary ?? '').trim()
-    ) {
-      setHighlightRegenOpen(true);
-    }
-  };
-
   const emailDesignSection = sections.find(section => section.section_key === 'email_design');
 
   useEffect(() => {
@@ -283,10 +258,7 @@ export default function AuditWorkspace() {
                   <AuditReportView
                     data={mergedReportData}
                     onManageEmailDesign={() => setEmailDesignDrawerOpen(true)}
-                    onManageRevenueOpportunities={() => {
-                      setHighlightChangesPending(false);
-                      setRevenueDrawerOpen(true);
-                    }}
+                    onManageRevenueOpportunities={() => setRevenueDrawerOpen(true)}
                   />
                 </Suspense>
               )}
@@ -337,47 +309,13 @@ export default function AuditWorkspace() {
           <Suspense fallback={null}>
             <EmailDesignDrawer
               open={revenueDrawerOpen}
-              onClose={closeRevenueDrawer}
+              onClose={() => setRevenueDrawerOpen(false)}
               title="Revenue opportunities"
             >
-              <RevenueAddOnItemsEditor
-                audit={audit}
-                onAuditChange={setAudit}
-                onHighlightChanged={() => setHighlightChangesPending(true)}
-              />
+              <RevenueAddOnItemsEditor audit={audit} onAuditChange={setAudit} />
             </EmailDesignDrawer>
           </Suspense>
         )}
-        <AddOnHighlightRegenModal
-          open={highlightRegenOpen}
-          running={highlightRegenRunning}
-          highlightedNames={highlightedAddOnNames}
-          onDismiss={() => {
-            setHighlightRegenOpen(false);
-            setHighlightChangesPending(false);
-          }}
-          onConfirm={async () => {
-            if (!audit?.id) return;
-            setHighlightRegenRunning(true);
-            try {
-              if (audit.layout) {
-                await updateAudit(audit.id, { layout: audit.layout });
-              }
-              await regenerateAuditForHighlights(audit.id);
-              setHighlightRegenOpen(false);
-              setHighlightChangesPending(false);
-              setAnalysisInProgress(true);
-              await waitForServerAuditAnalysis(audit.id, { maxWaitMs: 8 * 60 * 1000 });
-              setReloadKey(key => key + 1);
-              setAnalysisInProgress(false);
-            } catch (e) {
-              toast(e instanceof Error ? e.message : 'Regeneration failed');
-              setAnalysisInProgress(false);
-            } finally {
-              setHighlightRegenRunning(false);
-            }
-          }}
-        />
       </div>
     </ReportEditProvider>
   );

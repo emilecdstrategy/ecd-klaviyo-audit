@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, GripVertical, Plus, Star } from 'lucide-react';
+import { ArrowDown, ArrowUp, GripVertical, Plus } from 'lucide-react';
 import type { Audit, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../../lib/types';
 import { listRevenueOpportunityTemplates, updateAudit, uploadRevenueOpportunityImage } from '../../lib/db';
 import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
@@ -39,12 +39,9 @@ function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
 export default function RevenueAddOnItemsEditor({
   audit,
   onAuditChange,
-  onHighlightChanged,
 }: {
   audit: Audit;
   onAuditChange: (next: Audit) => void;
-  /** Fired when highlight toggles change (audit already has AI content). */
-  onHighlightChanged?: () => void;
 }) {
   const [templates, setTemplates] = useState<RevenueOpportunityTemplate[]>([]);
   const [selectedTemplateSlug, setSelectedTemplateSlug] = useState('');
@@ -129,11 +126,7 @@ export default function RevenueAddOnItemsEditor({
     };
     onAuditChange({ ...audit, layout: nextLayout });
 
-    const canPromptHighlightRegen =
-      audit.audit_method === 'api' && String(audit.executive_summary ?? '').trim();
-
     if (opts?.highlightChanged) {
-      if (canPromptHighlightRegen) onHighlightChanged?.();
       void (async () => {
         try {
           await updateAudit(audit.id, { layout: nextLayout });
@@ -219,16 +212,15 @@ export default function RevenueAddOnItemsEditor({
                 <div className="flex items-center gap-1">
                   <button
                     type="button"
-                    title={item.highlighted ? 'Remove highlight' : 'Highlight for report'}
                     aria-pressed={Boolean(item.highlighted)}
                     onClick={() => toggleHighlighted(index)}
-                    className={`p-1.5 rounded border transition-colors ${
+                    className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
                       item.highlighted
-                        ? 'border-amber-300 bg-amber-100 text-amber-700'
-                        : 'border-gray-200 text-gray-400 hover:border-amber-200 hover:text-amber-600'
+                        ? 'border-amber-300 bg-amber-100 text-amber-800'
+                        : 'border-gray-200 bg-white text-gray-600 hover:border-amber-200 hover:text-amber-700'
                     }`}
                   >
-                    <Star className={`w-3.5 h-3.5 ${item.highlighted ? 'fill-current' : ''}`} />
+                    {item.highlighted ? 'Unhighlight' : 'Highlight'}
                   </button>
                   <button
                     type="button"

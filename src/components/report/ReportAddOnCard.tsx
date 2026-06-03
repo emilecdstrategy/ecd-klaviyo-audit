@@ -96,7 +96,7 @@ export default function ReportAddOnCard({
   updateAddOnImage,
   updateAddOnPrice,
 }: ReportAddOnCardProps) {
-  const { editMode, toggleAddOnHighlighted } = useReportEdit();
+  const { editMode } = useReportEdit();
   const item = slice.item;
   const itemKey = `${item.template_slug}-${item.display_order}`;
   const showDemoCta = addOnHasCustomerAgentDemo(item.template_slug) && Boolean(customerAgentDemoUrl);
@@ -128,21 +128,6 @@ export default function ReportAddOnCard({
                 <Star className="h-3 w-3 fill-amber-600 text-amber-600" />
                 Highlighted
               </span>
-            )}
-            {editMode && (
-              <button
-                type="button"
-                title={isHighlighted ? 'Remove highlight' : 'Highlight for report'}
-                onClick={() => toggleAddOnHighlighted(itemKey, !isHighlighted)}
-                className={`inline-flex items-center gap-1 rounded-md border px-2 py-0.5 text-[10px] font-medium transition-colors ${
-                  isHighlighted
-                    ? 'border-amber-300 bg-amber-50 text-amber-800'
-                    : 'border-gray-200 text-gray-500 hover:border-amber-200 hover:text-amber-700'
-                }`}
-              >
-                <Star className={`h-3 w-3 ${isHighlighted ? 'fill-current' : ''}`} />
-                {isHighlighted ? 'Unhighlight' : 'Highlight'}
-              </button>
             )}
           </div>
           <EditablePlainText

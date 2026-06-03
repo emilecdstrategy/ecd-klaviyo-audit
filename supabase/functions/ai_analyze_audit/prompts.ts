@@ -471,6 +471,7 @@ export function buildAuditUserPrompt(
     );
   }
 
+  /* Highlighted add-on AI weaving + demo placements disabled for now.
   const highlighted = Array.isArray(data.highlightedAddOns)
     ? data.highlightedAddOns.filter((a) => a?.template_slug && a?.name)
     : [];
@@ -483,18 +484,14 @@ export function buildAuditUserPrompt(
       "Each placement needs a one-line presenter_note (what to show the client, tied to this account's data).",
     ];
   }
+  */
 
   if (mode !== "sections_only") {
     payload.required_top_level_fields = {
       strengths: "Array of 3-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages WITH benchmark ranges and health assessment. When citing revenue dollars, include pct_of_store_revenue from revenue_context/top_flows. Write naturally, no em-dashes, use commas and plain language.",
       findings: "Array of exactly 5 strings. Each is a problem statement ranked by impact. Bold lead phrase plus evidence. When citing percentages, include benchmark range. No dollar amounts or revenue language.",
       implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
-      ...(highlighted.length > 0
-        ? {
-          addOnPlacements:
-            "Array of {template_slug, section_keys, presenter_note} for each highlighted add-on listed in highlighted_add_ons.",
-        }
-        : {}),
+      // addOnPlacements: re-enable with highlighted add-on instructions above
     };
   }
   if (mode === "top_level_only") {
