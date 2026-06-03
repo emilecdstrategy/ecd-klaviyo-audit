@@ -56,6 +56,20 @@ export function repairSplitFindings(items: string[]): string[] {
   return out.map(repairBrokenBoldMarkers);
 }
 
+export const EXECUTIVE_FINDING_EDIT_SLOTS = 5;
+
+/** Findings list for workspace edit — preserves blank rows and explicit `findings` arrays. */
+export function getExecutiveFindingsForEdit(
+  findings?: string[],
+  concerns?: string[],
+): string[] {
+  if (Array.isArray(findings)) return [...findings];
+  if (Array.isArray(concerns) && concerns.some((c) => c.trim())) {
+    return repairSplitFindings(concerns);
+  }
+  return Array.from({ length: EXECUTIVE_FINDING_EDIT_SLOTS }, () => '');
+}
+
 /** Resolve numbered findings for display or save (findings preferred, concerns fallback). */
 export function resolveExecutiveFindings(findings?: string[], concerns?: string[]): string[] {
   const base =

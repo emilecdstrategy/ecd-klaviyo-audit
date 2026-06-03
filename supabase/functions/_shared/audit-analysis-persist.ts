@@ -1,4 +1,10 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
+import {
+  buildCompetingSmsKeyFinding,
+  extractRecoveryFlowRevenue,
+  injectCompetingSmsFinding,
+} from "./competing-sms-finding.ts";
+import type { CompetingSmsScanSnapshot } from "./competing-sms-scan.ts";
 
 const REVENUE_SECTION_KEYS = ["flows", "segmentation", "campaigns", "signup_forms", "email_design"];
 
@@ -173,10 +179,34 @@ export async function persistAuditAnalysisResults(
   const mergedLayout = mergeAddOnPlacementsIntoLayout(audit.layout, partial.addOnPlacements);
   const totalOpportunity = computeAuditTotalRevenueOpportunity(patchedSections, mergedLayout);
 
-  const execPayload = (strengthsForExec.length || partial.findings?.length || partial.implementationTimeline?.length)
+  let findingsForExec = partial.findings ?? [];
+  try {
+    const { data: rollup } = await sb
+      .from("klaviyo_reporting_rollups")
+      .select("computed")
+      .eq("audit_id", auditId)
+      .eq("timeframe_key", "last_30_days")
+      .maybeSingle();
+    const snapshot = (rollup?.computed as { account_snapshot?: { competing_sms_scan?: CompetingSmsScanSnapshot } } | null)
+      ?.account_snapshot;
+    const scan = snapshot?.competing_sms_scan;
+    if (scan?.should_inject_finding && scan.detected_platforms?.length) {
+      const { data: flowPerf } = await sb
+        .from("flow_performance")
+        .select("flow_name, monthly_revenue_current")
+        .eq("audit_id", auditId);
+      const recovery = extractRecoveryFlowRevenue(flowPerf ?? []);
+      const finding = buildCompetingSmsKeyFinding(scan.detected_platforms, recovery);
+      findingsForExec = injectCompetingSmsFinding(findingsForExec, finding);
+    }
+  } catch {
+    // non-critical
+  }
+
+  const execPayload = (strengthsForExec.length || findingsForExec.length || partial.implementationTimeline?.length)
     ? JSON.stringify({
       text: partial.executiveSummary ?? "",
-      findings: partial.findings ?? [],
+      findings: findingsForExec,
       strengths: strengthsForExec,
       timeline: partial.implementationTimeline ?? [],
     })

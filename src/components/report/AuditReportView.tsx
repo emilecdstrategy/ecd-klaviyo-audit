@@ -41,7 +41,7 @@ import ReportAddOnCard from './ReportAddOnCard';
 import { AttributionModelHelpTrigger } from './AttributionModelHelpModal';
 import { uploadReportScreenshot, uploadRevenueOpportunityImage } from '../../lib/db';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
-import { resolveExecutiveFindings } from '../../lib/findings-normalize';
+import { getExecutiveFindingsForEdit, resolveExecutiveFindings } from '../../lib/findings-normalize';
 // import { buildSectionDemoMap } from '../../lib/addon-highlight';
 import { cn } from '../../lib/utils';
 import type { AuditReportBundle } from '../../hooks/useAuditReportData';
@@ -238,7 +238,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
   const executiveSummaryData = useMemo(() => {
     let execText = audit.executive_summary || '';
-    let aiFindings: string[] = [];
+    let rawFindings: string[] | undefined;
     let aiStrengths: string[] = [];
     let aiConcerns: string[] = [];
     let aiTimeline: { phase: string; timeframe: string; label: string; items: string[] }[] = [];
@@ -249,7 +249,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       const parsed = JSON.parse(audit.executive_summary || '');
       if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
         if (typeof parsed.text === 'string') execText = parsed.text;
-        aiFindings = Array.isArray(parsed.findings) ? parsed.findings : [];
+        rawFindings = Array.isArray(parsed.findings) ? parsed.findings : undefined;
         aiStrengths = Array.isArray(parsed.strengths) ? parsed.strengths : [];
         aiConcerns = Array.isArray(parsed.concerns) ? parsed.concerns : [];
         aiTimeline = Array.isArray(parsed.timeline) ? parsed.timeline : [];
@@ -260,16 +260,19 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     } catch {
       // plain text — keep as-is
     }
+    const aiFindings = editMode
+      ? getExecutiveFindingsForEdit(rawFindings, aiConcerns)
+      : resolveExecutiveFindings(rawFindings, aiConcerns);
     return {
       execText,
-      aiFindings: resolveExecutiveFindings(aiFindings, aiConcerns),
+      aiFindings,
       aiStrengths,
       aiTimeline,
       findingsHidden,
       strengthsHidden,
       timelineHidden,
     };
-  }, [audit.executive_summary]);
+  }, [audit.executive_summary, editMode]);
 
   const {
     execText,

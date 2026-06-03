@@ -250,11 +250,26 @@ async function fetchKlaviyoContext(auditId: string, clientId: string): Promise<K
     account_snapshot?: {
       campaigns_truncated?: boolean;
       revenue_breakdown?: KlaviyoContext["revenueBreakdown"];
+      competing_sms_scan?: KlaviyoContext["competingSmsScan"] & {
+        detected_platforms?: Array<{ id: string; name: string; markers?: string[] }>;
+      };
     };
   } | null;
   const rollupTruncated = rollupComputed?.account_snapshot?.campaigns_truncated;
   const campaignsTruncated = rollupTruncated === true || campaignCount > 500;
   const revenueBreakdown = rollupComputed?.account_snapshot?.revenue_breakdown ?? null;
+  const rawCompetingScan = rollupComputed?.account_snapshot?.competing_sms_scan;
+  const competingSmsScan = rawCompetingScan
+    ? {
+      website_url: rawCompetingScan.website_url ?? null,
+      detected_platforms: (rawCompetingScan.detected_platforms ?? []).map((p) => ({
+        id: p.id,
+        name: p.name,
+      })),
+      klaviyo_sms_active: Boolean(rawCompetingScan.klaviyo_sms_active),
+      should_inject_finding: Boolean(rawCompetingScan.should_inject_finding),
+    }
+    : null;
 
   return {
     account: connRes.data ? { name: connRes.data.account_name, timezone: connRes.data.timezone, website_url: connRes.data.website_url } : undefined,
@@ -271,6 +286,7 @@ async function fetchKlaviyoContext(auditId: string, clientId: string): Promise<K
       email_message_count: fp.email_message_count ?? null,
     })),
     revenueBreakdown,
+    competingSmsScan,
   };
 }
 

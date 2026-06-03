@@ -3,6 +3,7 @@
  */
 import { describe, expect, it } from 'vitest';
 import {
+  getExecutiveFindingsForEdit,
   isFindingContinuation,
   mergeFindingContinuation,
   repairSplitFindings,
@@ -28,6 +29,12 @@ describe('findings-normalize', () => {
       '**Welcome flow under-converts**, only **0.15%** conversion.',
     ];
     expect(repairSplitFindings(items)).toEqual(items);
+  });
+
+  it('getExecutiveFindingsForEdit preserves blank rows and explicit findings arrays', () => {
+    expect(getExecutiveFindingsForEdit(['One', ''], [])).toEqual(['One', '']);
+    expect(getExecutiveFindingsForEdit(['', ''], [])).toEqual(['', '']);
+    expect(getExecutiveFindingsForEdit(undefined, [])).toHaveLength(5);
   });
 
   it('resolveExecutiveFindings prefers findings then falls back to concerns', () => {

@@ -51,6 +51,12 @@ export type KlaviyoContext = {
     sms_revenue: number;
     timeframe: "last_30_days";
   } | null;
+  competingSmsScan?: {
+    website_url: string | null;
+    detected_platforms: Array<{ id: string; name: string }>;
+    klaviyo_sms_active: boolean;
+    should_inject_finding: boolean;
+  } | null;
 };
 
 export function buildAuditSystemPrompt() {
@@ -377,6 +383,14 @@ function buildScopedKlaviyoData(
   }
   const revenueContext = buildRevenueContext(klaviyo);
   if (revenueContext) scoped.revenue_context = revenueContext;
+  if (klaviyo.competingSmsScan?.should_inject_finding) {
+    scoped.competing_sms_scan = {
+      detected: klaviyo.competingSmsScan.detected_platforms.map((p) => p.name),
+      klaviyo_sms_active: klaviyo.competingSmsScan.klaviyo_sms_active,
+      note:
+        "Storefront scan found a non-Klaviyo SMS platform while Klaviyo SMS revenue/subscribers are negligible. Mention fragmented SMS tracking and lost Browse/Cart abandonment attribution in findings if not already covered.",
+    };
+  }
   return scoped;
 }
 

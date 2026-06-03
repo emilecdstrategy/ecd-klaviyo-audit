@@ -5,6 +5,11 @@ import { fetchPlatformBenchmarkConfig, getFlowBenchmarks } from "../_shared/benc
 import { computeCampaignRevenuePerRecipient } from "../_shared/campaign-metrics.ts";
 import { buildRevenueBreakdown } from "../_shared/revenue-breakdown.ts";
 import { buildDeliverabilitySnapshot, extractBounceSpam } from "../_shared/deliverability.ts";
+import { flowInventoryHasSmsMarketing } from "../_shared/competing-sms-detect.ts";
+import {
+  resolveWebsiteUrlForClient,
+  runCompetingSmsWebsiteScan,
+} from "../_shared/competing-sms-scan.ts";
 
 // Stage machine: each stage runs in its own edge invocation with a fresh ~150s
 // budget. `config` is the entry point the frontend calls; subsequent stages
@@ -1761,6 +1766,23 @@ async function runStageReporting(params: {
       timeframe: "last_30_days",
     });
 
+    let competingSmsScan: Awaited<ReturnType<typeof runCompetingSmsWebsiteScan>> | null = null;
+    if (clientId) {
+      try {
+        const websiteUrl = await resolveWebsiteUrlForClient(sb, clientId);
+        competingSmsScan = await runCompetingSmsWebsiteScan({
+          websiteUrl,
+          klaviyoSignals: {
+            sms_revenue_30d: revenueBreakdown?.sms_revenue ?? null,
+            sms_subscribed_profiles: accountSnapshotSeed?.sms_subscribed_profiles_count ?? null,
+            has_live_sms_named_flow: flowInventoryHasSmsMarketing(flowRows ?? []),
+          },
+        });
+      } catch {
+        // non-critical — analysis continues without storefront SMS scan
+      }
+    }
+
     const accountSnapshotFinal = {
       ...(accountSnapshotSeed ?? {}),
       bounce_rate_90d: bounceRate90d,
@@ -1771,6 +1793,7 @@ async function runStageReporting(params: {
       ),
       revenue_breakdown: revenueBreakdown,
       deliverability: deliverabilitySnapshot,
+      competing_sms_scan: competingSmsScan,
       profile_scan_status: profileScanFull ? "pending" : "skipped",
       computed_at: new Date().toISOString(),
     };

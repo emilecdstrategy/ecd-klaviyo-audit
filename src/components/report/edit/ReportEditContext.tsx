@@ -13,6 +13,7 @@ import { scheduleSavedToast, useToast } from '../../ui/Toast';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
 import { computeAuditTotalRevenueOpportunity } from '../../../lib/revenue-calculator';
 import { normalizeCoreFlowsMatrix, sanitizeStructureNote, type CoreFlowRow } from '../../../lib/core-flows-matrix';
+import { getExecutiveFindingsForEdit } from '../../../lib/findings-normalize';
 import { repairEntityMarkers } from '../../../lib/entity-tags';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
@@ -28,6 +29,7 @@ export type TimelinePhase = {
 export type ExecutivePayload = {
   text?: string;
   findings?: string[];
+  concerns?: string[];
   strengths?: string[];
   findingsHidden?: boolean[];
   strengthsHidden?: boolean[];
@@ -48,12 +50,8 @@ function parseExecutiveSummary(raw: string): ExecutivePayload {
   return { text: raw };
 }
 
-const DEFAULT_FINDING_SLOTS = 5;
-
 function materializeFindings(payload: ExecutivePayload): string[] {
-  const findings = [...(payload.findings ?? [])];
-  if (findings.length > 0) return findings;
-  return Array.from({ length: DEFAULT_FINDING_SLOTS }, () => '');
+  return getExecutiveFindingsForEdit(payload.findings, payload.concerns);
 }
 
 function materializeFindingsHidden(payload: ExecutivePayload, length: number): boolean[] {
