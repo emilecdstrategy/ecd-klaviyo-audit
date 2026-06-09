@@ -67,7 +67,7 @@ export function isLikelyAuditGenerating(audit: Pick<Audit, 'audit_method' | 'exe
 }
 
 export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPipelineStatus> {
-  const [{ data: audit, error: auditErr }, { data: sections, error: sectionsErr }, { data: runs, error: runsErr }, { data: profileJob, error: profileErr }, { data: aiJob, error: aiJobErr }] = await Promise.all([
+  const [{ data: audit, error: auditErr }, { data: sections, error: sectionsErr }, { data: runs, error: runsErr }, { data: configRunRow, error: configRunErr }, { data: reportingRunRow, error: reportingRunErr }, { data: profileJob, error: profileErr }, { data: aiJob, error: aiJobErr }] = await Promise.all([
     supabase.from('audits').select('executive_summary, audit_method, created_at').eq('id', auditId).single(),
     supabase.from('audit_sections').select('section_key, summary_text, human_edited_findings').eq('audit_id', auditId),
     supabase
@@ -76,6 +76,22 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
       .eq('audit_id', auditId)
       .order('created_at', { ascending: false })
       .limit(15),
+    supabase
+      .from('klaviyo_runs')
+      .select('id, correlation_id, stage, status, elapsed_ms, error_code, error_message, created_at')
+      .eq('audit_id', auditId)
+      .eq('stage', 'config')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('klaviyo_runs')
+      .select('id, correlation_id, stage, status, elapsed_ms, error_code, error_message, created_at')
+      .eq('audit_id', auditId)
+      .eq('stage', 'reporting')
+      .order('created_at', { ascending: false })
+      .limit(1)
+      .maybeSingle(),
     supabase
       .from('klaviyo_profile_scan_jobs')
       .select('status, total_profiles, subscribed, updated_at')
@@ -91,6 +107,8 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   if (auditErr) throw auditErr;
   if (sectionsErr) throw sectionsErr;
   if (runsErr) throw runsErr;
+  if (configRunErr) throw configRunErr;
+  if (reportingRunErr) throw reportingRunErr;
   if (profileErr) throw profileErr;
   // aiJobErr is non-fatal before migration is applied everywhere
   if (aiJobErr && aiJobErr.code !== 'PGRST205') throw aiJobErr;
@@ -182,8 +200,10 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   const aiJobFailed = aiJobStatus === 'failed';
   const aiJobError = aiJobFailed ? (aiJob?.error_message ?? 'AI analysis failed') : null;
 
-  const configRun = stageRuns.find(run => run.stage === 'config' || !run.stage);
-  const reportingRun = stageRuns.find(run => run.stage === 'reporting');
+  const configRun = (configRunRow as KlaviyoRunRow | null)
+    ?? stageRuns.find(run => run.stage === 'config' || !run.stage);
+  const reportingRun = (reportingRunRow as KlaviyoRunRow | null)
+    ?? stageRuns.find(run => run.stage === 'reporting');
   const reportingDone = reportingRun && ['success', 'partial', 'error', 'timeout'].includes(reportingRun.status);
   const profileActive = profileJob && ['pending', 'running'].includes(profileJob.status);
   const profileScanTotal = profileJob?.total_profiles != null ? Number(profileJob.total_profiles) : null;
