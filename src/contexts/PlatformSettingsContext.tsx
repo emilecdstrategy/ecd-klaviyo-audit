@@ -16,12 +16,17 @@ import {
 } from '../lib/entity-highlight-styles';
 import type { AnnotationSize } from '../lib/types';
 import { DEFAULT_BENCHMARK_CONFIG, type BenchmarkConfig } from '../lib/benchmarks';
+import {
+  mergeCoreFlowRecommendations,
+  type CoreFlowRecommendations,
+} from '../lib/core-flow-recommendations';
 
 export type PlatformSettingsState = {
   annotation_size: AnnotationSize;
   annotations_expanded: boolean;
   entity_highlight_style: EntityHighlightStyle;
   benchmarks: BenchmarkConfig;
+  core_flow_recommendations: CoreFlowRecommendations;
 };
 
 const DEFAULT_SETTINGS: PlatformSettingsState = {
@@ -29,6 +34,7 @@ const DEFAULT_SETTINGS: PlatformSettingsState = {
   annotations_expanded: false,
   entity_highlight_style: 'purple',
   benchmarks: { ...DEFAULT_BENCHMARK_CONFIG },
+  core_flow_recommendations: mergeCoreFlowRecommendations(),
 };
 
 type PlatformSettingsContextValue = {

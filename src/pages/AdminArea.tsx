@@ -16,6 +16,7 @@ import {
   ArrowDown,
   Palette,
   BarChart3,
+  Workflow,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -43,11 +44,13 @@ import type { IndustryEmailLibrary, RevenueOpportunityTemplate } from '../lib/ty
 import { usePlatformSettings } from '../contexts/PlatformSettingsContext';
 import PlatformReportSettingsPanel from '../components/admin/PlatformReportSettingsPanel';
 import BenchmarkSettingsPanel from '../components/admin/BenchmarkSettingsPanel';
+import CoreFlowStandardsPanel from '../components/admin/CoreFlowStandardsPanel';
 
 const TABS = [
   { id: 'users', label: 'Users', icon: Users },
   { id: 'report_display', label: 'Report Display', icon: Palette },
   { id: 'klaviyo_benchmarks', label: 'Klaviyo Benchmarks', icon: BarChart3 },
+  { id: 'core_flow_standards', label: 'Core Flow Standards', icon: Workflow },
   { id: 'email_library', label: 'Email Library', icon: ImageIcon },
   { id: 'revenue_opportunities', label: 'Revenue Opportunities', icon: TrendingUp },
   { id: 'settings', label: 'API Connection', icon: Key },
@@ -106,6 +109,7 @@ export default function AdminArea() {
         {tab === 'users' && <UsersTab />}
         {tab === 'report_display' && <PlatformReportSettingsPanel />}
         {tab === 'klaviyo_benchmarks' && <BenchmarkSettingsPanel />}
+        {tab === 'core_flow_standards' && <CoreFlowStandardsPanel />}
         {tab === 'email_library' && <EmailLibraryTab />}
         {tab === 'revenue_opportunities' && <RevenueOpportunitiesTab />}
         {tab === 'settings' && <SettingsTab />}

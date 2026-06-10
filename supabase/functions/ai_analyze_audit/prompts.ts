@@ -170,13 +170,13 @@ export function buildAuditSystemPrompt() {
     "When discussing strengths about flows, clearly distinguish between revenue performance and engagement performance.",
     "",
     "SECTION RUBRIC REQUIREMENTS:",
-    "For FLOWS, explicitly cover: Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
+    "For FLOWS, explicitly cover: Abandoned Cart, Abandoned Checkout, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
     "CORE FLOWS MATRIX flow_name — CRITICAL: flow_name must be EXACTLY one of the predefined ECD labels below. NEVER put Klaviyo flow names, entity tags, or combined flow strings in flow_name.",
-    "Predefined flow_name values (use verbatim): Abandoned Cart | Browse Abandonment | Welcome Series | Post-Purchase | Winback / Re-engagement | Back-in-Stock | Sunset / List Cleaning. When client sells subscriptions, also include Subscription Lifecycle (8 rows total, inserted after Post-Purchase).",
+    "Predefined flow_name values (use verbatim): Abandoned Cart | Abandoned Checkout | Browse Abandonment | Welcome Series | Post-Purchase | Winback / Re-engagement | Back-in-Stock | Sunset / List Cleaning. When client sells subscriptions, also include Subscription Lifecycle (9 rows total, inserted after Post-Purchase).",
     "In current_structure_note and recommended_structure use plain text only (no entity tags, backticks, or flow: prefixes). Mention the matched Klaviyo flow by name if helpful.",
-    "For each core flow include: present/not present, live/not live, email_count (the number of email messages/steps in the flow sequence — NOT the recipient count; use the emails_in_sequence value from flow performance data when available), current structure note, and ECD recommended structure note.",
-    "CORE FLOWS MATRIX NOTES — KEEP SHORT: current_structure_note and recommended_structure must each be ONE short phrase (max 15 words, no full sentences).",
-    "Example current: '3 emails, no SMS, weak offer on email 2'. Example recommended: '4 emails + SMS, social proof in email 1, urgency in email 3'.",
+    "For each core flow include: present/not present, live/not live, email_count (the number of email messages/steps in the flow sequence — NOT the recipient count; use the emails_in_sequence value from flow performance data when available), current structure note, and recommended structure note.",
+    "CORE FLOWS MATRIX NOTES: current_structure_note must be ONE short phrase (max 15 words, no full sentences). recommended_structure is overwritten by ECD company standards at persist — still emit a brief placeholder if required by schema.",
+    "Example current: '3 emails, no SMS, weak offer on email 2'. Example recommended placeholder: 'ECD standard'.",
     "Do NOT write paragraphs in these fields. The report shows them in an expandable detail panel, not inline.",
     "For SEGMENTATION, explicitly assess: full-list vs segmented sends, engaged/unengaged audience definition, VIP/high-LTV segments, and benchmark against ECD architecture.",
     "For CAMPAIGNS, explicitly assess: send frequency consistency, segmented targeting vs blasting, subject/preview hygiene, and campaign type mix (promotional/educational/seasonal).",
@@ -470,8 +470,8 @@ export function buildAuditUserPrompt(
     },
     section_rubric: {
       flows: data.clientSellsSubscriptions
-        ? "Cover Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Subscription lifecycle, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus). For Subscription lifecycle, use soft matching on flow names (subscription/subscr/recharge/skio/loop/renewal/rebill/next order/membership/etc.) and mark present/live accordingly."
-        : "Cover Abandoned Cart, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
+        ? "Cover Abandoned Cart, Abandoned Checkout, Browse Abandonment, Welcome Series, Post-Purchase, Subscription lifecycle, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus). For Subscription lifecycle, use soft matching on flow names (subscription/subscr/recharge/skio/loop/renewal/rebill/next order/membership/etc.) and mark present/live accordingly."
+        : "Cover Abandoned Cart, Abandoned Checkout, Browse Abandonment, Welcome Series, Post-Purchase, Winback/Re-engagement, Back-in-Stock (bonus), Sunset/List Cleaning (bonus).",
       segmentation: "Assess full-list vs segmented, engaged/unengaged definitions, VIP/high-LTV, and benchmark architecture.",
       campaigns: "Assess frequency consistency, segmented targeting, subject/preview hygiene, and campaign type mix.",
       signup_forms: "Assess popup + embedded presence, offer quality, mobile optimization, benchmark conversion framing.",

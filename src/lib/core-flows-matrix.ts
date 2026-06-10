@@ -30,7 +30,11 @@ const CORE_FLOW_TAIL: CoreFlowDefinition[] = [
 const CORE_FLOW_HEAD: CoreFlowDefinition[] = [
   {
     name: 'Abandoned Cart',
-    patterns: [/abandon.*cart|cart.*abandon|checkout.*abandon|abandon.*checkout|abandoned checkout/i],
+    patterns: [/abandon.*cart|cart.*abandon|abandoned cart/i],
+  },
+  {
+    name: 'Abandoned Checkout',
+    patterns: [/checkout.*abandon|abandon.*checkout|abandoned checkout/i],
   },
   {
     name: 'Browse Abandonment',

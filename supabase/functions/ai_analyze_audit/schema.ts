@@ -112,6 +112,7 @@ const SECTION_ITEM_SCHEMA = {
                     type: "string",
                     enum: [
                       "Abandoned Cart",
+                      "Abandoned Checkout",
                       "Browse Abandonment",
                       "Welcome Series",
                       "Post-Purchase",
@@ -126,7 +127,7 @@ const SECTION_ITEM_SCHEMA = {
                   live: { type: "boolean" },
                   email_count: { type: "number", description: "Number of email messages/steps in the flow sequence, NOT recipient count" },
                   current_structure_note: { type: "string", maxLength: 120 },
-                  recommended_structure: { type: "string", maxLength: 120 },
+                  recommended_structure: { type: "string", maxLength: 280 },
                 },
               },
             },

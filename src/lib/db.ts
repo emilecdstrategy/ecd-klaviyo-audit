@@ -32,6 +32,10 @@ import {
   resolveBenchmarkConfig,
   type BenchmarkConfig,
 } from './benchmarks';
+import {
+  mergeCoreFlowRecommendations,
+  type CoreFlowRecommendations,
+} from './core-flow-recommendations';
 
 const FLOW_SNAPSHOT_SELECT =
   'id, audit_id, client_id, flow_id, name, status, trigger_type, archived, created_at_klaviyo, updated_at_klaviyo, fetched_at, action_count:raw->attributes->action_count, flow_actions:raw->relationships->flow_actions->data';
@@ -757,6 +761,7 @@ export type PlatformSettings = {
   annotations_expanded: boolean;
   entity_highlight_style: EntityHighlightStyle;
   benchmarks: BenchmarkConfig;
+  core_flow_recommendations: CoreFlowRecommendations;
 };
 
 export async function getPlatformSettings(): Promise<PlatformSettings> {
@@ -771,6 +776,7 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
     annotations_expanded: false,
     entity_highlight_style: 'purple',
     benchmarks: { ...DEFAULT_BENCHMARK_CONFIG },
+    core_flow_recommendations: mergeCoreFlowRecommendations(),
   };
 
   if (error || !data) return defaults;
@@ -782,6 +788,9 @@ export async function getPlatformSettings(): Promise<PlatformSettings> {
       data.entity_highlight_style ?? defaults.entity_highlight_style,
     ),
     benchmarks: resolveBenchmarkConfig(data.benchmarks as Partial<BenchmarkConfig> | null),
+    core_flow_recommendations: mergeCoreFlowRecommendations(
+      data.core_flow_recommendations as Partial<CoreFlowRecommendations> | null,
+    ),
   };
 }
 
@@ -790,6 +799,7 @@ export async function updatePlatformSettings(updates: {
   annotations_expanded?: boolean;
   entity_highlight_style?: EntityHighlightStyle;
   benchmarks?: BenchmarkConfig;
+  core_flow_recommendations?: CoreFlowRecommendations;
 }): Promise<void> {
   const { error } = await supabase
     .from('platform_settings')

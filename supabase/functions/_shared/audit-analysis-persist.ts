@@ -5,6 +5,10 @@ import {
   injectCompetingSmsFinding,
 } from "./competing-sms-finding.ts";
 import type { CompetingSmsScanSnapshot } from "./competing-sms-scan.ts";
+import {
+  applyCoreFlowRecommendationsToSectionDetails,
+  fetchCoreFlowRecommendations,
+} from "./core-flow-recommendations.ts";
 
 const REVENUE_SECTION_KEYS = ["flows", "segmentation", "campaigns", "signup_forms", "email_design"];
 
@@ -120,7 +124,17 @@ export async function persistAuditAnalysisResults(
     .eq("audit_id", auditId);
   if (sectionsErr) throw sectionsErr;
 
-  const patches = partial.sections ?? [];
+  const recommendations = await fetchCoreFlowRecommendations(sb);
+  const patches = (partial.sections ?? []).map((patch) => {
+    if (String(patch.section_key) !== "flows" || !patch.section_details) return patch;
+    return {
+      ...patch,
+      section_details: applyCoreFlowRecommendationsToSectionDetails(
+        patch.section_details,
+        recommendations,
+      ),
+    };
+  });
   const patchByKey = new Map(patches.map((p) => [String(p.section_key), p]));
   const patchOnly = options?.patchOnlySectionKeys?.length
     ? new Set(options.patchOnlySectionKeys)
