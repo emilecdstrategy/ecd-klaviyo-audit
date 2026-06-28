@@ -174,7 +174,7 @@ async function seedPartialFromAudit(sb: ReturnType<typeof assertServiceClient>, 
   const { data: sectionRows } = await sb
     .from("audit_sections")
     .select(
-      "section_key, current_state_title, optimized_state_title, current_state_notes, optimized_notes, ai_findings, summary_text, revenue_opportunity, confidence, section_details",
+      "section_key, current_state_title, optimized_state_title, current_state_notes, optimized_notes, ai_findings, key_findings, summary_text, revenue_opportunity, confidence, section_details",
     )
     .eq("audit_id", auditId);
 
@@ -188,6 +188,7 @@ async function seedPartialFromAudit(sb: ReturnType<typeof assertServiceClient>, 
       optimized_notes: s.optimized_notes ?? "",
       ai_findings: s.ai_findings ?? "",
       summary_text: s.summary_text ?? "",
+      key_findings: s.key_findings ?? { items: [], items_hidden: [] },
       revenue_opportunity: Number(s.revenue_opportunity) || 0,
       confidence: s.confidence ?? "medium",
       section_details: s.section_details ?? {},

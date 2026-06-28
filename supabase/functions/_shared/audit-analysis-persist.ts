@@ -126,9 +126,20 @@ export async function persistAuditAnalysisResults(
 
   const recommendations = await fetchCoreFlowRecommendations(sb);
   const patches = (partial.sections ?? []).map((patch) => {
-    if (String(patch.section_key) !== "flows" || !patch.section_details) return patch;
+    let next: Record<string, unknown> = { ...patch };
+    const rawKf = (patch as { key_findings?: { items?: string[] } }).key_findings;
+    if (rawKf?.items?.length) {
+      next = {
+        ...next,
+        key_findings: {
+          items: rawKf.items.map((item) => String(item).trim()).filter(Boolean),
+          items_hidden: rawKf.items.map(() => false),
+        },
+      };
+    }
+    if (String(patch.section_key) !== "flows" || !patch.section_details) return next;
     return {
-      ...patch,
+      ...next,
       section_details: applyCoreFlowRecommendationsToSectionDetails(
         patch.section_details,
         recommendations,

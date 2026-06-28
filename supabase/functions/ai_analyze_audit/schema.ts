@@ -1,6 +1,6 @@
 import { repairSplitFindings } from "../_shared/findings-normalize.ts";
 
-export const AI_SCHEMA_VERSION = "2026-05-23.v5";
+export const AI_SCHEMA_VERSION = "2026-06-10.v6";
 
 export const AUDIT_SECTION_KEYS = [
   "account_health",
@@ -21,7 +21,7 @@ export type AISection = {
   current_state_notes: string;
   optimized_notes: string;
   ai_findings: string;
-  summary_text: string;
+  key_findings: { items: string[] };
   revenue_opportunity: number;
   confidence: Confidence;
   section_details?: Record<string, unknown>;
@@ -76,7 +76,7 @@ const SECTION_ITEM_SCHEMA = {
     "current_state_notes",
     "optimized_notes",
     "ai_findings",
-    "summary_text",
+    "key_findings",
     "revenue_opportunity",
     "confidence",
     "section_details",
@@ -88,7 +88,19 @@ const SECTION_ITEM_SCHEMA = {
     current_state_notes: { type: "string", minLength: 40, maxLength: 3000 },
     optimized_notes: { type: "string", minLength: 40, maxLength: 3000 },
     ai_findings: { type: "string", minLength: 40, maxLength: 3000 },
-    summary_text: { type: "string", minLength: 40, maxLength: 650 },
+    key_findings: {
+      type: "object",
+      additionalProperties: false,
+      required: ["items"],
+      properties: {
+        items: {
+          type: "array",
+          minItems: 3,
+          maxItems: 5,
+          items: { type: "string", minLength: 40, maxLength: 350 },
+        },
+      },
+    },
     revenue_opportunity: { type: "number", minimum: 0, maximum: 25000 },
     confidence: { type: "string", enum: ["low", "medium", "high"] },
     section_details: {
@@ -362,13 +374,17 @@ export function validateOutput(
         continue;
       }
       byKey.set(key, section);
-      if (!section.summary_text || section.summary_text.trim().length < 40) errors.push(`${key}: summary_text too short`);
+      const kfItems = Array.isArray(section.key_findings?.items)
+        ? section.key_findings.items.map((s: string) => String(s).trim()).filter(Boolean)
+        : [];
+      if (kfItems.length < 3) errors.push(`${key}: key_findings must have at least 3 items`);
+      if (kfItems.length > 5) errors.push(`${key}: key_findings must have at most 5 items`);
       if (!section.ai_findings || section.ai_findings.trim().length < 40) errors.push(`${key}: ai_findings too short`);
       if (section.revenue_opportunity == null || Number.isNaN(section.revenue_opportunity) || section.revenue_opportunity < 0) {
         errors.push(`${key}: revenue_opportunity invalid`);
       }
       if (!["low", "medium", "high"].includes(section.confidence)) errors.push(`${key}: confidence invalid`);
-      if (placeholderRegex.test(section.summary_text) || placeholderRegex.test(section.ai_findings)) {
+      if (placeholderRegex.test(section.ai_findings) || kfItems.some((item: string) => placeholderRegex.test(item))) {
         errors.push(`${key}: contains placeholder language`);
       }
     }
@@ -393,7 +409,15 @@ export function validateOutput(
         label: p.label,
         items: p.items.map((i: string) => i.trim()),
       })),
-      sections: needsSections ? requiredSectionKeys.map((k) => byKey.get(k)!) : [],
+      sections: needsSections
+        ? requiredSectionKeys.map((k) => {
+          const section = byKey.get(k)!;
+          const items = repairSplitFindings(
+            (section.key_findings?.items ?? []).map((s: string) => String(s).trim()),
+          );
+          return { ...section, key_findings: { items } };
+        })
+        : [],
       addOnPlacements: normalizeAddOnPlacements((out as Record<string, unknown>).addOnPlacements),
     },
   };

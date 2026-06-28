@@ -1,4 +1,4 @@
-export const AI_SCHEMA_VERSION = "2026-05-23.v5";
+export const AI_SCHEMA_VERSION = "2026-06-10.v6";
 
 export const AUDIT_SECTION_KEYS = [
   "account_health",
@@ -31,7 +31,7 @@ export const AI_OUTPUT_JSON_SCHEMA = {
           "current_state_notes",
           "optimized_notes",
           "ai_findings",
-          "summary_text",
+          "key_findings",
           "revenue_opportunity",
           "confidence",
           "section_details",
@@ -46,7 +46,19 @@ export const AI_OUTPUT_JSON_SCHEMA = {
           current_state_notes: { type: "string", minLength: 40, maxLength: 3000 },
           optimized_notes: { type: "string", minLength: 40, maxLength: 3000 },
           ai_findings: { type: "string", minLength: 40, maxLength: 3000 },
-          summary_text: { type: "string", minLength: 40, maxLength: 1200 },
+          key_findings: {
+            type: "object",
+            additionalProperties: false,
+            required: ["items"],
+            properties: {
+              items: {
+                type: "array",
+                minItems: 3,
+                maxItems: 5,
+                items: { type: "string", minLength: 40, maxLength: 350 },
+              },
+            },
+          },
           revenue_opportunity: { type: "number", minimum: 0, maximum: 500000 },
           confidence: { type: "string", enum: ["low", "medium", "high"] },
           section_details: { type: "object" },
@@ -55,4 +67,3 @@ export const AI_OUTPUT_JSON_SCHEMA = {
     },
   },
 } as const;
-

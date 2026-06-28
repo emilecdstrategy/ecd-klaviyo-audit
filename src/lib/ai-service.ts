@@ -283,7 +283,13 @@ export async function runAIAnalysis(
         current_state_notes: `Account is generating revenue primarily through campaign sends. Automated flows account for less than 15% of total email revenue. List hygiene practices need improvement with a significant portion of inactive subscribers.`,
         optimized_notes: `Industry-leading ${industry} brands typically generate 30-45% of email revenue through automated flows. Regular list cleaning maintains deliverability above 98% and engagement rates 2-3x above current levels.`,
         ai_findings: `Key gaps identified: Low flow-to-campaign revenue ratio, inactive subscriber management needed, deliverability risks from list quality issues.`,
-        summary_text: `Your account has strong foundational elements but is underperforming relative to ${industry} benchmarks. The primary opportunity is shifting revenue from manual campaigns to automated, behavior-triggered flows.`,
+        key_findings: {
+          items: [
+            `Your account has strong foundational elements but is underperforming relative to ${industry} benchmarks.`,
+            'Revenue is weighted toward manual campaigns instead of automated, behavior-triggered flows.',
+            'List hygiene and engagement tiers need attention to unlock the next performance tier.',
+          ],
+        },
         revenue_opportunity: Math.round(listSize * 0.15),
         confidence: 'high' as const,
       },
@@ -294,7 +300,13 @@ export async function runAIAnalysis(
         current_state_notes: `Limited automation in place. Missing critical flows including browse abandonment and post-purchase sequences. Existing abandoned cart flow uses a single email with generic messaging and no conditional splits.`,
         optimized_notes: `Best-in-class ${industry} brands run 7+ automated flows with multi-step sequences, A/B tested subject lines, dynamic product recommendations, and conditional splits based on customer value and behavior.`,
         ai_findings: `Missing flows: Browse Abandonment, Post-Purchase, Winback, Back-in-Stock. Existing flows lack personalization, conditional logic, and proper timing optimization.`,
-        summary_text: `Your flow architecture has significant room for improvement. Adding the missing core flows and optimizing existing ones represents the single largest revenue opportunity in this audit.`,
+        key_findings: {
+          items: [
+            '**Missing core flows**, including browse abandonment and post-purchase sequences.',
+            'Existing abandoned cart flow uses a single email with no conditional splits or personalization.',
+            'Adding and optimizing core flows represents the largest revenue opportunity in this audit.',
+          ],
+        },
         revenue_opportunity: Math.round(listSize * 0.35),
         confidence: 'high' as const,
       },
@@ -305,7 +317,13 @@ export async function runAIAnalysis(
         current_state_notes: `Minimal segmentation in use. Campaigns are sent to full list or basic segments (e.g., all subscribers, recent purchasers). No RFM-based segments or engagement tiers.`,
         optimized_notes: `Implement engagement-based tiers (active, at-risk, dormant), RFM scoring, purchase behavior segments, and browse behavior segments. Personalize campaign content and send frequency by segment.`,
         ai_findings: `No engagement-based segmentation detected. Missing VIP/loyalty segments, product interest segments, and lifecycle stage segments.`,
-        summary_text: `Moving from batch-and-blast to segmented campaigns typically increases open rates by 15-25% and click rates by 30-50%, directly impacting revenue per send.`,
+        key_findings: {
+          items: [
+            '**Batch-and-blast sending** dominates with minimal engagement-based segmentation.',
+            'No VIP, RFM, or lifecycle segments are in active use for campaign targeting.',
+            'Segmented sends typically lift opens 15–25% and clicks 30–50% versus full-list blasts.',
+          ],
+        },
         revenue_opportunity: Math.round(listSize * 0.08),
         confidence: 'medium' as const,
       },
@@ -316,7 +334,13 @@ export async function runAIAnalysis(
         current_state_notes: `Inconsistent send cadence with gaps of 7+ days between campaigns. Content is primarily promotional with limited value-add or educational content. No A/B testing program in place.`,
         optimized_notes: `Establish a consistent 3-4x/week send cadence mixing promotional (60%), educational (25%), and engagement (15%) content. Implement systematic A/B testing on subject lines, send times, and content formats.`,
         ai_findings: `Irregular send schedule, over-reliance on discount-driven campaigns, no testing framework, and limited content variety.`,
-        summary_text: `A structured campaign calendar with content variety and consistent testing will improve subscriber engagement and reduce unsubscribe rates while maintaining or improving revenue per send.`,
+        key_findings: {
+          items: [
+            '**Inconsistent send cadence** with long gaps between promotional campaigns.',
+            'Campaign mix is heavily discount-driven with limited educational or engagement content.',
+            'No systematic A/B testing on subject lines, send times, or creative formats.',
+          ],
+        },
         revenue_opportunity: Math.round(listSize * 0.06),
         confidence: 'medium' as const,
       },
@@ -327,7 +351,13 @@ export async function runAIAnalysis(
         current_state_notes: `Email templates are text-heavy with limited visual hierarchy. CTAs are not prominently placed. Mobile rendering has layout issues. Brand consistency varies across campaigns.`,
         optimized_notes: `Modern email design for ${industry} should feature clean layouts, strong visual hierarchy, mobile-first design, prominent CTAs above the fold, and consistent brand elements. Use dynamic content blocks for personalization.`,
         ai_findings: `Design improvements needed: Mobile optimization, CTA placement and styling, visual hierarchy, image-to-text ratio, and brand consistency.`,
-        summary_text: `Upgrading email design to current best practices typically improves click-through rates by 20-40%, which directly translates to higher conversion rates and revenue per email.`,
+        key_findings: {
+          items: [
+            '**Mobile rendering issues** and weak visual hierarchy limit click-through on campaigns.',
+            'CTAs are not consistently placed above the fold across templates.',
+            'Brand and layout consistency varies widely between campaign sends.',
+          ],
+        },
         revenue_opportunity: Math.round(listSize * 0.04),
         confidence: 'medium' as const,
       },
@@ -338,7 +368,13 @@ export async function runAIAnalysis(
         current_state_notes: `Basic popup form with a simple discount offer. No exit-intent trigger. No multi-step forms. Limited targeting rules. Embedded forms on site are minimal or absent.`,
         optimized_notes: `Deploy multi-step popup with exit-intent trigger, timed delay, and scroll-depth triggers. Add embedded forms in key page locations. Use gamified elements (spin-to-win) for higher conversion. Target 4-6% conversion rate.`,
         ai_findings: `Form conversion rate is below industry average. Missing exit-intent popup, multi-step form flow, and strategic form placement across the site.`,
-        summary_text: `Optimizing signup forms is one of the fastest ways to grow your email list and increase downstream revenue. Current forms are leaving significant subscriber growth on the table.`,
+        key_findings: {
+          items: [
+            '**Popup form conversion** is below industry benchmarks for this vertical.',
+            'No exit-intent, multi-step, or scroll-depth triggers are configured.',
+            'Embedded capture forms are minimal across key site pages.',
+          ],
+        },
         revenue_opportunity: Math.round(listSize * 0.05),
         confidence: 'high' as const,
       },

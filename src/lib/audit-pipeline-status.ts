@@ -49,13 +49,20 @@ const PROFILE_PAUSED_STALE_MS = 5 * 60 * 1000;
 
 function auditHasAnalysisContent(
   executiveSummary: string | null | undefined,
-  sections: Array<{ section_key?: string; summary_text?: string | null; human_edited_findings?: string | null }>,
+  sections: Array<{
+    section_key?: string;
+    summary_text?: string | null;
+    human_edited_findings?: string | null;
+    key_findings?: { items?: string[] } | null;
+  }>,
 ): boolean {
   if (executiveSummary?.trim()) return true;
-  return sections.some(section =>
-    section.section_key !== 'revenue_summary'
-    && Boolean(section.summary_text?.trim() || section.human_edited_findings?.trim()),
-  );
+  return sections.some(section => {
+    if (section.section_key === 'revenue_summary') return false;
+    const kfItems = section.key_findings?.items ?? [];
+    if (kfItems.some(item => String(item).trim())) return true;
+    return Boolean(section.summary_text?.trim() || section.human_edited_findings?.trim());
+  });
 }
 
 /** Fast sync check for list views — no extra queries. */
@@ -69,7 +76,7 @@ export function isLikelyAuditGenerating(audit: Pick<Audit, 'audit_method' | 'exe
 export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPipelineStatus> {
   const [{ data: audit, error: auditErr }, { data: sections, error: sectionsErr }, { data: runs, error: runsErr }, { data: configRunRow, error: configRunErr }, { data: reportingRunRow, error: reportingRunErr }, { data: profileJob, error: profileErr }, { data: aiJob, error: aiJobErr }] = await Promise.all([
     supabase.from('audits').select('executive_summary, audit_method, created_at').eq('id', auditId).single(),
-    supabase.from('audit_sections').select('section_key, summary_text, human_edited_findings').eq('audit_id', auditId),
+    supabase.from('audit_sections').select('section_key, summary_text, human_edited_findings, key_findings').eq('audit_id', auditId),
     supabase
       .from('klaviyo_runs')
       .select('id, correlation_id, stage, status, elapsed_ms, error_code, error_message, created_at')

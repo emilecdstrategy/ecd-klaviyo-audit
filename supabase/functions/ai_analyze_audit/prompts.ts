@@ -108,7 +108,7 @@ export function buildAuditSystemPrompt() {
     "  Segments: `segment:Exact Segment Name`",
     "  Forms: `form:Exact Form Name`",
     "Use the EXACT name as it appears in the Klaviyo data (including prefixes like 'MM |').",
-    "Apply in narrative fields: findings, strengths, executiveSummary, current_state_notes, optimized_notes, ai_findings, summary_text, and timeline items. Do NOT use entity tags in core flows matrix structure notes.",
+    "Apply in narrative fields: findings, strengths, executiveSummary, current_state_notes, optimized_notes, ai_findings, key_findings items, and timeline items. Do NOT use entity tags in core flows matrix structure notes.",
     "You may still use **bold** for problem phrases, metrics, and non-entity emphasis — but NOT for flow/campaign/segment/form names (use entity tags instead).",
     "Example: 'SMS cart recovery is not pulling its weight yet, `flow:MM | SMS Cart Abandonment` has 45 recipients and $0 in revenue.'",
     "",
@@ -122,7 +122,7 @@ export function buildAuditSystemPrompt() {
     "Example strength: '`flow:Browse Abandonment` has an 83.6% open rate (benchmark 25–45%, likely inflated by Apple MPP) and $5,034 in revenue.'",
     "",
     "REVENUE SHARE CONTEXT — CRITICAL:",
-    "When citing a dollar revenue figure in strengths or section summary_text, also express its share of total store revenue and/or Klaviyo-attributed revenue using the precomputed values in klaviyo_data.revenue_context and top_flows[].pct_of_store_revenue / pct_of_attributed_revenue.",
+    "When citing a dollar revenue figure in strengths or section key_findings items, also express its share of total store revenue and/or Klaviyo-attributed revenue using the precomputed values in klaviyo_data.revenue_context and top_flows[].pct_of_store_revenue / pct_of_attributed_revenue.",
     "NEVER invent or calculate percentages yourself. Use ONLY the provided pct fields.",
     "Phrase naturally: '$55,319 (~13% of total store revenue)' or '$55,319 (~42% of Klaviyo-attributed revenue, ~13% of total store revenue)'.",
     "All revenue figures in the data are last 30 days unless stated otherwise.",
@@ -148,10 +148,11 @@ export function buildAuditSystemPrompt() {
     "NEVER include dollar amounts, monthly revenue figures, 'unlock $X', or revenue opportunity language in findings.",
     "Example findings: '**No active post-purchase flow**, which means repeat purchase revenue is not being captured after the first order', '**45 draft flows sitting idle**, including flows that previously generated revenue'.",
     "",
-    "SECTION summary_text — KEY TAKEAWAY:",
-    "Each section's summary_text is displayed as a 'Key Takeaway' on the client report. Keep it to 2-4 sentences MAX — punchy and scannable.",
-    "Tag flow, segment, form, and campaign names with entity tags (e.g., `flow:Abandoned Cart`, `segment:Engaged Subscribers`, `form:Popup`).",
-    "Bold key dollar amounts and percentages. When citing a percentage, always include the benchmark range and health assessment.",
+    "SECTION key_findings — KEY FINDINGS:",
+    "Each section must include key_findings.items: 3–5 bullet strings displayed under that section for the sales presenter.",
+    "Format like executive findings: **bold lead phrase**, then evidence. Rank by business impact (most critical first).",
+    "Keep each bullet under 350 characters. Tag flow, segment, form, and campaign names with entity tags where relevant.",
+    "NEVER include dollar amounts or revenue opportunity language in key_findings bullets.",
     "",
     "IMPLEMENTATION TIMELINE: Return exactly 4 phases based on the audit findings.",
     "Phase 1 (Week 1-2, 'Quick Wins'): low-effort high-impact fixes found in the data (e.g., activating draft flows, fixing broken forms).",
@@ -540,7 +541,7 @@ const REFINE_MEETING_MAX = 25_000;
 
 export type RefineBaselineSection = {
   section_key: string;
-  summary_text?: string;
+  key_findings?: { items?: string[] };
   ai_findings?: string;
   current_state_notes?: string;
   optimized_notes?: string;

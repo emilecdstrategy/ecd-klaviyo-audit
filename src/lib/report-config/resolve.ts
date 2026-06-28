@@ -252,6 +252,13 @@ export function resolveDeliverabilitySnapshotConfig(
   return deepMerge(defaults, raw);
 }
 
+export function isDeliverabilitySnapshotBlockVisible(
+  resolved: DeliverabilitySnapshotSectionConfig,
+  block: 'keyFindings',
+): boolean {
+  return isBlockVisible(resolved, block);
+}
+
 // -----------------------------------------------------------------------------
 // Attribution Model
 // -----------------------------------------------------------------------------
@@ -268,6 +275,13 @@ export function resolveAttributionModelConfig(
 ): AttributionModelSectionConfig {
   if (!raw) return defaults;
   return deepMerge(defaults, raw);
+}
+
+export function isAttributionModelBlockVisible(
+  resolved: AttributionModelSectionConfig,
+  block: 'keyFindings',
+): boolean {
+  return isBlockVisible(resolved, block);
 }
 
 // -----------------------------------------------------------------------------

@@ -20,6 +20,7 @@ import ReportCoreFlowsMatrix from './ReportCoreFlowsMatrix';
 import ReportCover from './ReportCover';
 import ReportSectionHeader from './ReportSectionHeader';
 import ReportKeyFindings from './ReportKeyFindings';
+import ReportSectionKeyFindings from './ReportSectionKeyFindings';
 import ReportStrengthsPanel from './ReportStrengthsPanel';
 import ReportTrustFooter from './ReportTrustFooter';
 import ReportBlockHeader from './ReportBlockHeader';
@@ -42,6 +43,12 @@ import { AttributionModelHelpTrigger } from './AttributionModelHelpModal';
 import { uploadReportScreenshot, uploadRevenueOpportunityImage } from '../../lib/db';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
 import { normalizeWorkspaceKeyFindings, resolveExecutiveFindings } from '../../lib/findings-normalize';
+import {
+  materializeSectionKeyFindingsHidden,
+  normalizeWorkspaceSectionKeyFindings,
+  parseSectionKeyFindings,
+  resolveSectionKeyFindings,
+} from '../../lib/section-key-findings';
 // import { buildSectionDemoMap } from '../../lib/addon-highlight';
 import { cn } from '../../lib/utils';
 import type { AuditReportBundle } from '../../hooks/useAuditReportData';
@@ -53,6 +60,8 @@ import {
   extractSegmentationRawConfig,
   extractSignupFormsRawConfig,
   isCampaignsBlockVisible,
+  isDeliverabilitySnapshotBlockVisible,
+  isAttributionModelBlockVisible,
   isEmailDesignBlockVisible,
   isExecutiveSummaryBlockVisible,
   isFlowsBlockVisible,
@@ -71,7 +80,8 @@ import {
   resolveAttributionModelConfig,
 } from '../../lib/report-config/resolve';
 import { DEFAULT_REVENUE_SUMMARY_SECTION } from '../../lib/report-config/defaults';
-import type { DeliverabilitySnapshotSectionConfig, RevenueSummarySectionConfig } from '../../lib/report-config/types';
+import type { DeliverabilitySnapshotSectionConfig, RevenueSummarySectionConfig, GenericBlockConfig } from '../../lib/report-config/types';
+import type { SectionKeyFindings } from '../../lib/types';
 
 const NAV_ITEMS = [
   { id: 'summary', label: 'Summary' },
@@ -305,6 +315,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     const campaignsSectionRow = reportSections.find(section => section.section_key === 'campaigns');
     const campaignsCfg = resolveCampaignsConfig(extractCampaignsRawConfig(pickConfig('campaigns')));
 
+    const emailDesignSectionRow = reportSections.find(section => section.section_key === 'email_design');
     const emailDesignCfg = resolveEmailDesignConfig(extractEmailDesignRawConfig(pickConfig('email_design')));
 
     const revenueSummaryRaw = auditLayout.revenue_summary as Partial<RevenueSummarySectionConfig> | null | undefined;
@@ -333,6 +344,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       signupFormsCfg,
       campaignsSectionRow,
       campaignsCfg,
+      emailDesignSectionRow,
       emailDesignCfg,
       revenueSummaryCfg,
       deliverabilitySnapshotCfg,
@@ -350,6 +362,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     signupFormsCfg,
     campaignsSectionRow,
     campaignsCfg,
+    emailDesignSectionRow,
     emailDesignCfg,
     revenueSummaryCfg,
     deliverabilitySnapshotCfg,
@@ -669,6 +682,15 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               label={flowsCfg.sectionTitle ?? 'Flows'}
             />
 
+            {(isFlowsBlockVisible(flowsCfg, 'keyFindings') || editMode) && (
+              <AuditSectionKeyFindingsPanel
+                sectionKey="flows"
+                section={flowsSectionRow}
+                blockCfg={flowsCfg.blocks.keyFindings}
+                blockVisible={isFlowsBlockVisible(flowsCfg, 'keyFindings')}
+              />
+            )}
+
             {((isFlowsBlockVisible(flowsCfg, 'narrative') || isFlowsBlockVisible(flowsCfg, 'rubric')) || editMode) && (() => {
               const flowsSection = flowsSectionRow;
               const idx = flowsSection ? reportSections.findIndex(s => s.id === flowsSection.id) : -1;
@@ -696,7 +718,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                     hideHeader
                     hideCurrentOptimized={!narrativeVisible}
                     hideRubric={!rubricVisible}
-                    hideKeyTakeaway
                   />
                 </ReportBlockEditChrome>
               );
@@ -836,6 +857,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               )
             }
           />
+          {(isDeliverabilitySnapshotBlockVisible(deliverabilitySnapshotCfg, 'keyFindings') || editMode) && (
+            <LayoutSectionKeyFindingsPanel
+              layoutKey="deliverability_snapshot"
+              keyFindings={deliverabilitySnapshotCfg.key_findings}
+              blockCfg={deliverabilitySnapshotCfg.blocks?.keyFindings}
+              blockVisible={isDeliverabilitySnapshotBlockVisible(deliverabilitySnapshotCfg, 'keyFindings')}
+            />
+          )}
           <ReportDeliverabilitySnapshot deliverability={accountSnapshot?.deliverability} />
         </ReportSectionShell>
 
@@ -851,6 +880,15 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               number={sectionNumbers['segments'] ?? segmentationCfg.sectionNumber ?? '04'}
               label={segmentationCfg.sectionTitle ?? 'Segments'}
             />
+
+            {(isSegmentationBlockVisible(segmentationCfg, 'keyFindings') || editMode) && (
+              <AuditSectionKeyFindingsPanel
+                sectionKey="segmentation"
+                section={segmentationSectionRow}
+                blockCfg={segmentationCfg.blocks.keyFindings}
+                blockVisible={isSegmentationBlockVisible(segmentationCfg, 'keyFindings')}
+              />
+            )}
 
             {(isSegmentationBlockVisible(segmentationCfg, 'narrative') ||
               isSegmentationBlockVisible(segmentationCfg, 'rubric')) && segmentationSectionRow && (() => {
@@ -874,7 +912,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                     hideHeader
                     hideCurrentOptimized={!narrativeVisible}
                     hideRubric={!rubricVisible}
-                    hideKeyTakeaway={!narrativeVisible}
                   />
                 </div>
               );
@@ -911,6 +948,15 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               label={signupFormsCfg.sectionTitle ?? 'Signup Forms'}
             />
 
+            {(isSignupFormsBlockVisible(signupFormsCfg, 'keyFindings') || editMode) && (
+              <AuditSectionKeyFindingsPanel
+                sectionKey="signup_forms"
+                section={signupFormsSectionRow}
+                blockCfg={signupFormsCfg.blocks.keyFindings}
+                blockVisible={isSignupFormsBlockVisible(signupFormsCfg, 'keyFindings')}
+              />
+            )}
+
             {(isSignupFormsBlockVisible(signupFormsCfg, 'narrative') ||
               isSignupFormsBlockVisible(signupFormsCfg, 'rubric')) && signupFormsSectionRow && (() => {
               const formsSection = signupFormsSectionRow;
@@ -933,7 +979,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                     hideHeader
                     hideCurrentOptimized={!narrativeVisible}
                     hideRubric={!rubricVisible}
-                    hideKeyTakeaway={!narrativeVisible}
                   />
                 </div>
               );
@@ -966,6 +1011,15 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               label={campaignsCfg.sectionTitle ?? 'Campaigns'}
             />
 
+            {(isCampaignsBlockVisible(campaignsCfg, 'keyFindings') || editMode) && (
+              <AuditSectionKeyFindingsPanel
+                sectionKey="campaigns"
+                section={campaignsSectionRow}
+                blockCfg={campaignsCfg.blocks.keyFindings}
+                blockVisible={isCampaignsBlockVisible(campaignsCfg, 'keyFindings')}
+              />
+            )}
+
             {(isCampaignsBlockVisible(campaignsCfg, 'narrative') ||
               isCampaignsBlockVisible(campaignsCfg, 'rubric')) && campaignsSectionRow && (() => {
               const campSection = campaignsSectionRow;
@@ -988,7 +1042,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                     hideHeader
                     hideCurrentOptimized={!narrativeVisible}
                     hideRubric={!rubricVisible}
-                    hideKeyTakeaway={!narrativeVisible}
                   />
                 </div>
               );
@@ -1023,6 +1076,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
                 label={emailDesignCfg.sectionTitle ?? 'Email Design'}
               />
+              {(isEmailDesignBlockVisible(emailDesignCfg, 'keyFindings') || editMode) && (
+                <AuditSectionKeyFindingsPanel
+                  sectionKey="email_design"
+                  section={emailDesignSectionRow}
+                  blockCfg={emailDesignCfg.blocks.keyFindings}
+                  blockVisible={isEmailDesignBlockVisible(emailDesignCfg, 'keyFindings')}
+                />
+              )}
               <EmailDesignSection
                 emailDesign={emailDesign}
                 annotations={annotations}
@@ -1033,6 +1094,19 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               />
             </>
           ) : editMode ? (
+            <>
+              <ReportSectionHeader
+                number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
+                label={emailDesignCfg.sectionTitle ?? 'Email Design'}
+              />
+              {(isEmailDesignBlockVisible(emailDesignCfg, 'keyFindings') || editMode) && (
+                <AuditSectionKeyFindingsPanel
+                  sectionKey="email_design"
+                  section={emailDesignSectionRow}
+                  blockCfg={emailDesignCfg.blocks.keyFindings}
+                  blockVisible={isEmailDesignBlockVisible(emailDesignCfg, 'keyFindings')}
+                />
+              )}
             <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-6 py-10 text-center">
               <p className="text-sm text-gray-600">No email design data yet.</p>
               {onManageEmailDesign && (
@@ -1045,6 +1119,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 </button>
               )}
             </div>
+            </>
           ) : null}
         </ReportSectionShell>
 
@@ -1065,6 +1140,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 : undefined
             }
           />
+          {(isAttributionModelBlockVisible(attributionModelCfg, 'keyFindings') || editMode) && (
+            <LayoutSectionKeyFindingsPanel
+              layoutKey="attribution_model"
+              keyFindings={attributionModelCfg.key_findings}
+              blockCfg={attributionModelCfg.blocks?.keyFindings}
+              blockVisible={isAttributionModelBlockVisible(attributionModelCfg, 'keyFindings')}
+            />
+          )}
           {editMode && (
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <AttributionModelHelpTrigger />
@@ -1832,6 +1915,70 @@ function SectionRubricDetails({ section }: { section: AuditSection }) {
   return null;
 }
 
+function AuditSectionKeyFindingsPanel({
+  sectionKey,
+  section,
+  blockCfg,
+  blockVisible,
+}: {
+  sectionKey: string;
+  section: AuditSection | null | undefined;
+  blockCfg?: GenericBlockConfig;
+  blockVisible: boolean;
+}) {
+  const { editMode } = useReportEdit();
+  if (!section && !editMode) return null;
+  const parsed = parseSectionKeyFindings(section?.key_findings);
+  const legacy = section?.human_edited_findings || section?.summary_text;
+  const items = editMode
+    ? normalizeWorkspaceSectionKeyFindings(parsed, legacy)
+    : resolveSectionKeyFindings(parsed, legacy);
+  const itemsHidden = materializeSectionKeyFindingsHidden(parsed, items.length);
+  if (!blockVisible && !editMode) return null;
+  if (!editMode && items.every((item, i) => !item.trim() || itemsHidden[i])) return null;
+
+  return (
+    <ReportSectionKeyFindings
+      scope={{ kind: 'audit_section', sectionKey }}
+      title={blockCfg?.title ?? 'Key Findings'}
+      subtitle={blockCfg?.subtitle}
+      items={items}
+      itemsHidden={itemsHidden}
+      blockHidden={blockCfg?.hidden === true}
+    />
+  );
+}
+
+function LayoutSectionKeyFindingsPanel({
+  layoutKey,
+  keyFindings,
+  blockCfg,
+  blockVisible,
+}: {
+  layoutKey: 'deliverability_snapshot' | 'attribution_model';
+  keyFindings?: SectionKeyFindings;
+  blockCfg?: GenericBlockConfig;
+  blockVisible: boolean;
+}) {
+  const { editMode } = useReportEdit();
+  const parsed = parseSectionKeyFindings(keyFindings);
+  const items = editMode ? normalizeWorkspaceSectionKeyFindings(parsed) : resolveSectionKeyFindings(parsed);
+  const itemsHidden = materializeSectionKeyFindingsHidden(parsed, items.length);
+  if (!blockVisible && !editMode) return null;
+  if (!editMode && items.every((item, i) => !item.trim() || itemsHidden[i])) return null;
+
+  return (
+    <ReportSectionKeyFindings
+      scope={{ kind: 'layout', layoutKey }}
+      title={blockCfg?.title ?? 'Key Findings'}
+      subtitle={blockCfg?.subtitle}
+      items={items}
+      itemsHidden={itemsHidden}
+      blockHidden={blockCfg?.hidden === true}
+    />
+  );
+}
+
 function ReportSectionBlock({
   section,
   index,
@@ -1840,7 +1987,6 @@ function ReportSectionBlock({
   hideHeader = false,
   hideCurrentOptimized = false,
   hideRubric = false,
-  hideKeyTakeaway = false,
 }: {
   section: AuditSection;
   index: number;
@@ -1849,7 +1995,6 @@ function ReportSectionBlock({
   hideHeader?: boolean;
   hideCurrentOptimized?: boolean;
   hideRubric?: boolean;
-  hideKeyTakeaway?: boolean;
 }) {
   const { updateSectionField, updateSectionRevenueOpportunity, editMode } = useReportEdit();
   const sk = section.section_key;
@@ -1950,18 +2095,6 @@ function ReportSectionBlock({
           </div>
         )}
         {!hideRubric && <SectionRubricDetails section={section} />}
-
-        {!hideKeyTakeaway && (editMode || section.human_edited_findings || section.summary_text) && (
-          <div className="rounded-xl p-4 border border-gray-100" style={{ backgroundColor: '#f9f9f9' }}>
-            <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5">Key Takeaway</p>
-            <EditableRichText
-              value={section.human_edited_findings || section.summary_text || ''}
-              onSave={v => updateSectionField(sk, 'human_edited_findings', v)}
-              className="text-sm text-gray-700 leading-relaxed"
-              placeholder="Key takeaway for this section…"
-            />
-          </div>
-        )}
       </div>
     </div>
   );

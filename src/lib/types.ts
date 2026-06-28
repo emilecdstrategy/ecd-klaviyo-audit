@@ -224,6 +224,11 @@ export interface HealthScoreItem {
   note: string;
 }
 
+export interface SectionKeyFindings {
+  items: string[];
+  items_hidden?: boolean[];
+}
+
 export interface AuditSection {
   id: string;
   audit_id: string;
@@ -235,6 +240,7 @@ export interface AuditSection {
   ai_findings: string;
   human_edited_findings: string;
   summary_text: string;
+  key_findings?: SectionKeyFindings | null;
   revenue_opportunity: number;
   confidence: 'low' | 'medium' | 'high';
   status: 'draft' | 'approved';

@@ -27,12 +27,19 @@ export { DEFAULT_FLOWS_HEALTH_BENCHMARKS };
 
 export const DEFAULT_FLOWS_VISIBLE_ROWS = 2;
 
+const DEFAULT_KEY_FINDINGS_BLOCK = {
+  hidden: false,
+  title: 'Key Findings',
+  subtitle: 'Priority gaps to discuss in this section',
+} as const;
+
 export const DEFAULT_FLOWS_SECTION: FlowsSectionConfig = {
   hidden: false,
   sectionNumber: '03',
   sectionTitle: 'Flows',
   sectionSubtitle: undefined,
   blocks: {
+    keyFindings: { ...DEFAULT_KEY_FINDINGS_BLOCK },
     narrative: {
       hidden: false,
       currentTitle: 'Current State',
@@ -98,6 +105,10 @@ export const DEFAULT_DELIVERABILITY_SNAPSHOT_SECTION: DeliverabilitySnapshotSect
   sectionNumber: '04',
   sectionTitle: 'Deliverability',
   sectionSubtitle: undefined,
+  key_findings: { items: [], items_hidden: [] },
+  blocks: {
+    keyFindings: { ...DEFAULT_KEY_FINDINGS_BLOCK },
+  },
 };
 
 // -----------------------------------------------------------------------------
@@ -110,6 +121,10 @@ export const DEFAULT_ATTRIBUTION_MODEL_SECTION: AttributionModelSectionConfig = 
   sectionTitle: 'Attribution Model',
   sectionSubtitle: undefined,
   screenshot_url: null,
+  key_findings: { items: [], items_hidden: [] },
+  blocks: {
+    keyFindings: { ...DEFAULT_KEY_FINDINGS_BLOCK },
+  },
 };
 
 // -----------------------------------------------------------------------------
@@ -122,6 +137,7 @@ export const DEFAULT_SEGMENTATION_SECTION: SegmentationSectionConfig = {
   sectionTitle: 'Segments',
   sectionSubtitle: undefined,
   blocks: {
+    keyFindings: { ...DEFAULT_KEY_FINDINGS_BLOCK },
     narrative: {
       hidden: false,
       currentTitle: 'Current State',
@@ -149,6 +165,7 @@ export const DEFAULT_SIGNUP_FORMS_SECTION: SignupFormsSectionConfig = {
   sectionTitle: 'Signup Forms',
   sectionSubtitle: undefined,
   blocks: {
+    keyFindings: { ...DEFAULT_KEY_FINDINGS_BLOCK },
     narrative: {
       hidden: false,
       currentTitle: 'Current State',
@@ -176,6 +193,7 @@ export const DEFAULT_CAMPAIGNS_SECTION: CampaignsSectionConfig = {
   sectionTitle: 'Campaigns',
   sectionSubtitle: undefined,
   blocks: {
+    keyFindings: { ...DEFAULT_KEY_FINDINGS_BLOCK },
     narrative: {
       hidden: false,
       currentTitle: 'Current State',
@@ -203,6 +221,7 @@ export const DEFAULT_EMAIL_DESIGN_SECTION: EmailDesignSectionConfig = {
   sectionTitle: 'Email Design',
   sectionSubtitle: undefined,
   blocks: {
+    keyFindings: { ...DEFAULT_KEY_FINDINGS_BLOCK },
     comparison: {
       hidden: false,
       title: undefined,

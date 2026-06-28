@@ -398,6 +398,7 @@ export async function createAuditSections(
     ai_findings: '',
     human_edited_findings: '',
     summary_text: '',
+    key_findings: { items: [], items_hidden: [] },
     revenue_opportunity: 0,
     confidence: 'medium',
     status: 'approved',

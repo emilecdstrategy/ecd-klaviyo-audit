@@ -10,7 +10,7 @@
  *   - `null`       -> hide that specific piece of copy (for nullable insights)
  *   - any value    -> replace the default
  */
-import type { RevenueOpportunityAddOnItem } from '../types';
+import type { RevenueOpportunityAddOnItem, SectionKeyFindings } from '../types';
 
 export type BlockVisibility = Record<string, boolean>;
 
@@ -46,6 +46,7 @@ export interface FlowsSectionConfig {
   sectionTitle?: string;
   sectionSubtitle?: string;
   blocks: {
+    keyFindings?: GenericBlockConfig;
     narrative?: {
       hidden?: boolean;
       currentTitle?: string;
@@ -133,6 +134,7 @@ export type AccountHealthBlockKey = keyof NonNullable<AccountHealthSectionConfig
 
 export interface SegmentationSectionConfig extends BaseSectionConfig {
   blocks: {
+    keyFindings?: GenericBlockConfig;
     narrative?: NarrativeBlockConfig;
     rubric?: GenericBlockConfig;
     segmentTable?: GenericBlockConfig;
@@ -145,6 +147,7 @@ export type SegmentationBlockKey = keyof NonNullable<SegmentationSectionConfig['
 
 export interface SignupFormsSectionConfig extends BaseSectionConfig {
   blocks: {
+    keyFindings?: GenericBlockConfig;
     narrative?: NarrativeBlockConfig;
     rubric?: GenericBlockConfig;
     formTable?: GenericBlockConfig;
@@ -157,6 +160,7 @@ export type SignupFormsBlockKey = keyof NonNullable<SignupFormsSectionConfig['bl
 
 export interface CampaignsSectionConfig extends BaseSectionConfig {
   blocks: {
+    keyFindings?: GenericBlockConfig;
     narrative?: NarrativeBlockConfig;
     rubric?: GenericBlockConfig;
     campaignTable?: GenericBlockConfig;
@@ -169,6 +173,7 @@ export type CampaignsBlockKey = keyof NonNullable<CampaignsSectionConfig['blocks
 
 export interface EmailDesignSectionConfig extends BaseSectionConfig {
   blocks: {
+    keyFindings?: GenericBlockConfig;
     comparison?: GenericBlockConfig;
   };
 }
@@ -191,13 +196,20 @@ export type RevenueSummaryBlockKey = keyof NonNullable<RevenueSummarySectionConf
 // ----- Deliverability Snapshot -----------------------------------------------
 
 export interface DeliverabilitySnapshotSectionConfig extends BaseSectionConfig {
-  blocks?: Record<string, never>;
+  key_findings?: SectionKeyFindings;
+  blocks?: {
+    keyFindings?: GenericBlockConfig;
+  };
 }
 
 // ----- Attribution Model -----------------------------------------------------
 
 export interface AttributionModelSectionConfig extends BaseSectionConfig {
   screenshot_url?: string | null;
+  key_findings?: SectionKeyFindings;
+  blocks?: {
+    keyFindings?: GenericBlockConfig;
+  };
 }
 
 // ----- Executive Summary (section 01, hero) ---------------------------------

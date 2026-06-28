@@ -13,11 +13,24 @@ import { scheduleSavedToast, useToast } from '../../ui/Toast';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
 import { computeAuditTotalRevenueOpportunity } from '../../../lib/revenue-calculator';
 import { normalizeCoreFlowsMatrix, sanitizeStructureNote, type CoreFlowRow } from '../../../lib/core-flows-matrix';
-import { getExecutiveFindingsForEdit, normalizeWorkspaceKeyFindings } from '../../../lib/findings-normalize';
+import {
+  materializeSectionKeyFindingsHidden,
+  normalizeWorkspaceSectionKeyFindings,
+  parseSectionKeyFindings,
+  serializeSectionKeyFindings,
+} from '../../../lib/section-key-findings';
+import type { SectionKeyFindings } from '../../../lib/types';
 import { repairEntityMarkers } from '../../../lib/entity-tags';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
 type LayoutSectionKey = 'executive_summary' | 'revenue_summary' | 'deliverability_snapshot' | 'attribution_model';
+type LayoutKeyFindingsKey = 'deliverability_snapshot' | 'attribution_model';
+
+const LAYOUT_KEY_FINDINGS_KEYS = new Set<string>(['deliverability_snapshot', 'attribution_model']);
+
+function isLayoutKeyFindingsKey(key: string): key is LayoutKeyFindingsKey {
+  return LAYOUT_KEY_FINDINGS_KEYS.has(key);
+}
 
 export type TimelinePhase = {
   phase: string;
@@ -128,6 +141,17 @@ type ReportEditContextValue = {
   toggleFindingHidden: (index: number, hidden: boolean) => void;
   toggleStrengthHidden: (index: number, hidden: boolean) => void;
   toggleTimelinePhaseHidden: (index: number, hidden: boolean) => void;
+  updateSectionKeyFinding: (targetKey: string, index: number, value: string) => void;
+  addSectionKeyFinding: (targetKey: string) => void;
+  removeSectionKeyFinding: (targetKey: string, index: number) => void;
+  toggleSectionKeyFindingHidden: (targetKey: string, index: number, hidden: boolean) => void;
+  toggleSectionKeyFindingsBlockHidden: (targetKey: string, hidden: boolean) => void;
+  updateLayoutBlockTitle: (
+    layoutKey: LayoutKeyFindingsKey,
+    blockKey: string,
+    field: 'title' | 'subtitle',
+    value: string,
+  ) => void;
   updateSectionBlockField: (
     sectionKey: string,
     blockKey: string,
@@ -171,6 +195,12 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   toggleFindingHidden: () => {},
   toggleStrengthHidden: () => {},
   toggleTimelinePhaseHidden: () => {},
+  updateSectionKeyFinding: () => {},
+  addSectionKeyFinding: () => {},
+  removeSectionKeyFinding: () => {},
+  toggleSectionKeyFindingHidden: () => {},
+  toggleSectionKeyFindingsBlockHidden: () => {},
+  updateLayoutBlockTitle: () => {},
   updateSectionBlockField: () => {},
   updateSectionDetailField: () => {},
   updateCoreFlowMatrixNote: () => {},
@@ -342,6 +372,167 @@ export function ReportEditProvider({
       });
     },
     [patchLayout],
+  );
+
+  const updateLayoutBlockTitle = useCallback(
+    (layoutKey: LayoutKeyFindingsKey, blockKey: string, field: 'title' | 'subtitle', value: string) => {
+      patchLayout(layoutKey, section => {
+        const blocks = { ...((section.blocks as Record<string, unknown>) ?? {}) };
+        const block = { ...((blocks[blockKey] as Record<string, unknown>) ?? {}), [field]: value || undefined };
+        blocks[blockKey] = block;
+        return { ...section, blocks };
+      });
+    },
+    [patchLayout],
+  );
+
+  const getAuditSectionKeyFindings = useCallback(
+    (sectionKey: string): SectionKeyFindings => {
+      const section = sections.find(s => s.section_key === sectionKey);
+      return parseSectionKeyFindings(section?.key_findings);
+    },
+    [sections],
+  );
+
+  const getLayoutKeyFindings = useCallback(
+    (layoutKey: LayoutKeyFindingsKey): SectionKeyFindings => {
+      const layout = (audit.layout as Record<string, unknown> | null | undefined) ?? {};
+      const section = (layout[layoutKey] as Record<string, unknown> | null | undefined) ?? {};
+      return parseSectionKeyFindings(section.key_findings);
+    },
+    [audit.layout],
+  );
+
+  const saveAuditSectionKeyFindings = useCallback(
+    (sectionKey: string, keyFindings: SectionKeyFindings) => {
+      const section = sections.find(s => s.section_key === sectionKey);
+      if (!section) return;
+      const nextSections = sections.map(s =>
+        s.id === section.id ? { ...s, key_findings: keyFindings } : s,
+      );
+      onSectionsChange(nextSections);
+      schedule(`section-kf-${section.id}`, async () => {
+        await updateAuditSection(section.id, { key_findings: keyFindings });
+      });
+    },
+    [sections, onSectionsChange, schedule],
+  );
+
+  const saveLayoutKeyFindings = useCallback(
+    (layoutKey: LayoutKeyFindingsKey, keyFindings: SectionKeyFindings) => {
+      patchLayout(layoutKey, section => ({ ...section, key_findings: keyFindings }));
+    },
+    [patchLayout],
+  );
+
+  const materializeKeyFindingsItems = useCallback(
+    (targetKey: string): string[] => {
+      if (isLayoutKeyFindingsKey(targetKey)) {
+        const kf = getLayoutKeyFindings(targetKey);
+        return normalizeWorkspaceSectionKeyFindings(kf);
+      }
+      const section = sections.find(s => s.section_key === targetKey);
+      const kf = getAuditSectionKeyFindings(targetKey);
+      const legacy = section?.human_edited_findings || section?.summary_text;
+      return normalizeWorkspaceSectionKeyFindings(kf, legacy);
+    },
+    [getAuditSectionKeyFindings, getLayoutKeyFindings, sections],
+  );
+
+  const updateSectionKeyFinding = useCallback(
+    (targetKey: string, index: number, value: string) => {
+      const items = materializeKeyFindingsItems(targetKey);
+      while (items.length <= index) items.push('');
+      items[index] = repairEntityMarkers(value);
+      const prev = isLayoutKeyFindingsKey(targetKey)
+        ? getLayoutKeyFindings(targetKey)
+        : getAuditSectionKeyFindings(targetKey);
+      const next = serializeSectionKeyFindings(items, materializeSectionKeyFindingsHidden(prev, items.length));
+      if (isLayoutKeyFindingsKey(targetKey)) saveLayoutKeyFindings(targetKey, next);
+      else saveAuditSectionKeyFindings(targetKey, next);
+    },
+    [
+      getAuditSectionKeyFindings,
+      getLayoutKeyFindings,
+      materializeKeyFindingsItems,
+      saveAuditSectionKeyFindings,
+      saveLayoutKeyFindings,
+    ],
+  );
+
+  const addSectionKeyFinding = useCallback(
+    (targetKey: string) => {
+      const items = materializeKeyFindingsItems(targetKey).filter(item => item.trim());
+      while (items.length > 0 && !items[items.length - 1].trim()) items.pop();
+      items.push('');
+      const prev = isLayoutKeyFindingsKey(targetKey)
+        ? getLayoutKeyFindings(targetKey)
+        : getAuditSectionKeyFindings(targetKey);
+      const items_hidden = materializeSectionKeyFindingsHidden(prev, items.length);
+      while (items_hidden.length < items.length) items_hidden.push(false);
+      const next = serializeSectionKeyFindings(items, items_hidden);
+      if (isLayoutKeyFindingsKey(targetKey)) saveLayoutKeyFindings(targetKey, next);
+      else saveAuditSectionKeyFindings(targetKey, next);
+    },
+    [
+      getAuditSectionKeyFindings,
+      getLayoutKeyFindings,
+      materializeKeyFindingsItems,
+      saveAuditSectionKeyFindings,
+      saveLayoutKeyFindings,
+    ],
+  );
+
+  const removeSectionKeyFinding = useCallback(
+    (targetKey: string, index: number) => {
+      let items = materializeKeyFindingsItems(targetKey);
+      let items_hidden = materializeSectionKeyFindingsHidden(
+        isLayoutKeyFindingsKey(targetKey)
+          ? getLayoutKeyFindings(targetKey)
+          : getAuditSectionKeyFindings(targetKey),
+        items.length,
+      );
+      if (index < 0 || index >= items.length) return;
+      if (items.length <= 1) {
+        items = [];
+        items_hidden = [];
+      } else {
+        items = items.filter((_, i) => i !== index);
+        items_hidden = items_hidden.filter((_, i) => i !== index);
+      }
+      const next = serializeSectionKeyFindings(items, items_hidden);
+      if (isLayoutKeyFindingsKey(targetKey)) saveLayoutKeyFindings(targetKey, next);
+      else saveAuditSectionKeyFindings(targetKey, next);
+    },
+    [
+      getAuditSectionKeyFindings,
+      getLayoutKeyFindings,
+      materializeKeyFindingsItems,
+      saveAuditSectionKeyFindings,
+      saveLayoutKeyFindings,
+    ],
+  );
+
+  const toggleSectionKeyFindingHidden = useCallback(
+    (targetKey: string, index: number, hidden: boolean) => {
+      const prev = isLayoutKeyFindingsKey(targetKey)
+        ? getLayoutKeyFindings(targetKey)
+        : getAuditSectionKeyFindings(targetKey);
+      const items = materializeKeyFindingsItems(targetKey);
+      const items_hidden = materializeSectionKeyFindingsHidden(prev, items.length);
+      while (items_hidden.length <= index) items_hidden.push(false);
+      items_hidden[index] = hidden;
+      const next = serializeSectionKeyFindings(items, items_hidden);
+      if (isLayoutKeyFindingsKey(targetKey)) saveLayoutKeyFindings(targetKey, next);
+      else saveAuditSectionKeyFindings(targetKey, next);
+    },
+    [
+      getAuditSectionKeyFindings,
+      getLayoutKeyFindings,
+      materializeKeyFindingsItems,
+      saveAuditSectionKeyFindings,
+      saveLayoutKeyFindings,
+    ],
   );
 
   const updateTimelinePhase = useCallback(
@@ -633,6 +824,26 @@ export function ReportEditProvider({
     [toggleSectionBlockHidden],
   );
 
+  const toggleSectionKeyFindingsBlockHidden = useCallback(
+    (targetKey: string, hidden: boolean) => {
+      if (isLayoutKeyFindingsKey(targetKey)) {
+        patchLayout(targetKey, section => {
+          const blocks = { ...((section.blocks as Record<string, unknown>) ?? {}) };
+          const block = { ...((blocks.keyFindings as Record<string, unknown>) ?? {}), hidden: hidden || undefined };
+          blocks.keyFindings = block;
+          return { ...section, blocks };
+        });
+        return;
+      }
+      if (targetKey === 'flows') {
+        toggleFlowsBlockHidden('keyFindings', hidden);
+        return;
+      }
+      toggleSectionBlockHidden(targetKey, 'keyFindings', hidden);
+    },
+    [patchLayout, toggleFlowsBlockHidden, toggleSectionBlockHidden],
+  );
+
   const toggleFindingHidden = useCallback(
     (index: number, hidden: boolean) => {
       const prev = getExecPayload();
@@ -822,6 +1033,12 @@ export function ReportEditProvider({
       toggleFindingHidden,
       toggleStrengthHidden,
       toggleTimelinePhaseHidden,
+      updateSectionKeyFinding,
+      addSectionKeyFinding,
+      removeSectionKeyFinding,
+      toggleSectionKeyFindingHidden,
+      toggleSectionKeyFindingsBlockHidden,
+      updateLayoutBlockTitle,
       updateSectionBlockField,
       updateSectionDetailField,
       updateCoreFlowMatrixNote,
@@ -857,6 +1074,12 @@ export function ReportEditProvider({
       toggleFindingHidden,
       toggleStrengthHidden,
       toggleTimelinePhaseHidden,
+      updateSectionKeyFinding,
+      addSectionKeyFinding,
+      removeSectionKeyFinding,
+      toggleSectionKeyFindingHidden,
+      toggleSectionKeyFindingsBlockHidden,
+      updateLayoutBlockTitle,
       updateSectionBlockField,
       updateSectionDetailField,
       updateCoreFlowMatrixNote,
