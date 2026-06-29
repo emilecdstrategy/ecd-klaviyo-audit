@@ -5,7 +5,7 @@ This app’s “API audit” mode is designed to fetch real Klaviyo account conf
 ## Authentication + versioning
 
 - **Auth**: `Authorization: Klaviyo-API-Key <private_key>` ([docs](https://developers.klaviyo.com/en/docs/authenticate_))
-- **Revision**: `revision: YYYY-MM-DD` is required for `/api` requests ([docs](https://developers.klaviyo.com/en/docs/api_versioning_and_deprecation_policy))
+- **Revision**: `revision: YYYY-MM-DD` is required for `/api` requests ([docs](https://developers.klaviyo.com/en/docs/api_versioning_and_deprecation_policy)). The app uses a single shared revision in `supabase/functions/_shared/klaviyo-api.ts` (currently **`2026-04-15`**, latest GA). Update that constant when upgrading; each revision is supported for ~2 years.
 
 ## Minimum required scopes (private key)
 

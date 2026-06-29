@@ -1054,21 +1054,31 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                   ))}
                 </div>
                 {snapshotMeta?.counts && (() => {
-                  const fetch = snapshotMeta.fetch as Record<string, { ok: boolean }> | undefined;
+                  const fetch = snapshotMeta.fetch as Record<string, { ok: boolean; status?: number | null }> | undefined;
                   const resources = ['flows', 'campaigns', 'segments', 'forms', 'lists'] as const;
-                  const failedScopes = fetch ? resources.filter(r => fetch[r] && !fetch[r].ok) : [];
+                  const failedFetches = fetch ? resources.filter(r => fetch[r] && !fetch[r].ok) : [];
+                  const failedScopes = failedFetches.filter(r => {
+                    const status = fetch?.[r]?.status ?? null;
+                    return status === 401 || status === 403;
+                  });
+                  const failedOther = failedFetches.filter(r => !failedScopes.includes(r));
                   return (
                     <div className="max-w-md mx-auto mt-4 text-left bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
                       <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Klaviyo data pulled</p>
                       <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
                         {resources.filter(r => r !== 'lists').map(r => {
-                          const ok = fetch ? fetch[r]?.ok : true;
+                          const diag = fetch?.[r];
+                          const ok = diag ? diag.ok : true;
                           const count = snapshotMeta.counts?.[r];
+                          const failLabel =
+                            ok === false
+                              ? (diag?.status === 401 || diag?.status === 403 ? 'No access' : 'Fetch failed')
+                              : '';
                           return (
                             <div key={r} className="flex items-center justify-between">
                               <span className="capitalize">{r}</span>
                               {ok === false ? (
-                                <span className="font-medium text-amber-600">No access</span>
+                                <span className="font-medium text-amber-600">{failLabel}</span>
                               ) : (
                                 <span className="font-medium text-gray-900">{count ?? '—'}</span>
                               )}
@@ -1080,6 +1090,11 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                         <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1.5 rounded">
                           Your API key is missing permissions for: <strong>{failedScopes.join(', ')}</strong>.
                           Regenerate the key in Klaviyo with full read access for complete data.
+                        </div>
+                      )}
+                      {failedOther.length > 0 && (
+                        <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1.5 rounded">
+                          Could not pull: <strong>{failedOther.join(', ')}</strong>. This is usually a temporary Klaviyo API issue — retry the audit or contact support if it persists.
                         </div>
                       )}
                       {Array.isArray(snapshotMeta.reporting?.errors) && snapshotMeta.reporting!.errors!.length > 0 && (

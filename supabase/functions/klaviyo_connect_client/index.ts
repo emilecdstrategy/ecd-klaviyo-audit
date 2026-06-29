@@ -1,13 +1,11 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization } from "../_shared/auth.ts";
+import { KLAVIYO_BASE, KLAVIYO_REVISION } from "../_shared/klaviyo-api.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
-
-const KLAVIYO_REVISION = "2024-10-15";
-const KLAVIYO_BASE = "https://a.klaviyo.com";
 
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",

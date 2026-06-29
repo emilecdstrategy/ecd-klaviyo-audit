@@ -10,6 +10,7 @@ import {
   resolveWebsiteUrlForClient,
   runCompetingSmsWebsiteScan,
 } from "../_shared/competing-sms-scan.ts";
+import { KLAVIYO_BASE, KLAVIYO_REVISION, resolveKlaviyoRevision } from "../_shared/klaviyo-api.ts";
 
 // Stage machine: each stage runs in its own edge invocation with a fresh ~150s
 // budget. `config` is the entry point the frontend calls; subsequent stages
@@ -49,8 +50,6 @@ const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 
-const KLAVIYO_BASE = "https://a.klaviyo.com";
-const DEFAULT_REVISION = "2024-10-15";
 /** Flow-id cap for values-reports filter. Flamingo Estate has >50 flows. */
 const MAX_REPORT_IDS = 100;
 /** 5 pages × 100 = 500 email campaigns max per snapshot. */
@@ -60,7 +59,7 @@ const MAX_LIST_SEGMENT_PAGES = 5;
 const SEGMENTS_WITH_DEFINITIONS_PATH =
   "/api/segments/?page%5Bsize%5D=10&fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing";
 const CAMPAIGNS_WITH_AUDIENCES_PATH =
-  "/api/campaigns/?filter=equals(messages.channel,'email')&fields%5Bcampaign%5D=name,status,created_at,updated_at,send_channel,audiences";
+  "/api/campaigns/?filter=equals(messages.channel,'email')&fields%5Bcampaign%5D=name,status,created_at,updated_at,audiences";
 const METRICS_MAX_PAGES = 5;
 
 type EcdGroupNameEntry = { name: string; kind: "segment" | "list" };
@@ -495,7 +494,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       clientId: (claimed.client_id as string) ?? null,
       stage: "resume_profile_scan",
       status: "error",
-      revision: String(claimed.revision ?? DEFAULT_REVISION),
+      revision: String(claimed.revision ?? KLAVIYO_REVISION),
       elapsedMs: Date.now() - startedAt,
       errorCode: "key_error",
       errorMessage: msg,
@@ -506,7 +505,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
   const startPath = (claimed.next_path as string | null) ?? null;
   const chunk = await computeProfileSnapshotChunk({
     apiKey,
-    revision: String(claimed.revision),
+    revision: KLAVIYO_REVISION,
     since90Iso: String(claimed.since90_iso),
     startPath,
     totalProfiles: Number(claimed.total_profiles ?? 0),
@@ -529,7 +528,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       clientId: (claimed.client_id as string) ?? null,
       stage: "resume_profile_scan",
       status: "error",
-      revision: String(claimed.revision ?? DEFAULT_REVISION),
+      revision: String(claimed.revision ?? KLAVIYO_REVISION),
       elapsedMs: Date.now() - startedAt,
       errorCode: `profile_${chunk.status}`,
       errorMessage: trimBody(chunk.body) ?? "profile fetch failed",
@@ -555,7 +554,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       clientId: (claimed.client_id as string) ?? null,
       stage: "resume_profile_scan",
       status: "partial",
-      revision: String(claimed.revision ?? DEFAULT_REVISION),
+      revision: String(claimed.revision ?? KLAVIYO_REVISION),
       elapsedMs: Date.now() - startedAt,
       errorMessage: `chunk_ok total=${chunk.totalProfiles} subscribed=${chunk.subscribed}`,
     });
@@ -571,7 +570,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
     clientId: (claimed.client_id as string) ?? null,
     stage: "resume_profile_scan",
     status: "success",
-    revision: String(claimed.revision ?? DEFAULT_REVISION),
+    revision: String(claimed.revision ?? KLAVIYO_REVISION),
     elapsedMs: Date.now() - startedAt,
     errorMessage: `final total=${chunk.totalProfiles} subscribed=${chunk.subscribed}`,
   });
@@ -1077,7 +1076,7 @@ async function runStageFetchCampaignEmail(params: {
     .select("revision")
     .eq("client_id", clientId)
     .maybeSingle();
-  const revision = (conn?.revision as string | null) || DEFAULT_REVISION;
+  const revision = KLAVIYO_REVISION;
 
   const apiKey = await resolveApiKey(sb, clientId, null);
   const html = await fetchCampaignEmailHtml(apiKey, revision, params.campaignId);
@@ -1523,7 +1522,7 @@ async function runStageReporting(params: {
   const sb = assertServiceClient();
 
   let clientId: string | null = null;
-  let revision: string = DEFAULT_REVISION;
+  let revision: string = KLAVIYO_REVISION;
   try {
     const { data: audit, error: auditErr } = await sb.from("audits").select("client_id").eq("id", params.auditId).maybeSingle();
     if (auditErr) throw auditErr;
@@ -1533,7 +1532,7 @@ async function runStageReporting(params: {
     const { data: conn } = await sb.from("klaviyo_connections")
       .select("revision, conversion_metric_id, timezone")
       .eq("client_id", clientId).maybeSingle();
-    revision = (conn?.revision as string | null) || DEFAULT_REVISION;
+    revision = KLAVIYO_REVISION;
     const conversionMetricId = (conn?.conversion_metric_id as string | null) || null;
     const accountTimezone = (conn?.timezone as string | null) || "UTC";
 
@@ -1925,7 +1924,7 @@ async function runStageBackfillRevenueBreakdown(params: {
   const deadlineAtMs = startedAt + 148_000;
   const sb = assertServiceClient();
   let clientId: string | null = null;
-  let revision: string = DEFAULT_REVISION;
+  let revision: string = KLAVIYO_REVISION;
 
   try {
     const { data: audit, error: auditErr } = await sb.from("audits").select("client_id").eq("id", params.auditId).maybeSingle();
@@ -1936,7 +1935,7 @@ async function runStageBackfillRevenueBreakdown(params: {
     const { data: conn } = await sb.from("klaviyo_connections")
       .select("revision, conversion_metric_id, timezone")
       .eq("client_id", clientId).maybeSingle();
-    revision = (conn?.revision as string | null) || DEFAULT_REVISION;
+    revision = KLAVIYO_REVISION;
     const conversionMetricId = (conn?.conversion_metric_id as string | null) || null;
     const accountTimezone = (conn?.timezone as string | null) || "UTC";
     if (!conversionMetricId) throw new Error("No conversion_metric_id on klaviyo_connections");
@@ -2064,7 +2063,7 @@ async function runStageBackfillDeliverability(params: {
   const deadlineAtMs = startedAt + 148_000;
   const sb = assertServiceClient();
   let clientId: string | null = null;
-  let revision: string = DEFAULT_REVISION;
+  let revision: string = KLAVIYO_REVISION;
 
   const campaignReportStats = [
     "recipients",
@@ -2084,7 +2083,7 @@ async function runStageBackfillDeliverability(params: {
     const { data: conn } = await sb.from("klaviyo_connections")
       .select("revision, conversion_metric_id")
       .eq("client_id", clientId).maybeSingle();
-    revision = (conn?.revision as string | null) || DEFAULT_REVISION;
+    revision = KLAVIYO_REVISION;
     const conversionMetricId = (conn?.conversion_metric_id as string | null) || null;
     if (!conversionMetricId) throw new Error("No conversion_metric_id on klaviyo_connections");
 
@@ -2187,7 +2186,7 @@ async function runStageBackfillSegmentDefinitions(params: {
   const startedAt = Date.now();
   const sb = assertServiceClient();
   let clientId: string | null = null;
-  let revision: string = DEFAULT_REVISION;
+  let revision: string = KLAVIYO_REVISION;
 
   try {
     const { data: audit, error: auditErr } = await sb.from("audits").select("client_id").eq("id", params.auditId).maybeSingle();
@@ -2198,7 +2197,7 @@ async function runStageBackfillSegmentDefinitions(params: {
     const { data: conn } = await sb.from("klaviyo_connections")
       .select("revision")
       .eq("client_id", clientId).maybeSingle();
-    revision = (conn?.revision as string | null) || DEFAULT_REVISION;
+    revision = KLAVIYO_REVISION;
 
     const apiKey = await resolveApiKey(sb, clientId, null);
 
@@ -2453,7 +2452,7 @@ serve(async (req) => {
   if (!auditId || !clientId) {
     return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id or client_id" }, correlationId }, { status: 400 });
   }
-  const revision = (bodyJson.revision || DEFAULT_REVISION).trim();
+  const revision = resolveKlaviyoRevision(bodyJson.revision);
   const profileScan: "full" | "fast" = bodyJson.profile_scan === "fast" ? "fast" : "full";
 
   return await runStageConfig({

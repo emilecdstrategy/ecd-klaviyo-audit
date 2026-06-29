@@ -23,6 +23,7 @@ import {
   updateAuditStatus,
   updateAuditSection,
 } from '../lib/db';
+import { klaviyoScopePermissionWarnings } from '../lib/klaviyo-fetch-diagnostics';
 import { supabase } from '../lib/supabase';
 import { scheduleSavedToast, useToast } from '../components/ui/Toast';
 
@@ -90,12 +91,8 @@ export default function AuditWorkspace() {
               .select('scopes')
               .eq('client_id', report.audit.client_id)
               .maybeSingle();
-            if (conn?.scopes) {
-              const missing = Object.entries(conn.scopes as Record<string, unknown>)
-                .filter(([, value]) => value !== true)
-                .map(([key]) => key);
-              if (missing.length > 0) setScopeWarnings(missing);
-            }
+            const missing = klaviyoScopePermissionWarnings(conn?.scopes as Record<string, unknown> | undefined);
+            if (missing.length > 0) setScopeWarnings(missing);
           } catch {
             // non-critical
           }

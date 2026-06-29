@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { KLAVIYO_BASE, KLAVIYO_REVISION } from "../_shared/klaviyo-api.ts";
 
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
@@ -7,10 +8,8 @@ function json(data: unknown, init: ResponseInit = {}) {
   });
 }
 
-const KLAVIYO_REVISION = "2024-10-15";
-
 async function klaviyoCall(apiKey: string, path: string) {
-  const res = await fetch(`https://a.klaviyo.com${path}`, {
+  const res = await fetch(`${KLAVIYO_BASE}${path}`, {
     headers: {
       accept: "application/json",
       authorization: `Klaviyo-API-Key ${apiKey}`,
