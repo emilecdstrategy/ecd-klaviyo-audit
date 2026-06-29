@@ -3,10 +3,13 @@ import { ArrowDown, ArrowUp, GripVertical, Plus } from 'lucide-react';
 import type { Audit, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../../lib/types';
 import { listRevenueOpportunityTemplates, updateAudit, uploadRevenueOpportunityImage } from '../../lib/db';
 import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
+import { getHighlightedAddOns } from '../../lib/addon-highlight';
+import { regenerateAuditForHighlights } from '../../lib/audit-pipeline-status';
 import { scheduleSavedToast, useToast } from '../ui/Toast';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
 import ImageUploadZone from '../ui/ImageUploadZone';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
+import AddOnHighlightRegenModal from './AddOnHighlightRegenModal';
 
 function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
   if (!Array.isArray(rawItems)) return [];
@@ -39,14 +42,20 @@ function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
 export default function RevenueAddOnItemsEditor({
   audit,
   onAuditChange,
+  hasAnalysisContent = false,
+  onHighlightRegenStart,
 }: {
   audit: Audit;
   onAuditChange: (next: Audit) => void;
+  hasAnalysisContent?: boolean;
+  onHighlightRegenStart?: () => void;
 }) {
   const [templates, setTemplates] = useState<RevenueOpportunityTemplate[]>([]);
   const [selectedTemplateSlug, setSelectedTemplateSlug] = useState('');
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
+  const [regenModalOpen, setRegenModalOpen] = useState(false);
+  const [regenRunning, setRegenRunning] = useState(false);
   const saveTimer = useRef<number | null>(null);
   const toast = useToast();
 
@@ -91,6 +100,24 @@ export default function RevenueAddOnItemsEditor({
     }
   }, [availableTemplates, selectedTemplateSlug]);
 
+  const highlightedNames = useMemo(
+    () => getHighlightedAddOns(addOnItems).map(item => item.name),
+    [addOnItems],
+  );
+
+  const handleConfirmRegen = async () => {
+    setRegenRunning(true);
+    try {
+      await regenerateAuditForHighlights(audit.id);
+      onHighlightRegenStart?.();
+      setRegenModalOpen(false);
+    } catch {
+      toast('Failed to start regeneration');
+    } finally {
+      setRegenRunning(false);
+    }
+  };
+
   const toggleHighlighted = (index: number) => {
     const next = addOnItems.slice();
     const item = next[index];
@@ -131,6 +158,9 @@ export default function RevenueAddOnItemsEditor({
         try {
           await updateAudit(audit.id, { layout: nextLayout });
           scheduleSavedToast(toast);
+          if (hasAnalysisContent) {
+            setRegenModalOpen(true);
+          }
         } catch {
           toast('Could not save');
         }
@@ -477,6 +507,14 @@ export default function RevenueAddOnItemsEditor({
           Add opportunity
         </button>
       </div>
+
+      <AddOnHighlightRegenModal
+        open={regenModalOpen}
+        running={regenRunning}
+        highlightedNames={highlightedNames}
+        onConfirm={() => { void handleConfirmRegen(); }}
+        onDismiss={() => { if (!regenRunning) setRegenModalOpen(false); }}
+      />
     </div>
   );
 }

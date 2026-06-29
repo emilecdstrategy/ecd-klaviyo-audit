@@ -50,6 +50,7 @@ import {
   resolveSectionKeyFindings,
 } from '../../lib/section-key-findings';
 // import { buildSectionDemoMap } from '../../lib/addon-highlight';
+import { buildNavSectionDemoMap } from '../../lib/addon-highlight';
 import { cn } from '../../lib/utils';
 import type { AuditReportBundle } from '../../hooks/useAuditReportData';
 import {
@@ -411,10 +412,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       : [];
   }, [revenueSummaryCfg]);
 
-  // const sectionDemoMap = useMemo(
-  //   () => buildSectionDemoMap(visibleAddOnItems),
-  //   [visibleAddOnItems],
-  // );
+  const sectionDemoMap = useMemo(
+    () => buildNavSectionDemoMap(visibleAddOnItems),
+    [visibleAddOnItems],
+  );
+  const demoFor = (navId: string) => sectionDemoMap.get(navId) ?? [];
 
   const { oneTime: oneTimeAddOns, monthly: monthlyAddOns, unpriced: unpricedAddOns } = useMemo(
     () => splitAddOnsByPricing(visibleAddOnItems),
@@ -694,6 +696,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['flows'] ?? flowsCfg.sectionNumber ?? '03'}
               label={flowsCfg.sectionTitle ?? 'Flows'}
+              demoMarkers={demoFor('flows')}
             />
 
             {((isFlowsBlockVisible(flowsCfg, 'narrative') || isFlowsBlockVisible(flowsCfg, 'rubric')) || editMode) && (() => {
@@ -870,6 +873,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 deliverabilitySnapshotCfg.sectionTitle ?? 'Deliverability'
               )
             }
+            demoMarkers={demoFor('deliverability')}
           />
           <ReportDeliverabilitySnapshot deliverability={accountSnapshot?.deliverability} />
           {(isDeliverabilitySnapshotBlockVisible(deliverabilitySnapshotCfg, 'keyFindings') || editMode) && (
@@ -893,6 +897,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['segments'] ?? segmentationCfg.sectionNumber ?? '04'}
               label={segmentationCfg.sectionTitle ?? 'Segments'}
+              demoMarkers={demoFor('segments')}
             />
 
             {(isSegmentationBlockVisible(segmentationCfg, 'narrative') ||
@@ -967,6 +972,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['forms'] ?? signupFormsCfg.sectionNumber ?? '05'}
               label={signupFormsCfg.sectionTitle ?? 'Signup Forms'}
+              demoMarkers={demoFor('forms')}
             />
 
             {(isSignupFormsBlockVisible(signupFormsCfg, 'narrative') ||
@@ -1030,6 +1036,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['campaigns'] ?? campaignsCfg.sectionNumber ?? '06'}
               label={campaignsCfg.sectionTitle ?? 'Campaigns'}
+              demoMarkers={demoFor('campaigns')}
             />
 
             {(isCampaignsBlockVisible(campaignsCfg, 'narrative') ||
@@ -1096,6 +1103,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               <ReportSectionHeader
                 number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
                 label={emailDesignCfg.sectionTitle ?? 'Email Design'}
+                demoMarkers={demoFor('email_design')}
               />
               <EmailDesignSection
                 emailDesign={emailDesign}
@@ -1119,6 +1127,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               <ReportSectionHeader
                 number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
                 label={emailDesignCfg.sectionTitle ?? 'Email Design'}
+                demoMarkers={demoFor('email_design')}
               />
             <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-6 py-10 text-center">
               <p className="text-sm text-gray-600">No email design data yet.</p>

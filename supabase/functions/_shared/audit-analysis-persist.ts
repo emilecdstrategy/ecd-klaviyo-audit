@@ -60,25 +60,42 @@ type PartialState = {
 function mergeAddOnPlacementsIntoLayout(
   layout: unknown,
   placements: AddOnPlacementPersist[] | undefined,
+  options?: { clearUnplaced?: boolean },
 ): Record<string, unknown> {
   const layoutObj = { ...((layout as Record<string, unknown> | null | undefined) ?? {}) };
-  if (!placements?.length) return layoutObj;
-
-  const bySlug = new Map(placements.map((p) => [p.template_slug, p]));
   const revenueSummary = { ...((layoutObj.revenue_summary as Record<string, unknown> | undefined) ?? {}) };
   const blocks = { ...((revenueSummary.blocks as Record<string, unknown> | undefined) ?? {}) };
   const addOns = { ...((blocks.addOns as Record<string, unknown> | undefined) ?? {}) };
   const items = Array.isArray(addOns.items) ? [...(addOns.items as Array<Record<string, unknown>>)] : [];
 
+  if (!placements?.length) {
+    if (!options?.clearUnplaced || items.length === 0) return layoutObj;
+    for (let i = 0; i < items.length; i++) {
+      const { related_section_keys: _r, presenter_note: _p, ...rest } = items[i];
+      items[i] = rest;
+    }
+    addOns.items = items;
+    blocks.addOns = addOns;
+    revenueSummary.blocks = blocks;
+    layoutObj.revenue_summary = revenueSummary;
+    return layoutObj;
+  }
+
+  const bySlug = new Map(placements.map((p) => [p.template_slug, p]));
+
   for (let i = 0; i < items.length; i++) {
     const slug = String(items[i]?.template_slug ?? "").trim();
     const placement = bySlug.get(slug);
-    if (!placement) continue;
-    items[i] = {
-      ...items[i],
-      related_section_keys: placement.section_keys,
-      presenter_note: placement.presenter_note,
-    };
+    if (placement) {
+      items[i] = {
+        ...items[i],
+        related_section_keys: placement.section_keys,
+        presenter_note: placement.presenter_note,
+      };
+    } else if (options?.clearUnplaced) {
+      const { related_section_keys: _r, presenter_note: _p, ...rest } = items[i];
+      items[i] = rest;
+    }
   }
 
   addOns.items = items;
@@ -201,7 +218,11 @@ export async function persistAuditAnalysisResults(
     return { ...section, ...patch };
   });
 
-  const mergedLayout = mergeAddOnPlacementsIntoLayout(audit.layout, partial.addOnPlacements);
+  const mergedLayout = mergeAddOnPlacementsIntoLayout(
+    audit.layout,
+    partial.addOnPlacements,
+    { clearUnplaced: Boolean(options?.preserveStrengthsFromAudit) },
+  );
   const totalOpportunity = computeAuditTotalRevenueOpportunity(patchedSections, mergedLayout);
 
   let findingsForExec = partial.findings ?? [];

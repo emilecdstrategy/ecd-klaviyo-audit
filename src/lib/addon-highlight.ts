@@ -6,6 +6,30 @@ export type SectionDemoMarker = {
   presenter_note?: string;
 };
 
+const AUDIT_SECTION_KEY_TO_NAV_ID: Record<string, string> = {
+  account_health: 'deliverability',
+  flows: 'flows',
+  segmentation: 'segments',
+  campaigns: 'campaigns',
+  email_design: 'email_design',
+  signup_forms: 'forms',
+};
+
+export function auditSectionKeyToNavId(sectionKey: string): string {
+  return AUDIT_SECTION_KEY_TO_NAV_ID[sectionKey] ?? sectionKey;
+}
+
+export function buildNavSectionDemoMap(items: RevenueOpportunityAddOnItem[]): Map<string, SectionDemoMarker[]> {
+  const byAuditKey = buildSectionDemoMap(items);
+  const navMap = new Map<string, SectionDemoMarker[]>();
+  for (const [auditKey, markers] of byAuditKey.entries()) {
+    const navId = auditSectionKeyToNavId(auditKey);
+    const existing = navMap.get(navId) ?? [];
+    navMap.set(navId, [...existing, ...markers]);
+  }
+  return navMap;
+}
+
 export function getAddOnItemsFromLayout(layout: unknown): RevenueOpportunityAddOnItem[] {
   const layoutObj = (layout as Record<string, unknown> | null | undefined) ?? {};
   const revenueSummary = layoutObj.revenue_summary as Record<string, unknown> | undefined;

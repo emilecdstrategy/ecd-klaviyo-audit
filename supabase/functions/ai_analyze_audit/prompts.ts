@@ -486,7 +486,6 @@ export function buildAuditUserPrompt(
     );
   }
 
-  /* Highlighted add-on AI weaving + demo placements disabled for now.
   const highlighted = Array.isArray(data.highlightedAddOns)
     ? data.highlightedAddOns.filter((a) => a?.template_slug && a?.name)
     : [];
@@ -498,15 +497,23 @@ export function buildAuditUserPrompt(
       "Return addOnPlacements: for EACH highlighted add-on, pick 1-3 report section_keys where a presenter should demo that service (account_health, flows, segmentation, campaigns, email_design, signup_forms).",
       "Each placement needs a one-line presenter_note (what to show the client, tied to this account's data).",
     ];
+    if (mode === "sections_only") {
+      payload.highlighted_section_weave_instructions = [
+        "Weave the highlighted ECD add-on services into this section's narrative where they naturally address a gap.",
+        "Update summary_text, key_findings items, and optimized_notes when relevant — do not force add-ons into every paragraph.",
+        "Keep revenue_opportunity realistic; only increase if the add-on directly unlocks measurable upside for this section.",
+      ];
+    }
   }
-  */
 
   if (mode !== "sections_only") {
     payload.required_top_level_fields = {
       strengths: "Array of 3-6 strings. Each is a specific positive finding with bold lead phrase and supporting data. Reference actual flow names, dollar amounts, percentages WITH benchmark ranges and health assessment. When citing revenue dollars, include pct_of_store_revenue from revenue_context/top_flows. Write naturally, no em-dashes, use commas and plain language.",
       findings: "Array of exactly 5 strings. Each is a problem statement ranked by impact. Bold lead phrase plus evidence. When citing percentages, include benchmark range. No dollar amounts or revenue language.",
       implementationTimeline: "Array of exactly 4 objects with {phase, timeframe, label, items}. Phase 1='Quick Wins' (Week 1-2), Phase 2='Core Flows' (Week 3-6), Phase 3='Strategic' (Month 2-3), Phase 4='Long-Term' (Month 3+). Items must be specific to this account's findings.",
-      // addOnPlacements: re-enable with highlighted add-on instructions above
+      addOnPlacements: highlighted.length > 0
+        ? "Array of { template_slug, section_keys, presenter_note } for each highlighted add-on (see highlighted_add_on_instructions)."
+        : "Empty array when no add-ons are highlighted.",
     };
   }
   if (mode === "top_level_only") {

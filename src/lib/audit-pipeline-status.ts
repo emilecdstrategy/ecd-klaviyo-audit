@@ -47,7 +47,7 @@ const PROFILE_NUDGE_STALE_MS = 90_000;
 /** Only show the manual "paused" UI after this long without profile progress. */
 const PROFILE_PAUSED_STALE_MS = 5 * 60 * 1000;
 
-function auditHasAnalysisContent(
+export function auditHasAnalysisContent(
   executiveSummary: string | null | undefined,
   sections: Array<{
     section_key?: string;
@@ -106,7 +106,7 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
       .maybeSingle(),
     supabase
       .from('audit_analysis_jobs')
-      .select('status, step_index, error_message, updated_at')
+      .select('status, step_index, error_message, updated_at, partial_state')
       .eq('audit_id', auditId)
       .maybeSingle(),
   ]);
@@ -128,8 +128,10 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
   );
   const hasAnalysisContent = auditHasAnalysisContent(audit.executive_summary, sectionRows);
 
-  /* Highlight-targeted regen UI disabled — re-enable with regenerateAuditForHighlights.
-  if (hasAnalysisContent && audit.audit_method === 'api' && aiRegenInProgress) {
+  const aiPartial = (aiJob?.partial_state ?? {}) as Record<string, unknown>;
+  const isHighlightRegenJob = Boolean(aiPartial.highlightRegen);
+
+  if (hasAnalysisContent && audit.audit_method === 'api' && aiRegenInProgress && isHighlightRegenJob) {
     const stepIndex = Number(aiJob?.step_index) || 0;
     return {
       isGenerating: true,
@@ -150,31 +152,25 @@ export async function fetchAuditPipelineStatus(auditId: string): Promise<AuditPi
     };
   }
 
-  if (hasAnalysisContent && audit.audit_method === 'api' && aiJobStatus === 'failed') {
-    const partial = (aiJob?.partial_state ?? {}) as Record<string, unknown>;
-    if (partial.highlightRegen) {
-      // Ignore stale highlight-regen job failures; report content is already present.
-    } else {
-      return {
-        isGenerating: false,
-        isStalled: false,
-        needsProfileResume: false,
-        needsAiResume: true,
-        showPipelineUi: true,
-        aiServerActive: false,
-        aiJobFailed: true,
-        aiJobError: aiJob?.error_message ?? 'Regeneration failed',
-        phase: 'ai_analysis',
-        progress: 60,
-        label: 'Add-on regeneration failed — retry',
-        stageRuns,
-        profileScanTotal: profileJob?.total_profiles ?? null,
-        profileStalled: false,
-        aiStalled: false,
-      };
-    }
+  if (hasAnalysisContent && audit.audit_method === 'api' && aiJobStatus === 'failed' && isHighlightRegenJob) {
+    return {
+      isGenerating: false,
+      isStalled: false,
+      needsProfileResume: false,
+      needsAiResume: true,
+      showPipelineUi: true,
+      aiServerActive: false,
+      aiJobFailed: true,
+      aiJobError: aiJob?.error_message ?? 'Regeneration failed',
+      phase: 'ai_analysis',
+      progress: 60,
+      label: 'Add-on regeneration failed — retry',
+      stageRuns,
+      profileScanTotal: profileJob?.total_profiles ?? null,
+      profileStalled: false,
+      aiStalled: false,
+    };
   }
-  */
 
   if (hasAnalysisContent || audit.audit_method !== 'api') {
     return {
@@ -314,16 +310,24 @@ export async function nudgeProfileScan(auditId: string): Promise<void> {
   }
 }
 
-/** Highlight-targeted AI regen disabled — layout highlight flags are visual only for now. */
-export async function regenerateAuditForHighlights(_auditId: string): Promise<void> {
-  return;
-  /* Re-enable when highlight AI + demo placements return:
+/** Kick highlight-targeted AI regen after add-on highlight changes on an existing report. */
+export async function regenerateAuditForHighlights(auditId: string): Promise<void> {
   await supabase.auth.refreshSession().catch(() => {});
   const invokePromise = supabase.functions.invoke('audit_finalize_analysis', {
     body: { audit_id: auditId, mode: 'highlight_regen' },
   });
-  ...
-  */
+  const result = await Promise.race([
+    invokePromise,
+    new Promise<{ data: null; error: null }>(resolve => {
+      window.setTimeout(() => resolve({ data: null, error: null }), 8_000);
+    }),
+  ]);
+
+  if (result.error) {
+    const status = (result.error as { context?: { status?: number } }).context?.status;
+    if (Number(status) === 546 || Number(status) === 504) return;
+    throw new Error(result.error.message || 'Failed to start add-on regeneration');
+  }
 }
 
 export async function startServerAuditAnalysis(auditId: string): Promise<void> {

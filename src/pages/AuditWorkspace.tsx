@@ -9,8 +9,10 @@ import { mergeReportBundle, type AuditReportBundle } from '../hooks/useAuditRepo
 import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
 import AuditGenerationStatus from '../components/audit/AuditGenerationStatus';
 import {
+  auditHasAnalysisContent,
   clearAuditGenerationActive,
   fetchAuditPipelineStatus,
+  markAuditGenerationActive,
 } from '../lib/audit-pipeline-status';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, Client } from '../lib/types';
@@ -123,6 +125,11 @@ export default function AuditWorkspace() {
     if (!reportBundle || !audit || !client) return null;
     return mergeReportBundle(reportBundle, audit, sections, annotations, emailDesign);
   }, [reportBundle, audit, client, sections, annotations, emailDesign]);
+
+  const hasAnalysisContent = useMemo(
+    () => auditHasAnalysisContent(audit?.executive_summary, sections),
+    [audit?.executive_summary, sections],
+  );
 
   if (loading) {
     return (
@@ -306,7 +313,16 @@ export default function AuditWorkspace() {
               onClose={() => setRevenueDrawerOpen(false)}
               title="Revenue opportunities"
             >
-              <RevenueAddOnItemsEditor audit={audit} onAuditChange={setAudit} />
+              <RevenueAddOnItemsEditor
+                audit={audit}
+                onAuditChange={setAudit}
+                hasAnalysisContent={hasAnalysisContent}
+                onHighlightRegenStart={() => {
+                  markAuditGenerationActive(audit.id);
+                  setAnalysisInProgress(true);
+                  setRevenueDrawerOpen(false);
+                }}
+              />
             </EmailDesignDrawer>
           </Suspense>
         )}
