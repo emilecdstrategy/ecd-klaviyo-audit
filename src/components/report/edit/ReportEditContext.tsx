@@ -94,6 +94,8 @@ export type SaveStatus = 'idle' | 'saving' | 'saved' | 'error';
 
 type ReportEditContextValue = {
   editMode: boolean;
+  /** Public / published report: allow Investment Summary line-item toggles without full edit chrome. */
+  investmentToggleMode: boolean;
   saveStatus: SaveStatus;
   updateFinding: (index: number, value: string) => void;
   addFinding: () => void;
@@ -177,6 +179,7 @@ type ReportEditContextValue = {
 
 const ReportEditContext = createContext<ReportEditContextValue>({
   editMode: false,
+  investmentToggleMode: false,
   saveStatus: 'idle',
   updateFinding: () => {},
   updateStrength: () => {},
@@ -226,6 +229,7 @@ export function useReportEdit() {
 
 export function ReportEditProvider({
   editMode,
+  investmentToggleMode = false,
   audit,
   sections,
   onAuditChange,
@@ -233,6 +237,7 @@ export function ReportEditProvider({
   children,
 }: {
   editMode: boolean;
+  investmentToggleMode?: boolean;
   audit: Audit;
   sections: AuditSection[];
   onAuditChange: (next: Audit) => void;
@@ -1123,6 +1128,7 @@ export function ReportEditProvider({
   const value = useMemo(
     () => ({
       editMode,
+      investmentToggleMode,
       saveStatus,
       updateFinding,
       addFinding,
@@ -1169,6 +1175,7 @@ export function ReportEditProvider({
     }),
     [
       editMode,
+      investmentToggleMode,
       saveStatus,
       updateFinding,
       addFinding,

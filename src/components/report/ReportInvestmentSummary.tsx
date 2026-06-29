@@ -122,20 +122,20 @@ export default function ReportInvestmentSummary({
   onSaveTitle,
   onSaveSubtitle,
 }: ReportInvestmentSummaryProps) {
-  const { editMode, toggleAddOnInvestmentIncluded } = useReportEdit();
+  const { editMode, investmentToggleMode, toggleAddOnInvestmentIncluded } = useReportEdit();
   const lineItems = buildInvestmentLineItems(items);
   const totals = computeInvestmentTotals(lineItems);
   const groups = groupInvestmentLinesByItem(lineItems);
+  const canToggleItems = editMode || investmentToggleMode;
 
-  const visibleGroups = editMode
+  const visibleGroups = canToggleItems
     ? groups
     : groups.filter(group => group.included);
 
   if (!editMode && hidden) return null;
-  if (!editMode && visibleGroups.length === 0) return null;
+  if (!canToggleItems && visibleGroups.length === 0) return null;
 
   const canEditCopy = editMode && Boolean(onSaveTitle);
-  const canToggleItems = editMode;
   const hasOneTime = lineItems.some(line => line.unit === 'one_time');
   const hasMonthly = lineItems.some(line => line.unit === 'monthly');
 
@@ -276,7 +276,9 @@ export default function ReportInvestmentSummary({
 
         {canToggleItems && (
           <p className="mt-4 text-xs text-gray-500">
-            Toggle line items on or off while presenting — totals update immediately and save to this audit.
+            {editMode
+              ? 'Toggle line items on or off while presenting — totals update immediately and save to this audit.'
+              : 'Tap a service to include or exclude it from this proposal. Totals update immediately.'}
           </p>
         )}
       </div>

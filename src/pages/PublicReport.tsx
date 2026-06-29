@@ -1,14 +1,30 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import AppPreloader from '../components/ui/AppPreloader';
 import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
+import { ReportEditProvider } from '../components/report/edit/ReportEditContext';
 import { useAuditReportData } from '../hooks/useAuditReportData';
+import type { Audit, AuditSection } from '../lib/types';
 
 const AuditReportView = lazy(() => import('../components/report/AuditReportView'));
 
 export default function PublicReport() {
   const { token } = useParams();
-  const { loading, loadError, data } = useAuditReportData(token);
+  const { loading, loadError, data, setData } = useAuditReportData(token);
+
+  const onAuditChange = useCallback(
+    (audit: Audit) => {
+      setData(prev => (prev ? { ...prev, audit } : prev));
+    },
+    [setData],
+  );
+
+  const onSectionsChange = useCallback(
+    (sections: AuditSection[]) => {
+      setData(prev => (prev ? { ...prev, sections } : prev));
+    },
+    [setData],
+  );
 
   if (loading) {
     return <AppPreloader message="Loading report…" />;
@@ -37,8 +53,17 @@ export default function PublicReport() {
   }
 
   return (
-    <Suspense fallback={<SkeletonAuditWorkspace />}>
-      <AuditReportView data={data} />
-    </Suspense>
+    <ReportEditProvider
+      editMode={false}
+      investmentToggleMode
+      audit={data.audit}
+      sections={data.sections}
+      onAuditChange={onAuditChange}
+      onSectionsChange={onSectionsChange}
+    >
+      <Suspense fallback={<SkeletonAuditWorkspace />}>
+        <AuditReportView data={data} />
+      </Suspense>
+    </ReportEditProvider>
   );
 }
