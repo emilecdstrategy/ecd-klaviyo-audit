@@ -1413,8 +1413,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
           </div>
           )}
 
-          {revenueSummaryCfg.blocks.timeline && revenueSummaryCfg.blocks.timeline.hidden !== true && (
-          <div className="mt-6 overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+          {revenueSummaryCfg.blocks.timeline && (revenueSummaryCfg.blocks.timeline.hidden !== true || editMode) && (
+          <ReportBlockEditChrome
+            label="Implementation Timeline"
+            hidden={revenueSummaryCfg.blocks.timeline.hidden === true}
+            onToggleHidden={h => toggleRevenueBlockHidden('timeline', h)}
+            className="mt-6"
+          >
+          <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
             <ReportBlockHeader
               icon={
                 <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
@@ -1472,6 +1478,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             )}
             </div>
           </div>
+          </ReportBlockEditChrome>
           )}
         </ReportSectionShell>
       </main>

@@ -261,7 +261,7 @@ export const DEFAULT_REVENUE_SUMMARY_SECTION: RevenueSummarySectionConfig = {
       items: [],
     },
     timeline: {
-      hidden: false,
+      hidden: true,
       title: 'Implementation Timeline',
       subtitle: 'Suggested rollout order — work through each phase before moving to the next.',
     },
