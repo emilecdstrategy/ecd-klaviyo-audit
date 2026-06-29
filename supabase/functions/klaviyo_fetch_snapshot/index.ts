@@ -58,12 +58,12 @@ const CAMPAIGN_SNAPSHOT_CAP = 500;
 const MAX_LIST_PAGES = 5;
 /** Lightweight segment names for groupNameMap (100/page × 10 = 1000). */
 const MAX_SEGMENT_NAME_PAGES = 10;
-/** Segments with definitions for segment inventory snapshots (50/page × 10 = 500). */
-const MAX_SEGMENT_DEFINITION_PAGES = 10;
+/** Segments with definitions for segment inventory snapshots (10/page × 20 = 200; Klaviyo max page size is 10 when definition is requested). */
+const MAX_SEGMENT_DEFINITION_PAGES = 20;
 const SEGMENTS_NAMES_ONLY_PATH =
   "/api/segments/?page%5Bsize%5D=100&fields%5Bsegment%5D=name,created,updated";
 const SEGMENTS_WITH_DEFINITIONS_PATH =
-  "/api/segments/?page%5Bsize%5D=50&fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing";
+  "/api/segments/?page%5Bsize%5D=10&fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing";
 const SEGMENT_BY_ID_FIELDS =
   "fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing";
 const LIST_BY_ID_FIELDS = "fields%5Blist%5D=name,created,updated";
