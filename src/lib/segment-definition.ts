@@ -189,7 +189,7 @@ function parseCondition(
   if (type === 'profile-property') {
     const property = String(c.property ?? 'Property');
     const filter = formatMetricFilter(property, c.filter);
-    return filter ? `${property} ${filter}` : `Profile property: ${property}`;
+    return filter ?? `Profile property: ${property}`;
   }
 
   if (type === 'profile-group-membership') {

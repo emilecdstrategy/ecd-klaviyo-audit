@@ -221,7 +221,7 @@ export interface ExecutiveSummarySectionConfig extends BaseSectionConfig {
       headline?: string | null;
       /** Override the intro paragraph; when null the paragraph is hidden. */
       intro?: string | null;
-      /** Override the leading eyebrow tag ("Klaviyo Email Audit — X"). Null hides it. */
+      /** Override the leading eyebrow tag ("Company | Klaviyo Email Audit"). Null hides it. */
       eyebrow?: string | null;
     };
     accountSnapshot?: GenericBlockConfig;

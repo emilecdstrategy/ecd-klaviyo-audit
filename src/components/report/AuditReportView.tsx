@@ -232,7 +232,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
   useEffect(() => {
     if (client?.company_name) {
-      document.title = `Klaviyo Email Audit — ${client.company_name}`;
+      document.title = `${client.company_name} | Klaviyo Email Audit`;
     }
     return () => { document.title = 'ECD Audit Dashboard'; };
   }, [client?.company_name]);

@@ -1,15 +1,26 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, GripVertical, Plus } from 'lucide-react';
+import {
+  ArrowDown,
+  ArrowLeft,
+  ArrowUp,
+  Eye,
+  EyeOff,
+  GripVertical,
+  Plus,
+  Sparkles,
+} from 'lucide-react';
 import type { Audit, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../../lib/types';
 import { listRevenueOpportunityTemplates, updateAudit, uploadRevenueOpportunityImage } from '../../lib/db';
 import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
+import { summarizeTemplatePricing } from '../../lib/revenue-addon-categories';
 import { getHighlightedAddOns } from '../../lib/addon-highlight';
 import { regenerateAuditForHighlights } from '../../lib/audit-pipeline-status';
 import { scheduleSavedToast, useToast } from '../ui/Toast';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
 import ImageUploadZone from '../ui/ImageUploadZone';
-import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import AddOnHighlightRegenModal from './AddOnHighlightRegenModal';
+import AddOpportunityPickerModal from './AddOpportunityPickerModal';
+import { cn } from '../../lib/utils';
 
 function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
   if (!Array.isArray(rawItems)) return [];
@@ -39,6 +50,293 @@ function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
     .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
 }
 
+function summarizeItemPricing(item: RevenueOpportunityAddOnItem): string | null {
+  return summarizeTemplatePricing(item);
+}
+
+function AddOnListRow({
+  item,
+  selected,
+  dragActive,
+  onSelect,
+  onDragStart,
+  onDragEnd,
+  onDrop,
+  onToggleHighlight,
+  onToggleHidden,
+}: {
+  item: RevenueOpportunityAddOnItem;
+  selected: boolean;
+  dragActive: boolean;
+  onSelect: () => void;
+  onDragStart: () => void;
+  onDragEnd: () => void;
+  onDrop: () => void;
+  onToggleHighlight: () => void;
+  onToggleHidden: () => void;
+}) {
+  const pricing = summarizeItemPricing(item);
+
+  return (
+    <div
+      draggable
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+      onDragOver={e => e.preventDefault()}
+      onDrop={onDrop}
+      className={cn(
+        'rounded-lg border transition-colors',
+        selected
+          ? 'border-brand-primary/40 bg-brand-primary/[0.06] shadow-sm'
+          : dragActive
+            ? 'border-brand-primary/30 bg-brand-primary/[0.03]'
+            : 'border-transparent bg-white hover:border-gray-200 hover:bg-gray-50',
+      )}
+    >
+      <button
+        type="button"
+        onClick={onSelect}
+        className="flex w-full items-start gap-2 px-2.5 py-2.5 text-left"
+      >
+        <GripVertical className="mt-0.5 h-4 w-4 shrink-0 cursor-grab text-gray-300 active:cursor-grabbing" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5">
+            <span className={cn('truncate text-sm font-medium', item.is_hidden ? 'text-gray-400' : 'text-gray-900')}>
+              {item.name || 'Untitled'}
+            </span>
+            {item.highlighted ? (
+              <Sparkles className="h-3.5 w-3.5 shrink-0 text-amber-500" aria-label="Highlighted" />
+            ) : null}
+          </div>
+          {pricing ? (
+            <p className="mt-0.5 truncate text-[11px] text-gray-500">{pricing}</p>
+          ) : (
+            <p className="mt-0.5 text-[11px] text-gray-400">No pricing set</p>
+          )}
+        </div>
+      </button>
+      <div className="flex items-center justify-end gap-1 border-t border-gray-100/80 px-2 pb-2 pt-1">
+        <button
+          type="button"
+          title={item.highlighted ? 'Remove highlight' : 'Highlight in report'}
+          onClick={e => {
+            e.stopPropagation();
+            onToggleHighlight();
+          }}
+          className={cn(
+            'rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide',
+            item.highlighted
+              ? 'bg-amber-100 text-amber-800'
+              : 'text-gray-500 hover:bg-gray-100',
+          )}
+        >
+          {item.highlighted ? 'Highlighted' : 'Highlight'}
+        </button>
+        <button
+          type="button"
+          title={item.is_hidden ? 'Show in report' : 'Hide from report'}
+          onClick={e => {
+            e.stopPropagation();
+            onToggleHidden();
+          }}
+          className="rounded-md p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600"
+        >
+          {item.is_hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function AddOnDetailPanel({
+  item,
+  index,
+  total,
+  uploading,
+  onChange,
+  onMove,
+  onRemove,
+  onImageUpload,
+}: {
+  item: RevenueOpportunityAddOnItem;
+  index: number;
+  total: number;
+  uploading: boolean;
+  onChange: (next: RevenueOpportunityAddOnItem) => void;
+  onMove: (direction: -1 | 1) => void;
+  onRemove: () => void;
+  onImageUpload: (file: File | undefined) => void;
+}) {
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-gray-100 pb-4">
+        <div>
+          <p className="text-[11px] font-bold uppercase tracking-wider text-gray-400">
+            Editing · {index + 1} of {total}
+          </p>
+          <h4 className="mt-1 text-lg font-semibold text-gray-900">{item.name}</h4>
+        </div>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onMove(-1)}
+            disabled={index === 0}
+            className="rounded-lg border border-gray-200 p-2 text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+            title="Move up"
+          >
+            <ArrowUp className="h-4 w-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => onMove(1)}
+            disabled={index >= total - 1}
+            className="rounded-lg border border-gray-200 p-2 text-gray-500 hover:bg-gray-50 disabled:opacity-40"
+            title="Move down"
+          >
+            <ArrowDown className="h-4 w-4" />
+          </button>
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-gray-500">Display name</label>
+        <input
+          type="text"
+          value={item.name}
+          onChange={e => onChange({ ...item, name: e.target.value })}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+        />
+      </div>
+
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-gray-500">One-time price ($)</label>
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="0"
+            value={item.one_time_price != null && item.one_time_price > 0 ? String(item.one_time_price) : ''}
+            onChange={e => {
+              const raw = e.target.value.replace(/[^0-9.]/g, '');
+              onChange({ ...item, one_time_price: raw === '' ? null : Number(raw) });
+            }}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-gray-500">One-time note</label>
+          <input
+            type="text"
+            placeholder="e.g. Full $2,500 · Mini $500"
+            value={item.one_time_label ?? ''}
+            onChange={e => onChange({ ...item, one_time_label: e.target.value.trim() || null })}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-gray-500">Monthly retainer ($)</label>
+          <input
+            type="text"
+            inputMode="decimal"
+            placeholder="0"
+            value={item.monthly_price != null && item.monthly_price > 0 ? String(item.monthly_price) : ''}
+            onChange={e => {
+              const raw = e.target.value.replace(/[^0-9.]/g, '');
+              onChange({ ...item, monthly_price: raw === '' ? null : Number(raw) });
+            }}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+          />
+        </div>
+        <div>
+          <label className="mb-1 block text-[11px] font-medium text-gray-500">Monthly note</label>
+          <input
+            type="text"
+            placeholder="e.g. $12,000+/mo"
+            value={item.monthly_label ?? ''}
+            onChange={e => onChange({ ...item, monthly_label: e.target.value.trim() || null })}
+            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+          />
+        </div>
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-gray-500">Short description</label>
+        <input
+          type="text"
+          value={item.description ?? ''}
+          onChange={e => onChange({ ...item, description: e.target.value || undefined })}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-gray-500">Report body</label>
+        <SimpleRichEditor
+          value={item.content ?? ''}
+          onChange={value => onChange({ ...item, content: value })}
+          rows={5}
+          placeholder="Paragraphs or bullet lists — use the list button in the toolbar."
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-gray-500">Screenshot</label>
+        <ImageUploadZone
+          compact
+          previewUrl={item.image_url}
+          previewAlt={`${item.name} screenshot`}
+          label={item.image_url ? 'Replace screenshot' : 'Upload screenshot'}
+          uploading={uploading}
+          onFile={onImageUpload}
+          onRemove={item.image_url ? () => onChange({ ...item, image_url: null }) : undefined}
+          className="max-w-md"
+        />
+      </div>
+
+      <div>
+        <label className="mb-1 block text-[11px] font-medium text-gray-500">Details doc URL</label>
+        <input
+          type="url"
+          placeholder="https://…"
+          value={item.details_url ?? ''}
+          onChange={e => onChange({ ...item, details_url: e.target.value.trim() || null })}
+          className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+        />
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
+        <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+          <span className="text-xs font-medium text-gray-700">Show in report</span>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={!item.is_hidden}
+            onClick={() => onChange({ ...item, is_hidden: !item.is_hidden })}
+            className={cn(
+              'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors',
+              !item.is_hidden ? 'bg-brand-primary' : 'bg-gray-200',
+            )}
+          >
+            <span
+              className={cn(
+                'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
+                !item.is_hidden ? 'translate-x-4' : 'translate-x-0',
+              )}
+            />
+          </button>
+        </div>
+        <button
+          type="button"
+          onClick={onRemove}
+          className="text-sm font-medium text-red-600 hover:underline"
+        >
+          Remove from audit
+        </button>
+      </div>
+    </div>
+  );
+}
+
 export default function RevenueAddOnItemsEditor({
   audit,
   onAuditChange,
@@ -51,7 +349,9 @@ export default function RevenueAddOnItemsEditor({
   onHighlightRegenStart?: () => void;
 }) {
   const [templates, setTemplates] = useState<RevenueOpportunityTemplate[]>([]);
-  const [selectedTemplateSlug, setSelectedTemplateSlug] = useState('');
+  const [selectedIndex, setSelectedIndex] = useState<number | null>(null);
+  const [mobileShowDetail, setMobileShowDetail] = useState(false);
+  const [pickerOpen, setPickerOpen] = useState(false);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [uploadingIndex, setUploadingIndex] = useState<number | null>(null);
   const [regenModalOpen, setRegenModalOpen] = useState(false);
@@ -75,30 +375,29 @@ export default function RevenueAddOnItemsEditor({
     [templates, addOnItems],
   );
 
+  const visibleCount = useMemo(() => addOnItems.filter(item => !item.is_hidden).length, [addOnItems]);
+  const highlightedCount = useMemo(() => addOnItems.filter(item => item.highlighted).length, [addOnItems]);
+
   useEffect(() => {
     listRevenueOpportunityTemplates({ activeOnly: true })
-      .then(data => {
-        setTemplates(data);
-        if (!selectedTemplateSlug && data.length > 0) {
-          setSelectedTemplateSlug(data[0].slug);
-        }
-      })
+      .then(setTemplates)
       .catch(() => setTemplates([]));
-  }, [selectedTemplateSlug]);
+  }, []);
 
   useEffect(() => () => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);
   }, []);
 
   useEffect(() => {
-    if (!availableTemplates.length) {
-      setSelectedTemplateSlug('');
+    if (addOnItems.length === 0) {
+      setSelectedIndex(null);
+      setMobileShowDetail(false);
       return;
     }
-    if (!availableTemplates.some(t => t.slug === selectedTemplateSlug)) {
-      setSelectedTemplateSlug(availableTemplates[0].slug);
+    if (selectedIndex == null || selectedIndex >= addOnItems.length) {
+      setSelectedIndex(0);
     }
-  }, [availableTemplates, selectedTemplateSlug]);
+  }, [addOnItems.length, selectedIndex]);
 
   const highlightedNames = useMemo(
     () => getHighlightedAddOns(addOnItems).map(item => item.name),
@@ -116,14 +415,6 @@ export default function RevenueAddOnItemsEditor({
     } finally {
       setRegenRunning(false);
     }
-  };
-
-  const toggleHighlighted = (index: number) => {
-    const next = addOnItems.slice();
-    const item = next[index];
-    if (!item) return;
-    next[index] = { ...item, highlighted: !item.highlighted };
-    writeItems(next, { highlightChanged: true });
   };
 
   const writeItems = (
@@ -179,19 +470,22 @@ export default function RevenueAddOnItemsEditor({
     }, 800) as unknown as number;
   };
 
-  const handleImageUpload = async (index: number, file: File | undefined) => {
-    if (!file) return;
-    setUploadingIndex(index);
-    try {
-      const url = await uploadRevenueOpportunityImage(file);
-      const next = addOnItems.slice();
-      next[index] = { ...next[index], image_url: url };
-      writeItems(next);
-    } catch {
-      toast('Image upload failed');
-    } finally {
-      setUploadingIndex(null);
-    }
+  const updateItemAt = (index: number, nextItem: RevenueOpportunityAddOnItem, opts?: { highlightChanged?: boolean }) => {
+    const next = addOnItems.slice();
+    next[index] = nextItem;
+    writeItems(next, opts);
+  };
+
+  const toggleHighlighted = (index: number) => {
+    const item = addOnItems[index];
+    if (!item) return;
+    updateItemAt(index, { ...item, highlighted: !item.highlighted }, { highlightChanged: true });
+  };
+
+  const toggleHidden = (index: number) => {
+    const item = addOnItems[index];
+    if (!item) return;
+    updateItemAt(index, { ...item, is_hidden: !item.is_hidden });
   };
 
   const moveItem = (index: number, direction: -1 | 1) => {
@@ -202,311 +496,195 @@ export default function RevenueAddOnItemsEditor({
     next[index] = next[target];
     next[target] = temp;
     writeItems(next);
+    setSelectedIndex(target);
   };
 
+  const removeItem = (index: number) => {
+    const next = addOnItems.filter((_, i) => i !== index);
+    writeItems(next);
+    if (next.length === 0) {
+      setSelectedIndex(null);
+      setMobileShowDetail(false);
+    } else {
+      setSelectedIndex(Math.min(index, next.length - 1));
+    }
+  };
+
+  const handleImageUpload = async (index: number, file: File | undefined) => {
+    if (!file) return;
+    setUploadingIndex(index);
+    try {
+      const url = await uploadRevenueOpportunityImage(file);
+      const item = addOnItems[index];
+      if (item) updateItemAt(index, { ...item, image_url: url });
+    } catch {
+      toast('Image upload failed');
+    } finally {
+      setUploadingIndex(null);
+    }
+  };
+
+  const addTemplate = (template: RevenueOpportunityTemplate) => {
+    if (addOnItems.some(item => item.template_slug === template.slug)) return;
+    const next = [
+      ...addOnItems,
+      {
+        template_slug: template.slug,
+        name: template.name,
+        description: template.description || undefined,
+        content: template.content || resolveRevenueOpportunityContent(template),
+        bullets: [],
+        revenue_monthly: 0,
+        one_time_price: template.one_time_price ?? null,
+        one_time_label: template.one_time_label ?? null,
+        monthly_price: template.monthly_price ?? null,
+        monthly_label: template.monthly_label ?? null,
+        image_url: template.image_url ?? null,
+        details_url: template.details_url ?? null,
+        is_hidden: false,
+      },
+    ];
+    writeItems(next);
+    setSelectedIndex(next.length - 1);
+    setMobileShowDetail(true);
+    setPickerOpen(false);
+  };
+
+  const selectedItem = selectedIndex != null ? addOnItems[selectedIndex] : null;
+
   return (
-    <div className="bg-white rounded-xl p-6 card-shadow">
-      <h3 className="text-sm font-semibold text-gray-900 mb-1">Add-On Opportunity Items</h3>
-      <p className="text-xs text-gray-500 mb-4">
-        Manage selected predefined opportunities in a dedicated section. These cards render in the report and count toward total opportunity.
-      </p>
-
-      {addOnItems.length === 0 ? (
-        <div className="text-xs text-gray-500 rounded-lg border border-dashed border-gray-200 px-3 py-3">
-          No add-ons selected for this audit yet.
-        </div>
-      ) : (
-        <div className="space-y-3">
-          {addOnItems.map((item, index) => (
-            <div
-              key={`${item.template_slug}-${index}`}
-              draggable
-              onDragStart={() => setDragIndex(index)}
-              onDragEnd={() => setDragIndex(null)}
-              onDragOver={e => e.preventDefault()}
-              onDrop={() => {
-                if (dragIndex === null || dragIndex === index) return;
-                const next = addOnItems.slice();
-                const [moved] = next.splice(dragIndex, 1);
-                next.splice(index, 0, moved);
-                setDragIndex(null);
-                writeItems(next);
-              }}
-              className={`rounded-xl border p-3.5 space-y-3 transition-colors ${dragIndex === index ? 'border-brand-primary/50 bg-brand-primary/[0.03]' : 'border-gray-100'}`}
-            >
-              <div className="flex items-start justify-between gap-3">
-                <div className="flex items-center gap-2 text-gray-400">
-                  <GripVertical className="w-4 h-4" />
-                  <span className="text-[11px] uppercase tracking-wide font-semibold">Position {index + 1}</span>
-                </div>
-                <div className="flex items-center gap-1">
-                  <button
-                    type="button"
-                    aria-pressed={Boolean(item.highlighted)}
-                    onClick={() => toggleHighlighted(index)}
-                    className={`rounded-md border px-2.5 py-1 text-xs font-medium transition-colors ${
-                      item.highlighted
-                        ? 'border-amber-300 bg-amber-100 text-amber-800'
-                        : 'border-gray-200 bg-white text-gray-600 hover:border-amber-200 hover:text-amber-700'
-                    }`}
-                  >
-                    {item.highlighted ? 'Unhighlight' : 'Highlight'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => moveItem(index, -1)}
-                    disabled={index === 0}
-                    className="p-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="Move up"
-                  >
-                    <ArrowUp className="w-3.5 h-3.5" />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => moveItem(index, 1)}
-                    disabled={index === addOnItems.length - 1}
-                    className="p-1.5 rounded border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-                    title="Move down"
-                  >
-                    <ArrowDown className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-500 mb-1">Name</label>
-                  <input
-                    type="text"
-                    value={item.name}
-                    onChange={e => {
-                      const next = addOnItems.slice();
-                      next[index] = { ...item, name: e.target.value };
-                      writeItems(next);
-                    }}
-                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  />
-                </div>
-              </div>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-500 mb-1">One-time price ($)</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0"
-                    value={item.one_time_price != null && item.one_time_price > 0 ? String(item.one_time_price) : ''}
-                    onChange={e => {
-                      const raw = e.target.value.replace(/[^0-9.]/g, '');
-                      const next = addOnItems.slice();
-                      next[index] = {
-                        ...item,
-                        one_time_price: raw === '' ? null : Number(raw),
-                      };
-                      writeItems(next);
-                    }}
-                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-500 mb-1">One-time price note</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. Full $2,500 · Mini $500"
-                    value={item.one_time_label ?? ''}
-                    onChange={e => {
-                      const next = addOnItems.slice();
-                      next[index] = { ...item, one_time_label: e.target.value.trim() || null };
-                      writeItems(next);
-                    }}
-                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-500 mb-1">Monthly retainer ($)</label>
-                  <input
-                    type="text"
-                    inputMode="decimal"
-                    placeholder="0"
-                    value={item.monthly_price != null && item.monthly_price > 0 ? String(item.monthly_price) : ''}
-                    onChange={e => {
-                      const raw = e.target.value.replace(/[^0-9.]/g, '');
-                      const next = addOnItems.slice();
-                      next[index] = {
-                        ...item,
-                        monthly_price: raw === '' ? null : Number(raw),
-                      };
-                      writeItems(next);
-                    }}
-                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-[11px] font-medium text-gray-500 mb-1">Monthly price note</label>
-                  <input
-                    type="text"
-                    placeholder="e.g. $12,000+/mo"
-                    value={item.monthly_label ?? ''}
-                    onChange={e => {
-                      const next = addOnItems.slice();
-                      next[index] = { ...item, monthly_label: e.target.value.trim() || null };
-                      writeItems(next);
-                    }}
-                    className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-gray-500 mb-1">Description</label>
-                <input
-                  type="text"
-                  value={item.description ?? ''}
-                  onChange={e => {
-                    const next = addOnItems.slice();
-                    next[index] = { ...item, description: e.target.value || undefined };
-                    writeItems(next);
-                  }}
-                  className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-gray-500 mb-1">Body</label>
-                <SimpleRichEditor
-                  value={item.content ?? ''}
-                  onChange={(value) => {
-                    const next = addOnItems.slice();
-                    next[index] = { ...item, content: value };
-                    writeItems(next);
-                  }}
-                  rows={4}
-                  placeholder="Paragraphs or bullet lists — use the list button in the toolbar."
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-gray-500 mb-1">Screenshot</label>
-                <ImageUploadZone
-                  compact
-                  previewUrl={item.image_url}
-                  previewAlt={`${item.name} screenshot`}
-                  label={item.image_url ? 'Replace screenshot' : 'Upload screenshot'}
-                  uploading={uploadingIndex === index}
-                  onFile={file => handleImageUpload(index, file)}
-                  onRemove={
-                    item.image_url
-                      ? () => {
-                          const next = addOnItems.slice();
-                          next[index] = { ...item, image_url: null };
-                          writeItems(next);
-                        }
-                      : undefined
-                  }
-                  className="max-w-md"
-                />
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-medium text-gray-500 mb-1">Details doc URL</label>
-                <input
-                  type="url"
-                  placeholder="https://…"
-                  value={item.details_url ?? ''}
-                  onChange={e => {
-                    const next = addOnItems.slice();
-                    next[index] = { ...item, details_url: e.target.value.trim() || null };
-                    writeItems(next);
-                  }}
-                  className="w-full px-2.5 py-1.5 border border-gray-200 rounded-md text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                />
-              </div>
-
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 min-w-[220px]">
-                  <div className="text-xs text-gray-700 font-medium">Show in report</div>
-                  <button
-                    type="button"
-                    role="switch"
-                    aria-checked={!item.is_hidden}
-                    onClick={() => {
-                      const next = addOnItems.slice();
-                      next[index] = { ...item, is_hidden: !item.is_hidden };
-                      writeItems(next);
-                    }}
-                    className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${!item.is_hidden ? 'bg-brand-primary' : 'bg-gray-200'}`}
-                  >
-                    <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${!item.is_hidden ? 'translate-x-4' : 'translate-x-0'}`} />
-                  </button>
-                </div>
-                <button
-                  type="button"
-                  onClick={() => writeItems(addOnItems.filter((_, rowIndex) => rowIndex !== index))}
-                  className="text-xs font-medium text-red-600 hover:underline"
-                >
-                  Remove from this audit
-                </button>
-              </div>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="mt-4 flex flex-wrap items-end gap-2">
-        <div className="min-w-[260px] flex-1">
-          <label className="block text-[11px] font-medium text-gray-500 mb-1">Add from template</label>
-          <Select value={selectedTemplateSlug || '__none__'} onValueChange={value => setSelectedTemplateSlug(value === '__none__' ? '' : value)}>
-            <SelectTrigger className="w-full">
-              <SelectValue placeholder={availableTemplates.length ? 'Pick an opportunity template' : 'All templates already added'} />
-            </SelectTrigger>
-            <SelectContent>
-              {availableTemplates.length === 0 ? (
-                <SelectItem value="__none__" disabled>
-                  <SelectItemText>All templates already added</SelectItemText>
-                </SelectItem>
-              ) : (
-                availableTemplates.map(template => (
-                  <SelectItem key={template.id} value={template.slug}>
-                    <SelectItemText>{template.name}</SelectItemText>
-                  </SelectItem>
-                ))
-              )}
-            </SelectContent>
-          </Select>
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div className="mb-4 flex shrink-0 flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-2 text-xs text-gray-500">
+          <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-700">
+            {addOnItems.length} in audit
+          </span>
+          <span className="rounded-full bg-gray-100 px-2.5 py-1">
+            {visibleCount} visible in report
+          </span>
+          {highlightedCount > 0 ? (
+            <span className="rounded-full bg-amber-50 px-2.5 py-1 font-medium text-amber-800">
+              {highlightedCount} highlighted
+            </span>
+          ) : null}
         </div>
         <button
           type="button"
-          onClick={() => {
-            const template = templates.find(t => t.slug === selectedTemplateSlug);
-            if (!template) return;
-            if (addOnItems.some(item => item.template_slug === template.slug)) return;
-            writeItems([
-              ...addOnItems,
-              {
-                template_slug: template.slug,
-                name: template.name,
-                description: template.description || undefined,
-                content: template.content || resolveRevenueOpportunityContent(template),
-                bullets: [],
-                revenue_monthly: 0,
-                one_time_price: template.one_time_price ?? null,
-                one_time_label: template.one_time_label ?? null,
-                monthly_price: template.monthly_price ?? null,
-                monthly_label: template.monthly_label ?? null,
-                image_url: template.image_url ?? null,
-                details_url: template.details_url ?? null,
-                is_hidden: false,
-              },
-            ]);
-          }}
-          disabled={!selectedTemplateSlug}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed"
+          onClick={() => setPickerOpen(true)}
+          disabled={availableTemplates.length === 0}
+          className="inline-flex items-center gap-1.5 rounded-lg bg-brand-primary px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-50"
         >
-          <Plus className="w-4 h-4" />
-          Add opportunity
+          <Plus className="h-4 w-4" />
+          Add from library
         </button>
       </div>
+
+      <div className="flex min-h-0 flex-1 overflow-hidden rounded-xl border border-gray-200 bg-gray-50/40">
+        <aside
+          className={cn(
+            'flex w-full shrink-0 flex-col border-gray-200 bg-gray-50/80 md:w-[min(100%,280px)] md:border-r',
+            mobileShowDetail ? 'hidden md:flex' : 'flex',
+          )}
+        >
+          <div className="border-b border-gray-200 px-3 py-2.5">
+            <p className="text-[11px] font-bold uppercase tracking-wider text-gray-500">In this audit</p>
+          </div>
+          <div className="min-h-0 flex-1 overflow-y-auto p-2">
+            {addOnItems.length === 0 ? (
+              <div className="rounded-lg border border-dashed border-gray-200 bg-white px-3 py-8 text-center">
+                <p className="text-sm text-gray-600">No add-ons yet</p>
+                <p className="mt-1 text-xs text-gray-400">Use Add from library to get started.</p>
+              </div>
+            ) : (
+              <div className="space-y-1.5">
+                {addOnItems.map((item, index) => (
+                  <AddOnListRow
+                    key={`${item.template_slug}-${index}`}
+                    item={item}
+                    selected={selectedIndex === index}
+                    dragActive={dragIndex === index}
+                    onSelect={() => {
+                      setSelectedIndex(index);
+                      setMobileShowDetail(true);
+                    }}
+                    onDragStart={() => setDragIndex(index)}
+                    onDragEnd={() => setDragIndex(null)}
+                    onDrop={() => {
+                      if (dragIndex === null || dragIndex === index) return;
+                      const next = addOnItems.slice();
+                      const [moved] = next.splice(dragIndex, 1);
+                      next.splice(index, 0, moved);
+                      setDragIndex(null);
+                      writeItems(next);
+                      setSelectedIndex(index);
+                    }}
+                    onToggleHighlight={() => toggleHighlighted(index)}
+                    onToggleHidden={() => toggleHidden(index)}
+                  />
+                ))}
+              </div>
+            )}
+          </div>
+        </aside>
+
+        <main
+          className={cn(
+            'min-h-0 flex-1 overflow-y-auto bg-white',
+            !mobileShowDetail && addOnItems.length > 0 ? 'hidden md:block' : 'block',
+          )}
+        >
+          {selectedItem && selectedIndex != null ? (
+            <div className="p-4 sm:p-5">
+              <button
+                type="button"
+                onClick={() => setMobileShowDetail(false)}
+                className="mb-4 inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary md:hidden"
+              >
+                <ArrowLeft className="h-4 w-4" />
+                All add-ons
+              </button>
+              <AddOnDetailPanel
+                item={selectedItem}
+                index={selectedIndex}
+                total={addOnItems.length}
+                uploading={uploadingIndex === selectedIndex}
+                onChange={next => updateItemAt(selectedIndex, next)}
+                onMove={dir => moveItem(selectedIndex, dir)}
+                onRemove={() => removeItem(selectedIndex)}
+                onImageUpload={file => handleImageUpload(selectedIndex, file)}
+              />
+            </div>
+          ) : (
+            <div className="flex h-full min-h-[280px] flex-col items-center justify-center px-6 py-12 text-center">
+              <p className="text-sm font-medium text-gray-700">
+                {addOnItems.length === 0 ? 'Add your first opportunity' : 'Select an add-on to edit'}
+              </p>
+              <p className="mt-1 max-w-sm text-xs text-gray-500">
+                {addOnItems.length === 0
+                  ? 'Browse the library to add Klaviyo products, ECD implementation packages, or ongoing management tiers.'
+                  : 'Choose an item from the list on the left to edit pricing, copy, and visibility.'}
+              </p>
+              {addOnItems.length === 0 && availableTemplates.length > 0 ? (
+                <button
+                  type="button"
+                  onClick={() => setPickerOpen(true)}
+                  className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  <Plus className="h-4 w-4" />
+                  Browse library
+                </button>
+              ) : null}
+            </div>
+          )}
+        </main>
+      </div>
+
+      <AddOpportunityPickerModal
+        open={pickerOpen}
+        templates={availableTemplates}
+        onClose={() => setPickerOpen(false)}
+        onSelect={addTemplate}
+      />
 
       <AddOnHighlightRegenModal
         open={regenModalOpen}

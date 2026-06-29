@@ -30,6 +30,11 @@ import { scheduleSavedToast, useToast } from '../components/ui/Toast';
 const AuditReportView = lazy(() => import('../components/report/AuditReportView'));
 const EmailDesignEditor = lazy(() => import('../components/audit/EmailDesignEditor'));
 const RevenueAddOnItemsEditor = lazy(() => import('../components/audit/RevenueAddOnItemsEditor'));
+const RevenueOpportunitiesDrawer = lazy(() =>
+  import('../components/audit/RevenueOpportunitiesDrawer').then(module => ({
+    default: module.RevenueOpportunitiesDrawer,
+  })),
+);
 const EmailDesignDrawer = lazy(() =>
   import('../components/audit/EmailDesignEditor').then(module => ({ default: module.EmailDesignDrawer })),
 );
@@ -305,10 +310,9 @@ export default function AuditWorkspace() {
 
         {revenueDrawerOpen && (
           <Suspense fallback={null}>
-            <EmailDesignDrawer
+            <RevenueOpportunitiesDrawer
               open={revenueDrawerOpen}
               onClose={() => setRevenueDrawerOpen(false)}
-              title="Revenue opportunities"
             >
               <RevenueAddOnItemsEditor
                 audit={audit}
@@ -320,7 +324,7 @@ export default function AuditWorkspace() {
                   setRevenueDrawerOpen(false);
                 }}
               />
-            </EmailDesignDrawer>
+            </RevenueOpportunitiesDrawer>
           </Suspense>
         )}
       </div>
