@@ -183,7 +183,7 @@ export default function ReportInvestmentSummary({
         ) : (
           <div>
             <div className="mb-1 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-gray-400">
-              {canToggleItems ? <span className="w-6 shrink-0" aria-hidden /> : null}
+              {canToggleItems ? <span className="w-8 shrink-0" aria-hidden /> : null}
               <span className="flex-1">Service</span>
               <span className="shrink-0">Investment</span>
             </div>
@@ -198,8 +198,9 @@ export default function ReportInvestmentSummary({
                   )}
                 >
                   {canToggleItems ? (
-                    <div className="pt-3">
+                    <div className="pt-2.5">
                       <BrandedCheckbox
+                        size="lg"
                         checked={group.included}
                         onChange={checked => toggleAddOnInvestmentIncluded(group.itemKey, checked)}
                         aria-label={`Include ${group.name} in proposal`}
@@ -274,13 +275,6 @@ export default function ReportInvestmentSummary({
           </div>
         )}
 
-        {canToggleItems && (
-          <p className="mt-4 text-xs text-gray-500">
-            {editMode
-              ? 'Toggle line items on or off while presenting — totals update immediately and save to this audit.'
-              : 'Tap a service to include or exclude it from this proposal. Totals update immediately.'}
-          </p>
-        )}
       </div>
     </div>
   );
