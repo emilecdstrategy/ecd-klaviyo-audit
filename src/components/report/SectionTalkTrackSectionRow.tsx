@@ -6,7 +6,6 @@ import type { RevenueOpportunityAddOnItem } from '../../lib/types';
 import { getAddOnCategoryStyles } from '../../lib/revenue-addon-categories';
 import { cn } from '../../lib/utils';
 import { useReportEdit } from './edit/ReportEditContext';
-import SectionTalkTrackPills from './SectionTalkTrackPills';
 
 function truncateName(name: string, max = 22): string {
   const trimmed = name.trim();
@@ -201,24 +200,13 @@ export default function SectionTalkTrackSectionRow({
   sectionKey,
   markers,
   addOnItems,
-  editMode,
 }: {
   sectionKey: AuditSectionKey;
   markers: SectionTalkTrackMarker[];
   addOnItems: RevenueOpportunityAddOnItem[];
-  editMode: boolean;
 }) {
   const [pickerOpen, setPickerOpen] = useState(false);
   const [editingMarker, setEditingMarker] = useState<SectionTalkTrackMarker | null>(null);
-
-  if (!editMode) {
-    if (!markers.length) return null;
-    return (
-      <div className="mt-4 border-t border-gray-100 pt-4">
-        <SectionTalkTrackPills markers={markers} align="start" />
-      </div>
-    );
-  }
 
   return (
     <div className="relative mt-4 border-t border-gray-100 pt-4">
