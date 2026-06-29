@@ -39,8 +39,10 @@ export function extractGroupNamesFromRaw(raw: unknown): GroupNameMap | undefined
 export function buildGroupNameMapFromSnapshots(
   segmentSnapshots: KlaviyoSegmentSnapshot[],
   campaignSnapshots: KlaviyoCampaignSnapshot[] = [],
+  rollupGroupNames?: GroupNameMap,
 ): GroupNameMap {
   const fromRaw = mergeGroupNameMaps(
+    rollupGroupNames,
     ...segmentSnapshots.map(s => extractGroupNamesFromRaw(s.raw)),
     ...campaignSnapshots.map(c => extractGroupNamesFromRaw(c.raw)),
   );

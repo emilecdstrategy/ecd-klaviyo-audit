@@ -13,6 +13,7 @@ import type {
   KlaviyoFormSnapshot,
   KlaviyoSegmentSnapshot,
 } from '../lib/types';
+import type { GroupNameMap } from '../lib/segment-definition';
 
 export type AuditReportBundle = {
   audit: Audit;
@@ -27,6 +28,8 @@ export type AuditReportBundle = {
   campaignSnapshots: KlaviyoCampaignSnapshot[];
   emailDesign: AuditEmailDesign | null;
   reportingDiagnostic?: string | null;
+  /** Segment/list ID → name map stored once on the Klaviyo rollup (large accounts). */
+  klaviyoGroupNameMap?: GroupNameMap;
   accountSnapshot?: {
     total_profiles_count?: number | null;
     email_subscribed_profiles_count: number | null;

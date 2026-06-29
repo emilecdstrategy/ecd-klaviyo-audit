@@ -23,6 +23,7 @@ import {
 } from './entity-highlight-styles';
 import { dedupeClientsByCompany, normalizeCompanyKey } from './client-display';
 import { resolveRevenueOpportunityContent } from './revenue-opportunity-content';
+import type { GroupNameMap } from './segment-definition';
 import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from './revenue-calculator';
 import { computeCampaignRevenuePerRecipient } from './campaign-metrics';
 import type { DeliverabilitySnapshot } from './deliverability';
@@ -535,6 +536,7 @@ export async function fetchAuditReportBundleForAudit(
     ?? null;
 
   const rollup30 = ((rollups.data ?? []) as any[]).find((row: any) => row.timeframe_key === 'last_30_days');
+  const klaviyoGroupNameMap = rollup30?.computed?.group_name_map as GroupNameMap | undefined;
   const accountSnapshotRaw = rollup30?.computed?.account_snapshot ?? null;
   const campaignRprStored = accountSnapshotRaw?.campaign_revenue_per_recipient_30d;
   const campaignRprComputed = computeCampaignRevenuePerRecipient(rollup30?.campaigns);
@@ -567,6 +569,7 @@ export async function fetchAuditReportBundleForAudit(
     campaignSnapshots: (campSnaps.data ?? []) as KlaviyoCampaignSnapshot[],
     emailDesign: (emailDesignRes.data ?? null) as AuditEmailDesign | null,
     reportingDiagnostic,
+    klaviyoGroupNameMap,
     accountSnapshot,
   };
 }

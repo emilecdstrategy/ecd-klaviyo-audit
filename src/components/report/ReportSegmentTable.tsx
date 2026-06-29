@@ -8,21 +8,24 @@ import {
   parseSegmentDefinition,
 } from '../../lib/segment-definition';
 import { buildGroupNameMapFromSnapshots } from '../../lib/campaign-audiences';
+import type { GroupNameMap } from '../../lib/segment-definition';
 
 const COLLAPSED_COUNT = 2;
 
 export default function ReportSegmentTable({
   segments,
   campaigns = [],
+  klaviyoGroupNameMap,
   scrollable = false,
 }: {
   segments: KlaviyoSegmentSnapshot[];
   campaigns?: KlaviyoCampaignSnapshot[];
+  klaviyoGroupNameMap?: GroupNameMap;
   scrollable?: boolean;
 }) {
   const groupNames = useMemo(
-    () => buildGroupNameMapFromSnapshots(segments, campaigns),
-    [segments, campaigns],
+    () => buildGroupNameMapFromSnapshots(segments, campaigns, klaviyoGroupNameMap),
+    [segments, campaigns, klaviyoGroupNameMap],
   );
   const rows = [...segments]
     .filter(s => !s.is_hidden)

@@ -228,6 +228,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     emailDesign,
     reportingDiagnostic,
     accountSnapshot,
+    klaviyoGroupNameMap,
   } = data;
 
   useEffect(() => {
@@ -931,6 +932,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               <ReportCampaignAudienceSegments
                 campaigns={campaignSnapshots as KlaviyoCampaignSnapshot[]}
                 segmentSnapshots={segmentSnapshots as KlaviyoSegmentSnapshot[]}
+                klaviyoGroupNameMap={klaviyoGroupNameMap}
               />
             )}
 
@@ -946,6 +948,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 <ReportSegmentTable
                   segments={segmentSnapshots as KlaviyoSegmentSnapshot[]}
                   campaigns={campaignSnapshots as KlaviyoCampaignSnapshot[]}
+                  klaviyoGroupNameMap={klaviyoGroupNameMap}
                   scrollable
                 />
               </ReportInventoryLauncher>

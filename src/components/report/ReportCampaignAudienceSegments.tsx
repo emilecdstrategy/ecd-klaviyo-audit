@@ -159,16 +159,18 @@ const COLLAPSED_COUNT = 3;
 export default function ReportCampaignAudienceSegments({
   campaigns,
   segmentSnapshots,
+  klaviyoGroupNameMap,
 }: {
   campaigns: KlaviyoCampaignSnapshot[];
   segmentSnapshots: KlaviyoSegmentSnapshot[];
+  klaviyoGroupNameMap?: GroupNameMap;
 }) {
   const [modal, setModal] = useState<AudienceModalState>(null);
   const [expanded, setExpanded] = useState(false);
 
   const groupNames = useMemo(
-    () => buildGroupNameMapFromSnapshots(segmentSnapshots, campaigns),
-    [segmentSnapshots, campaigns],
+    () => buildGroupNameMapFromSnapshots(segmentSnapshots, campaigns, klaviyoGroupNameMap),
+    [segmentSnapshots, campaigns, klaviyoGroupNameMap],
   );
 
   const rows = useMemo(

@@ -1022,6 +1022,30 @@ async function mustSucceed(label: string, p: Promise<{ error: any }>) {
   if (error) throw new Error(`${label} failed: ${error.message ?? "unknown error"}`);
 }
 
+async function insertRowsInBatches(
+  label: string,
+  sb: ReturnType<typeof assertServiceClient>,
+  table: string,
+  rows: Record<string, unknown>[],
+  batchSize = 25,
+) {
+  if (!rows.length) return;
+  for (let i = 0; i < rows.length; i += batchSize) {
+    const chunk = rows.slice(i, i + batchSize);
+    const batchNum = Math.floor(i / batchSize) + 1;
+    await mustSucceed(`${label} batch ${batchNum}`, sb.from(table).insert(chunk));
+  }
+}
+
+function enrichSegmentRaw(segment: any, metricNameMap: Record<string, string>) {
+  return { ...segment, _ecd_metric_names: metricNameMap };
+}
+
+function enrichCampaignRaw(campaign: any, groupNameMap: Record<string, EcdGroupNameEntry> | null) {
+  if (!groupNameMap) return campaign;
+  return { ...campaign, _ecd_group_names: groupNameMap };
+}
+
 // ---------------------------------------------------------------------------
 // klaviyo_runs logging (stage-aware)
 // ---------------------------------------------------------------------------
@@ -1305,12 +1329,12 @@ async function runStageConfig(params: {
         updated_at_klaviyo: f.attributes?.updated ? new Date(f.attributes.updated).toISOString() : null,
         raw: f,
       }));
-      if (rows.length) await mustSucceed("insert klaviyo_flow_snapshots", sb.from("klaviyo_flow_snapshots").insert(rows));
+      if (rows.length) await insertRowsInBatches("insert klaviyo_flow_snapshots", sb, "klaviyo_flow_snapshots", rows);
     }
 
     if (campaigns.ok) {
       const campaignItems = campaignItemsForHydrate;
-      const rows = campaignItems.map((c: any) => ({
+      const rows = campaignItems.map((c: any, index: number) => ({
         audit_id: params.auditId,
         client_id: params.clientId,
         campaign_id: c.id,
@@ -1319,9 +1343,9 @@ async function runStageConfig(params: {
         send_channel: c.attributes?.send_channel ?? "email",
         created_at_klaviyo: c.attributes?.created_at ?? null,
         updated_at_klaviyo: c.attributes?.updated_at ?? null,
-        raw: { ...c, _ecd_group_names: groupNameMap },
+        raw: enrichCampaignRaw(c, index === 0 ? groupNameMap : null),
       }));
-      if (rows.length) await mustSucceed("insert klaviyo_campaign_snapshots", sb.from("klaviyo_campaign_snapshots").insert(rows));
+      if (rows.length) await insertRowsInBatches("insert klaviyo_campaign_snapshots", sb, "klaviyo_campaign_snapshots", rows);
 
       // Best-effort: grab HTML of most recent sent campaign for email-design comparison.
       try {
@@ -1361,7 +1385,7 @@ async function runStageConfig(params: {
         updated_at_klaviyo: f.attributes?.updated_at ?? null,
         raw: f,
       }));
-      if (rows.length) await mustSucceed("insert klaviyo_form_snapshots", sb.from("klaviyo_form_snapshots").insert(rows));
+      if (rows.length) await insertRowsInBatches("insert klaviyo_form_snapshots", sb, "klaviyo_form_snapshots", rows);
     }
 
     if (segments.ok || segmentItemsForSnapshots.length > 0) {
@@ -1372,9 +1396,9 @@ async function runStageConfig(params: {
         name: s.attributes?.name ?? "",
         created_at_klaviyo: s.attributes?.created ?? null,
         updated_at_klaviyo: s.attributes?.updated ?? null,
-        raw: { ...s, _ecd_metric_names: metricNameMap, _ecd_group_names: groupNameMap },
+        raw: enrichSegmentRaw(s, metricNameMap),
       }));
-      if (rows.length) await mustSucceed("insert klaviyo_segment_snapshots", sb.from("klaviyo_segment_snapshots").insert(rows));
+      if (rows.length) await insertRowsInBatches("insert klaviyo_segment_snapshots", sb, "klaviyo_segment_snapshots", rows);
     }
 
     // Diagnostic summary + connection metadata.
@@ -1519,6 +1543,8 @@ async function runStageConfig(params: {
           account_snapshot: accountSnapshotSeed,
           derived_metrics: derivedMetricsSeed,
           metric_selection: { reason: metricPickReason, probes_run: metricProbesRun },
+          group_name_map: groupNameMap,
+          metric_name_map: metricNameMap,
           since90_iso: since90,
           stage: "config_complete",
         },
@@ -2378,12 +2404,10 @@ async function runStageBackfillSegmentDefinitions(params: {
             definition,
           },
           _ecd_metric_names: metricNameMap,
-          _ecd_group_names: groupNameMap,
         }
         : {
           ...prevRaw,
           _ecd_metric_names: metricNameMap,
-          _ecd_group_names: groupNameMap,
         };
 
       await mustSucceed(
@@ -2407,12 +2431,14 @@ async function runStageBackfillSegmentDefinitions(params: {
         name: s.attributes?.name ?? "",
         created_at_klaviyo: s.attributes?.created ?? null,
         updated_at_klaviyo: s.attributes?.updated ?? null,
-        raw: { ...s, _ecd_metric_names: metricNameMap, _ecd_group_names: groupNameMap },
+        raw: enrichSegmentRaw(s, metricNameMap),
       }));
     if (missingSegmentRows.length) {
-      await mustSucceed(
+      await insertRowsInBatches(
         "insert hydrated klaviyo_segment_snapshots",
-        sb.from("klaviyo_segment_snapshots").insert(missingSegmentRows),
+        sb,
+        "klaviyo_segment_snapshots",
+        missingSegmentRows,
       );
       segmentsInserted = missingSegmentRows.length;
       if (missingSegmentRows.some((r) => (r.raw as any)?.attributes?.definition)) {
@@ -2425,6 +2451,7 @@ async function runStageBackfillSegmentDefinitions(params: {
       .select("id, campaign_id, raw")
       .eq("audit_id", params.auditId);
     if (campErr) throw campErr;
+    let campaignIndex = 0;
     for (const row of campaignSnaps ?? []) {
       const live = campaignById.get(row.campaign_id);
       const prevRaw = (row.raw && typeof row.raw === "object") ? row.raw as Record<string, unknown> : {};
@@ -2432,7 +2459,7 @@ async function runStageBackfillSegmentDefinitions(params: {
         ? prevRaw.attributes as Record<string, unknown>
         : {};
       const liveAttrs = (live?.attributes && typeof live.attributes === "object") ? live.attributes : {};
-      const nextRaw = live
+      const baseRaw = live
         ? {
           ...prevRaw,
           ...live,
@@ -2441,12 +2468,10 @@ async function runStageBackfillSegmentDefinitions(params: {
             ...liveAttrs,
             audiences: liveAttrs.audiences ?? prevAttrs.audiences ?? null,
           },
-          _ecd_group_names: groupNameMap,
         }
-        : {
-          ...prevRaw,
-          _ecd_group_names: groupNameMap,
-        };
+        : { ...prevRaw };
+      const nextRaw = enrichCampaignRaw(baseRaw, campaignIndex === 0 ? groupNameMap : null);
+      campaignIndex += 1;
       await mustSucceed(
         `update klaviyo_campaign_snapshots ${row.id}`,
         sb.from("klaviyo_campaign_snapshots").update({ raw: nextRaw }).eq("id", row.id),
