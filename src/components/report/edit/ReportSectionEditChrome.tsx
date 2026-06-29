@@ -46,9 +46,8 @@ export default function ReportSectionEditChrome({
   }
 
   return (
-    <div className="relative">
-      <div className="pointer-events-none absolute right-4 top-4 z-20 flex items-center gap-2">
-        <div className="pointer-events-auto flex items-center gap-2">
+    <div>
+      <div className="mb-4 flex items-center justify-end gap-2">
         {actions?.map(action => (
           <button
             key={action.label}
@@ -56,7 +55,7 @@ export default function ReportSectionEditChrome({
             onClick={action.onClick}
             title={action.label}
             className={cn(
-              'flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white/95 text-gray-700 shadow-sm backdrop-blur-sm hover:border-brand-primary/30 hover:text-brand-primary transition-colors',
+              'flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white text-gray-700 shadow-sm hover:border-brand-primary/30 hover:text-brand-primary transition-colors',
               action.variant === 'primary' ? 'h-9 px-3 text-xs font-semibold' : 'h-9 w-9 justify-center',
             )}
           >
@@ -69,13 +68,12 @@ export default function ReportSectionEditChrome({
           onClick={() => onToggleHidden(true)}
           title="Hide section from report"
           className={cn(
-            'flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white/95 text-gray-600 shadow-sm backdrop-blur-sm',
+            'flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm',
             'hover:border-amber-300 hover:text-amber-700 transition-colors',
           )}
         >
           <Eye className="h-4 w-4" />
         </button>
-        </div>
       </div>
       <div className="min-w-0">{children}</div>
     </div>

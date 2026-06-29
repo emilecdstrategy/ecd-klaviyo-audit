@@ -37,7 +37,7 @@ export default function ReportKeyFindings({
 
   return (
     <ReportBlockEditChrome
-      label="Key Findings"
+      label="General Key Findings"
       hidden={blockHidden}
       onToggleHidden={h => toggleExecutiveBlockHidden('findings', h)}
     >

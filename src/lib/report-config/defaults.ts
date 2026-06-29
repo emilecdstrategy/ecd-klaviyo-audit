@@ -301,7 +301,7 @@ export const DEFAULT_EXECUTIVE_SUMMARY_SECTION: ExecutiveSummarySectionConfig = 
     },
     findings: {
       hidden: false,
-      title: 'Key Findings',
+      title: 'General Key Findings',
       subtitle: undefined,
     },
   },

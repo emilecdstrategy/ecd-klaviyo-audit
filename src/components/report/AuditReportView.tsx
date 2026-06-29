@@ -709,7 +709,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
           {(isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'findings') || editMode) && (
             <ReportKeyFindings
-              title={executiveSummaryCfg.blocks.findings?.title ?? 'Key Findings'}
+              title={executiveSummaryCfg.blocks.findings?.title ?? 'General Key Findings'}
               subtitle={executiveSummaryCfg.blocks.findings?.subtitle}
               findings={aiFindings}
               findingsHidden={findingsHidden}
