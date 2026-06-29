@@ -192,39 +192,41 @@ export default function ReportInvestmentSummary({
               {visibleGroups.map(group => (
                 <div
                   key={group.itemKey}
-                  className={cn(
-                    'flex gap-3 py-1',
-                    !group.included && 'opacity-60',
-                  )}
+                  className={cn(!group.included && 'opacity-60')}
                 >
-                  {canToggleItems ? (
-                    <div className="pt-2.5">
-                      <BrandedCheckbox
-                        size="lg"
-                        checked={group.included}
-                        onChange={checked => toggleAddOnInvestmentIncluded(group.itemKey, checked)}
-                        aria-label={`Include ${group.name} in proposal`}
-                      />
+                  {group.lines.map((line, lineIndex) => (
+                    <div key={`${line.itemKey}-${line.unit}`} className="flex gap-3">
+                      {canToggleItems ? (
+                        <div className="flex w-8 shrink-0 justify-center pt-2.5">
+                          {lineIndex === 0 ? (
+                            <div className="flex h-6 items-center">
+                              <BrandedCheckbox
+                                size="lg"
+                                checked={group.included}
+                                onChange={checked => toggleAddOnInvestmentIncluded(group.itemKey, checked)}
+                                aria-label={`Include ${group.name} in proposal`}
+                              />
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                      <div className="min-w-0 flex-1">
+                        <MenuPriceRow
+                          label={
+                            lineIndex === 0
+                              ? group.name
+                              : line.unit === 'monthly'
+                                ? 'Monthly retainer'
+                                : 'One-time implementation'
+                          }
+                          amount={line.headline}
+                          caption={line.caption}
+                          muted={!group.included}
+                          labelClassName={lineIndex > 0 ? 'pl-3 text-sm font-normal text-gray-600' : undefined}
+                        />
+                      </div>
                     </div>
-                  ) : null}
-                  <div className="min-w-0 flex-1">
-                    {group.lines.map((line, lineIndex) => (
-                      <MenuPriceRow
-                        key={`${line.itemKey}-${line.unit}`}
-                        label={
-                          lineIndex === 0
-                            ? group.name
-                            : line.unit === 'monthly'
-                              ? 'Monthly retainer'
-                              : 'One-time implementation'
-                        }
-                        amount={line.headline}
-                        caption={line.caption}
-                        muted={!group.included}
-                        labelClassName={lineIndex > 0 ? 'pl-3 text-sm font-normal text-gray-600' : undefined}
-                      />
-                    ))}
-                  </div>
+                  ))}
                 </div>
               ))}
             </div>

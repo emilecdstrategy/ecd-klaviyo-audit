@@ -32,7 +32,7 @@ export default function BrandedCheckbox({
     <label
       className={cn(
         'inline-flex shrink-0 cursor-pointer',
-        size === 'lg' && 'p-0.5',
+        size === 'lg' && 'min-h-6 min-w-6 items-center justify-center',
         disabled && 'cursor-not-allowed opacity-50',
         className,
       )}
