@@ -789,7 +789,7 @@ export function ReportEditProvider({
       const layout = writeRevenueBlockPatch(
         (audit.layout as Record<string, unknown>) ?? {},
         blockKey,
-        { hidden: hidden || undefined },
+        { hidden },
       );
       onAuditChange({ ...audit, layout });
       schedule(`layout-rev-block-${blockKey}`, async () => {
