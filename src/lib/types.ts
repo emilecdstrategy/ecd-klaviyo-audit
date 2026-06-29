@@ -93,6 +93,8 @@ export interface RevenueOpportunityAddOnItem {
   monthly_label?: string | null;
   /** Per-audit screenshot. Falls back to the template default when added. */
   image_url?: string | null;
+  /** Display scale for report screenshot (0.2–1, default 1). */
+  image_scale?: number | null;
   /** Per-audit link to full service docs or slides. */
   details_url?: string | null;
   is_hidden?: boolean;

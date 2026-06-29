@@ -18,6 +18,37 @@ export function categorizeTemplateSlug(slug: string): AddOnTemplateCategory {
   return 'other';
 }
 
+export type AddOnCategoryStyles = {
+  dotClassName: string;
+  pillClassName: string;
+};
+
+export function getAddOnCategoryStyles(slug: string): AddOnCategoryStyles {
+  const category = categorizeTemplateSlug(slug);
+  switch (category) {
+    case 'klaviyo':
+      return {
+        dotClassName: 'bg-violet-500',
+        pillClassName: 'border-violet-200/80 bg-violet-50 text-violet-900',
+      };
+    case 'ecd':
+      return {
+        dotClassName: 'bg-amber-500',
+        pillClassName: 'border-amber-200/80 bg-amber-50 text-amber-900',
+      };
+    case 'ongoing':
+      return {
+        dotClassName: 'bg-blue-500',
+        pillClassName: 'border-blue-200/80 bg-blue-50 text-blue-900',
+      };
+    default:
+      return {
+        dotClassName: 'bg-gray-400',
+        pillClassName: 'border-gray-200 bg-gray-50 text-gray-800',
+      };
+  }
+}
+
 export function groupTemplatesByCategory(
   templates: RevenueOpportunityTemplate[],
 ): Record<AddOnTemplateCategory, RevenueOpportunityTemplate[]> {

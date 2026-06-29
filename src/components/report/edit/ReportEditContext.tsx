@@ -21,6 +21,7 @@ import {
 } from '../../../lib/section-key-findings';
 import type { SectionKeyFindings } from '../../../lib/types';
 import { repairEntityMarkers } from '../../../lib/entity-tags';
+import { normalizeImageScale } from '../../../lib/report-image-scale';
 import { writeFlowsConfigPatch, writeGenericConfigPatch, writeGenericBlockPatch, writeFlowsBlockPatch, writeExecutiveBlockPatch, writeRevenueBlockPatch } from '../../../lib/report-config/section-hide';
 
 type LayoutSectionKey = 'executive_summary' | 'revenue_summary' | 'deliverability_snapshot' | 'attribution_model';
@@ -129,8 +130,10 @@ type ReportEditContextValue = {
   ) => void;
   updateAddOnContent: (itemKey: string, value: string) => void;
   updateAddOnImage: (itemKey: string, value: string | null) => void;
+  updateAddOnImageScale: (itemKey: string, scale: number) => void;
   toggleAddOnHighlighted: (itemKey: string, highlighted: boolean) => void;
   updateAttributionScreenshot: (value: string | null) => void;
+  updateAttributionScreenshotScale: (scale: number) => void;
   updateSectionRevenueOpportunity: (sectionKey: string, value: number) => void;
   toggleLayoutSectionHidden: (layoutKey: LayoutSectionKey, hidden: boolean) => void;
   toggleAuditSectionHidden: (sectionKey: string, hidden: boolean) => void;
@@ -184,7 +187,9 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateAddOnPrice: () => {},
   updateAddOnContent: () => {},
   updateAddOnImage: () => {},
+  updateAddOnImageScale: () => {},
   updateAttributionScreenshot: () => {},
+  updateAttributionScreenshotScale: () => {},
   updateSectionRevenueOpportunity: () => {},
   toggleLayoutSectionHidden: () => {},
   toggleAuditSectionHidden: () => {},
@@ -704,7 +709,34 @@ export function ReportEditProvider({
       const items = [...((addOns.items as RevenueOpportunityAddOnItem[]) ?? [])];
       const idx = items.findIndex(i => `${i.template_slug}-${i.display_order}` === itemKey);
       if (idx < 0) return;
-      items[idx] = { ...items[idx], image_url: value };
+      const prev = items[idx];
+      items[idx] = {
+        ...prev,
+        image_url: value,
+        image_scale: value && value === prev.image_url ? prev.image_scale : undefined,
+      };
+      addOns.items = items;
+      blocks.addOns = addOns;
+      rs.blocks = blocks;
+      layout.revenue_summary = rs;
+      onAuditChange({ ...audit, layout });
+      schedule('layout-addons', async () => {
+        await updateAudit(audit.id, { layout });
+      });
+    },
+    [audit, onAuditChange, schedule],
+  );
+
+  const updateAddOnImageScale = useCallback(
+    (itemKey: string, scale: number) => {
+      const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
+      const rs = { ...((layout.revenue_summary as Record<string, unknown>) ?? {}) };
+      const blocks = { ...((rs.blocks as Record<string, unknown>) ?? {}) };
+      const addOns = { ...((blocks.addOns as Record<string, unknown>) ?? {}) };
+      const items = [...((addOns.items as RevenueOpportunityAddOnItem[]) ?? [])];
+      const idx = items.findIndex(i => `${i.template_slug}-${i.display_order}` === itemKey);
+      if (idx < 0) return;
+      items[idx] = { ...items[idx], image_scale: normalizeImageScale(scale) };
       addOns.items = items;
       blocks.addOns = addOns;
       rs.blocks = blocks;
@@ -728,9 +760,27 @@ export function ReportEditProvider({
   const updateAttributionScreenshot = useCallback(
     (value: string | null) => {
       const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
+      const prev = (layout.attribution_model as Record<string, unknown> | undefined) ?? {};
+      const section = {
+        ...prev,
+        screenshot_url: value,
+        screenshot_scale: value && value === prev.screenshot_url ? prev.screenshot_scale : undefined,
+      };
+      layout.attribution_model = section;
+      onAuditChange({ ...audit, layout });
+      schedule('layout-attribution', async () => {
+        await updateAudit(audit.id, { layout });
+      });
+    },
+    [audit, onAuditChange, schedule],
+  );
+
+  const updateAttributionScreenshotScale = useCallback(
+    (scale: number) => {
+      const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
       const section = {
         ...((layout.attribution_model as Record<string, unknown>) ?? {}),
-        screenshot_url: value,
+        screenshot_scale: normalizeImageScale(scale),
       };
       layout.attribution_model = section;
       onAuditChange({ ...audit, layout });
@@ -1021,8 +1071,10 @@ export function ReportEditProvider({
       updateAddOnPrice,
       updateAddOnContent,
       updateAddOnImage,
+      updateAddOnImageScale,
       toggleAddOnHighlighted,
       updateAttributionScreenshot,
+      updateAttributionScreenshotScale,
       updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,
@@ -1062,8 +1114,10 @@ export function ReportEditProvider({
       updateAddOnPrice,
       updateAddOnContent,
       updateAddOnImage,
+      updateAddOnImageScale,
       toggleAddOnHighlighted,
       updateAttributionScreenshot,
+      updateAttributionScreenshotScale,
       updateSectionRevenueOpportunity,
       toggleLayoutSectionHidden,
       toggleAuditSectionHidden,

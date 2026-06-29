@@ -206,6 +206,8 @@ export interface DeliverabilitySnapshotSectionConfig extends BaseSectionConfig {
 
 export interface AttributionModelSectionConfig extends BaseSectionConfig {
   screenshot_url?: string | null;
+  /** Display scale for attribution screenshot (0.2–1, default 1). */
+  screenshot_scale?: number | null;
   key_findings?: SectionKeyFindings;
   blocks?: {
     keyFindings?: GenericBlockConfig;

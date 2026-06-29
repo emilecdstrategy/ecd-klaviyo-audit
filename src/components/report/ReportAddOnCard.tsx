@@ -8,6 +8,7 @@ import EditableRichText from './edit/EditableRichText';
 import EditableCurrency from './edit/EditableCurrency';
 import { useReportEdit } from './edit/ReportEditContext';
 import ImageUploadZone from '../ui/ImageUploadZone';
+import ResizableReportImage from '../ui/ResizableReportImage';
 
 type ReportAddOnCardProps = {
   slice: AddOnPricingSlice;
@@ -96,7 +97,7 @@ export default function ReportAddOnCard({
   updateAddOnImage,
   updateAddOnPrice,
 }: ReportAddOnCardProps) {
-  const { editMode } = useReportEdit();
+  const { editMode, updateAddOnImageScale } = useReportEdit();
   const item = slice.item;
   const itemKey = `${item.template_slug}-${item.display_order}`;
   const showDemoCta = addOnHasCustomerAgentDemo(item.template_slug) && Boolean(customerAgentDemoUrl);
@@ -163,21 +164,25 @@ export default function ReportAddOnCard({
               onFile={file => onImageUpload(itemKey, file)}
               onRemove={item.image_url ? () => updateAddOnImage(itemKey, null) : undefined}
               onPreviewClick={item.image_url ? () => onLightbox(item.image_url ?? '') : undefined}
+              imageScale={item.image_scale}
+              onImageScaleChange={scale => updateAddOnImageScale(itemKey, scale)}
+              resizable={Boolean(item.image_url)}
               className="rounded-lg"
             />
           </div>
         ) : item.image_url ? (
-          <button
-            type="button"
-            onClick={() => onLightbox(item.image_url ?? '')}
-            className="relative mt-4 block w-full overflow-hidden rounded-lg border border-gray-100 bg-gray-50"
-            aria-label={`View ${item.name} screenshot`}
-          >
-            <img src={item.image_url} alt={item.name} className="block w-full h-auto object-contain" />
-            <span className="absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[11px] font-medium text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
+          <div className="group relative mt-4">
+            <ResizableReportImage
+              src={item.image_url}
+              alt={item.name}
+              scale={item.image_scale}
+              onClick={() => onLightbox(item.image_url ?? '')}
+              imageClassName="rounded-lg"
+            />
+            <span className="pointer-events-none absolute right-2 top-2 inline-flex items-center gap-1 rounded-full bg-black/55 px-2 py-1 text-[11px] font-medium text-white opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100">
               <ZoomIn className="h-3 w-3" /> View full size
             </span>
-          </button>
+          </div>
         ) : null}
 
         {showFooter && (

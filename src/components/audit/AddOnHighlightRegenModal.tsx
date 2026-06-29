@@ -32,8 +32,8 @@ export default function AddOnHighlightRegenModal({
             <h3 className="text-base font-semibold text-gray-900">Regenerate for highlighted add-ons?</h3>
             <p className="mt-2 text-sm text-gray-600 leading-relaxed">
               Highlighted add-ons changed. We can re-run AI using your current selection for the
-              executive summary, Key Findings, implementation timeline, and only the report sections
-              tied to highlighted add-ons.
+              executive summary, Key Findings, implementation timeline, section talk-track placement,
+              and only the report sections tied to highlighted add-ons.
             </p>
             {highlightedNames.length > 0 ? (
               <p className="mt-2 text-sm text-amber-900">
@@ -42,8 +42,8 @@ export default function AddOnHighlightRegenModal({
               </p>
             ) : (
               <p className="mt-2 text-sm text-gray-600">
-                No add-ons are highlighted right now — regeneration will remove demo markers and
-                de-emphasize add-ons in the narrative.
+                No add-ons are highlighted right now — regeneration will remove section talk-track
+                pills and de-emphasize add-ons in the narrative.
               </p>
             )}
             <p className="mt-2 text-xs text-gray-500">

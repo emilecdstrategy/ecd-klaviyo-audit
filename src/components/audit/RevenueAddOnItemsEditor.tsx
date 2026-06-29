@@ -13,7 +13,7 @@ import type { Audit, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } f
 import { listRevenueOpportunityTemplates, updateAudit, uploadRevenueOpportunityImage } from '../../lib/db';
 import { resolveRevenueOpportunityContent } from '../../lib/revenue-opportunity-content';
 import { summarizeTemplatePricing } from '../../lib/revenue-addon-categories';
-import { getHighlightedAddOns } from '../../lib/addon-highlight';
+import { getHighlightedAddOns, AUDIT_SECTION_OPTIONS } from '../../lib/addon-highlight';
 import { regenerateAuditForHighlights } from '../../lib/audit-pipeline-status';
 import { scheduleSavedToast, useToast } from '../ui/Toast';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
@@ -38,6 +38,7 @@ function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
       monthly_price: item.monthly_price != null ? Number(item.monthly_price) : null,
       monthly_label: item.monthly_label ? String(item.monthly_label) : null,
       image_url: item.image_url ?? null,
+      image_scale: item.image_scale ?? null,
       details_url: item.details_url ?? null,
       is_hidden: Boolean(item.is_hidden),
       highlighted: Boolean(item.highlighted),
@@ -288,7 +289,10 @@ function AddOnDetailPanel({
           label={item.image_url ? 'Replace screenshot' : 'Upload screenshot'}
           uploading={uploading}
           onFile={onImageUpload}
-          onRemove={item.image_url ? () => onChange({ ...item, image_url: null }) : undefined}
+          onRemove={item.image_url ? () => onChange({ ...item, image_url: null, image_scale: undefined }) : undefined}
+          imageScale={item.image_scale}
+          onImageScaleChange={scale => onChange({ ...item, image_scale: scale })}
+          resizable={Boolean(item.image_url)}
           className="max-w-md"
         />
       </div>
@@ -303,6 +307,69 @@ function AddOnDetailPanel({
           className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
         />
       </div>
+
+      {item.highlighted ? (
+        <div className="space-y-4 rounded-xl border border-amber-200/70 bg-amber-50/40 p-4">
+          <div>
+            <p className="text-xs font-semibold text-gray-900">Discuss in sections</p>
+            <p className="mt-0.5 text-[11px] text-gray-600">
+              Choose where this add-on appears as a talk-track pill next to the section heading in the report.
+            </p>
+            <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {AUDIT_SECTION_OPTIONS.map(option => {
+                const selected = (item.related_section_keys ?? []).includes(option.key);
+                return (
+                  <label
+                    key={option.key}
+                    className={cn(
+                      'flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors',
+                      selected
+                        ? 'border-amber-300 bg-white text-gray-900'
+                        : 'border-transparent bg-white/70 text-gray-700 hover:border-gray-200',
+                    )}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => {
+                        const current = item.related_section_keys ?? [];
+                        const next = selected
+                          ? current.filter(key => key !== option.key)
+                          : [...current, option.key];
+                        onChange({
+                          ...item,
+                          related_section_keys: next.length > 0 ? next : undefined,
+                        });
+                      }}
+                      className="h-3.5 w-3.5 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/30"
+                    />
+                    <span className="text-xs font-medium">{option.label}</span>
+                  </label>
+                );
+              })}
+            </div>
+          </div>
+
+          <details className="group">
+            <summary className="cursor-pointer text-xs font-semibold text-gray-800 marker:content-none">
+              <span className="inline-flex items-center gap-1">
+                Presenter note
+                <span className="font-normal text-gray-500">(optional · shown on hover in report)</span>
+              </span>
+            </summary>
+            <textarea
+              rows={3}
+              placeholder="One-line cue for what to show the client at those sections…"
+              value={item.presenter_note ?? ''}
+              onChange={e => onChange({
+                ...item,
+                presenter_note: e.target.value.trim() || undefined,
+              })}
+              className="mt-2 w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+            />
+          </details>
+        </div>
+      ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
         <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
@@ -479,7 +546,17 @@ export default function RevenueAddOnItemsEditor({
   const toggleHighlighted = (index: number) => {
     const item = addOnItems[index];
     if (!item) return;
-    updateItemAt(index, { ...item, highlighted: !item.highlighted }, { highlightChanged: true });
+    const nextHighlighted = !item.highlighted;
+    updateItemAt(
+      index,
+      {
+        ...item,
+        highlighted: nextHighlighted,
+        related_section_keys: nextHighlighted ? item.related_section_keys : undefined,
+        presenter_note: nextHighlighted ? item.presenter_note : undefined,
+      },
+      { highlightChanged: true },
+    );
   };
 
   const toggleHidden = (index: number) => {
@@ -516,7 +593,7 @@ export default function RevenueAddOnItemsEditor({
     try {
       const url = await uploadRevenueOpportunityImage(file);
       const item = addOnItems[index];
-      if (item) updateItemAt(index, { ...item, image_url: url });
+      if (item) updateItemAt(index, { ...item, image_url: url, image_scale: undefined });
     } catch {
       toast('Image upload failed');
     } finally {

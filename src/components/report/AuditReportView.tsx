@@ -35,6 +35,7 @@ import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction 
 import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
 import ImageLightbox from '../ui/ImageLightbox';
 import ImageUploadZone from '../ui/ImageUploadZone';
+import ResizableReportImage from '../ui/ResizableReportImage';
 import DemoPopupModal, { type DemoPopupState } from '../ui/DemoPopupModal';
 import { resolveCustomerAgentDemoUrl } from '../../lib/customer-agent-demo';
 import { splitAddOnsByPricing } from '../../lib/addon-pricing';
@@ -170,7 +171,9 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     updateAddOnPrice,
     updateAddOnContent,
     updateAddOnImage,
+    updateAddOnImageScale,
     updateAttributionScreenshot,
+    updateAttributionScreenshotScale,
     updateSectionRevenueOpportunity,
     toggleLayoutSectionHidden,
     toggleAuditSectionHidden,
@@ -1191,21 +1194,18 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                   onFile={handleAttributionImageUpload}
                   onRemove={() => updateAttributionScreenshot(null)}
                   onPreviewClick={() => setLightboxSrc(attributionModelCfg.screenshot_url ?? '')}
+                  imageScale={attributionModelCfg.screenshot_scale}
+                  onImageScaleChange={updateAttributionScreenshotScale}
+                  resizable
                   className="mt-0"
                 />
               ) : (
-                <button
-                  type="button"
+                <ResizableReportImage
+                  src={attributionModelCfg.screenshot_url}
+                  alt="Attribution model settings"
+                  scale={attributionModelCfg.screenshot_scale}
                   onClick={() => setLightboxSrc(attributionModelCfg.screenshot_url ?? '')}
-                  className="block w-full overflow-hidden rounded-xl border border-gray-100 bg-gray-50"
-                  aria-label="View attribution model screenshot"
-                >
-                  <img
-                    src={attributionModelCfg.screenshot_url}
-                    alt="Attribution model settings"
-                    className="block w-full h-auto object-contain"
-                  />
-                </button>
+                />
               )
             ) : editMode ? (
               <ImageUploadZone

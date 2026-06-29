@@ -44,21 +44,33 @@ export function getHighlightedAddOns(items: RevenueOpportunityAddOnItem[]): Reve
   return items.filter(item => Boolean(item.highlighted) && !item.is_hidden);
 }
 
+export const AUDIT_SECTION_OPTIONS = [
+  { key: 'account_health', label: 'Account health' },
+  { key: 'flows', label: 'Flows' },
+  { key: 'segmentation', label: 'Segmentation' },
+  { key: 'campaigns', label: 'Campaigns' },
+  { key: 'email_design', label: 'Email design' },
+  { key: 'signup_forms', label: 'Signup forms' },
+] as const;
+
+export type AuditSectionKey = (typeof AUDIT_SECTION_OPTIONS)[number]['key'];
+
 export function buildSectionDemoMap(items: RevenueOpportunityAddOnItem[]): Map<string, SectionDemoMarker[]> {
   const map = new Map<string, SectionDemoMarker[]>();
   for (const item of items) {
     if (!item.highlighted || item.is_hidden) continue;
     const keys = Array.isArray(item.related_section_keys) ? item.related_section_keys : [];
     for (const key of keys) {
-      const slug = String(key).trim();
-      if (!slug) continue;
-      const list = map.get(slug) ?? [];
+      const sectionKey = String(key).trim();
+      if (!sectionKey) continue;
+      const list = map.get(sectionKey) ?? [];
+      if (list.some(marker => marker.template_slug === item.template_slug)) continue;
       list.push({
         template_slug: item.template_slug,
         name: item.name,
         presenter_note: item.presenter_note,
       });
-      map.set(slug, list);
+      map.set(sectionKey, list);
     }
   }
   return map;

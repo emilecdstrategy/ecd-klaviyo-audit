@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent, type ReactNode } from 'react';
 import { ImageIcon } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import ResizableReportImage from './ResizableReportImage';
 
 function pickImageFile(files: FileList | null | undefined): File | undefined {
   if (!files?.length) return undefined;
@@ -38,6 +39,9 @@ export type ImageUploadZoneProps = {
   disabled?: boolean;
   replaceLabel?: string;
   children?: ReactNode;
+  imageScale?: number | null;
+  onImageScaleChange?: (scale: number) => void;
+  resizable?: boolean;
 };
 
 export default function ImageUploadZone({
@@ -54,6 +58,9 @@ export default function ImageUploadZone({
   disabled = false,
   replaceLabel = 'Replace image',
   children,
+  imageScale,
+  onImageScaleChange,
+  resizable = false,
 }: ImageUploadZoneProps) {
   const inputRef = useRef<HTMLInputElement>(null);
   const zoneRef = useRef<HTMLDivElement>(null);
@@ -124,16 +131,20 @@ export default function ImageUploadZone({
   }, [onPaste, pasteReady]);
 
   if (previewUrl) {
+    const canResize = resizable && !disabled && Boolean(onImageScaleChange);
     return (
       <div className={cn('space-y-3', className)}>
-        <button
-          type="button"
+        <ResizableReportImage
+          src={previewUrl}
+          alt={previewAlt}
+          scale={imageScale}
+          onScaleChange={canResize ? onImageScaleChange : undefined}
+          resizable={canResize}
           onClick={onPreviewClick}
-          className="relative block w-full overflow-hidden rounded-xl border border-gray-100 bg-gray-50"
-          aria-label={previewAlt}
-        >
-          <img src={previewUrl} alt={previewAlt} className="block w-full h-auto object-contain" />
-        </button>
+        />
+        {canResize ? (
+          <p className="text-[11px] text-gray-500">Drag the left or right edge to resize proportionally.</p>
+        ) : null}
         {(onRemove || !disabled) && (
           <div className="flex flex-wrap items-center gap-3">
             {!disabled && (
