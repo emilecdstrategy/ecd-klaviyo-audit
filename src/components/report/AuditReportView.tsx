@@ -682,15 +682,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               label={flowsCfg.sectionTitle ?? 'Flows'}
             />
 
-            {(isFlowsBlockVisible(flowsCfg, 'keyFindings') || editMode) && (
-              <AuditSectionKeyFindingsPanel
-                sectionKey="flows"
-                section={flowsSectionRow}
-                blockCfg={flowsCfg.blocks.keyFindings}
-                blockVisible={isFlowsBlockVisible(flowsCfg, 'keyFindings')}
-              />
-            )}
-
             {((isFlowsBlockVisible(flowsCfg, 'narrative') || isFlowsBlockVisible(flowsCfg, 'rubric')) || editMode) && (() => {
               const flowsSection = flowsSectionRow;
               const idx = flowsSection ? reportSections.findIndex(s => s.id === flowsSection.id) : -1;
@@ -832,6 +823,15 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 <ReportFlowInventoryTable flows={flowSnapshots as any} scrollable />
               </ReportInventoryLauncher>
             )}
+
+            {(isFlowsBlockVisible(flowsCfg, 'keyFindings') || editMode) && (
+              <AuditSectionKeyFindingsPanel
+                sectionKey="flows"
+                section={flowsSectionRow}
+                blockCfg={flowsCfg.blocks.keyFindings}
+                blockVisible={isFlowsBlockVisible(flowsCfg, 'keyFindings')}
+              />
+            )}
         </ReportSectionShell>
 
         <ReportSectionShell
@@ -857,6 +857,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               )
             }
           />
+          <ReportDeliverabilitySnapshot deliverability={accountSnapshot?.deliverability} />
           {(isDeliverabilitySnapshotBlockVisible(deliverabilitySnapshotCfg, 'keyFindings') || editMode) && (
             <LayoutSectionKeyFindingsPanel
               layoutKey="deliverability_snapshot"
@@ -865,7 +866,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               blockVisible={isDeliverabilitySnapshotBlockVisible(deliverabilitySnapshotCfg, 'keyFindings')}
             />
           )}
-          <ReportDeliverabilitySnapshot deliverability={accountSnapshot?.deliverability} />
         </ReportSectionShell>
 
         <ReportSectionShell
@@ -880,15 +880,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               number={sectionNumbers['segments'] ?? segmentationCfg.sectionNumber ?? '04'}
               label={segmentationCfg.sectionTitle ?? 'Segments'}
             />
-
-            {(isSegmentationBlockVisible(segmentationCfg, 'keyFindings') || editMode) && (
-              <AuditSectionKeyFindingsPanel
-                sectionKey="segmentation"
-                section={segmentationSectionRow}
-                blockCfg={segmentationCfg.blocks.keyFindings}
-                blockVisible={isSegmentationBlockVisible(segmentationCfg, 'keyFindings')}
-              />
-            )}
 
             {(isSegmentationBlockVisible(segmentationCfg, 'narrative') ||
               isSegmentationBlockVisible(segmentationCfg, 'rubric')) && segmentationSectionRow && (() => {
@@ -933,6 +924,15 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 <ReportSegmentTable segments={segmentSnapshots as any} scrollable />
               </ReportInventoryLauncher>
             )}
+
+            {(isSegmentationBlockVisible(segmentationCfg, 'keyFindings') || editMode) && (
+              <AuditSectionKeyFindingsPanel
+                sectionKey="segmentation"
+                section={segmentationSectionRow}
+                blockCfg={segmentationCfg.blocks.keyFindings}
+                blockVisible={isSegmentationBlockVisible(segmentationCfg, 'keyFindings')}
+              />
+            )}
         </ReportSectionShell>
 
         <ReportSectionShell
@@ -947,15 +947,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               number={sectionNumbers['forms'] ?? signupFormsCfg.sectionNumber ?? '05'}
               label={signupFormsCfg.sectionTitle ?? 'Signup Forms'}
             />
-
-            {(isSignupFormsBlockVisible(signupFormsCfg, 'keyFindings') || editMode) && (
-              <AuditSectionKeyFindingsPanel
-                sectionKey="signup_forms"
-                section={signupFormsSectionRow}
-                blockCfg={signupFormsCfg.blocks.keyFindings}
-                blockVisible={isSignupFormsBlockVisible(signupFormsCfg, 'keyFindings')}
-              />
-            )}
 
             {(isSignupFormsBlockVisible(signupFormsCfg, 'narrative') ||
               isSignupFormsBlockVisible(signupFormsCfg, 'rubric')) && signupFormsSectionRow && (() => {
@@ -996,6 +987,15 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 <ReportFormTable forms={formSnapshots as any} scrollable />
               </ReportInventoryLauncher>
             )}
+
+            {(isSignupFormsBlockVisible(signupFormsCfg, 'keyFindings') || editMode) && (
+              <AuditSectionKeyFindingsPanel
+                sectionKey="signup_forms"
+                section={signupFormsSectionRow}
+                blockCfg={signupFormsCfg.blocks.keyFindings}
+                blockVisible={isSignupFormsBlockVisible(signupFormsCfg, 'keyFindings')}
+              />
+            )}
         </ReportSectionShell>
 
         <ReportSectionShell
@@ -1010,15 +1010,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               number={sectionNumbers['campaigns'] ?? campaignsCfg.sectionNumber ?? '06'}
               label={campaignsCfg.sectionTitle ?? 'Campaigns'}
             />
-
-            {(isCampaignsBlockVisible(campaignsCfg, 'keyFindings') || editMode) && (
-              <AuditSectionKeyFindingsPanel
-                sectionKey="campaigns"
-                section={campaignsSectionRow}
-                blockCfg={campaignsCfg.blocks.keyFindings}
-                blockVisible={isCampaignsBlockVisible(campaignsCfg, 'keyFindings')}
-              />
-            )}
 
             {(isCampaignsBlockVisible(campaignsCfg, 'narrative') ||
               isCampaignsBlockVisible(campaignsCfg, 'rubric')) && campaignsSectionRow && (() => {
@@ -1059,6 +1050,15 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 <ReportCampaignTable campaigns={campaignSnapshots as any} scrollable />
               </ReportInventoryLauncher>
             )}
+
+            {(isCampaignsBlockVisible(campaignsCfg, 'keyFindings') || editMode) && (
+              <AuditSectionKeyFindingsPanel
+                sectionKey="campaigns"
+                section={campaignsSectionRow}
+                blockCfg={campaignsCfg.blocks.keyFindings}
+                blockVisible={isCampaignsBlockVisible(campaignsCfg, 'keyFindings')}
+              />
+            )}
         </ReportSectionShell>
 
         <ReportSectionShell
@@ -1076,14 +1076,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
                 label={emailDesignCfg.sectionTitle ?? 'Email Design'}
               />
-              {(isEmailDesignBlockVisible(emailDesignCfg, 'keyFindings') || editMode) && (
-                <AuditSectionKeyFindingsPanel
-                  sectionKey="email_design"
-                  section={emailDesignSectionRow}
-                  blockCfg={emailDesignCfg.blocks.keyFindings}
-                  blockVisible={isEmailDesignBlockVisible(emailDesignCfg, 'keyFindings')}
-                />
-              )}
               <EmailDesignSection
                 emailDesign={emailDesign}
                 annotations={annotations}
@@ -1092,13 +1084,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 benchmarkTitle={emailDesignCfg.blocks.comparison?.title}
                 clientTitle={(emailDesignCfg.blocks.comparison as { clientTitle?: string } | undefined)?.clientTitle}
               />
-            </>
-          ) : editMode ? (
-            <>
-              <ReportSectionHeader
-                number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
-                label={emailDesignCfg.sectionTitle ?? 'Email Design'}
-              />
               {(isEmailDesignBlockVisible(emailDesignCfg, 'keyFindings') || editMode) && (
                 <AuditSectionKeyFindingsPanel
                   sectionKey="email_design"
@@ -1107,6 +1092,13 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                   blockVisible={isEmailDesignBlockVisible(emailDesignCfg, 'keyFindings')}
                 />
               )}
+            </>
+          ) : editMode ? (
+            <>
+              <ReportSectionHeader
+                number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
+                label={emailDesignCfg.sectionTitle ?? 'Email Design'}
+              />
             <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-6 py-10 text-center">
               <p className="text-sm text-gray-600">No email design data yet.</p>
               {onManageEmailDesign && (
@@ -1119,6 +1111,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 </button>
               )}
             </div>
+              {(isEmailDesignBlockVisible(emailDesignCfg, 'keyFindings') || editMode) && (
+                <AuditSectionKeyFindingsPanel
+                  sectionKey="email_design"
+                  section={emailDesignSectionRow}
+                  blockCfg={emailDesignCfg.blocks.keyFindings}
+                  blockVisible={isEmailDesignBlockVisible(emailDesignCfg, 'keyFindings')}
+                />
+              )}
             </>
           ) : null}
         </ReportSectionShell>
@@ -1140,14 +1140,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 : undefined
             }
           />
-          {(isAttributionModelBlockVisible(attributionModelCfg, 'keyFindings') || editMode) && (
-            <LayoutSectionKeyFindingsPanel
-              layoutKey="attribution_model"
-              keyFindings={attributionModelCfg.key_findings}
-              blockCfg={attributionModelCfg.blocks?.keyFindings}
-              blockVisible={isAttributionModelBlockVisible(attributionModelCfg, 'keyFindings')}
-            />
-          )}
           {editMode && (
             <div className="mt-4 flex flex-wrap items-center gap-3">
               <AttributionModelHelpTrigger />
@@ -1190,6 +1182,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               />
             ) : null}
           </div>
+          {(isAttributionModelBlockVisible(attributionModelCfg, 'keyFindings') || editMode) && (
+            <LayoutSectionKeyFindingsPanel
+              layoutKey="attribution_model"
+              keyFindings={attributionModelCfg.key_findings}
+              blockCfg={attributionModelCfg.blocks?.keyFindings}
+              blockVisible={isAttributionModelBlockVisible(attributionModelCfg, 'keyFindings')}
+            />
+          )}
         </ReportSectionShell>
 
         <ReportSectionShell

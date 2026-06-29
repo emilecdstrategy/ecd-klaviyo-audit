@@ -103,12 +103,13 @@ export default function ReportSectionKeyFindings({
       label="Key Findings"
       hidden={blockHidden}
       onToggleHidden={onToggleBlockHidden}
-      className="mb-6"
+      className="mt-6"
     >
       <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
         <ReportBlockHeader
+          className="border-b border-gray-200 bg-gray-50 px-6 py-4"
           icon={
-            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10">
+            <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/15 ring-1 ring-brand-primary/20">
               <AlertCircle className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
             </div>
           }
