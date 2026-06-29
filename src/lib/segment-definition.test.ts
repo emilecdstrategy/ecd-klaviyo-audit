@@ -80,4 +80,48 @@ describe('segment-definition', () => {
       'Is not in list “All Malicious”, segment “Engaged 30 Day”',
     );
   });
+
+  it('parses profile-property conditions with email contains filters', () => {
+    const parsed = parseSegmentDefinition({
+      raw: {
+        attributes: {
+          definition: {
+            condition_groups: [
+              {
+                conditions: [
+                  {
+                    type: 'profile-property',
+                    property: 'email',
+                    filter: { type: 'string', operator: 'contains', value: 'abuse@' },
+                  },
+                  {
+                    type: 'profile-property',
+                    property: 'email',
+                    filter: { type: 'string', operator: 'contains', value: 'support@' },
+                  },
+                ],
+              },
+              {
+                conditions: [
+                  {
+                    type: 'profile-metric',
+                    metric_id: 'S87HUX',
+                    measurement: 'count',
+                    measurement_filter: { type: 'numeric', operator: 'equals', value: 0 },
+                  },
+                ],
+              },
+            ],
+          },
+        },
+        _ecd_metric_names: { S87HUX: 'Manually Suppressed from Email Marketing' },
+      },
+    });
+
+    expect(parsed.available).toBe(true);
+    expect(parsed.criteriaLines).toHaveLength(3);
+    expect(parsed.criteriaLines[0]).toBe('Group 1: email contains abuse@');
+    expect(parsed.criteriaLines[1]).toBe('Group 1: email contains support@');
+    expect(parsed.criteriaLines[2]).toContain('Manually Suppressed from Email Marketing');
+  });
 });

@@ -186,6 +186,12 @@ function parseCondition(
     return filter ? `Profile: ${filter}` : `Profile attribute: ${field}`;
   }
 
+  if (type === 'profile-property') {
+    const property = String(c.property ?? 'Property');
+    const filter = formatMetricFilter(property, c.filter);
+    return filter ? `${property} ${filter}` : `Profile property: ${property}`;
+  }
+
   if (type === 'profile-group-membership') {
     return formatGroupMembership(c.group_ids, c.is_member, groupNames);
   }

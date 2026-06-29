@@ -33,15 +33,17 @@ export default function Modal({ open, title, children, onClose, className }: Mod
   if (!open) return null;
 
   return createPortal(
-    <div className="fixed inset-0 z-50">
-      <button
-        type="button"
-        aria-label="Close modal"
-        className="absolute inset-0 bg-black/40"
-        onClick={onClose}
-      />
-      <div className="absolute inset-0 flex items-center justify-center p-4">
-        <div className={cn('w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-100', className)}>
+    <div
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40"
+      onClick={onClose}
+      role="presentation"
+    >
+      <div
+        className={cn('w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-100', className)}
+        onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+      >
           <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100">
             <div className="min-w-0">
               {title && <h2 className="text-base font-semibold text-gray-900 truncate">{title}</h2>}
@@ -57,7 +59,6 @@ export default function Modal({ open, title, children, onClose, className }: Mod
           <div className="max-h-[calc(100vh-8rem)] overflow-y-auto">
             {children}
           </div>
-        </div>
       </div>
     </div>,
     document.body,

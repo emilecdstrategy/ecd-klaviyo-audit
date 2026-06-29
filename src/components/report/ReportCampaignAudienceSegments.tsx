@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { Megaphone } from 'lucide-react';
+import { ChevronDown, ChevronUp, Megaphone } from 'lucide-react';
+import { useExpandableTableClip } from '../../hooks/useExpandableTableClip';
 import type { KlaviyoCampaignSnapshot, KlaviyoSegmentSnapshot } from '../../lib/types';
 import {
   buildCampaignAudienceRows,
@@ -153,6 +154,8 @@ function AudienceDefinitionBody({
   );
 }
 
+const COLLAPSED_COUNT = 3;
+
 export default function ReportCampaignAudienceSegments({
   campaigns,
   segmentSnapshots,
@@ -161,6 +164,7 @@ export default function ReportCampaignAudienceSegments({
   segmentSnapshots: KlaviyoSegmentSnapshot[];
 }) {
   const [modal, setModal] = useState<AudienceModalState>(null);
+  const [expanded, setExpanded] = useState(false);
 
   const groupNames = useMemo(
     () => buildGroupNameMapFromSnapshots(segmentSnapshots, campaigns),
@@ -173,6 +177,9 @@ export default function ReportCampaignAudienceSegments({
   );
 
   const unknownAudienceCount = useMemo(() => countUnknownAudiences(rows), [rows]);
+
+  const needsExpand = rows.length > COLLAPSED_COUNT;
+  const { wrapRef, maxHeight } = useExpandableTableClip(rows.length, expanded, COLLAPSED_COUNT);
 
   if (rows.length === 0) return null;
 
@@ -201,8 +208,16 @@ export default function ReportCampaignAudienceSegments({
           </div>
         </div>
 
-        <div className="-mx-6 overflow-x-auto px-6">
-          <table className="w-full min-w-[720px] text-sm border-collapse">
+        <div className="relative pb-2">
+          <div
+            ref={needsExpand ? wrapRef : undefined}
+            className={cn(
+              '-mx-6 overflow-x-auto px-6',
+              needsExpand && 'overflow-y-hidden transition-[max-height] duration-300 ease-out motion-reduce:transition-none',
+            )}
+            style={needsExpand ? { maxHeight } : undefined}
+          >
+            <table className="w-full min-w-[720px] text-sm border-collapse">
             <thead>
               <tr className="border-b border-gray-100">
                 <th className="px-4 py-3 text-left text-xs font-semibold uppercase tracking-wider text-gray-500">
@@ -248,6 +263,34 @@ export default function ReportCampaignAudienceSegments({
               ))}
             </tbody>
           </table>
+          </div>
+
+          {needsExpand && !expanded && (
+            <>
+              <div className="absolute bottom-0 left-0 right-0 h-20 bg-gradient-to-t from-white via-white/95 to-transparent pointer-events-none" />
+              <div className="absolute bottom-6 left-0 right-0 z-10 flex justify-center pointer-events-none">
+                <button
+                  type="button"
+                  onClick={() => setExpanded(true)}
+                  className="flex items-center gap-1.5 text-sm font-semibold text-brand-primary hover:text-brand-primary-dark transition-colors duration-200 pointer-events-auto"
+                >
+                  Show all {rows.length} campaigns <ChevronDown className="w-4 h-4" />
+                </button>
+              </div>
+            </>
+          )}
+
+          {needsExpand && expanded && (
+            <div className="flex justify-center pt-4">
+              <button
+                type="button"
+                onClick={() => setExpanded(false)}
+                className="flex items-center gap-1.5 text-sm font-semibold text-brand-primary hover:text-brand-primary-dark transition-colors duration-200"
+              >
+                Collapse <ChevronUp className="w-4 h-4" />
+              </button>
+            </div>
+          )}
         </div>
       </div>
 
