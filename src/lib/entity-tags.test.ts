@@ -2,7 +2,7 @@
  * @vitest-environment node
  */
 import { describe, expect, it } from 'vitest';
-import { autoTagEntityNames, buildEntityLookup, type EntityType } from './entity-tags';
+import { autoTagEntityNames, buildEntityLookup, repairEntityMarkers, type EntityType } from './entity-tags';
 
 describe('autoTagEntityNames', () => {
   it('does not tag common English words that match short flow names like TEST', () => {
@@ -30,5 +30,20 @@ describe('autoTagEntityNames', () => {
     const input = 'Do not match kltest flow in prose.';
     const out = autoTagEntityNames(input, lookup);
     expect(out).toBe(input);
+  });
+});
+
+describe('repairEntityMarkers', () => {
+  it('joins multiline entity marker bodies broken by flattened bullet repair', () => {
+    const broken = '`campaign:MM | Community Roundup\n- June 08`';
+    expect(repairEntityMarkers(broken)).toBe('`campaign:MM | Community Roundup - June 08`');
+  });
+
+  it('repairs multiple split markers in one finding', () => {
+    const broken =
+      '`campaign:MM | Community Roundup\n- June 08`, `campaign:MM | Community Roundup\n- June 08 (clone)`';
+    const out = repairEntityMarkers(broken);
+    expect(out).toContain('`campaign:MM | Community Roundup - June 08`');
+    expect(out).toContain('`campaign:MM | Community Roundup - June 08 (clone)`');
   });
 });

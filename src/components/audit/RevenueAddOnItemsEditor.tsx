@@ -46,6 +46,7 @@ function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
         ? item.related_section_keys.map(v => String(v))
         : undefined,
       presenter_note: item.presenter_note ? String(item.presenter_note) : undefined,
+      investment_included: item.investment_included !== false,
       display_order: typeof item.display_order === 'number' ? item.display_order : (index + 1) * 10,
     }))
     .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
@@ -65,6 +66,7 @@ function AddOnListRow({
   onDrop,
   onToggleHighlight,
   onToggleHidden,
+  onToggleInvestmentIncluded,
 }: {
   item: RevenueOpportunityAddOnItem;
   selected: boolean;
@@ -75,6 +77,7 @@ function AddOnListRow({
   onDrop: () => void;
   onToggleHighlight: () => void;
   onToggleHidden: () => void;
+  onToggleInvestmentIncluded: () => void;
 }) {
   const pricing = summarizeItemPricing(item);
 
@@ -132,6 +135,22 @@ function AddOnListRow({
           )}
         >
           {item.highlighted ? 'Highlighted' : 'Highlight'}
+        </button>
+        <button
+          type="button"
+          title={item.investment_included === false ? 'Include in Investment Summary' : 'Exclude from Investment Summary'}
+          onClick={e => {
+            e.stopPropagation();
+            onToggleInvestmentIncluded();
+          }}
+          className={cn(
+            'rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide',
+            item.investment_included === false
+              ? 'text-gray-500 hover:bg-gray-100'
+              : 'bg-emerald-100 text-emerald-800',
+          )}
+        >
+          {item.investment_included === false ? 'Excluded' : 'In proposal'}
         </button>
         <button
           type="button"
@@ -372,25 +391,47 @@ function AddOnDetailPanel({
       ) : null}
 
       <div className="flex flex-wrap items-center justify-between gap-3 border-t border-gray-100 pt-4">
-        <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
-          <span className="text-xs font-medium text-gray-700">Show in report</span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={!item.is_hidden}
-            onClick={() => onChange({ ...item, is_hidden: !item.is_hidden })}
-            className={cn(
-              'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors',
-              !item.is_hidden ? 'bg-brand-primary' : 'bg-gray-200',
-            )}
-          >
-            <span
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+            <span className="text-xs font-medium text-gray-700">Show in report</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={!item.is_hidden}
+              onClick={() => onChange({ ...item, is_hidden: !item.is_hidden })}
               className={cn(
-                'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
-                !item.is_hidden ? 'translate-x-4' : 'translate-x-0',
+                'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors',
+                !item.is_hidden ? 'bg-brand-primary' : 'bg-gray-200',
               )}
-            />
-          </button>
+            >
+              <span
+                className={cn(
+                  'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
+                  !item.is_hidden ? 'translate-x-4' : 'translate-x-0',
+                )}
+              />
+            </button>
+          </div>
+          <div className="flex items-center gap-3 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2">
+            <span className="text-xs font-medium text-gray-700">Investment Summary</span>
+            <button
+              type="button"
+              role="switch"
+              aria-checked={item.investment_included !== false}
+              onClick={() => onChange({ ...item, investment_included: item.investment_included === false })}
+              className={cn(
+                'relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors',
+                item.investment_included !== false ? 'bg-emerald-600' : 'bg-gray-200',
+              )}
+            >
+              <span
+                className={cn(
+                  'pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm transition-transform',
+                  item.investment_included !== false ? 'translate-x-4' : 'translate-x-0',
+                )}
+              />
+            </button>
+          </div>
         </div>
         <button
           type="button"
@@ -565,6 +606,15 @@ export default function RevenueAddOnItemsEditor({
     updateItemAt(index, { ...item, is_hidden: !item.is_hidden });
   };
 
+  const toggleInvestmentIncluded = (index: number) => {
+    const item = addOnItems[index];
+    if (!item) return;
+    updateItemAt(index, {
+      ...item,
+      investment_included: item.investment_included === false,
+    });
+  };
+
   const moveItem = (index: number, direction: -1 | 1) => {
     const target = index + direction;
     if (target < 0 || target >= addOnItems.length) return;
@@ -697,6 +747,7 @@ export default function RevenueAddOnItemsEditor({
                     }}
                     onToggleHighlight={() => toggleHighlighted(index)}
                     onToggleHidden={() => toggleHidden(index)}
+                    onToggleInvestmentIncluded={() => toggleInvestmentIncluded(index)}
                   />
                 ))}
               </div>

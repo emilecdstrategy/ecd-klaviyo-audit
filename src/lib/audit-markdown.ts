@@ -3,6 +3,7 @@
 import {
   ENTITY_CHIP_CLASS,
   ENTITY_LABELS,
+  isInsideEntityMarkerAt,
   prepareAuditText,
   repairEntityMarkers,
   stripEntityMarkers,
@@ -28,7 +29,10 @@ export function normalizeInlineMarkdown(text: string): string {
 }
 
 export function prepareAuditMarkdown(text: string): string {
-  return repairFlattenedMarkdown(normalizeInlineMarkdown(text || ''));
+  let result = normalizeInlineMarkdown(text || '');
+  result = repairEntityMarkers(result);
+  result = repairFlattenedMarkdown(result);
+  return repairEntityMarkers(result);
 }
 
 export function tokenizeInlineMarkdown(text: string): InlineMarkdownToken[] {
@@ -98,7 +102,11 @@ export function repairFlattenedMarkdown(text: string): string {
 
   let repaired = text;
   if (bulletMarkers >= 2 && newlines < bulletMarkers) {
-    repaired = repaired.replace(/([^\n])- (?=[A-Za-z*])/g, '$1\n- ');
+    repaired = repaired.replace(/([^\n])- (?=[A-Za-z*])/g, (match, before, offset, whole) => {
+      const splitAt = offset + String(before).length;
+      if (isInsideEntityMarkerAt(whole, splitAt)) return match;
+      return `${before}\n- `;
+    });
   }
   repaired = repaired.replace(/([a-z.])(ECD Pricing:)/gi, '$1\n\n$2');
   repaired = repaired.replace(/(ECD Pricing:)- (?=[A-Za-z*])/g, '$1\n- ');

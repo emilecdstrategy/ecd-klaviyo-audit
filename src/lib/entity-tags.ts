@@ -55,9 +55,33 @@ function overlapsEntityMarkerRange(
   return ranges.some(([rangeStart, rangeEnd]) => start < rangeEnd && end > rangeStart);
 }
 
+const ENTITY_MARKER_BODY_REGEX = /`(flow|campaign|segment|form):([\s\S]*?)`/g;
+
+function isInsideEntityMarkerBody(prefix: string): boolean {
+  const lastTick = prefix.lastIndexOf('`');
+  if (lastTick < 0) return false;
+  return /^(flow|campaign|segment|form):[^`]*$/.test(prefix.slice(lastTick + 1));
+}
+
+/** Join marker bodies broken across lines (often by repairFlattenedMarkdown on "Name - Date"). */
+function normalizeEntityMarkerBodies(text: string): string {
+  return text.replace(ENTITY_MARKER_BODY_REGEX, (_match, type: EntityType, body: string) => {
+    if (!/[\n\r]/.test(body)) return _match;
+    const joined = body
+      .replace(/\r\n/g, '\n')
+      .replace(/\n-\s+/g, ' - ')
+      .replace(/\s*\n+\s*/g, ' ')
+      .replace(/\s{2,}/g, ' ')
+      .trim();
+    return `\`${type}:${joined}\``;
+  });
+}
+
 /** Repair nested or broken entity markers left by legacy auto-tagging. */
 export function repairEntityMarkers(text: string): string {
   let result = String(text ?? '');
+
+  result = normalizeEntityMarkerBodies(result);
 
   // Legacy nested wrap: `flow:`flow:ECD | Welcome Series` NEW` -> `flow:ECD | Welcome Series NEW`
   result = result.replace(
@@ -71,7 +95,17 @@ export function repairEntityMarkers(text: string): string {
   // Orphan prefix immediately before a valid marker: `flow:` `flow:Name` -> `flow:Name`
   result = result.replace(/`flow:\s*`(flow|campaign|segment|form):/gi, '`$1:');
 
-  return result;
+  // Stray orphan backtick immediately before a valid marker: ` `campaign:Name` -> `campaign:Name`
+  result = result.replace(/`\s+`(flow|campaign|segment|form):/gi, '`$1:');
+
+  return normalizeEntityMarkerBodies(result);
+}
+
+export function isInsideEntityMarkerAt(text: string, index: number): boolean {
+  const prefix = text.slice(0, index);
+  const tickCount = (prefix.match(/`/g) ?? []).length;
+  if (tickCount % 2 === 1) return true;
+  return isInsideEntityMarkerBody(prefix);
 }
 
 export function resolveEntityType(name: string, lookup: Map<string, EntityType>): EntityType {
@@ -158,6 +192,8 @@ export function prepareAuditText(
   if (autoTag) result = autoTagEntityNames(result, lookup);
   return repairEntityMarkers(result);
 }
+
+const ENTITY_MD_REGEX = /`(flow|campaign|segment|form):([^`]+)`/g;
 
 export function stripEntityMarkers(text: string): string {
   return text.replace(ENTITY_MD_REGEX, '$2');

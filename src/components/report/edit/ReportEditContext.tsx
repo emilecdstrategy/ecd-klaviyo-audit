@@ -135,6 +135,7 @@ type ReportEditContextValue = {
   setAddOnTalkTrackForSection: (itemKey: string, sectionKey: AuditSectionKey, enabled: boolean) => void;
   updateAddOnPresenterNote: (itemKey: string, note: string) => void;
   toggleAddOnHighlighted: (itemKey: string, highlighted: boolean) => void;
+  toggleAddOnInvestmentIncluded: (itemKey: string, included: boolean) => void;
   updateAttributionScreenshot: (value: string | null) => void;
   updateAttributionScreenshotScale: (scale: number) => void;
   updateSectionRevenueOpportunity: (sectionKey: string, value: number) => void;
@@ -193,6 +194,8 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateAddOnImageScale: () => {},
   setAddOnTalkTrackForSection: () => {},
   updateAddOnPresenterNote: () => {},
+  toggleAddOnHighlighted: () => {},
+  toggleAddOnInvestmentIncluded: () => {},
   updateAttributionScreenshot: () => {},
   updateAttributionScreenshotScale: () => {},
   updateSectionRevenueOpportunity: () => {},
@@ -812,6 +815,16 @@ export function ReportEditProvider({
     */
   }, []);
 
+  const toggleAddOnInvestmentIncluded = useCallback(
+    (itemKey: string, included: boolean) => {
+      patchAddOnItem(itemKey, item => ({
+        ...item,
+        investment_included: included,
+      }));
+    },
+    [patchAddOnItem],
+  );
+
   const updateAttributionScreenshot = useCallback(
     (value: string | null) => {
       const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
@@ -1130,6 +1143,7 @@ export function ReportEditProvider({
       setAddOnTalkTrackForSection,
       updateAddOnPresenterNote,
       toggleAddOnHighlighted,
+      toggleAddOnInvestmentIncluded,
       updateAttributionScreenshot,
       updateAttributionScreenshotScale,
       updateSectionRevenueOpportunity,
@@ -1175,6 +1189,7 @@ export function ReportEditProvider({
       setAddOnTalkTrackForSection,
       updateAddOnPresenterNote,
       toggleAddOnHighlighted,
+      toggleAddOnInvestmentIncluded,
       updateAttributionScreenshot,
       updateAttributionScreenshotScale,
       updateSectionRevenueOpportunity,

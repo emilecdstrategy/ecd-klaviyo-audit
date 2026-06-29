@@ -105,6 +105,8 @@ export interface RevenueOpportunityAddOnItem {
   related_section_keys?: string[];
   /** Short AI note for the presenter at those sections. */
   presenter_note?: string;
+  /** When false, excluded from Investment Summary totals (defaults to included). */
+  investment_included?: boolean;
 }
 
 export interface FlowPerformance {

@@ -265,6 +265,11 @@ export const DEFAULT_REVENUE_SUMMARY_SECTION: RevenueSummarySectionConfig = {
       title: 'Implementation Timeline',
       subtitle: 'Suggested rollout order — work through each phase before moving to the next.',
     },
+    investmentSummary: {
+      hidden: false,
+      title: 'Investment Summary',
+      subtitle: 'ECD implementation and retainer fees for services discussed in this audit.',
+    },
   },
 };
 

@@ -188,6 +188,7 @@ export interface RevenueSummarySectionConfig extends BaseSectionConfig {
     totalBanner?: GenericBlockConfig & { disclaimer?: string | null };
     addOns?: GenericBlockConfig & { items?: RevenueOpportunityAddOnItem[] };
     timeline?: GenericBlockConfig;
+    investmentSummary?: GenericBlockConfig;
   };
 }
 

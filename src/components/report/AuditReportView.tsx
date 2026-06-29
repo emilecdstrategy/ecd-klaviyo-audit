@@ -38,8 +38,9 @@ import ImageUploadZone from '../ui/ImageUploadZone';
 import ResizableReportImage from '../ui/ResizableReportImage';
 import DemoPopupModal, { type DemoPopupState } from '../ui/DemoPopupModal';
 import { resolveCustomerAgentDemoUrl } from '../../lib/customer-agent-demo';
-import { splitAddOnsByPricing } from '../../lib/addon-pricing';
+import { addOnHasPricing, splitAddOnsByPricing } from '../../lib/addon-pricing';
 import ReportAddOnCard from './ReportAddOnCard';
+import ReportInvestmentSummary from './ReportInvestmentSummary';
 import { AttributionModelHelpTrigger } from './AttributionModelHelpModal';
 import { uploadReportScreenshot, uploadRevenueOpportunityImage } from '../../lib/db';
 import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoCampaignSnapshot, KlaviyoSegmentSnapshot } from '../../lib/types';
@@ -410,6 +411,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             ? item.related_section_keys.map(v => String(v))
             : undefined,
           presenter_note: item.presenter_note ? String(item.presenter_note) : undefined,
+          investment_included: item.investment_included !== false,
           image_scale: item.image_scale ?? null,
         }))
         .filter(item => !item.is_hidden)
@@ -433,6 +435,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             ? item.related_section_keys.map(v => String(v))
             : undefined,
           presenter_note: item.presenter_note ? String(item.presenter_note) : undefined,
+          investment_included: item.investment_included !== false,
         }))
         .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
       : [];
@@ -449,6 +452,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     [visibleAddOnItems],
   );
   const hasPricedAddOns = oneTimeAddOns.length > 0 || monthlyAddOns.length > 0;
+  const investmentSummaryItems = useMemo(
+    () => addOnCatalogItems.filter(item => !item.is_hidden && addOnHasPricing(item)),
+    [addOnCatalogItems],
+  );
+  const investmentSummaryAvailable = investmentSummaryItems.length > 0;
   const addOnsSectionAvailable = visibleAddOnItems.length > 0;
 
   const customerAgentDemoUrl = useMemo(
@@ -1527,6 +1535,19 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             </div>
           </div>
           </ReportBlockEditChrome>
+          )}
+
+          {(investmentSummaryAvailable || editMode) &&
+            (revenueSummaryCfg.blocks.investmentSummary?.hidden !== true || editMode) && (
+            <ReportInvestmentSummary
+              items={investmentSummaryItems}
+              title={revenueSummaryCfg.blocks.investmentSummary?.title ?? 'Investment Summary'}
+              subtitle={revenueSummaryCfg.blocks.investmentSummary?.subtitle}
+              hidden={revenueSummaryCfg.blocks.investmentSummary?.hidden === true}
+              onToggleHidden={h => toggleRevenueBlockHidden('investmentSummary', h)}
+              onSaveTitle={v => updateBlockTitle('revenue_summary', 'investmentSummary', 'title', v)}
+              onSaveSubtitle={v => updateBlockTitle('revenue_summary', 'investmentSummary', 'subtitle', v)}
+            />
           )}
         </ReportSectionShell>
       </main>

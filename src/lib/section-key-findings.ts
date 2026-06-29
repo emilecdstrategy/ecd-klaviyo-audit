@@ -1,3 +1,4 @@
+import { prepareAuditMarkdown } from './audit-markdown';
 import { repairSplitFindings } from './findings-normalize';
 import type { SectionKeyFindings } from './types';
 
@@ -27,7 +28,7 @@ export function resolveSectionKeyFindings(
 ): string[] {
   const parsed = keyFindings ?? EMPTY_SECTION_KEY_FINDINGS;
   if (parsed.items.some((item) => item.trim())) {
-    return repairSplitFindings(parsed.items);
+    return repairSplitFindings(parsed.items).map(item => prepareAuditMarkdown(item));
   }
   const legacy = String(legacyProse ?? '').trim();
   return legacy ? [legacy] : [];
