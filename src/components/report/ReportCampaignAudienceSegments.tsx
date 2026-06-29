@@ -20,13 +20,13 @@ type AudienceModalState = {
 } | null;
 
 function AudienceChip({
-  ref: audienceRef,
+  audience,
   onClick,
 }: {
-  ref: CampaignAudienceRef;
+  audience: CampaignAudienceRef;
   onClick: () => void;
 }) {
-  const isUnknown = audienceRef.name.startsWith('Unknown audience');
+  const isUnknown = audience.name.startsWith('Unknown audience');
   return (
     <button
       type="button"
@@ -39,9 +39,9 @@ function AudienceChip({
       )}
     >
       <span className="mr-1 shrink-0 uppercase tracking-wide text-[10px] text-gray-400">
-        {audienceRef.kind}
+        {audience.kind}
       </span>
-      <span className="truncate">{audienceRef.name}</span>
+      <span className="truncate">{audience.name}</span>
     </button>
   );
 }
@@ -61,7 +61,7 @@ function AudienceChipList({
   return (
     <div className="flex flex-wrap gap-1.5">
       {items.map(item => (
-        <AudienceChip key={item.id} ref={item} onClick={() => onSelect(item)} />
+        <AudienceChip key={item.id} audience={item} onClick={() => onSelect(item)} />
       ))}
     </div>
   );
