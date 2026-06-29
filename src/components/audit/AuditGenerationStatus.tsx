@@ -214,8 +214,8 @@ export default function AuditGenerationStatus({ auditId, onComplete, compact = f
       </p>
       <p className="text-xs text-gray-400 mb-6 max-w-md mx-auto">
         {klaviyoStillRunning
-          ? 'You can close this page — a server watchdog keeps the profile scan moving automatically. Reopen anytime to check progress.'
-          : 'Klaviyo data is ready. AI analysis runs on the server — a watchdog retries if it stalls. You can close this page and reopen anytime.'}
+          ? 'You can safely close this tab — a server watchdog keeps the profile scan moving automatically. Reopen anytime to check progress.'
+          : 'Klaviyo data is ready. AI analysis runs on the server — a watchdog retries if it stalls. You can safely close this tab and reopen anytime.'}
       </p>
       {resumeError && (
         <p className="text-sm text-red-600 mb-4 max-w-md mx-auto">{resumeError}</p>

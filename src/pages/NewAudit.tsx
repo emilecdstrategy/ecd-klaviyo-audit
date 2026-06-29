@@ -26,7 +26,6 @@ import {
   nudgeProfileScan,
   waitForServerAuditAnalysis,
 } from '../lib/audit-pipeline-status';
-import { setAuditWizardCloseGuard } from '../lib/audit-wizard-guard';
 
 const CONTEXT_CHAR_SOFT = 15_000;
 const CONTEXT_CHAR_HARD = 30_000;
@@ -324,11 +323,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       mountedRef.current = false;
     };
   }, []);
-
-  useEffect(() => {
-    setAuditWizardCloseGuard(() => analyzing);
-    return () => setAuditWizardCloseGuard(null);
-  }, [analyzing]);
 
   useEffect(() => {
     if (!analyzing || !currentAuditId) return;
@@ -994,8 +988,11 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               <>
                 <Loader2 className="w-12 h-12 text-brand-primary animate-spin mx-auto mb-4" />
                 <h2 className="text-xl font-bold text-gray-900 mb-2">Analyzing Account...</h2>
-                <p className="text-sm text-gray-500 mb-6">
+                <p className="text-sm text-gray-500 mb-2">
                   {analysisStage || 'Generating findings across all audit sections.'}
+                </p>
+                <p className="text-xs text-gray-400 mb-6 max-w-md mx-auto">
+                  Analysis continues on the server — you can safely close this tab and reopen the audit from the Audits page anytime.
                 </p>
                 <div className="max-w-xs mx-auto">
                   <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
