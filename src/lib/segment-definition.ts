@@ -136,7 +136,7 @@ function formatGroupMembership(
       const kindLabel = entry.kind === 'list' ? 'list' : 'segment';
       return `${kindLabel} “${entry.name}”`;
     }
-    return 'unknown audience (re-sync needed)';
+    return 'unknown audience (not in snapshot)';
   });
   return `${memberPrefix} ${labels.join(', ')}`;
 }

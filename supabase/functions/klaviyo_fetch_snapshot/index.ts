@@ -55,9 +55,18 @@ const MAX_REPORT_IDS = 100;
 /** 5 pages × 100 = 500 email campaigns max per snapshot. */
 const MAX_CAMPAIGN_PAGES = 5;
 const CAMPAIGN_SNAPSHOT_CAP = 500;
-const MAX_LIST_SEGMENT_PAGES = 5;
+const MAX_LIST_PAGES = 5;
+/** Lightweight segment names for groupNameMap (100/page × 10 = 1000). */
+const MAX_SEGMENT_NAME_PAGES = 10;
+/** Segments with definitions for segment inventory snapshots (50/page × 10 = 500). */
+const MAX_SEGMENT_DEFINITION_PAGES = 10;
+const SEGMENTS_NAMES_ONLY_PATH =
+  "/api/segments/?page%5Bsize%5D=100&fields%5Bsegment%5D=name,created,updated";
 const SEGMENTS_WITH_DEFINITIONS_PATH =
-  "/api/segments/?page%5Bsize%5D=10&fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing";
+  "/api/segments/?page%5Bsize%5D=50&fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing";
+const SEGMENT_BY_ID_FIELDS =
+  "fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing";
+const LIST_BY_ID_FIELDS = "fields%5Blist%5D=name,created,updated";
 const CAMPAIGNS_WITH_AUDIENCES_PATH =
   "/api/campaigns/?filter=equals(messages.channel,'email')&fields%5Bcampaign%5D=name,status,created_at,updated_at,audiences";
 const METRICS_MAX_PAGES = 5;
@@ -75,6 +84,71 @@ function buildGroupNameMap(lists: any[], segments: any[]): Record<string, EcdGro
     map[item.id] = { name: item.attributes?.name ?? item.id, kind: "segment" };
   }
   return map;
+}
+
+function collectAudienceIdsFromCampaigns(campaigns: any[]): string[] {
+  const ids = new Set<string>();
+  for (const c of campaigns ?? []) {
+    const aud = c?.attributes?.audiences;
+    if (!aud || typeof aud !== "object") continue;
+    for (const id of (aud as any).included ?? []) {
+      if (id) ids.add(String(id));
+    }
+    for (const id of (aud as any).excluded ?? []) {
+      if (id) ids.add(String(id));
+    }
+  }
+  return [...ids];
+}
+
+async function hydrateAudienceIds(params: {
+  apiKey: string;
+  revision: string;
+  groupNameMap: Record<string, EcdGroupNameEntry>;
+  campaigns: any[];
+}): Promise<{
+  groupNameMap: Record<string, EcdGroupNameEntry>;
+  hydratedSegments: any[];
+}> {
+  const map = { ...params.groupNameMap };
+  const hydratedSegments: any[] = [];
+  const missing = collectAudienceIdsFromCampaigns(params.campaigns).filter((id) => !map[id]);
+
+  for (const id of missing) {
+    const segRes = await fetchWithRetry(
+      () => klaviyoFetch(params.apiKey, params.revision, `/api/segments/${id}/?${SEGMENT_BY_ID_FIELDS}`),
+      3,
+    );
+    if (segRes.ok && segRes.body?.data?.id) {
+      const seg = segRes.body.data;
+      map[id] = { name: seg.attributes?.name ?? id, kind: "segment" };
+      hydratedSegments.push(seg);
+      continue;
+    }
+    if (segRes.status !== 404) continue;
+
+    const listRes = await fetchWithRetry(
+      () => klaviyoFetch(params.apiKey, params.revision, `/api/lists/${id}/?${LIST_BY_ID_FIELDS}`),
+      3,
+    );
+    if (listRes.ok && listRes.body?.data?.id) {
+      const list = listRes.body.data;
+      map[id] = { name: list.attributes?.name ?? id, kind: "list" };
+    }
+  }
+
+  return { groupNameMap: map, hydratedSegments };
+}
+
+function mergeSegmentItemsForSnapshots(primary: any[], extra: any[]): any[] {
+  const byId = new Map<string, any>();
+  for (const s of primary ?? []) {
+    if (s?.id) byId.set(s.id, s);
+  }
+  for (const s of extra ?? []) {
+    if (s?.id && !byId.has(s.id)) byId.set(s.id, s);
+  }
+  return [...byId.values()];
 }
 /** Skip optional email HTML fetch if less than this many ms remain before deadline. */
 const MIN_SLACK_MS_EMAIL_HTML = 15_000;
@@ -1178,10 +1252,11 @@ async function runStageConfig(params: {
     const timezone = account?.attributes?.timezone ?? null;
     const preferredCurrency = account?.attributes?.preferred_currency ?? null;
 
-    const [flows, lists, segments, forms, campaigns, metricsRes] = await Promise.all([
+    const [flows, lists, segmentNames, segments, forms, campaigns, metricsRes] = await Promise.all([
       klaviyoPaged(apiKey, params.revision, "/api/flows/?page%5Bsize%5D=50"),
-      klaviyoPaged(apiKey, params.revision, "/api/lists/", MAX_LIST_SEGMENT_PAGES),
-      klaviyoPaged(apiKey, params.revision, SEGMENTS_WITH_DEFINITIONS_PATH, MAX_LIST_SEGMENT_PAGES),
+      klaviyoPaged(apiKey, params.revision, "/api/lists/", MAX_LIST_PAGES),
+      klaviyoPaged(apiKey, params.revision, SEGMENTS_NAMES_ONLY_PATH, MAX_SEGMENT_NAME_PAGES),
+      klaviyoPaged(apiKey, params.revision, SEGMENTS_WITH_DEFINITIONS_PATH, MAX_SEGMENT_DEFINITION_PAGES),
       klaviyoPaged(apiKey, params.revision, "/api/forms/?page%5Bsize%5D=100"),
       klaviyoPaged(apiKey, params.revision, CAMPAIGNS_WITH_AUDIENCES_PATH, MAX_CAMPAIGN_PAGES),
       klaviyoPaged(apiKey, params.revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", METRICS_MAX_PAGES),
@@ -1190,9 +1265,24 @@ async function runStageConfig(params: {
     const metricNameMap = Object.fromEntries(
       (metricsRes.ok ? metricsRes.items : []).map((m: any) => [m.id, m.attributes?.name ?? m.id]),
     );
-    const groupNameMap = buildGroupNameMap(
+    let groupNameMap = buildGroupNameMap(
       lists.ok ? lists.items : [],
+      [
+        ...(segmentNames.ok ? segmentNames.items : []),
+        ...(segments.ok ? segments.items : []),
+      ],
+    );
+    const campaignItemsForHydrate = campaigns.ok ? campaigns.items.slice(0, CAMPAIGN_SNAPSHOT_CAP) : [];
+    const hydrated = await hydrateAudienceIds({
+      apiKey,
+      revision: params.revision,
+      groupNameMap,
+      campaigns: campaignItemsForHydrate,
+    });
+    groupNameMap = hydrated.groupNameMap;
+    const segmentItemsForSnapshots = mergeSegmentItemsForSnapshots(
       segments.ok ? segments.items : [],
+      hydrated.hydratedSegments,
     );
 
     // Clear prior snapshots for this audit.
@@ -1219,7 +1309,7 @@ async function runStageConfig(params: {
     }
 
     if (campaigns.ok) {
-      const campaignItems = campaigns.items.slice(0, CAMPAIGN_SNAPSHOT_CAP);
+      const campaignItems = campaignItemsForHydrate;
       const rows = campaignItems.map((c: any) => ({
         audit_id: params.auditId,
         client_id: params.clientId,
@@ -1274,8 +1364,8 @@ async function runStageConfig(params: {
       if (rows.length) await mustSucceed("insert klaviyo_form_snapshots", sb.from("klaviyo_form_snapshots").insert(rows));
     }
 
-    if (segments.ok) {
-      const rows = segments.items.map((s: any) => ({
+    if (segments.ok || segmentItemsForSnapshots.length > 0) {
+      const rows = segmentItemsForSnapshots.map((s: any) => ({
         audit_id: params.auditId,
         client_id: params.clientId,
         segment_id: s.id,
@@ -1422,7 +1512,7 @@ async function runStageConfig(params: {
             flows: flows.ok ? flows.items.length : null,
             campaigns: campaigns.ok ? campaigns.items.length : null,
             forms: forms.ok ? forms.items.length : null,
-            segments: segments.ok ? segments.items.length : null,
+            segments: segmentItemsForSnapshots.length || null,
             lists: lists.ok ? lists.items.length : null,
           },
           reporting_errors: [],
@@ -1460,7 +1550,7 @@ async function runStageConfig(params: {
         flows: flows.ok ? flows.items.length : null,
         campaigns: campaigns.ok ? campaigns.items.length : null,
         forms: forms.ok ? forms.items.length : null,
-        segments: segments.ok ? segments.items.length : null,
+        segments: segmentItemsForSnapshots.length || null,
         lists: lists.ok ? lists.items.length : null,
       },
       fetch: Object.fromEntries(
@@ -2201,9 +2291,10 @@ async function runStageBackfillSegmentDefinitions(params: {
 
     const apiKey = await resolveApiKey(sb, clientId, null);
 
-    const [lists, segments, metricsRes, campaignsLive] = await Promise.all([
-      klaviyoPaged(apiKey, revision, "/api/lists/", MAX_LIST_SEGMENT_PAGES),
-      klaviyoPaged(apiKey, revision, SEGMENTS_WITH_DEFINITIONS_PATH, MAX_LIST_SEGMENT_PAGES),
+    const [lists, segmentNames, segments, metricsRes, campaignsLive] = await Promise.all([
+      klaviyoPaged(apiKey, revision, "/api/lists/", MAX_LIST_PAGES),
+      klaviyoPaged(apiKey, revision, SEGMENTS_NAMES_ONLY_PATH, MAX_SEGMENT_NAME_PAGES),
+      klaviyoPaged(apiKey, revision, SEGMENTS_WITH_DEFINITIONS_PATH, MAX_SEGMENT_DEFINITION_PAGES),
       klaviyoPaged(apiKey, revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", METRICS_MAX_PAGES),
       klaviyoPaged(apiKey, revision, CAMPAIGNS_WITH_AUDIENCES_PATH, MAX_CAMPAIGN_PAGES),
     ]);
@@ -2215,11 +2306,24 @@ async function runStageBackfillSegmentDefinitions(params: {
     const metricNameMap = Object.fromEntries(
       (metricsRes.ok ? metricsRes.items : []).map((m: any) => [m.id, m.attributes?.name ?? m.id]),
     );
-    const groupNameMap = buildGroupNameMap(
+    let groupNameMap = buildGroupNameMap(
       lists.ok ? lists.items : [],
-      segments.items,
+      [
+        ...(segmentNames.ok ? segmentNames.items : []),
+        ...segments.items,
+      ],
     );
-    const segmentById = new Map<string, any>(segments.items.map((s: any) => [s.id, s]));
+    const campaignItemsForHydrate = campaignsLive.ok ? campaignsLive.items : [];
+    const hydrated = await hydrateAudienceIds({
+      apiKey,
+      revision,
+      groupNameMap,
+      campaigns: campaignItemsForHydrate,
+    });
+    groupNameMap = hydrated.groupNameMap;
+    const segmentById = new Map<string, any>(
+      mergeSegmentItemsForSnapshots(segments.items, hydrated.hydratedSegments).map((s: any) => [s.id, s]),
+    );
     const campaignById = new Map<string, any>(
       (campaignsLive.ok ? campaignsLive.items : []).map((c: any) => [c.id, c]),
     );
@@ -2230,30 +2334,57 @@ async function runStageBackfillSegmentDefinitions(params: {
     if (snapErr) throw snapErr;
     if (!snapshots?.length) throw new Error("No segment snapshots found for audit");
 
+    const { data: campaignSnapsPre, error: campPreErr } = await sb.from("klaviyo_campaign_snapshots")
+      .select("raw")
+      .eq("audit_id", params.auditId);
+    if (campPreErr) throw campPreErr;
+    const storedCampaignsForHydrate = (campaignSnapsPre ?? []).map((row) => {
+      const raw = row.raw as Record<string, unknown> | null;
+      if (!raw || typeof raw !== "object") return null;
+      return { id: (raw as any).id, attributes: (raw as any).attributes };
+    }).filter(Boolean);
+    const hydratedFromStored = await hydrateAudienceIds({
+      apiKey,
+      revision,
+      groupNameMap,
+      campaigns: storedCampaignsForHydrate,
+    });
+    groupNameMap = hydratedFromStored.groupNameMap;
+    for (const s of hydratedFromStored.hydratedSegments) {
+      if (s?.id && !segmentById.has(s.id)) segmentById.set(s.id, s);
+    }
+
     let updated = 0;
     let withDefinition = 0;
+    let segmentsInserted = 0;
+    const existingSegmentIds = new Set(snapshots.map((s) => s.segment_id));
     for (const row of snapshots) {
       const live = segmentById.get(row.segment_id);
-      if (!live) continue;
       const prevRaw = (row.raw && typeof row.raw === "object") ? row.raw as Record<string, unknown> : {};
       const prevAttrs = (prevRaw.attributes && typeof prevRaw.attributes === "object")
         ? prevRaw.attributes as Record<string, unknown>
         : {};
-      const liveAttrs = (live.attributes && typeof live.attributes === "object") ? live.attributes : {};
+      const liveAttrs = (live?.attributes && typeof live.attributes === "object") ? live.attributes : {};
       const definition = liveAttrs.definition ?? prevAttrs.definition ?? null;
       if (definition) withDefinition += 1;
 
-      const nextRaw = {
-        ...prevRaw,
-        ...live,
-        attributes: {
-          ...prevAttrs,
-          ...liveAttrs,
-          definition,
-        },
-        _ecd_metric_names: metricNameMap,
-        _ecd_group_names: groupNameMap,
-      };
+      const nextRaw = live
+        ? {
+          ...prevRaw,
+          ...live,
+          attributes: {
+            ...prevAttrs,
+            ...liveAttrs,
+            definition,
+          },
+          _ecd_metric_names: metricNameMap,
+          _ecd_group_names: groupNameMap,
+        }
+        : {
+          ...prevRaw,
+          _ecd_metric_names: metricNameMap,
+          _ecd_group_names: groupNameMap,
+        };
 
       await mustSucceed(
         `update klaviyo_segment_snapshots ${row.id}`,
@@ -2265,6 +2396,28 @@ async function runStageBackfillSegmentDefinitions(params: {
         }).eq("id", row.id),
       );
       updated += 1;
+    }
+
+    const missingSegmentRows = [...segmentById.values()]
+      .filter((s) => s?.id && !existingSegmentIds.has(s.id))
+      .map((s: any) => ({
+        audit_id: params.auditId,
+        client_id: clientId,
+        segment_id: s.id,
+        name: s.attributes?.name ?? "",
+        created_at_klaviyo: s.attributes?.created ?? null,
+        updated_at_klaviyo: s.attributes?.updated ?? null,
+        raw: { ...s, _ecd_metric_names: metricNameMap, _ecd_group_names: groupNameMap },
+      }));
+    if (missingSegmentRows.length) {
+      await mustSucceed(
+        "insert hydrated klaviyo_segment_snapshots",
+        sb.from("klaviyo_segment_snapshots").insert(missingSegmentRows),
+      );
+      segmentsInserted = missingSegmentRows.length;
+      if (missingSegmentRows.some((r) => (r.raw as any)?.attributes?.definition)) {
+        withDefinition += missingSegmentRows.filter((r) => (r.raw as any)?.attributes?.definition).length;
+      }
     }
 
     let campaignsUpdated = 0;
@@ -2318,7 +2471,8 @@ async function runStageBackfillSegmentDefinitions(params: {
       stage: "backfill_segment_definitions",
       updated,
       with_definition: withDefinition,
-      total_snapshots: snapshots.length,
+      segments_inserted: segmentsInserted,
+      total_snapshots: snapshots.length + segmentsInserted,
       campaigns_updated: campaignsUpdated,
       elapsed_ms: Date.now() - startedAt,
     });

@@ -13,7 +13,21 @@ export type CampaignAudienceRow = {
   excluded: CampaignAudienceRef[];
 };
 
-const UNKNOWN_LABEL = 'Unknown audience (re-sync needed)';
+export const UNKNOWN_AUDIENCE_LABEL = 'Unknown audience (not in snapshot)';
+
+export function isUnknownAudienceName(name: string): boolean {
+  return name === UNKNOWN_AUDIENCE_LABEL || name.startsWith('Unknown audience');
+}
+
+export function countUnknownAudiences(rows: CampaignAudienceRow[]): number {
+  let count = 0;
+  for (const row of rows) {
+    for (const ref of [...row.included, ...row.excluded]) {
+      if (isUnknownAudienceName(ref.name)) count += 1;
+    }
+  }
+  return count;
+}
 
 export function extractGroupNamesFromRaw(raw: unknown): GroupNameMap | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -46,7 +60,7 @@ export function resolveAudienceRef(id: string, groupNames: GroupNameMap): Campai
   if (entry?.name) {
     return { id, name: entry.name, kind: entry.kind };
   }
-  return { id, name: UNKNOWN_LABEL, kind: 'segment' };
+  return { id, name: UNKNOWN_AUDIENCE_LABEL, kind: 'segment' };
 }
 
 export function extractCampaignAudiences(
@@ -99,7 +113,7 @@ export function collectReferencedGroupIds(rows: CampaignAudienceRow[]): Set<stri
   const ids = new Set<string>();
   for (const row of rows) {
     for (const ref of [...row.included, ...row.excluded]) {
-      if (ref.name !== UNKNOWN_LABEL) ids.add(ref.id);
+      if (!isUnknownAudienceName(ref.name)) ids.add(ref.id);
     }
   }
   return ids;

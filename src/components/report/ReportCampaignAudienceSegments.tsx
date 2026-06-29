@@ -4,7 +4,9 @@ import type { KlaviyoCampaignSnapshot, KlaviyoSegmentSnapshot } from '../../lib/
 import {
   buildCampaignAudienceRows,
   buildGroupNameMapFromSnapshots,
+  countUnknownAudiences,
   findSegmentSnapshotForAudience,
+  isUnknownAudienceName,
   type CampaignAudienceRef,
 } from '../../lib/campaign-audiences';
 import {
@@ -26,7 +28,7 @@ function AudienceChip({
   audience: CampaignAudienceRef;
   onClick: () => void;
 }) {
-  const isUnknown = audience.name.startsWith('Unknown audience');
+  const isUnknown = isUnknownAudienceName(audience.name);
   return (
     <button
       type="button"
@@ -170,6 +172,8 @@ export default function ReportCampaignAudienceSegments({
     [campaigns, groupNames],
   );
 
+  const unknownAudienceCount = useMemo(() => countUnknownAudiences(rows), [rows]);
+
   if (rows.length === 0) return null;
 
   return (
@@ -186,6 +190,13 @@ export default function ReportCampaignAudienceSegments({
                 Included and excluded segments/lists for the 30 most recent sent email campaigns. Click an audience to
                 see its definition.
               </p>
+              {unknownAudienceCount > 0 ? (
+                <p className="mt-2 text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-md px-2.5 py-1.5">
+                  {unknownAudienceCount} audience{unknownAudienceCount === 1 ? '' : 's'} could not be resolved from
+                  this audit snapshot. Re-run the Klaviyo sync (or backfill segment definitions) to hydrate missing
+                  segment/list names.
+                </p>
+              ) : null}
             </div>
           </div>
         </div>
