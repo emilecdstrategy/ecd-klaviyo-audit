@@ -5,6 +5,7 @@ import { addOnItemKey, isAddOnOnSection } from '../../lib/addon-highlight';
 import type { RevenueOpportunityAddOnItem } from '../../lib/types';
 import { getAddOnCategoryStyles } from '../../lib/revenue-addon-categories';
 import { cn } from '../../lib/utils';
+import BrandedCheckbox from '../ui/BrandedCheckbox';
 import { useReportEdit } from './edit/ReportEditContext';
 
 function truncateName(name: string, max = 22): string {
@@ -66,20 +67,24 @@ function AddOnPicker({
             const styles = getAddOnCategoryStyles(item.template_slug);
             return (
               <li key={key}>
-                <label className="flex cursor-pointer items-start gap-2 rounded-lg px-2 py-2 hover:bg-gray-50">
-                  <input
-                    type="checkbox"
+                <div className="flex items-start gap-2.5 rounded-lg px-2 py-2 hover:bg-gray-50">
+                  <BrandedCheckbox
                     checked={selected}
-                    onChange={() => setAddOnTalkTrackForSection(key, sectionKey, !selected)}
-                    className="mt-0.5 h-3.5 w-3.5 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/30"
+                    onChange={checked => setAddOnTalkTrackForSection(key, sectionKey, checked)}
+                    className="mt-0.5"
+                    aria-label={`Discuss ${item.name} in this section`}
                   />
-                  <span className="min-w-0 flex-1">
+                  <button
+                    type="button"
+                    onClick={() => setAddOnTalkTrackForSection(key, sectionKey, !selected)}
+                    className="min-w-0 flex-1 text-left"
+                  >
                     <span className="flex items-center gap-1.5">
                       <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', styles.dotClassName)} />
                       <span className="text-xs font-medium text-gray-900">{item.name}</span>
                     </span>
-                  </span>
-                </label>
+                  </button>
+                </div>
               </li>
             );
           })}

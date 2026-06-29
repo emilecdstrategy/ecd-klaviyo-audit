@@ -20,6 +20,7 @@ import SimpleRichEditor from '../ui/SimpleRichEditor';
 import ImageUploadZone from '../ui/ImageUploadZone';
 import AddOnHighlightRegenModal from './AddOnHighlightRegenModal';
 import AddOpportunityPickerModal from './AddOpportunityPickerModal';
+import BrandedCheckbox from '../ui/BrandedCheckbox';
 import { cn } from '../../lib/utils';
 
 function normalizeItems(rawItems: unknown): RevenueOpportunityAddOnItem[] {
@@ -338,17 +339,16 @@ function AddOnDetailPanel({
               {AUDIT_SECTION_OPTIONS.map(option => {
                 const selected = (item.related_section_keys ?? []).includes(option.key);
                 return (
-                  <label
+                  <div
                     key={option.key}
                     className={cn(
-                      'flex cursor-pointer items-center gap-2 rounded-lg border px-3 py-2 text-sm transition-colors',
+                      'flex items-center gap-2.5 rounded-lg border px-3 py-2 text-sm transition-colors',
                       selected
                         ? 'border-amber-300 bg-white text-gray-900'
                         : 'border-transparent bg-white/70 text-gray-700 hover:border-gray-200',
                     )}
                   >
-                    <input
-                      type="checkbox"
+                    <BrandedCheckbox
                       checked={selected}
                       onChange={() => {
                         const current = item.related_section_keys ?? [];
@@ -360,10 +360,25 @@ function AddOnDetailPanel({
                           related_section_keys: next.length > 0 ? next : undefined,
                         });
                       }}
-                      className="h-3.5 w-3.5 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/30"
+                      aria-label={`Discuss in ${option.label}`}
                     />
-                    <span className="text-xs font-medium">{option.label}</span>
-                  </label>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const current = item.related_section_keys ?? [];
+                        const next = selected
+                          ? current.filter(key => key !== option.key)
+                          : [...current, option.key];
+                        onChange({
+                          ...item,
+                          related_section_keys: next.length > 0 ? next : undefined,
+                        });
+                      }}
+                      className="text-left text-xs font-medium"
+                    >
+                      {option.label}
+                    </button>
+                  </div>
                 );
               })}
             </div>
