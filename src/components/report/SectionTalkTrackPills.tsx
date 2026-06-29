@@ -88,7 +88,13 @@ function OverflowPopover({
   );
 }
 
-export default function SectionTalkTrackPills({ markers }: { markers: SectionDemoMarkerData[] }) {
+export default function SectionTalkTrackPills({
+  markers,
+  align = 'end',
+}: {
+  markers: SectionDemoMarkerData[];
+  align?: 'start' | 'end';
+}) {
   const [overflowOpen, setOverflowOpen] = useState(false);
 
   if (!markers.length) return null;
@@ -98,8 +104,8 @@ export default function SectionTalkTrackPills({ markers }: { markers: SectionDem
   const overflow = hasOverflow ? markers.slice(VISIBLE_BEFORE_OVERFLOW) : [];
 
   return (
-    <div className="relative shrink-0 sm:max-w-[min(100%,22rem)]">
-      <div className="flex flex-wrap items-center justify-end gap-1.5">
+    <div className={cn('relative w-full min-w-0', align === 'end' && 'sm:max-w-[min(100%,22rem)] sm:ml-auto')}>
+      <div className={cn('flex flex-wrap items-center gap-1.5', align === 'end' ? 'justify-end' : 'justify-start')}>
         <span className="mr-0.5 hidden text-[10px] font-semibold uppercase tracking-wide text-gray-400 sm:inline">
           Discuss
         </span>

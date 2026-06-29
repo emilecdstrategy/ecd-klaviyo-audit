@@ -410,8 +410,30 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             ? item.related_section_keys.map(v => String(v))
             : undefined,
           presenter_note: item.presenter_note ? String(item.presenter_note) : undefined,
+          image_scale: item.image_scale ?? null,
         }))
         .filter(item => !item.is_hidden)
+        .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
+      : [];
+  }, [revenueSummaryCfg]);
+
+  const addOnCatalogItems = useMemo(() => {
+    const addOnItemsRaw = revenueSummaryCfg.blocks.addOns?.items;
+    return Array.isArray(addOnItemsRaw)
+      ? addOnItemsRaw
+        .filter((item): item is RevenueOpportunityAddOnItem => !!item && typeof item === 'object')
+        .map((item, index) => ({
+          ...item,
+          template_slug: String(item.template_slug ?? ''),
+          name: String(item.name ?? ''),
+          display_order: typeof item.display_order === 'number' ? item.display_order : (index + 1) * 10,
+          is_hidden: Boolean(item.is_hidden),
+          highlighted: Boolean(item.highlighted),
+          related_section_keys: Array.isArray(item.related_section_keys)
+            ? item.related_section_keys.map(v => String(v))
+            : undefined,
+          presenter_note: item.presenter_note ? String(item.presenter_note) : undefined,
+        }))
         .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0))
       : [];
   }, [revenueSummaryCfg]);
@@ -700,6 +722,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['flows'] ?? flowsCfg.sectionNumber ?? '03'}
               label={flowsCfg.sectionTitle ?? 'Flows'}
+              sectionKey="flows"
+              addOnItems={addOnCatalogItems}
               demoMarkers={demoFor('flows')}
             />
 
@@ -878,6 +902,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               )
             }
             demoMarkers={demoFor('deliverability')}
+            sectionKey="account_health"
+            addOnItems={addOnCatalogItems}
           />
           <ReportDeliverabilitySnapshot deliverability={accountSnapshot?.deliverability} />
           {(isDeliverabilitySnapshotBlockVisible(deliverabilitySnapshotCfg, 'keyFindings') || editMode) && (
@@ -901,6 +927,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['segments'] ?? segmentationCfg.sectionNumber ?? '04'}
               label={segmentationCfg.sectionTitle ?? 'Segments'}
+              sectionKey="segmentation"
+              addOnItems={addOnCatalogItems}
               demoMarkers={demoFor('segments')}
             />
 
@@ -978,6 +1006,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['forms'] ?? signupFormsCfg.sectionNumber ?? '05'}
               label={signupFormsCfg.sectionTitle ?? 'Signup Forms'}
+              sectionKey="signup_forms"
+              addOnItems={addOnCatalogItems}
               demoMarkers={demoFor('forms')}
             />
 
@@ -1042,6 +1072,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             <ReportSectionHeader
               number={sectionNumbers['campaigns'] ?? campaignsCfg.sectionNumber ?? '06'}
               label={campaignsCfg.sectionTitle ?? 'Campaigns'}
+              sectionKey="campaigns"
+              addOnItems={addOnCatalogItems}
               demoMarkers={demoFor('campaigns')}
             />
 
@@ -1109,6 +1141,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               <ReportSectionHeader
                 number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
                 label={emailDesignCfg.sectionTitle ?? 'Email Design'}
+                sectionKey="email_design"
+                addOnItems={addOnCatalogItems}
                 demoMarkers={demoFor('email_design')}
               />
               <EmailDesignSection
@@ -1133,6 +1167,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               <ReportSectionHeader
                 number={sectionNumbers['email_design'] ?? emailDesignCfg.sectionNumber ?? '07'}
                 label={emailDesignCfg.sectionTitle ?? 'Email Design'}
+                sectionKey="email_design"
+                addOnItems={addOnCatalogItems}
                 demoMarkers={demoFor('email_design')}
               />
             <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50/60 px-6 py-10 text-center">

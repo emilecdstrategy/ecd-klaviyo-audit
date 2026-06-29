@@ -11,6 +11,7 @@ import type { Audit, AuditSection } from '../../../lib/types';
 import { updateAudit, updateAuditSection } from '../../../lib/db';
 import { scheduleSavedToast, useToast } from '../../ui/Toast';
 import type { RevenueOpportunityAddOnItem } from '../../../lib/types';
+import type { AuditSectionKey } from '../../../lib/addon-highlight';
 import { computeAuditTotalRevenueOpportunity } from '../../../lib/revenue-calculator';
 import { normalizeCoreFlowsMatrix, sanitizeStructureNote, type CoreFlowRow } from '../../../lib/core-flows-matrix';
 import {
@@ -131,6 +132,8 @@ type ReportEditContextValue = {
   updateAddOnContent: (itemKey: string, value: string) => void;
   updateAddOnImage: (itemKey: string, value: string | null) => void;
   updateAddOnImageScale: (itemKey: string, scale: number) => void;
+  setAddOnTalkTrackForSection: (itemKey: string, sectionKey: AuditSectionKey, enabled: boolean) => void;
+  updateAddOnPresenterNote: (itemKey: string, note: string) => void;
   toggleAddOnHighlighted: (itemKey: string, highlighted: boolean) => void;
   updateAttributionScreenshot: (value: string | null) => void;
   updateAttributionScreenshotScale: (scale: number) => void;
@@ -188,6 +191,8 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateAddOnContent: () => {},
   updateAddOnImage: () => {},
   updateAddOnImageScale: () => {},
+  setAddOnTalkTrackForSection: () => {},
+  updateAddOnPresenterNote: () => {},
   updateAttributionScreenshot: () => {},
   updateAttributionScreenshotScale: () => {},
   updateSectionRevenueOpportunity: () => {},
@@ -749,6 +754,56 @@ export function ReportEditProvider({
     [audit, onAuditChange, schedule],
   );
 
+  const patchAddOnItem = useCallback(
+    (itemKey: string, mutator: (item: RevenueOpportunityAddOnItem) => RevenueOpportunityAddOnItem) => {
+      const layout = { ...((audit.layout as Record<string, unknown>) ?? {}) };
+      const rs = { ...((layout.revenue_summary as Record<string, unknown>) ?? {}) };
+      const blocks = { ...((rs.blocks as Record<string, unknown>) ?? {}) };
+      const addOns = { ...((blocks.addOns as Record<string, unknown>) ?? {}) };
+      const items = [...((addOns.items as RevenueOpportunityAddOnItem[]) ?? [])];
+      const idx = items.findIndex(i => `${i.template_slug}-${i.display_order}` === itemKey);
+      if (idx < 0) return;
+      items[idx] = mutator(items[idx]);
+      addOns.items = items;
+      blocks.addOns = addOns;
+      rs.blocks = blocks;
+      layout.revenue_summary = rs;
+      onAuditChange({ ...audit, layout });
+      schedule('layout-addons', async () => {
+        await updateAudit(audit.id, { layout });
+      });
+    },
+    [audit, onAuditChange, schedule],
+  );
+
+  const setAddOnTalkTrackForSection = useCallback(
+    (itemKey: string, sectionKey: AuditSectionKey, enabled: boolean) => {
+      patchAddOnItem(itemKey, item => {
+        const keys = item.related_section_keys ?? [];
+        if (enabled) {
+          const next = keys.includes(sectionKey) ? keys : [...keys, sectionKey];
+          return { ...item, highlighted: true, related_section_keys: next };
+        }
+        const next = keys.filter(key => key !== sectionKey);
+        return {
+          ...item,
+          related_section_keys: next.length > 0 ? next : undefined,
+        };
+      });
+    },
+    [patchAddOnItem],
+  );
+
+  const updateAddOnPresenterNote = useCallback(
+    (itemKey: string, note: string) => {
+      patchAddOnItem(itemKey, item => ({
+        ...item,
+        presenter_note: note.trim() || undefined,
+      }));
+    },
+    [patchAddOnItem],
+  );
+
   // Highlight toggles live in Revenue opportunities drawer only (RevenueAddOnItemsEditor).
   const toggleAddOnHighlighted = useCallback((_itemKey: string, _highlighted: boolean) => {
     /* Re-enable if report-card highlight toggle returns:
@@ -1072,6 +1127,8 @@ export function ReportEditProvider({
       updateAddOnContent,
       updateAddOnImage,
       updateAddOnImageScale,
+      setAddOnTalkTrackForSection,
+      updateAddOnPresenterNote,
       toggleAddOnHighlighted,
       updateAttributionScreenshot,
       updateAttributionScreenshotScale,
@@ -1115,6 +1172,8 @@ export function ReportEditProvider({
       updateAddOnContent,
       updateAddOnImage,
       updateAddOnImageScale,
+      setAddOnTalkTrackForSection,
+      updateAddOnPresenterNote,
       toggleAddOnHighlighted,
       updateAttributionScreenshot,
       updateAttributionScreenshotScale,

@@ -47,7 +47,8 @@ export default function ReportSectionEditChrome({
 
   return (
     <div className="relative">
-      <div className="absolute right-4 top-4 z-20 flex items-center gap-2">
+      <div className="pointer-events-none absolute right-4 top-4 z-20 flex items-center gap-2">
+        <div className="pointer-events-auto flex items-center gap-2">
         {actions?.map(action => (
           <button
             key={action.label}
@@ -74,8 +75,9 @@ export default function ReportSectionEditChrome({
         >
           <Eye className="h-4 w-4" />
         </button>
+        </div>
       </div>
-      {children}
+      <div className="min-w-0">{children}</div>
     </div>
   );
 }

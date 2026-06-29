@@ -1,22 +1,32 @@
 import EditablePlainText from './edit/EditablePlainText';
-import SectionTalkTrackPills from './SectionTalkTrackPills';
-import type { SectionDemoMarker as SectionDemoMarkerData } from '../../lib/addon-highlight';
+import type { AuditSectionKey, SectionDemoMarker as SectionDemoMarkerData } from '../../lib/addon-highlight';
+import type { RevenueOpportunityAddOnItem } from '../../lib/types';
+import { cn } from '../../lib/utils';
+import { useReportEdit } from './edit/ReportEditContext';
+import SectionTalkTrackSectionRow from './SectionTalkTrackSectionRow';
 
 export default function ReportSectionHeader({
   number,
   label,
   onSaveLabel,
   demoMarkers,
+  sectionKey,
+  addOnItems = [],
 }: {
   number: string;
   label: string;
   onSaveLabel?: (value: string) => void;
   demoMarkers?: SectionDemoMarkerData[];
+  /** When set, enables per-section talk-track pills (view + edit). */
+  sectionKey?: AuditSectionKey;
+  addOnItems?: RevenueOpportunityAddOnItem[];
 }) {
+  const { editMode } = useReportEdit();
   const talkTrackMarkers = demoMarkers ?? [];
+  const showTalkTrack = Boolean(sectionKey && (talkTrackMarkers.length > 0 || editMode));
 
   return (
-    <div className="mb-8 flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between sm:gap-6">
+    <div className={cn('mb-8', editMode && 'pr-24 sm:pr-28')}>
       <div className="flex min-w-0 items-center gap-4">
         <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-primary text-sm font-bold text-white tabular-nums shadow-sm shadow-brand-primary/25">
           {number}
@@ -33,8 +43,13 @@ export default function ReportSectionHeader({
           />
         </div>
       </div>
-      {talkTrackMarkers.length > 0 ? (
-        <SectionTalkTrackPills markers={talkTrackMarkers} />
+      {showTalkTrack && sectionKey ? (
+        <SectionTalkTrackSectionRow
+          sectionKey={sectionKey}
+          markers={talkTrackMarkers}
+          addOnItems={addOnItems}
+          editMode={editMode}
+        />
       ) : null}
     </div>
   );

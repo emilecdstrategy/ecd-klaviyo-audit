@@ -7,6 +7,9 @@ import {
 } from '../../lib/report-image-scale';
 import { cn } from '../../lib/utils';
 
+const DRAG_THRESHOLD_PX = 4;
+const CLICK_SUPPRESS_MS = 400;
+
 type ResizableReportImageProps = {
   src: string;
   alt: string;
@@ -17,6 +20,40 @@ type ResizableReportImageProps = {
   className?: string;
   imageClassName?: string;
 };
+
+function ResizeEdge({
+  edge,
+  onStart,
+}: {
+  edge: 'left' | 'right';
+  onStart: (event: ReactPointerEvent<HTMLDivElement>, edge: 'left' | 'right') => void;
+}) {
+  return (
+    <div
+      role="separator"
+      aria-orientation="vertical"
+      aria-label={`Resize image from ${edge} edge`}
+      onPointerDown={event => onStart(event, edge)}
+      className={cn(
+        'absolute inset-y-0 z-20 flex w-10 cursor-ew-resize items-center justify-center touch-none',
+        edge === 'left' ? 'left-0 border-l-2 border-transparent hover:border-brand-primary/40 hover:bg-brand-primary/10' : 'right-0 border-r-2 border-transparent hover:border-brand-primary/40 hover:bg-brand-primary/10',
+        'group/edge',
+      )}
+    >
+      <div
+        className={cn(
+          'flex h-16 w-1.5 flex-col items-center justify-center gap-1 rounded-full',
+          'bg-brand-primary/25 shadow-sm ring-1 ring-brand-primary/30',
+          'opacity-70 transition-opacity group-hover/edge:opacity-100',
+        )}
+      >
+        <span className="h-1 w-1 rounded-full bg-brand-primary" />
+        <span className="h-1 w-1 rounded-full bg-brand-primary" />
+        <span className="h-1 w-1 rounded-full bg-brand-primary" />
+      </div>
+    </div>
+  );
+}
 
 export default function ResizableReportImage({
   src,
@@ -29,11 +66,13 @@ export default function ResizableReportImage({
   imageClassName,
 }: ResizableReportImageProps) {
   const containerRef = useRef<HTMLDivElement>(null);
+  const suppressClickUntilRef = useRef(0);
   const scale = normalizeImageScale(scaleProp);
+  const isResizable = resizable && Boolean(onScaleChange);
 
   const startResize = useCallback(
-    (edge: 'left' | 'right') => (event: ReactPointerEvent<HTMLDivElement>) => {
-      if (!resizable || !onScaleChange || !containerRef.current) return;
+    (event: ReactPointerEvent<HTMLDivElement>, edge: 'left' | 'right') => {
+      if (!isResizable || !onScaleChange || !containerRef.current) return;
       event.preventDefault();
       event.stopPropagation();
 
@@ -42,11 +81,17 @@ export default function ResizableReportImage({
 
       const startX = event.clientX;
       const startScale = scale;
+      let dragged = false;
       const target = event.currentTarget;
       target.setPointerCapture(event.pointerId);
 
       const onPointerMove = (moveEvent: PointerEvent) => {
         const deltaX = moveEvent.clientX - startX;
+        if (!dragged && Math.abs(deltaX) >= DRAG_THRESHOLD_PX) {
+          dragged = true;
+        }
+        if (!dragged) return;
+
         const signedDelta = edge === 'right' ? deltaX : -deltaX;
         const nextScale = Math.min(
           MAX_IMAGE_SCALE,
@@ -55,75 +100,74 @@ export default function ResizableReportImage({
         onScaleChange(Number(nextScale.toFixed(3)));
       };
 
-      const onPointerUp = () => {
+      const finish = () => {
+        if (dragged) {
+          suppressClickUntilRef.current = Date.now() + CLICK_SUPPRESS_MS;
+        }
         target.releasePointerCapture(event.pointerId);
         window.removeEventListener('pointermove', onPointerMove);
-        window.removeEventListener('pointerup', onPointerUp);
-        window.removeEventListener('pointercancel', onPointerUp);
+        window.removeEventListener('pointerup', finish);
+        window.removeEventListener('pointercancel', finish);
       };
 
       window.addEventListener('pointermove', onPointerMove);
-      window.addEventListener('pointerup', onPointerUp);
-      window.addEventListener('pointercancel', onPointerUp);
+      window.addEventListener('pointerup', finish);
+      window.addEventListener('pointercancel', finish);
     },
-    [onScaleChange, resizable, scale],
+    [isResizable, onScaleChange, scale],
   );
 
-  const inner = (
-    <div
-      className="relative"
-      style={{ width: `${scale * 100}%`, maxWidth: '100%' }}
-    >
-      <img
-        src={src}
-        alt={alt}
-        draggable={false}
-        className={cn('block h-auto w-full object-contain', imageClassName)}
-      />
-      {resizable && onScaleChange ? (
-        <>
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize image from left edge"
-            onPointerDown={startResize('left')}
-            className="absolute left-0 top-1/2 z-10 flex h-10 w-3 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border border-brand-primary/30 bg-white/95 shadow-sm hover:border-brand-primary hover:bg-brand-primary/5"
-          >
-            <span className="h-4 w-0.5 rounded-full bg-brand-primary/70" />
-          </div>
-          <div
-            role="separator"
-            aria-orientation="vertical"
-            aria-label="Resize image from right edge"
-            onPointerDown={startResize('right')}
-            className="absolute right-0 top-1/2 z-10 flex h-10 w-3 translate-x-1/2 -translate-y-1/2 cursor-ew-resize items-center justify-center rounded-full border border-brand-primary/30 bg-white/95 shadow-sm hover:border-brand-primary hover:bg-brand-primary/5"
-          >
-            <span className="h-4 w-0.5 rounded-full bg-brand-primary/70" />
-          </div>
-        </>
-      ) : null}
+  const handlePreviewClick = useCallback(() => {
+    if (Date.now() < suppressClickUntilRef.current) return;
+    onClick?.();
+  }, [onClick]);
+
+  const frameClassName = cn(
+    'w-full overflow-hidden rounded-xl border border-gray-100 bg-gray-50',
+    isResizable && 'ring-1 ring-brand-primary/15',
+  );
+
+  const imageBlock = (
+    <div className="flex w-full justify-center">
+      <div
+        className="relative max-w-full"
+        style={{ width: `${scale * 100}%` }}
+      >
+        <img
+          src={src}
+          alt={alt}
+          draggable={false}
+          className={cn('pointer-events-none block h-auto w-full select-none object-contain', imageClassName)}
+        />
+        {isResizable ? (
+          <>
+            <ResizeEdge edge="left" onStart={startResize} />
+            <ResizeEdge edge="right" onStart={startResize} />
+          </>
+        ) : null}
+      </div>
     </div>
   );
 
-  if (onClick) {
+  if (onClick && !isResizable) {
     return (
-      <div ref={containerRef} className={cn('flex w-full justify-center', className)}>
+      <div ref={containerRef} className={cn('w-full', className)}>
         <button
           type="button"
-          onClick={onClick}
-          className="block w-full overflow-hidden rounded-xl border border-gray-100 bg-gray-50"
+          onClick={handlePreviewClick}
+          className={cn(frameClassName, 'block w-full text-left')}
           aria-label={alt}
         >
-          {inner}
+          {imageBlock}
         </button>
       </div>
     );
   }
 
   return (
-    <div ref={containerRef} className={cn('flex w-full justify-center', className)}>
-      <div className="w-full overflow-hidden rounded-xl border border-gray-100 bg-gray-50">
-        {inner}
+    <div ref={containerRef} className={cn('w-full', className)}>
+      <div className={frameClassName}>
+        {imageBlock}
       </div>
     </div>
   );

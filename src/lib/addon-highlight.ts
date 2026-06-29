@@ -4,6 +4,8 @@ export type SectionDemoMarker = {
   template_slug: string;
   name: string;
   presenter_note?: string;
+  /** Set when building markers from layout items (section editor). */
+  itemKey?: string;
 };
 
 const AUDIT_SECTION_KEY_TO_NAV_ID: Record<string, string> = {
@@ -55,6 +57,14 @@ export const AUDIT_SECTION_OPTIONS = [
 
 export type AuditSectionKey = (typeof AUDIT_SECTION_OPTIONS)[number]['key'];
 
+export function addOnItemKey(item: Pick<RevenueOpportunityAddOnItem, 'template_slug' | 'display_order'>): string {
+  return `${item.template_slug}-${item.display_order ?? 0}`;
+}
+
+export function isAddOnOnSection(item: RevenueOpportunityAddOnItem, sectionKey: AuditSectionKey): boolean {
+  return (item.related_section_keys ?? []).includes(sectionKey);
+}
+
 export function buildSectionDemoMap(items: RevenueOpportunityAddOnItem[]): Map<string, SectionDemoMarker[]> {
   const map = new Map<string, SectionDemoMarker[]>();
   for (const item of items) {
@@ -69,6 +79,7 @@ export function buildSectionDemoMap(items: RevenueOpportunityAddOnItem[]): Map<s
         template_slug: item.template_slug,
         name: item.name,
         presenter_note: item.presenter_note,
+        itemKey: addOnItemKey(item),
       });
       map.set(sectionKey, list);
     }

@@ -140,13 +140,24 @@ export default function ImageUploadZone({
           scale={imageScale}
           onScaleChange={canResize ? onImageScaleChange : undefined}
           resizable={canResize}
-          onClick={onPreviewClick}
+          onClick={canResize ? undefined : onPreviewClick}
         />
         {canResize ? (
-          <p className="text-[11px] text-gray-500">Drag the left or right edge to resize proportionally.</p>
+          <p className="text-[11px] text-gray-500">
+            Drag the highlighted left or right edge to resize. The image stays centered in the report.
+          </p>
         ) : null}
         {(onRemove || !disabled) && (
           <div className="flex flex-wrap items-center gap-3">
+            {canResize && onPreviewClick ? (
+              <button
+                type="button"
+                onClick={onPreviewClick}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-primary hover:underline"
+              >
+                View full size
+              </button>
+            ) : null}
             {!disabled && (
               <button
                 type="button"
