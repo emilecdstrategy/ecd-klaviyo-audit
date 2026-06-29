@@ -1,22 +1,29 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { ChevronDown, ChevronUp } from 'lucide-react';
 import { useExpandableTableClip } from '../../hooks/useExpandableTableClip';
 import { cn } from '../../lib/utils';
-import type { KlaviyoSegmentSnapshot } from '../../lib/types';
+import type { KlaviyoCampaignSnapshot, KlaviyoSegmentSnapshot } from '../../lib/types';
 import {
   buildSegmentSignalTags,
   parseSegmentDefinition,
 } from '../../lib/segment-definition';
+import { buildGroupNameMapFromSnapshots } from '../../lib/campaign-audiences';
 
 const COLLAPSED_COUNT = 2;
 
 export default function ReportSegmentTable({
   segments,
+  campaigns = [],
   scrollable = false,
 }: {
   segments: KlaviyoSegmentSnapshot[];
+  campaigns?: KlaviyoCampaignSnapshot[];
   scrollable?: boolean;
 }) {
+  const groupNames = useMemo(
+    () => buildGroupNameMapFromSnapshots(segments, campaigns),
+    [segments, campaigns],
+  );
   const rows = [...segments]
     .filter(s => !s.is_hidden)
     .sort((a, b) => {
@@ -52,7 +59,7 @@ export default function ReportSegmentTable({
           </thead>
           <tbody>
             {rows.map((s, i) => {
-              const parsed = parseSegmentDefinition(s);
+              const parsed = parseSegmentDefinition(s, undefined, groupNames);
               const tags = buildSegmentSignalTags(parsed.signals);
               return (
               <tr key={s.id} className={`border-b border-gray-50 ${i % 2 === 0 ? 'bg-white' : 'bg-gray-50/40'}`}>
@@ -63,9 +70,7 @@ export default function ReportSegmentTable({
                     </p>
                     {s.display_notes ? (
                       <p className="text-xs text-gray-500 leading-relaxed mt-0.5">{s.display_notes}</p>
-                    ) : (
-                      <p className="text-xs text-gray-400 truncate">{s.segment_id}</p>
-                    )}
+                    ) : null}
                   </div>
                 </td>
                 <td className="px-4 py-3 align-top max-w-md">

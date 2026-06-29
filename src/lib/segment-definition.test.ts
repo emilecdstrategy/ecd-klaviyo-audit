@@ -48,4 +48,36 @@ describe('segment-definition', () => {
     expect(parsed.available).toBe(false);
     expect(parsed.criteriaLines).toEqual([]);
   });
+
+  it('resolves profile-group-membership IDs to readable names', () => {
+    const parsed = parseSegmentDefinition(
+      {
+        raw: {
+          attributes: {
+            definition: {
+              condition_groups: [
+                {
+                  conditions: [
+                    {
+                      type: 'profile-group-membership',
+                      is_member: false,
+                      group_ids: ['list1', 'seg1'],
+                    },
+                  ],
+                },
+              ],
+            },
+          },
+        },
+      },
+      undefined,
+      {
+        list1: { name: 'All Malicious', kind: 'list' },
+        seg1: { name: 'Engaged 30 Day', kind: 'segment' },
+      },
+    );
+    expect(parsed.criteriaLines[0]).toBe(
+      'Is not in list “All Malicious”, segment “Engaged 30 Day”',
+    );
+  });
 });

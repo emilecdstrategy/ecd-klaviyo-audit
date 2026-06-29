@@ -150,7 +150,7 @@ export const DEFAULT_SEGMENTATION_SECTION: SegmentationSectionConfig = {
     segmentTable: {
       hidden: false,
       title: 'Segment inventory',
-      subtitle: 'Reference list from Klaviyo — open if you need the full breakdown.',
+      subtitle: 'Full Klaviyo segment list — open if you need every segment, not just recent campaign audiences.',
     },
   },
 };

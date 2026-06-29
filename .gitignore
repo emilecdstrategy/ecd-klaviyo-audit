@@ -21,6 +21,7 @@ dist-ssr
 *.sln
 *.sw?
 .env
+.env.supabase
 
 # Claude Design handoff bundles (managed by claude-design-cursor-bridge)
 .design/handoff/**/*.zip

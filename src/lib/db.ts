@@ -44,7 +44,7 @@ const SEGMENT_SNAPSHOT_SELECT =
 const FORM_SNAPSHOT_SELECT =
   'id, audit_id, client_id, form_id, name, status, ab_test, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order';
 const CAMPAIGN_SNAPSHOT_SELECT =
-  'id, audit_id, client_id, campaign_id, name, status, send_channel, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order';
+  'id, audit_id, client_id, campaign_id, name, status, send_channel, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order, raw';
 
 const AUDIT_LIST_SELECT = '*, audit_sections(audit_id, section_key, revenue_opportunity, section_config)';
 

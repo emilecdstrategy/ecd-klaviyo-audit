@@ -59,7 +59,24 @@ const CAMPAIGN_SNAPSHOT_CAP = 500;
 const MAX_LIST_SEGMENT_PAGES = 5;
 const SEGMENTS_WITH_DEFINITIONS_PATH =
   "/api/segments/?page%5Bsize%5D=10&fields%5Bsegment%5D=name,created,updated,definition,is_active,is_processing";
+const CAMPAIGNS_WITH_AUDIENCES_PATH =
+  "/api/campaigns/?filter=equals(messages.channel,'email')&fields%5Bcampaign%5D=name,status,created_at,updated_at,send_channel,audiences";
 const METRICS_MAX_PAGES = 5;
+
+type EcdGroupNameEntry = { name: string; kind: "segment" | "list" };
+
+function buildGroupNameMap(lists: any[], segments: any[]): Record<string, EcdGroupNameEntry> {
+  const map: Record<string, EcdGroupNameEntry> = {};
+  for (const item of lists ?? []) {
+    if (!item?.id) continue;
+    map[item.id] = { name: item.attributes?.name ?? item.id, kind: "list" };
+  }
+  for (const item of segments ?? []) {
+    if (!item?.id) continue;
+    map[item.id] = { name: item.attributes?.name ?? item.id, kind: "segment" };
+  }
+  return map;
+}
 /** Skip optional email HTML fetch if less than this many ms remain before deadline. */
 const MIN_SLACK_MS_EMAIL_HTML = 15_000;
 /** Full enumeration is required for exact consent/suppression counts; Klaviyo has no aggregate-only endpoint for those metrics. */
@@ -1167,9 +1184,17 @@ async function runStageConfig(params: {
       klaviyoPaged(apiKey, params.revision, "/api/lists/", MAX_LIST_SEGMENT_PAGES),
       klaviyoPaged(apiKey, params.revision, SEGMENTS_WITH_DEFINITIONS_PATH, MAX_LIST_SEGMENT_PAGES),
       klaviyoPaged(apiKey, params.revision, "/api/forms/?page%5Bsize%5D=100"),
-      klaviyoPaged(apiKey, params.revision, "/api/campaigns/?filter=equals(messages.channel,'email')", MAX_CAMPAIGN_PAGES),
+      klaviyoPaged(apiKey, params.revision, CAMPAIGNS_WITH_AUDIENCES_PATH, MAX_CAMPAIGN_PAGES),
       klaviyoPaged(apiKey, params.revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", METRICS_MAX_PAGES),
     ]);
+
+    const metricNameMap = Object.fromEntries(
+      (metricsRes.ok ? metricsRes.items : []).map((m: any) => [m.id, m.attributes?.name ?? m.id]),
+    );
+    const groupNameMap = buildGroupNameMap(
+      lists.ok ? lists.items : [],
+      segments.ok ? segments.items : [],
+    );
 
     // Clear prior snapshots for this audit.
     await mustSucceed("delete klaviyo_flow_snapshots", sb.from("klaviyo_flow_snapshots").delete().eq("audit_id", params.auditId));
@@ -1205,7 +1230,7 @@ async function runStageConfig(params: {
         send_channel: c.attributes?.send_channel ?? "email",
         created_at_klaviyo: c.attributes?.created_at ?? null,
         updated_at_klaviyo: c.attributes?.updated_at ?? null,
-        raw: c,
+        raw: { ...c, _ecd_group_names: groupNameMap },
       }));
       if (rows.length) await mustSucceed("insert klaviyo_campaign_snapshots", sb.from("klaviyo_campaign_snapshots").insert(rows));
 
@@ -1251,9 +1276,6 @@ async function runStageConfig(params: {
     }
 
     if (segments.ok) {
-      const metricNameMap = Object.fromEntries(
-        (metricsRes.ok ? metricsRes.items : []).map((m: any) => [m.id, m.attributes?.name ?? m.id]),
-      );
       const rows = segments.items.map((s: any) => ({
         audit_id: params.auditId,
         client_id: params.clientId,
@@ -1261,7 +1283,7 @@ async function runStageConfig(params: {
         name: s.attributes?.name ?? "",
         created_at_klaviyo: s.attributes?.created ?? null,
         updated_at_klaviyo: s.attributes?.updated ?? null,
-        raw: { ...s, _ecd_metric_names: metricNameMap },
+        raw: { ...s, _ecd_metric_names: metricNameMap, _ecd_group_names: groupNameMap },
       }));
       if (rows.length) await mustSucceed("insert klaviyo_segment_snapshots", sb.from("klaviyo_segment_snapshots").insert(rows));
     }
@@ -2180,9 +2202,11 @@ async function runStageBackfillSegmentDefinitions(params: {
 
     const apiKey = await resolveApiKey(sb, clientId, null);
 
-    const [segments, metricsRes] = await Promise.all([
+    const [lists, segments, metricsRes, campaignsLive] = await Promise.all([
+      klaviyoPaged(apiKey, revision, "/api/lists/", MAX_LIST_SEGMENT_PAGES),
       klaviyoPaged(apiKey, revision, SEGMENTS_WITH_DEFINITIONS_PATH, MAX_LIST_SEGMENT_PAGES),
       klaviyoPaged(apiKey, revision, "/api/metrics/?fields%5Bmetric%5D=name,integration", METRICS_MAX_PAGES),
+      klaviyoPaged(apiKey, revision, CAMPAIGNS_WITH_AUDIENCES_PATH, MAX_CAMPAIGN_PAGES),
     ]);
 
     if (!segments.ok) {
@@ -2192,7 +2216,14 @@ async function runStageBackfillSegmentDefinitions(params: {
     const metricNameMap = Object.fromEntries(
       (metricsRes.ok ? metricsRes.items : []).map((m: any) => [m.id, m.attributes?.name ?? m.id]),
     );
+    const groupNameMap = buildGroupNameMap(
+      lists.ok ? lists.items : [],
+      segments.items,
+    );
     const segmentById = new Map<string, any>(segments.items.map((s: any) => [s.id, s]));
+    const campaignById = new Map<string, any>(
+      (campaignsLive.ok ? campaignsLive.items : []).map((c: any) => [c.id, c]),
+    );
 
     const { data: snapshots, error: snapErr } = await sb.from("klaviyo_segment_snapshots")
       .select("id, segment_id, raw")
@@ -2222,6 +2253,7 @@ async function runStageBackfillSegmentDefinitions(params: {
           definition,
         },
         _ecd_metric_names: metricNameMap,
+        _ecd_group_names: groupNameMap,
       };
 
       await mustSucceed(
@@ -2234,6 +2266,40 @@ async function runStageBackfillSegmentDefinitions(params: {
         }).eq("id", row.id),
       );
       updated += 1;
+    }
+
+    let campaignsUpdated = 0;
+    const { data: campaignSnaps, error: campErr } = await sb.from("klaviyo_campaign_snapshots")
+      .select("id, campaign_id, raw")
+      .eq("audit_id", params.auditId);
+    if (campErr) throw campErr;
+    for (const row of campaignSnaps ?? []) {
+      const live = campaignById.get(row.campaign_id);
+      const prevRaw = (row.raw && typeof row.raw === "object") ? row.raw as Record<string, unknown> : {};
+      const prevAttrs = (prevRaw.attributes && typeof prevRaw.attributes === "object")
+        ? prevRaw.attributes as Record<string, unknown>
+        : {};
+      const liveAttrs = (live?.attributes && typeof live.attributes === "object") ? live.attributes : {};
+      const nextRaw = live
+        ? {
+          ...prevRaw,
+          ...live,
+          attributes: {
+            ...prevAttrs,
+            ...liveAttrs,
+            audiences: liveAttrs.audiences ?? prevAttrs.audiences ?? null,
+          },
+          _ecd_group_names: groupNameMap,
+        }
+        : {
+          ...prevRaw,
+          _ecd_group_names: groupNameMap,
+        };
+      await mustSucceed(
+        `update klaviyo_campaign_snapshots ${row.id}`,
+        sb.from("klaviyo_campaign_snapshots").update({ raw: nextRaw }).eq("id", row.id),
+      );
+      campaignsUpdated += 1;
     }
 
     await logStageRun(sb, {
@@ -2254,6 +2320,7 @@ async function runStageBackfillSegmentDefinitions(params: {
       updated,
       with_definition: withDefinition,
       total_snapshots: snapshots.length,
+      campaigns_updated: campaignsUpdated,
       elapsed_ms: Date.now() - startedAt,
     });
   } catch (e) {

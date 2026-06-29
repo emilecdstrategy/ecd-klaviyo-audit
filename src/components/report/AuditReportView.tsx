@@ -12,7 +12,7 @@ import ReportFlowRevenueBreakdown from './ReportFlowRevenueBreakdown';
 import ReportDeliverabilitySnapshot from './ReportDeliverabilitySnapshot';
 import ReportAccountSnapshot from './ReportAccountSnapshot';
 import ReportSegmentTable from './ReportSegmentTable';
-import ReportSegmentCriteria from './ReportSegmentCriteria';
+import ReportCampaignAudienceSegments from './ReportCampaignAudienceSegments';
 import ReportFormTable from './ReportFormTable';
 import ReportCampaignTable from './ReportCampaignTable';
 import ReportInventoryLauncher from './ReportInventoryLauncher';
@@ -41,7 +41,7 @@ import { splitAddOnsByPricing } from '../../lib/addon-pricing';
 import ReportAddOnCard from './ReportAddOnCard';
 import { AttributionModelHelpTrigger } from './AttributionModelHelpModal';
 import { uploadReportScreenshot, uploadRevenueOpportunityImage } from '../../lib/db';
-import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoSegmentSnapshot } from '../../lib/types';
+import type { AuditSection, AuditAsset, Annotation, AuditEmailDesign, RevenueOpportunityAddOnItem, KlaviyoCampaignSnapshot, KlaviyoSegmentSnapshot } from '../../lib/types';
 import { normalizeWorkspaceKeyFindings, resolveExecutiveFindings } from '../../lib/findings-normalize';
 import {
   materializeSectionKeyFindingsHidden,
@@ -111,6 +111,7 @@ function ReportSectionShell({
   onToggleHidden,
   available,
   actions,
+  showTopSeparator = id !== 'summary',
   children,
 }: {
   id: string;
@@ -120,14 +121,22 @@ function ReportSectionShell({
   onToggleHidden: (hidden: boolean) => void;
   available: boolean;
   actions?: ReturnType<typeof emailDesignAction>[];
+  showTopSeparator?: boolean;
   children: ReactNode;
 }) {
   const { editMode } = useReportEdit();
+  const topSeparator = showTopSeparator ? (
+    <div
+      className="mb-10 h-px w-full bg-gradient-to-r from-transparent via-gray-200/70 to-transparent"
+      aria-hidden
+    />
+  ) : null;
   if (!available && !editMode) return null;
   if (!editMode) {
     if (hidden) return null;
     return (
       <section id={id} ref={setRef(id)} className="relative">
+        {topSeparator}
         {children}
       </section>
     );
@@ -140,7 +149,12 @@ function ReportSectionShell({
         onToggleHidden={onToggleHidden}
         actions={actions}
       >
-        {!hidden ? children : null}
+        {!hidden ? (
+          <>
+            {topSeparator}
+            {children}
+          </>
+        ) : null}
       </ReportSectionEditChrome>
     </section>
   );
@@ -908,8 +922,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               );
             })()}
 
-            {isSegmentationBlockVisible(segmentationCfg, 'segmentTable') && segmentSnapshots.length > 0 && (
-              <ReportSegmentCriteria segments={segmentSnapshots as KlaviyoSegmentSnapshot[]} />
+            {isSegmentationBlockVisible(segmentationCfg, 'segmentTable') && campaignSnapshots.length > 0 && (
+              <ReportCampaignAudienceSegments
+                campaigns={campaignSnapshots as KlaviyoCampaignSnapshot[]}
+                segmentSnapshots={segmentSnapshots as KlaviyoSegmentSnapshot[]}
+              />
             )}
 
             {isSegmentationBlockVisible(segmentationCfg, 'segmentTable') && (
@@ -921,7 +938,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 modalTitle={segmentationCfg.blocks.segmentTable?.title ?? 'Segment inventory'}
                 modalSubtitle="Inventory of segments pulled directly from Klaviyo for this audit."
               >
-                <ReportSegmentTable segments={segmentSnapshots as any} scrollable />
+                <ReportSegmentTable
+                  segments={segmentSnapshots as KlaviyoSegmentSnapshot[]}
+                  campaigns={campaignSnapshots as KlaviyoCampaignSnapshot[]}
+                  scrollable
+                />
               </ReportInventoryLauncher>
             )}
 

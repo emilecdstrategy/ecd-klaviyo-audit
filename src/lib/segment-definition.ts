@@ -1,5 +1,9 @@
 import type { KlaviyoSegmentSnapshot } from './types';
 
+export type GroupNameEntry = { name: string; kind: 'segment' | 'list' };
+
+export type GroupNameMap = Record<string, GroupNameEntry>;
+
 export type SegmentDefinitionSignals = {
   excludesApplePrivacyOpens: boolean;
   includesApplePrivacyOpens: boolean;
@@ -116,10 +120,32 @@ function noteMetricUsage(metricName: string, signals: SegmentDefinitionSignals) 
   if (key.includes('active on site') || key.includes('viewed product')) signals.usesActiveOnSite = true;
 }
 
+function formatGroupMembership(
+  groupIds: unknown,
+  isMember: unknown,
+  groupNames?: GroupNameMap,
+): string {
+  const ids = Array.isArray(groupIds) ? groupIds.map(String).filter(Boolean) : [];
+  const memberPrefix =
+    isMember === true ? 'Is in' : isMember === false ? 'Is not in' : 'Membership in';
+  if (ids.length === 0) return `${memberPrefix} list/segment`;
+
+  const labels = ids.map(id => {
+    const entry = groupNames?.[id];
+    if (entry?.name) {
+      const kindLabel = entry.kind === 'list' ? 'list' : 'segment';
+      return `${kindLabel} “${entry.name}”`;
+    }
+    return 'unknown audience (re-sync needed)';
+  });
+  return `${memberPrefix} ${labels.join(', ')}`;
+}
+
 function parseCondition(
   condition: unknown,
   metricNames: Record<string, string> | undefined,
   signals: SegmentDefinitionSignals,
+  groupNames?: GroupNameMap,
 ): string | null {
   if (!condition || typeof condition !== 'object') return null;
   const c = condition as Record<string, unknown>;
@@ -161,9 +187,7 @@ function parseCondition(
   }
 
   if (type === 'profile-group-membership') {
-    const member = c.is_member === true ? 'is in' : c.is_member === false ? 'is not in' : 'membership in';
-    const groups = Array.isArray(c.group_ids) ? c.group_ids.join(', ') : 'list/segment';
-    return `${member} ${groups}`;
+    return formatGroupMembership(c.group_ids, c.is_member, groupNames);
   }
 
   if (type === 'profile-marketing-consent') {
@@ -190,12 +214,32 @@ function extractMetricNames(raw: unknown): Record<string, string> | undefined {
   return undefined;
 }
 
+function extractGroupNames(raw: unknown): GroupNameMap | undefined {
+  if (!raw || typeof raw !== 'object') return undefined;
+  const map = (raw as Record<string, unknown>)._ecd_group_names;
+  if (map && typeof map === 'object') return map as GroupNameMap;
+  return undefined;
+}
+
+export function mergeGroupNameMaps(...maps: (GroupNameMap | undefined)[]): GroupNameMap {
+  const out: GroupNameMap = {};
+  for (const map of maps) {
+    if (!map) continue;
+    for (const [id, entry] of Object.entries(map)) {
+      if (entry?.name) out[id] = entry;
+    }
+  }
+  return out;
+}
+
 export function parseSegmentDefinition(
   segment: Pick<KlaviyoSegmentSnapshot, 'raw'>,
   metricNames?: Record<string, string>,
+  groupNames?: GroupNameMap,
 ): ParsedSegmentDefinition {
   const definition = extractDefinition(segment.raw);
   const resolvedMetricNames = metricNames ?? extractMetricNames(segment.raw);
+  const resolvedGroupNames = groupNames ?? extractGroupNames(segment.raw);
   if (!definition || typeof definition !== 'object') {
     return {
       available: false,
@@ -218,7 +262,7 @@ export function parseSegmentDefinition(
       ? (group as Record<string, unknown>).conditions as unknown[]
       : [];
     for (let ci = 0; ci < conditions.length; ci++) {
-      const line = parseCondition(conditions[ci], resolvedMetricNames, signals);
+      const line = parseCondition(conditions[ci], resolvedMetricNames, signals, resolvedGroupNames);
       if (line) {
         criteriaLines.push(groups.length > 1 ? `Group ${gi + 1}: ${line}` : line);
       }
