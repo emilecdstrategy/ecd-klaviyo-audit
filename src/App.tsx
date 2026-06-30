@@ -53,8 +53,9 @@ function AppRoutes() {
   const navigate = useNavigate();
   const state = location.state as any;
   const backgroundLocation = state?.backgroundLocation as ReturnType<typeof useLocation> | undefined;
+  const isPublicReportRoute = location.pathname.startsWith('/report/');
 
-  if (isLoading) {
+  if (isLoading && !isPublicReportRoute) {
     return <AppPreloader />;
   }
 

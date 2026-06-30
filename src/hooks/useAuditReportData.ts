@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { getPublicReportByToken } from '../lib/db';
+import { preloadAuditReportView } from '../lib/preload-audit-report-view';
 import type {
   Audit,
   AuditAsset,
@@ -54,6 +55,10 @@ export function useAuditReportData(token: string | undefined) {
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
   const [data, setData] = useState<AuditReportBundle | null>(null);
+
+  useEffect(() => {
+    void preloadAuditReportView();
+  }, []);
 
   useEffect(() => {
     let cancelled = false;

@@ -109,6 +109,24 @@ function finalizePublicReportSections(bundle: Awaited<ReturnType<typeof fetchAud
   };
 }
 
+type AuditSectionWithAnnotations = AuditSection & { annotations?: Annotation[] | null };
+
+export function flattenSectionsWithAnnotations(rows: AuditSectionWithAnnotations[]): {
+  sections: AuditSection[];
+  annotations: Annotation[];
+} {
+  const sections: AuditSection[] = [];
+  const annotations: Annotation[] = [];
+  for (const row of rows) {
+    const { annotations: nested, ...section } = row;
+    sections.push(section as AuditSection);
+    if (Array.isArray(nested)) {
+      annotations.push(...nested);
+    }
+  }
+  return { sections, annotations };
+}
+
 function requireUserId(user: Profile | null): string {
   if (!user) throw new Error('Not signed in');
   return user.id;
@@ -462,7 +480,6 @@ export async function deleteAnnotation(id: string): Promise<void> {
 
 export async function fetchAuditReportBundleForAudit(
   audit: Audit,
-  options?: { approvedSectionsOnly?: boolean },
 ): Promise<{
   audit: Audit;
   client: Client;
@@ -497,14 +514,9 @@ export async function fetchAuditReportBundleForAudit(
     deliverability?: DeliverabilitySnapshot | null;
   } | null;
 } | null> {
-  let sectionsQuery = supabase.from('audit_sections').select('*').eq('audit_id', audit.id);
-  if (options?.approvedSectionsOnly) {
-    sectionsQuery = sectionsQuery.eq('status', 'approved');
-  }
-
   const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, rollups, emailDesignRes] = await Promise.all([
     supabase.from('clients').select('*').eq('id', audit.client_id).maybeSingle(),
-    sectionsQuery,
+    supabase.from('audit_sections').select('*, annotations(*)').eq('audit_id', audit.id),
     supabase.from('audit_assets').select('*').eq('audit_id', audit.id),
     supabase.from('flow_performance').select('*').eq('audit_id', audit.id),
     supabase.from('klaviyo_flow_snapshots').select(FLOW_SNAPSHOT_SELECT).eq('audit_id', audit.id),
@@ -527,9 +539,9 @@ export async function fetchAuditReportBundleForAudit(
 
   if (!client.data) return null;
 
-  const allSections = (sections.data ?? []) as AuditSection[];
-  const sectionIds = allSections.map(section => section.id);
-  const annotations = await listAnnotationsForAuditSections(sectionIds);
+  const { sections: allSections, annotations } = flattenSectionsWithAnnotations(
+    (sections.data ?? []) as AuditSectionWithAnnotations[],
+  );
 
   const reportingDiagnostic = ((rollups.data ?? []) as any[])
     .find((row: any) => row.timeframe_key === 'last_30_days')?.computed?.reporting_errors?.[0]?.message
@@ -574,6 +586,31 @@ export async function fetchAuditReportBundleForAudit(
   };
 }
 
+export async function fetchAuditWorkspaceShell(auditId: string): Promise<{
+  audit: Audit;
+  client: Client;
+  sections: AuditSection[];
+} | null> {
+  const { data: audit, error: auditErr } = await supabase.from('audits').select('*').eq('id', auditId).maybeSingle();
+  if (auditErr) throw auditErr;
+  if (!audit) return null;
+
+  const [client, sections] = await Promise.all([
+    supabase.from('clients').select('*').eq('id', audit.client_id).maybeSingle(),
+    supabase.from('audit_sections').select('*').eq('audit_id', audit.id),
+  ]);
+
+  if (client.error) throw client.error;
+  if (sections.error) throw sections.error;
+  if (!client.data) return null;
+
+  return {
+    audit: audit as Audit,
+    client: client.data as Client,
+    sections: (sections.data ?? []) as AuditSection[],
+  };
+}
+
 export async function getAuditReportBundleById(auditId: string): Promise<Awaited<ReturnType<typeof fetchAuditReportBundleForAudit>>> {
   const { data: audit, error } = await supabase.from('audits').select('*').eq('id', auditId).maybeSingle();
   if (error) throw error;
@@ -591,10 +628,7 @@ export async function getPublicReportByToken(token: string): Promise<Awaited<Ret
   if (publishedErr) throw publishedErr;
 
   if (publishedAudit) {
-    let bundle = await fetchAuditReportBundleForAudit(publishedAudit as Audit, { approvedSectionsOnly: true });
-    if (bundle && bundle.sections.length === 0) {
-      bundle = await fetchAuditReportBundleForAudit(publishedAudit as Audit);
-    }
+    const bundle = await fetchAuditReportBundleForAudit(publishedAudit as Audit);
     return finalizePublicReportSections(bundle);
   }
 

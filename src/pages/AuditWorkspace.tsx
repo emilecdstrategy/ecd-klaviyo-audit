@@ -17,6 +17,8 @@ import {
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
 import type { Audit, Client } from '../lib/types';
 import {
+  fetchAuditReportBundleForAudit,
+  fetchAuditWorkspaceShell,
   getAuditReportBundleById,
   listIndustryEmailLibrary,
   publishAudit,
@@ -24,10 +26,11 @@ import {
   updateAuditSection,
 } from '../lib/db';
 import { klaviyoScopePermissionWarnings } from '../lib/klaviyo-fetch-diagnostics';
+import { lazyAuditReportView, preloadAuditReportView } from '../lib/preload-audit-report-view';
 import { supabase } from '../lib/supabase';
 import { scheduleSavedToast, useToast } from '../components/ui/Toast';
 
-const AuditReportView = lazy(() => import('../components/report/AuditReportView'));
+const AuditReportView = lazy(lazyAuditReportView);
 const EmailDesignEditor = lazy(() => import('../components/audit/EmailDesignEditor'));
 const RevenueAddOnItemsEditor = lazy(() => import('../components/audit/RevenueAddOnItemsEditor'));
 const RevenueOpportunitiesDrawer = lazy(() =>
@@ -66,13 +69,54 @@ export default function AuditWorkspace() {
   const emailDesignSection = sections.find(section => section.section_key === 'email_design');
 
   useEffect(() => {
+    void preloadAuditReportView();
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
     if (!id) return;
+
+    const loadScopeWarnings = async (auditRow: Audit) => {
+      if (auditRow.audit_method !== 'api') return;
+      try {
+        const { data: conn } = await supabase
+          .from('klaviyo_connections')
+          .select('scopes')
+          .eq('client_id', auditRow.client_id)
+          .maybeSingle();
+        const missing = klaviyoScopePermissionWarnings(conn?.scopes as Record<string, unknown> | undefined);
+        if (!cancelled && missing.length > 0) setScopeWarnings(missing);
+      } catch {
+        // non-critical
+      }
+    };
+
     (async () => {
       try {
         setLoading(true);
         setError('');
-        const report = await getAuditReportBundleById(id);
+        setScopeWarnings([]);
+
+        const [shell, pipeline] = await Promise.all([
+          fetchAuditWorkspaceShell(id),
+          fetchAuditPipelineStatus(id),
+        ]);
+        if (cancelled) return;
+        if (!shell) throw new Error('Audit not found');
+
+        setAudit(shell.audit);
+        setClient(shell.client);
+        setSections(shell.sections);
+        setAnalysisInProgress(pipeline.showPipelineUi);
+
+        if (pipeline.showPipelineUi) {
+          void loadScopeWarnings(shell.audit);
+          return;
+        }
+
+        clearAuditGenerationActive(id);
+
+        const report = await fetchAuditReportBundleForAudit(shell.audit);
         if (cancelled) return;
         if (!report) throw new Error('Audit not found');
 
@@ -82,26 +126,7 @@ export default function AuditWorkspace() {
         setAnnotations(report.annotations);
         setEmailDesign(report.emailDesign);
         setReportBundle(report as AuditReportBundle);
-
-        const pipeline = await fetchAuditPipelineStatus(id);
-        if (!cancelled) {
-          setAnalysisInProgress(pipeline.showPipelineUi);
-          if (!pipeline.showPipelineUi) clearAuditGenerationActive(id);
-        }
-
-        if (report.audit.audit_method === 'api') {
-          try {
-            const { data: conn } = await supabase
-              .from('klaviyo_connections')
-              .select('scopes')
-              .eq('client_id', report.audit.client_id)
-              .maybeSingle();
-            const missing = klaviyoScopePermissionWarnings(conn?.scopes as Record<string, unknown> | undefined);
-            if (missing.length > 0) setScopeWarnings(missing);
-          } catch {
-            // non-critical
-          }
-        }
+        void loadScopeWarnings(report.audit);
       } catch (e: unknown) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : 'Failed to load audit');

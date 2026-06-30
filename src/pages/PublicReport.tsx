@@ -1,16 +1,21 @@
-import { lazy, Suspense, useCallback } from 'react';
+import { lazy, Suspense, useCallback, useEffect } from 'react';
 import { useParams } from 'react-router-dom';
 import AppPreloader from '../components/ui/AppPreloader';
 import { SkeletonAuditWorkspace } from '../components/ui/Skeleton';
 import { ReportEditProvider } from '../components/report/edit/ReportEditContext';
 import { useAuditReportData } from '../hooks/useAuditReportData';
+import { lazyAuditReportView, preloadAuditReportView } from '../lib/preload-audit-report-view';
 import type { Audit, AuditSection } from '../lib/types';
 
-const AuditReportView = lazy(() => import('../components/report/AuditReportView'));
+const AuditReportView = lazy(lazyAuditReportView);
 
 export default function PublicReport() {
   const { token } = useParams();
   const { loading, loadError, data, setData } = useAuditReportData(token);
+
+  useEffect(() => {
+    void preloadAuditReportView();
+  }, []);
 
   const onAuditChange = useCallback(
     (audit: Audit) => {
