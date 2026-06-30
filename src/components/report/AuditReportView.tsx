@@ -458,6 +458,13 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   );
   const investmentSummaryAvailable = investmentSummaryItems.length > 0;
   const addOnsSectionAvailable = visibleAddOnItems.length > 0;
+  const opportunityContentAvailable = useMemo(() => {
+    const totalBannerVisible = revenueSummaryCfg.blocks.totalBanner?.hidden !== true;
+    const timelineBlockVisible = revenueSummaryCfg.blocks.timeline?.hidden !== true;
+    const investmentVisible =
+      investmentSummaryAvailable && revenueSummaryCfg.blocks.investmentSummary?.hidden !== true;
+    return totalBannerVisible || (timelineBlockVisible && aiTimeline.length > 0) || investmentVisible;
+  }, [revenueSummaryCfg, aiTimeline.length, investmentSummaryAvailable]);
 
   const customerAgentDemoUrl = useMemo(
     () => resolveCustomerAgentDemoUrl(client?.website_url),
@@ -504,9 +511,9 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       email_design: emailDesignDataAvailable,
       attribution: attributionSectionAvailable,
       addons: addOnsSectionAvailable,
-      opportunity: true,
+      opportunity: editMode || opportunityContentAvailable,
     }),
-    [flowsDataAvailable, accountSnapshot?.deliverability, segmentSnapshots.length, formSnapshots.length, campaignSnapshots.length, emailDesignDataAvailable, attributionSectionAvailable, addOnsSectionAvailable],
+    [flowsDataAvailable, accountSnapshot?.deliverability, segmentSnapshots.length, formSnapshots.length, campaignSnapshots.length, emailDesignDataAvailable, attributionSectionAvailable, addOnsSectionAvailable, editMode, opportunityContentAvailable],
   );
 
   const sectionVisibility = useMemo<Record<string, boolean>>(
@@ -520,7 +527,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       email_design: emailDesignDataAvailable && !sectionHiddenFlags.email_design,
       attribution: attributionSectionAvailable && !sectionHiddenFlags.attribution,
       addons: addOnsSectionAvailable && !sectionHiddenFlags.addons,
-      opportunity: !sectionHiddenFlags.opportunity,
+      opportunity: (editMode || opportunityContentAvailable) && !sectionHiddenFlags.opportunity,
     }),
     [
       sectionHiddenFlags,
@@ -531,6 +538,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       emailDesignDataAvailable,
       attributionSectionAvailable,
       addOnsSectionAvailable,
+      opportunityContentAvailable,
+      editMode,
     ],
   );
 
@@ -1420,7 +1429,13 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
           {/* Breakdown by Area hidden */}
 
-          {revenueSummaryCfg.blocks.totalBanner && revenueSummaryCfg.blocks.totalBanner.hidden !== true && (
+          {revenueSummaryCfg.blocks.totalBanner &&
+            (revenueSummaryCfg.blocks.totalBanner.hidden !== true || editMode) && (
+          <ReportBlockEditChrome
+            label="Total identified opportunity"
+            hidden={revenueSummaryCfg.blocks.totalBanner.hidden === true}
+            onToggleHidden={h => toggleRevenueBlockHidden('totalBanner', h)}
+          >
           <div className="relative overflow-hidden rounded-3xl text-center shadow-xl shadow-brand-primary/20 ring-1 ring-white/20">
             <div
               className="absolute inset-0 bg-gradient-to-br from-brand-primary-dark via-brand-primary to-brand-primary-light"
@@ -1467,6 +1482,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               )}
             </div>
           </div>
+          </ReportBlockEditChrome>
           )}
 
           {revenueSummaryCfg.blocks.timeline && (revenueSummaryCfg.blocks.timeline.hidden !== true || editMode) && (
