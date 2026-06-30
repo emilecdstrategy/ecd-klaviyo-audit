@@ -304,6 +304,11 @@ export const DEFAULT_EXECUTIVE_SUMMARY_SECTION: ExecutiveSummarySectionConfig = 
       title: 'General Key Findings',
       subtitle: undefined,
     },
+    identifiedOpportunity: {
+      hidden: false,
+      title: 'Identified opportunity',
+      subtitle: undefined,
+    },
   },
 };
 

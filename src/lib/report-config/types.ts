@@ -230,6 +230,8 @@ export interface ExecutiveSummarySectionConfig extends BaseSectionConfig {
     accountSnapshot?: GenericBlockConfig;
     strengths?: GenericBlockConfig;
     findings?: GenericBlockConfig;
+    /** Cover hero callout showing total $/mo identified opportunity. */
+    identifiedOpportunity?: GenericBlockConfig;
   };
 }
 

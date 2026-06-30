@@ -654,7 +654,25 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
             companyName={client.company_name}
             preparedDate={preparedDateLabel}
             websiteUrl={client.website_url}
-            totalRevenueOpportunity={totalRevenue}
+            identifiedOpportunity={
+              totalRevenue > 0 &&
+              (isExecutiveSummaryBlockVisible(executiveSummaryCfg, 'identifiedOpportunity') || editMode) ? (
+                <ReportBlockEditChrome
+                  label="Identified opportunity"
+                  hidden={executiveSummaryCfg.blocks.identifiedOpportunity?.hidden === true}
+                  onToggleHidden={h => toggleExecutiveBlockHidden('identifiedOpportunity', h)}
+                  className="absolute bottom-6 right-6 z-10 text-right sm:bottom-10 sm:right-12 lg:bottom-12 lg:right-14"
+                >
+                  <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">
+                    {executiveSummaryCfg.blocks.identifiedOpportunity?.title ?? 'Identified opportunity'}
+                  </p>
+                  <p className="mt-1 text-2xl font-extrabold tabular-nums tracking-tight text-white sm:text-3xl">
+                    {formatCurrency(totalRevenue)}
+                    <span className="ml-1 text-sm font-semibold text-white/70 sm:text-base">/mo</span>
+                  </p>
+                </ReportBlockEditChrome>
+              ) : undefined
+            }
           />
 
             <ReportSectionHeader
