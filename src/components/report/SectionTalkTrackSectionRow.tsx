@@ -7,6 +7,7 @@ import { getAddOnCategoryStyles } from '../../lib/revenue-addon-categories';
 import { cn } from '../../lib/utils';
 import BrandedCheckbox from '../ui/BrandedCheckbox';
 import HoverTooltip from '../ui/HoverTooltip';
+import PresenterNoteText from './PresenterNoteText';
 import { useReportEdit } from './edit/ReportEditContext';
 
 function truncateName(name: string, max = 22): string {
@@ -117,7 +118,11 @@ function EditablePill({
     >
       <HoverTooltip
         label={marker.name}
-        description={marker.presenter_note?.trim() || undefined}
+        description={
+          marker.presenter_note?.trim() ? (
+            <PresenterNoteText text={marker.presenter_note.trim()} />
+          ) : undefined
+        }
         align="end"
         className="min-w-0 flex-1"
       >

@@ -3,6 +3,7 @@ import type { SectionDemoMarker as SectionDemoMarkerData } from '../../lib/addon
 import { getAddOnCategoryStyles } from '../../lib/revenue-addon-categories';
 import { cn } from '../../lib/utils';
 import HoverTooltip from '../ui/HoverTooltip';
+import PresenterNoteText from './PresenterNoteText';
 
 const VISIBLE_PILL_LIMIT = 3;
 const VISIBLE_BEFORE_OVERFLOW = 2;
@@ -24,7 +25,11 @@ function TalkTrackPill({
   const note = marker.presenter_note?.trim();
 
   return (
-    <HoverTooltip label={marker.name} description={note || undefined} align="end">
+    <HoverTooltip
+      label={marker.name}
+      description={note ? <PresenterNoteText text={note} /> : undefined}
+      align="end"
+    >
       <span
         className={cn(
           'inline-flex max-w-[11rem] items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium leading-tight',
@@ -78,7 +83,10 @@ function OverflowPopover({
             <div className="rounded-lg px-2 py-1.5 hover:bg-gray-50">
               <p className="text-xs font-semibold text-gray-900">{marker.name}</p>
               {marker.presenter_note?.trim() ? (
-                <p className="mt-0.5 text-[11px] leading-snug text-gray-600">{marker.presenter_note.trim()}</p>
+                <PresenterNoteText
+                  text={marker.presenter_note.trim()}
+                  className="mt-0.5 block text-[11px] leading-snug text-gray-600"
+                />
               ) : null}
             </div>
           </li>
