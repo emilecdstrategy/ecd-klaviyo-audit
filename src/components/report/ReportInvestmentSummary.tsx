@@ -5,6 +5,7 @@ import {
   computeInvestmentTotals,
   formatInvestmentTotal,
   groupInvestmentLinesByItem,
+  shouldShowInvestmentTotal,
 } from '../../lib/investment-summary';
 import type { RevenueOpportunityAddOnItem } from '../../lib/types';
 import BrandedCheckbox from '../ui/BrandedCheckbox';
@@ -136,8 +137,8 @@ export default function ReportInvestmentSummary({
   if (!canToggleItems && visibleGroups.length === 0) return null;
 
   const canEditCopy = editMode && Boolean(onSaveTitle);
-  const hasOneTime = lineItems.some(line => line.unit === 'one_time');
-  const hasMonthly = lineItems.some(line => line.unit === 'monthly');
+  const showOneTimeSummary = shouldShowInvestmentTotal(totals.oneTimeTotal, totals.oneTimeHasLabelOnly);
+  const showMonthlySummary = shouldShowInvestmentTotal(totals.monthlyTotal, totals.monthlyHasLabelOnly);
 
   const body = (
     <div className="overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
@@ -231,20 +232,20 @@ export default function ReportInvestmentSummary({
               ))}
             </div>
 
-            {(hasOneTime || hasMonthly) && (
+            {(showOneTimeSummary || showMonthlySummary) && (
               <div className="mt-6 border-t border-gray-200 pt-5">
                 <div className="space-y-1">
-                  {hasOneTime && (
+                  {showOneTimeSummary && (
                     <SummaryTotalRow
                       label="One-time total"
                       amount={formatInvestmentTotal(totals.oneTimeTotal, totals.oneTimeHasLabelOnly, 'one_time')}
                     />
                   )}
-                  {hasMonthly && (
+                  {showMonthlySummary && (
                     <SummaryTotalRow
                       label="Monthly total"
                       amount={formatInvestmentTotal(totals.monthlyTotal, totals.monthlyHasLabelOnly, 'monthly')}
-                      suffix={totals.monthlyTotal > 0 ? '/mo' : undefined}
+                      suffix="/mo"
                     />
                   )}
                 </div>
@@ -254,7 +255,7 @@ export default function ReportInvestmentSummary({
                     Proposal total
                   </p>
                   <div className="space-y-1">
-                    {hasOneTime && (
+                    {showOneTimeSummary && (
                       <SummaryTotalRow
                         label="One-time"
                         amount={formatInvestmentTotal(totals.oneTimeTotal, totals.oneTimeHasLabelOnly, 'one_time')}
@@ -262,7 +263,7 @@ export default function ReportInvestmentSummary({
                         emphasis
                       />
                     )}
-                    {hasMonthly && (
+                    {showMonthlySummary && (
                       <SummaryTotalRow
                         label="Monthly"
                         amount={formatInvestmentTotal(totals.monthlyTotal, totals.monthlyHasLabelOnly, 'monthly')}

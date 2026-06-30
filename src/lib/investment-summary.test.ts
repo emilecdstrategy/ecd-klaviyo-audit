@@ -6,6 +6,7 @@ import {
   buildInvestmentLineItems,
   computeInvestmentTotals,
   isAddOnInvestmentIncluded,
+  shouldShowInvestmentTotal,
 } from './investment-summary';
 import type { RevenueOpportunityAddOnItem } from './types';
 
@@ -55,5 +56,11 @@ describe('investment summary', () => {
     const totals = computeInvestmentTotals(lines);
     expect(totals.oneTimeTotal).toBe(3500);
     expect(totals.monthlyTotal).toBe(500);
+  });
+
+  it('hides zero subtotals unless label-only pricing applies', () => {
+    expect(shouldShowInvestmentTotal(0, false)).toBe(false);
+    expect(shouldShowInvestmentTotal(0, true)).toBe(true);
+    expect(shouldShowInvestmentTotal(2500, false)).toBe(true);
   });
 });

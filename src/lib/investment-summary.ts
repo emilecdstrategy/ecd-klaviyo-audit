@@ -89,6 +89,11 @@ export function formatInvestmentTotal(
   return formatCurrency(0);
 }
 
+/** Whether to show a one-time or monthly subtotal row (hide when $0 with no label-only items). */
+export function shouldShowInvestmentTotal(total: number, hasLabelOnly: boolean): boolean {
+  return total > 0 || hasLabelOnly;
+}
+
 export function groupInvestmentLinesByItem(
   lines: InvestmentLineItem[],
 ): Array<{ itemKey: string; name: string; included: boolean; lines: InvestmentLineItem[] }> {
