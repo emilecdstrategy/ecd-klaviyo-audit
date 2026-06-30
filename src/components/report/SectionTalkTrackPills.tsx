@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import type { SectionDemoMarker as SectionDemoMarkerData } from '../../lib/addon-highlight';
 import { getAddOnCategoryStyles } from '../../lib/revenue-addon-categories';
 import { cn } from '../../lib/utils';
+import HoverTooltip from '../ui/HoverTooltip';
 
 const VISIBLE_PILL_LIMIT = 3;
 const VISIBLE_BEFORE_OVERFLOW = 2;
@@ -20,22 +21,21 @@ function TalkTrackPill({
   className?: string;
 }) {
   const styles = getAddOnCategoryStyles(marker.template_slug);
-  const tooltip = marker.presenter_note?.trim()
-    ? `${marker.name}\n\n${marker.presenter_note.trim()}`
-    : marker.name;
+  const note = marker.presenter_note?.trim();
 
   return (
-    <span
-      title={tooltip}
-      className={cn(
-        'inline-flex max-w-[11rem] items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium leading-tight',
-        styles.pillClassName,
-        className,
-      )}
-    >
-      <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', styles.dotClassName)} aria-hidden />
-      <span className="truncate">{truncateName(marker.name)}</span>
-    </span>
+    <HoverTooltip label={marker.name} description={note || undefined} align="end">
+      <span
+        className={cn(
+          'inline-flex max-w-[11rem] items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-medium leading-tight',
+          styles.pillClassName,
+          className,
+        )}
+      >
+        <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', styles.dotClassName)} aria-hidden />
+        <span className="truncate">{truncateName(marker.name)}</span>
+      </span>
+    </HoverTooltip>
   );
 }
 

@@ -6,6 +6,7 @@ import type { RevenueOpportunityAddOnItem } from '../../lib/types';
 import { getAddOnCategoryStyles } from '../../lib/revenue-addon-categories';
 import { cn } from '../../lib/utils';
 import BrandedCheckbox from '../ui/BrandedCheckbox';
+import HoverTooltip from '../ui/HoverTooltip';
 import { useReportEdit } from './edit/ReportEditContext';
 
 function truncateName(name: string, max = 22): string {
@@ -114,15 +115,21 @@ function EditablePill({
         styles.pillClassName,
       )}
     >
-      <button
-        type="button"
-        onClick={onEdit}
-        title={marker.presenter_note || marker.name}
-        className="inline-flex min-w-0 items-center gap-1.5"
+      <HoverTooltip
+        label={marker.name}
+        description={marker.presenter_note?.trim() || undefined}
+        align="end"
+        className="min-w-0 flex-1"
       >
-        <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', styles.dotClassName)} aria-hidden />
-        <span className="truncate">{truncateName(marker.name)}</span>
-      </button>
+        <button
+          type="button"
+          onClick={onEdit}
+          className="inline-flex min-w-0 max-w-full items-center gap-1.5"
+        >
+          <span className={cn('h-1.5 w-1.5 shrink-0 rounded-full', styles.dotClassName)} aria-hidden />
+          <span className="truncate">{truncateName(marker.name)}</span>
+        </button>
+      </HoverTooltip>
       {itemKey ? (
         <button
           type="button"
