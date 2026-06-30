@@ -662,6 +662,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                   hidden={executiveSummaryCfg.blocks.identifiedOpportunity?.hidden === true}
                   onToggleHidden={h => toggleExecutiveBlockHidden('identifiedOpportunity', h)}
                   className="absolute bottom-6 right-6 z-10 text-right sm:bottom-10 sm:right-12 lg:bottom-12 lg:right-14"
+                  hideButtonClassName="-right-4 -top-4"
                 >
                   <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-white/50">
                     {executiveSummaryCfg.blocks.identifiedOpportunity?.title ?? 'Identified opportunity'}

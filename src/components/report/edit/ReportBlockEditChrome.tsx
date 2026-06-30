@@ -9,12 +9,14 @@ export default function ReportBlockEditChrome({
   onToggleHidden,
   children,
   className,
+  hideButtonClassName,
 }: {
   label: string;
   hidden?: boolean;
   onToggleHidden?: (hidden: boolean) => void;
   children: ReactNode;
   className?: string;
+  hideButtonClassName?: string;
 }) {
   const { editMode } = useReportEdit();
   if (!editMode || !onToggleHidden) {
@@ -46,7 +48,10 @@ export default function ReportBlockEditChrome({
         type="button"
         onClick={() => onToggleHidden(true)}
         title={`Hide ${label}`}
-        className="absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white/95 text-gray-500 shadow-sm backdrop-blur-sm hover:border-amber-300 hover:text-amber-700"
+        className={cn(
+          'absolute right-3 top-3 z-20 flex h-8 w-8 items-center justify-center rounded-md border border-gray-200 bg-white/95 text-gray-500 shadow-sm backdrop-blur-sm hover:border-amber-300 hover:text-amber-700',
+          hideButtonClassName,
+        )}
       >
         <Eye className="h-3.5 w-3.5" />
       </button>
