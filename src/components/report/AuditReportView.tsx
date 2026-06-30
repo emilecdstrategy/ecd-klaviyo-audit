@@ -1419,7 +1419,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
           hidden={sectionHiddenFlags.opportunity}
           onToggleHidden={h => toggleLayoutSectionHidden('revenue_summary', h)}
           available={sectionDataAvailable.opportunity}
-          actions={onManageRevenueOpportunities ? [revenueOpportunitiesAction(onManageRevenueOpportunities)] : undefined}
         >
           <ReportSectionHeader
             number={sectionNumbers['opportunity'] ?? revenueSummaryCfg.sectionNumber ?? '08'}
