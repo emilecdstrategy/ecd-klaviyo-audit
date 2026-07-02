@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { FileSignature, LayoutTemplate, FileCheck2, Plus } from 'lucide-react';
+import { FileSignature, LayoutTemplate, FileCheck2, Plus, Settings2 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import ProposalList from '../components/proposal/ProposalList';
+import ProposalKPIs from '../components/proposal/ProposalKPIs';
 import ProposalTemplatesPanel from '../components/proposal/ProposalTemplatesPanel';
 import ContractDocsPanel from '../components/proposal/ContractDocsPanel';
+import ProposalSettingsPanel from '../components/proposal/ProposalSettingsPanel';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { listProposals } from '../lib/proposals-db';
 import type { Proposal } from '../lib/types';
@@ -13,6 +15,7 @@ const TABS = [
   { id: 'overview', label: 'Overview', icon: FileSignature },
   { id: 'templates', label: 'Templates', icon: LayoutTemplate },
   { id: 'contracts', label: 'Contract Docs', icon: FileCheck2 },
+  { id: 'settings', label: 'Settings', icon: Settings2 },
 ] as const;
 
 type TabId = (typeof TABS)[number]['id'];
@@ -92,6 +95,8 @@ export default function Proposals() {
             {loading ? (
               <SkeletonTable rows={5} cols={6} />
             ) : (
+              <>
+              {proposals.length > 0 && <ProposalKPIs proposals={proposals} />}
               <ProposalList
                 proposals={proposals}
                 onDeleted={id => setProposals(prev => prev.filter(p => p.id !== id))}
@@ -105,11 +110,13 @@ export default function Proposals() {
                   </button>
                 }
               />
+              </>
             )}
           </>
         )}
         {tab === 'templates' && <ProposalTemplatesPanel />}
         {tab === 'contracts' && <ContractDocsPanel />}
+        {tab === 'settings' && <ProposalSettingsPanel />}
       </div>
     </div>
   );

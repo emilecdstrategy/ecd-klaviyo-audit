@@ -11,6 +11,7 @@ import {
   isProposalExpired,
   proposalJson,
 } from "../_shared/proposal-public.ts";
+import { proposalEmailHtml, resolveFromAddress, sendEmail } from "../_shared/resend.ts";
 
 const MAX_SIGNATURE_LENGTH = 300000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -107,6 +108,34 @@ serve(async (req) => {
         metadata: { via: "client_signature" },
       },
     ]);
+
+    // Team notification (best effort — signing already succeeded).
+    const { data: settingsRow } = await sb
+      .from("platform_settings")
+      .select("proposal_settings")
+      .eq("id", "default")
+      .maybeSingle();
+    const settings = (settingsRow?.proposal_settings ?? {}) as {
+      email?: { from_name?: string; from_email?: string; team_notification_emails?: string[] };
+    };
+    const teamEmails = (settings.email?.team_notification_emails ?? []).filter(Boolean);
+    if (teamEmails.length > 0) {
+      const company = proposal.client?.company_name ?? "a client";
+      const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+      await sendEmail({
+        to: teamEmails,
+        from: resolveFromAddress(settings.email),
+        subject: `🎉 Proposal signed — ${company}`,
+        html: proposalEmailHtml({
+          heading: `${typedName} signed the ${company} proposal`,
+          bodyLines: [
+            `Proposal ECD-${String(proposal.proposal_number).padStart(4, "0")} (“${proposal.title}”) was just signed and marked won.`,
+            `Totals: ${money(totals.oneTimeTotal)} one-time + ${money(totals.monthlyTotal)}/mo.`,
+            `Next step: countersign it from the proposal page.`,
+          ],
+        }),
+      });
+    }
 
     return proposalJson({ ok: true, signed_at: signedAt, correlationId });
   } catch (e) {

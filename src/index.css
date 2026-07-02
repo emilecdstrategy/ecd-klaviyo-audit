@@ -119,3 +119,51 @@
   from { opacity: 0; transform: scale(0.95); }
   to { opacity: 1; transform: scale(1); }
 }
+
+/* Proposal print-to-PDF ("Download PDF" = window.print) */
+@media print {
+  @page {
+    size: letter;
+    margin: 0.6in;
+  }
+
+  body {
+    background: #ffffff !important;
+  }
+
+  /* Hide all app chrome: sidebars, top bars, action rails, edit chrome. */
+  aside,
+  header,
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .proposal-print-root {
+    max-width: none !important;
+    margin: 0 !important;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+
+  .proposal-print-root .proposal-section {
+    break-inside: avoid;
+    box-shadow: none !important;
+  }
+
+  /* Contracts (and anything page-break-marked) start on a fresh page. */
+  .proposal-page-break {
+    break-before: page;
+  }
+
+  .proposal-print-root h1,
+  .proposal-print-root h2,
+  .proposal-print-root h3 {
+    break-after: avoid;
+  }
+
+  /* Neutralize sticky/fixed layout elements that would overlap pages. */
+  .sticky,
+  .fixed {
+    position: static !important;
+  }
+}

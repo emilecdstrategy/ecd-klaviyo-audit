@@ -11,6 +11,7 @@ import {
   ExternalLink,
   PenLine,
   Printer,
+  Send,
 } from 'lucide-react';
 import AppPreloader from '../components/ui/AppPreloader';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -18,6 +19,7 @@ import Modal from '../components/ui/Modal';
 import { useToast } from '../components/ui/Toast';
 import ProposalDocument from '../components/proposal/ProposalDocument';
 import ProposalActivityTimeline from '../components/proposal/ProposalActivityTimeline';
+import SendProposalModal from '../components/proposal/SendProposalModal';
 import SignaturePad, { type SignaturePadHandle } from '../components/proposal/SignaturePad';
 import { ProposalEditProvider } from '../components/proposal/edit/ProposalEditContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -42,6 +44,7 @@ export default function ProposalDetail() {
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState('');
   const [linkBusy, setLinkBusy] = useState(false);
+  const [sendOpen, setSendOpen] = useState(false);
   const [confirmDraftLink, setConfirmDraftLink] = useState(false);
   const [countersignOpen, setCountersignOpen] = useState(false);
   const [countersignName, setCountersignName] = useState('');
@@ -287,6 +290,20 @@ export default function ProposalDetail() {
         </div>
       </Modal>
 
+      <SendProposalModal
+        open={sendOpen}
+        proposal={proposal}
+        onClose={() => setSendOpen(false)}
+        onSent={async emailStatus => {
+          toast(
+            emailStatus === 'sent'
+              ? 'Proposal emailed to the client'
+              : 'Proposal is live — email skipped (Resend not configured), copy the link instead',
+          );
+          await reload();
+        }}
+      />
+
       <main className="mx-auto flex max-w-[1280px] flex-col gap-8 px-4 py-8 sm:px-6 lg:flex-row">
         <div className="min-w-0 flex-1">
           <ProposalEditProvider mode="preview" proposal={proposal} lineItems={lineItems}>
@@ -360,10 +377,20 @@ export default function ProposalDetail() {
                 <button
                   type="button"
                   onClick={() => navigate(`/proposals/${proposal.id}/edit`)}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
                 >
                   <Pencil className="h-3.5 w-3.5" />
                   Edit proposal
+                </button>
+              )}
+              {!isClosed && (
+                <button
+                  type="button"
+                  onClick={() => setSendOpen(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                >
+                  <Send className="h-3.5 w-3.5" />
+                  {proposal.status === 'draft' ? 'Send to client' : 'Resend'}
                 </button>
               )}
               {needsCountersign && (
@@ -438,9 +465,6 @@ export default function ProposalDetail() {
                 </button>
               )}
             </div>
-            <p className="mt-3 text-[11px] text-gray-400">
-              Email sending arrives in the next update — for now, copy the client link and send it yourself.
-            </p>
           </div>
 
           <div className="rounded-xl bg-white p-5 card-shadow">

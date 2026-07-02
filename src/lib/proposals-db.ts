@@ -402,6 +402,31 @@ export async function countersignProposal(input: {
   if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to countersign');
 }
 
+export async function sendProposalEmail(input: {
+  proposal_id: string;
+  recipient_email: string;
+  recipient_name?: string;
+  message?: string;
+}): Promise<{ public_token: string; email_status: 'sent' | 'skipped' }> {
+  const { data, error } = await supabase.functions.invoke('proposal_send_email', {
+    body: { ...input, app_url: window.location.origin },
+  });
+  if (error) {
+    const context = (error as { context?: Response }).context;
+    if (context) {
+      try {
+        const body = await context.json();
+        throw new Error(body?.error?.message ?? error.message);
+      } catch (e) {
+        if (e instanceof Error && e.message !== error.message) throw e;
+      }
+    }
+    throw error;
+  }
+  if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to send proposal');
+  return { public_token: data.public_token, email_status: data.email_status };
+}
+
 // ---------------------------------------------------------------------------
 // Events & signatures
 

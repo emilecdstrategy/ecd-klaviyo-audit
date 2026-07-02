@@ -11,6 +11,7 @@ import {
   proposalJson,
   serializePublicProposal,
 } from "../_shared/proposal-public.ts";
+import { proposalEmailHtml, resolveFromAddress, sendEmail } from "../_shared/resend.ts";
 
 // Email link scanners (Outlook SafeLinks, security proxies) prefetch URLs and
 // would otherwise flip proposals to "viewed" before a human opens them.
@@ -68,6 +69,33 @@ serve(async (req) => {
         actor: "client",
         metadata: { ip, user_agent: userAgent.slice(0, 400), first_view: firstView },
       });
+
+      // Team notification exactly once, hung off the race-winning first view.
+      if (firstView) {
+        const { data: settingsRow } = await sb
+          .from("platform_settings")
+          .select("proposal_settings")
+          .eq("id", "default")
+          .maybeSingle();
+        const settings = (settingsRow?.proposal_settings ?? {}) as {
+          email?: { from_name?: string; from_email?: string; team_notification_emails?: string[] };
+        };
+        const teamEmails = (settings.email?.team_notification_emails ?? []).filter(Boolean);
+        if (teamEmails.length > 0) {
+          const company = proposal.client?.company_name ?? "a client";
+          await sendEmail({
+            to: teamEmails,
+            from: resolveFromAddress(settings.email),
+            subject: `Proposal viewed — ${company}`,
+            html: proposalEmailHtml({
+              heading: `${company} just opened their proposal`,
+              bodyLines: [
+                `Proposal ECD-${String(proposal.proposal_number).padStart(4, "0")} (“${proposal.title}”) was viewed for the first time.`,
+              ],
+            }),
+          });
+        }
+      }
     }
 
     const payload = await serializePublicProposal(sb, bundle);
