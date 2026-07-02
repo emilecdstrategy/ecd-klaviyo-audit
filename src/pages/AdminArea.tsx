@@ -17,6 +17,7 @@ import {
   Palette,
   BarChart3,
   Workflow,
+  ChevronDown,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -698,6 +699,17 @@ function RevenueOpportunitiesTab() {
   const [reorderingId, setReorderingId] = useState<string | null>(null);
   const [dragIndex, setDragIndex] = useState<number | null>(null);
   const [uploadingImageId, setUploadingImageId] = useState<string | null>(null);
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpanded = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
 
   const handleEntryImageUpload = async (entryId: string, file: File | undefined) => {
     if (!file) return;
@@ -811,7 +823,7 @@ function RevenueOpportunitiesTab() {
     setCreating(true);
     try {
       const nextDisplayOrder = entries.reduce((max, e) => Math.max(max, e.display_order || 0), 0) + 10;
-      await createRevenueOpportunityTemplate({
+      const created = await createRevenueOpportunityTemplate({
         slug: uniqueHandleFromName(name, entries),
         name,
         description: newEntry.description.trim(),
@@ -835,6 +847,8 @@ function RevenueOpportunitiesTab() {
         monthlyLabel: '',
         isActive: true,
       });
+      setShowCreateModal(false);
+      setExpandedIds(prev => new Set(prev).add(created.id));
       await reload();
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create template');
@@ -897,121 +911,146 @@ function RevenueOpportunitiesTab() {
 
   return (
     <div className="space-y-6 animate-slide-up">
-      <div>
-        <h2 className="text-base font-semibold text-gray-900">Predefined Revenue Opportunities</h2>
-        <p className="text-sm text-gray-500 mt-0.5">
-          Manage reusable Klaviyo opportunities that can be selected in the audit wizard.
-        </p>
+      <div className="flex flex-wrap items-start justify-between gap-4">
+        <div>
+          <h2 className="text-base font-semibold text-gray-900">Predefined Revenue Opportunities</h2>
+          <p className="text-sm text-gray-500 mt-0.5">
+            Manage reusable Klaviyo opportunities that can be selected in the audit wizard.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowCreateModal(true)}
+          className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+        >
+          <Plus className="w-4 h-4" />
+          New template
+        </button>
       </div>
 
       {error && <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>}
 
-      <div className="bg-white rounded-xl p-5 card-shadow space-y-4">
-        <h3 className="text-sm font-semibold text-gray-900">Create New Template</h3>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
-          <input
-            type="text"
-            value={newEntry.name}
-            onChange={e => setNewEntry(prev => ({ ...prev, name: e.target.value }))}
-            placeholder="Klaviyo SMS"
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-          <input
-            type="text"
-            value={newEntry.description}
-            onChange={e => setNewEntry(prev => ({ ...prev, description: e.target.value }))}
-            placeholder="One-line summary shown in the report card."
-            className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-          />
-        </div>
-        <div>
-          <label className="block text-xs font-medium text-gray-500 mb-1">Body</label>
-          <SimpleRichEditor
-            value={newEntry.content}
-            onChange={(value) => setNewEntry(prev => ({ ...prev, content: value }))}
-            rows={4}
-            placeholder="Paragraphs or bullet lists — use the list button in the toolbar."
-          />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+      <Modal open={showCreateModal} title="Create New Template" onClose={() => setShowCreateModal(false)}>
+        <div className="p-5 space-y-4">
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">One-time price ($)</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
             <input
               type="text"
-              inputMode="decimal"
-              placeholder="0"
-              value={newEntry.oneTimePrice}
-              onChange={e => setNewEntry(prev => ({ ...prev, oneTimePrice: e.target.value.replace(/[^0-9.]/g, '') }))}
+              value={newEntry.name}
+              onChange={e => setNewEntry(prev => ({ ...prev, name: e.target.value }))}
+              placeholder="Klaviyo SMS"
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">One-time price note</label>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
             <input
               type="text"
-              value={newEntry.oneTimeLabel}
-              onChange={e => setNewEntry(prev => ({ ...prev, oneTimeLabel: e.target.value }))}
-              placeholder="e.g. Full $2,500 · Mini $500"
+              value={newEntry.description}
+              onChange={e => setNewEntry(prev => ({ ...prev, description: e.target.value }))}
+              placeholder="One-line summary shown in the report card."
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Monthly retainer ($)</label>
-            <input
-              type="text"
-              inputMode="decimal"
-              placeholder="0"
-              value={newEntry.monthlyPrice}
-              onChange={e => setNewEntry(prev => ({ ...prev, monthlyPrice: e.target.value.replace(/[^0-9.]/g, '') }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            <label className="block text-xs font-medium text-gray-500 mb-1">Body</label>
+            <SimpleRichEditor
+              value={newEntry.content}
+              onChange={(value) => setNewEntry(prev => ({ ...prev, content: value }))}
+              rows={4}
+              placeholder="Paragraphs or bullet lists — use the list button in the toolbar."
             />
           </div>
-          <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Monthly price note</label>
-            <input
-              type="text"
-              value={newEntry.monthlyLabel}
-              onChange={e => setNewEntry(prev => ({ ...prev, monthlyLabel: e.target.value }))}
-              placeholder="e.g. $12,000+/mo"
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-            />
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">One-time price ($)</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="0"
+                value={newEntry.oneTimePrice}
+                onChange={e => setNewEntry(prev => ({ ...prev, oneTimePrice: e.target.value.replace(/[^0-9.]/g, '') }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">One-time price note</label>
+              <input
+                type="text"
+                value={newEntry.oneTimeLabel}
+                onChange={e => setNewEntry(prev => ({ ...prev, oneTimeLabel: e.target.value }))}
+                placeholder="e.g. Full $2,500 · Mini $500"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Monthly retainer ($)</label>
+              <input
+                type="text"
+                inputMode="decimal"
+                placeholder="0"
+                value={newEntry.monthlyPrice}
+                onChange={e => setNewEntry(prev => ({ ...prev, monthlyPrice: e.target.value.replace(/[^0-9.]/g, '') }))}
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-500 mb-1">Monthly price note</label>
+              <input
+                type="text"
+                value={newEntry.monthlyLabel}
+                onChange={e => setNewEntry(prev => ({ ...prev, monthlyLabel: e.target.value }))}
+                placeholder="e.g. $12,000+/mo"
+                className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+              />
+            </div>
+            <label className="flex items-center gap-2 text-sm text-gray-700 mt-2 cursor-pointer select-none md:col-span-2">
+              <button
+                type="button"
+                role="switch"
+                aria-checked={newEntry.isActive}
+                onClick={() => setNewEntry(prev => ({ ...prev, isActive: !prev.isActive }))}
+                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${newEntry.isActive ? 'bg-brand-primary' : 'bg-gray-200'}`}
+              >
+                <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${newEntry.isActive ? 'translate-x-4' : 'translate-x-0'}`} />
+              </button>
+              Active in wizard
+            </label>
           </div>
-          <label className="flex items-center gap-2 text-sm text-gray-700 mt-2 cursor-pointer select-none md:col-span-2">
+          <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
             <button
               type="button"
-              role="switch"
-              aria-checked={newEntry.isActive}
-              onClick={() => setNewEntry(prev => ({ ...prev, isActive: !prev.isActive }))}
-              className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${newEntry.isActive ? 'bg-brand-primary' : 'bg-gray-200'}`}
+              onClick={() => setShowCreateModal(false)}
+              className="px-4 py-2 text-sm font-medium rounded-lg border border-gray-200 text-gray-600 hover:bg-gray-50"
             >
-              <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${newEntry.isActive ? 'translate-x-4' : 'translate-x-0'}`} />
+              Cancel
             </button>
-            Active in wizard
-          </label>
+            <button
+              type="button"
+              onClick={createEntry}
+              disabled={creating}
+              className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
+            >
+              {creating ? 'Creating...' : 'Create Template'}
+            </button>
+          </div>
         </div>
-        <div>
-          <button
-            type="button"
-            onClick={createEntry}
-            disabled={creating}
-            className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50"
-          >
-            {creating ? 'Creating...' : 'Create Template'}
-          </button>
-        </div>
-      </div>
+      </Modal>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="space-y-3">
         {loading ? (
           <div className="bg-white rounded-xl p-6 card-shadow text-sm text-gray-500">Loading templates...</div>
         ) : entries.length === 0 ? (
-          <div className="bg-white rounded-xl p-6 card-shadow text-sm text-gray-500">No templates yet.</div>
+          <div className="bg-white rounded-xl p-8 card-shadow text-center text-sm text-gray-500">
+            No templates yet. Use <span className="font-medium text-gray-700">New template</span> above to create one.
+          </div>
         ) : (
           sortedEntries.map((entry, index) => {
+            const expanded = expandedIds.has(entry.id);
+            const priceParts: string[] = [];
+            if (entry.one_time_price) priceParts.push(`$${Number(entry.one_time_price).toLocaleString()} one-time`);
+            if (entry.monthly_price) priceParts.push(`$${Number(entry.monthly_price).toLocaleString()}/mo`);
+
             return (
               <div
                 key={entry.id}
@@ -1024,9 +1063,9 @@ function RevenueOpportunitiesTab() {
                   setDragIndex(null);
                   reorderEntries(next, entry.id);
                 }}
-                className={`bg-white rounded-xl p-5 card-shadow space-y-3 transition-colors ${dragIndex === index ? 'ring-2 ring-brand-primary/30 bg-brand-primary/[0.02]' : ''}`}
+                className={`bg-white rounded-xl card-shadow transition-colors overflow-hidden ${dragIndex === index ? 'ring-2 ring-brand-primary/30 bg-brand-primary/[0.02]' : ''}`}
               >
-                <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3 px-4 py-3">
                   <div
                     draggable
                     onDragStart={(e) => {
@@ -1034,12 +1073,42 @@ function RevenueOpportunitiesTab() {
                       e.dataTransfer.effectAllowed = 'move';
                     }}
                     onDragEnd={() => setDragIndex(null)}
-                    className="inline-flex items-center gap-1.5 text-[11px] font-medium text-gray-500 cursor-grab active:cursor-grabbing select-none"
+                    className="shrink-0 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing"
+                    title="Drag to reorder"
                   >
-                    <GripVertical className="w-3.5 h-3.5 pointer-events-none" />
-                    Drag to reorder
+                    <GripVertical className="w-4 h-4" />
                   </div>
-                  <div className="flex items-center gap-1">
+
+                  {entry.image_url ? (
+                    <img
+                      src={entry.image_url}
+                      alt=""
+                      className="h-11 w-11 shrink-0 rounded-lg border border-gray-200 object-cover"
+                    />
+                  ) : (
+                    <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-gray-300">
+                      <ImageIcon className="h-4 w-4" />
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => toggleExpanded(entry.id)}
+                    className="min-w-0 flex-1 text-left"
+                  >
+                    <div className="flex items-center gap-2">
+                      <p className="text-sm font-semibold text-gray-900 truncate">{entry.name || 'Untitled template'}</p>
+                      <span className={`shrink-0 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${entry.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
+                        {entry.is_active ? 'Active' : 'Inactive'}
+                      </span>
+                    </div>
+                    <p className="text-xs text-gray-500 truncate mt-0.5">
+                      {entry.description || 'No description yet'}
+                      {priceParts.length ? <span className="text-gray-400"> · {priceParts.join(' · ')}</span> : null}
+                    </p>
+                  </button>
+
+                  <div className="flex items-center gap-1 shrink-0">
                     <button
                       type="button"
                       onClick={() => moveEntry(entry.id, 'up')}
@@ -1058,183 +1127,200 @@ function RevenueOpportunitiesTab() {
                     >
                       <ArrowDown className="w-3.5 h-3.5" />
                     </button>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
-                  <input
-                    type="text"
-                    value={entry.name}
-                    onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, name: e.target.value } : p)))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
-                  <input
-                    type="text"
-                    value={entry.description}
-                    onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, description: e.target.value } : p)))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Body</label>
-                  <SimpleRichEditor
-                    value={entry.content}
-                    onChange={(value) => {
-                      setEntries(prev => prev.map(p => (
-                        p.id === entry.id ? { ...p, content: value } : p
-                      )));
-                    }}
-                    rows={4}
-                    placeholder="Paragraphs or bullet lists — use the list button in the toolbar."
-                  />
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Default screenshot</label>
-                  <div className="flex items-start gap-3">
-                    {entry.image_url ? (
-                      <img
-                        src={entry.image_url}
-                        alt=""
-                        className="h-20 w-28 shrink-0 rounded-lg border border-gray-200 object-cover"
-                      />
-                    ) : (
-                      <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-gray-300">
-                        <ImageIcon className="h-6 w-6" />
-                      </div>
-                    )}
-                    <div className="flex flex-col gap-1.5">
-                      <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                        <ImageIcon className="h-3.5 w-3.5" />
-                        {uploadingImageId === entry.id ? 'Uploading…' : entry.image_url ? 'Replace image' : 'Upload image'}
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          disabled={uploadingImageId === entry.id}
-                          onChange={e => {
-                            handleEntryImageUpload(entry.id, e.target.files?.[0]);
-                            e.target.value = '';
-                          }}
-                        />
-                      </label>
-                      {entry.image_url && (
-                        <button
-                          type="button"
-                          onClick={() => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, image_url: null } : p)))}
-                          className="text-left text-[11px] font-medium text-red-600 hover:underline"
-                        >
-                          Remove image
-                        </button>
-                      )}
-                      <p className="text-[11px] text-gray-400">Shown by default on the report add-on card.</p>
-                    </div>
-                  </div>
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500 mb-1">Details doc URL</label>
-                  <input
-                    type="url"
-                    placeholder="https://…"
-                    value={entry.details_url ?? ''}
-                    onChange={e => setEntries(prev => prev.map(p => (
-                      p.id === entry.id ? { ...p, details_url: e.target.value || null } : p
-                    )))}
-                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  />
-                  <p className="mt-1 text-[11px] text-gray-400">Powers the &quot;View more details&quot; button on the report card (opens in a new tab).</p>
-                </div>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">One-time price ($)</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0"
-                      value={entry.one_time_price ? String(entry.one_time_price) : ''}
-                      onChange={e => {
-                        const raw = e.target.value.replace(/[^0-9.]/g, '');
-                        setEntries(prev => prev.map(p => (
-                          p.id === entry.id ? { ...p, one_time_price: raw === '' ? null : Number(raw) } : p
-                        )));
-                      }}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">One-time price note</label>
-                    <input
-                      type="text"
-                      value={entry.one_time_label ?? ''}
-                      onChange={e => setEntries(prev => prev.map(p => (
-                        p.id === entry.id ? { ...p, one_time_label: e.target.value || null } : p
-                      )))}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Monthly retainer ($)</label>
-                    <input
-                      type="text"
-                      inputMode="decimal"
-                      placeholder="0"
-                      value={entry.monthly_price ? String(entry.monthly_price) : ''}
-                      onChange={e => {
-                        const raw = e.target.value.replace(/[^0-9.]/g, '');
-                        setEntries(prev => prev.map(p => (
-                          p.id === entry.id ? { ...p, monthly_price: raw === '' ? null : Number(raw) } : p
-                        )));
-                      }}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-xs font-medium text-gray-500 mb-1">Monthly price note</label>
-                    <input
-                      type="text"
-                      value={entry.monthly_label ?? ''}
-                      onChange={e => setEntries(prev => prev.map(p => (
-                        p.id === entry.id ? { ...p, monthly_label: e.target.value || null } : p
-                      )))}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                    />
-                  </div>
-                  <label className="flex items-center gap-2 text-sm text-gray-700 mt-2 cursor-pointer select-none md:col-span-2">
                     <button
                       type="button"
-                      role="switch"
-                      aria-checked={entry.is_active}
-                      onClick={() => setEntries(prev => prev.map(p => (
-                        p.id === entry.id ? { ...p, is_active: !p.is_active } : p
-                      )))}
-                      className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${entry.is_active ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                      onClick={() => toggleExpanded(entry.id)}
+                      className="inline-flex items-center justify-center w-7 h-7 rounded-md border border-gray-200 text-gray-500 hover:text-gray-700 hover:bg-gray-50"
+                      title={expanded ? 'Collapse' : 'Edit'}
                     >
-                      <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${entry.is_active ? 'translate-x-4' : 'translate-x-0'}`} />
+                      <ChevronDown className={`w-3.5 h-3.5 transition-transform ${expanded ? 'rotate-180' : ''}`} />
                     </button>
-                    Active in wizard
-                  </label>
+                  </div>
                 </div>
 
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => saveEntry(entry)}
-                    disabled={savingId === entry.id}
-                    className="px-4 py-2 text-sm font-medium rounded-lg bg-brand-primary text-white hover:bg-brand-primary-dark disabled:opacity-50"
-                  >
-                    {savingId === entry.id ? 'Saving...' : 'Save'}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => removeEntry(entry.id)}
-                    disabled={deletingId === entry.id}
-                    className="px-4 py-2 text-sm font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
-                  >
-                    {deletingId === entry.id ? 'Deleting...' : 'Delete'}
-                  </button>
-                </div>
+                {expanded && (
+                  <div className="border-t border-gray-100 px-5 py-4 space-y-4">
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Name</label>
+                      <input
+                        type="text"
+                        value={entry.name}
+                        onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, name: e.target.value } : p)))}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
+                      <input
+                        type="text"
+                        value={entry.description}
+                        onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, description: e.target.value } : p)))}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Body</label>
+                      <SimpleRichEditor
+                        value={entry.content}
+                        onChange={(value) => {
+                          setEntries(prev => prev.map(p => (
+                            p.id === entry.id ? { ...p, content: value } : p
+                          )));
+                        }}
+                        rows={4}
+                        placeholder="Paragraphs or bullet lists — use the list button in the toolbar."
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Default screenshot</label>
+                      <div className="flex items-start gap-3">
+                        {entry.image_url ? (
+                          <img
+                            src={entry.image_url}
+                            alt=""
+                            className="h-20 w-28 shrink-0 rounded-lg border border-gray-200 object-cover"
+                          />
+                        ) : (
+                          <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-gray-300">
+                            <ImageIcon className="h-6 w-6" />
+                          </div>
+                        )}
+                        <div className="flex flex-col gap-1.5">
+                          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
+                            <ImageIcon className="h-3.5 w-3.5" />
+                            {uploadingImageId === entry.id ? 'Uploading…' : entry.image_url ? 'Replace image' : 'Upload image'}
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              disabled={uploadingImageId === entry.id}
+                              onChange={e => {
+                                handleEntryImageUpload(entry.id, e.target.files?.[0]);
+                                e.target.value = '';
+                              }}
+                            />
+                          </label>
+                          {entry.image_url && (
+                            <button
+                              type="button"
+                              onClick={() => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, image_url: null } : p)))}
+                              className="text-left text-[11px] font-medium text-red-600 hover:underline"
+                            >
+                              Remove image
+                            </button>
+                          )}
+                          <p className="text-[11px] text-gray-400">Shown by default on the report add-on card.</p>
+                        </div>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Details doc URL</label>
+                      <input
+                        type="url"
+                        placeholder="https://…"
+                        value={entry.details_url ?? ''}
+                        onChange={e => setEntries(prev => prev.map(p => (
+                          p.id === entry.id ? { ...p, details_url: e.target.value || null } : p
+                        )))}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                      <p className="mt-1 text-[11px] text-gray-400">Powers the &quot;View more details&quot; button on the report card (opens in a new tab).</p>
+                    </div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">One-time price ($)</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0"
+                          value={entry.one_time_price ? String(entry.one_time_price) : ''}
+                          onChange={e => {
+                            const raw = e.target.value.replace(/[^0-9.]/g, '');
+                            setEntries(prev => prev.map(p => (
+                              p.id === entry.id ? { ...p, one_time_price: raw === '' ? null : Number(raw) } : p
+                            )));
+                          }}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">One-time price note</label>
+                        <input
+                          type="text"
+                          value={entry.one_time_label ?? ''}
+                          onChange={e => setEntries(prev => prev.map(p => (
+                            p.id === entry.id ? { ...p, one_time_label: e.target.value || null } : p
+                          )))}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Monthly retainer ($)</label>
+                        <input
+                          type="text"
+                          inputMode="decimal"
+                          placeholder="0"
+                          value={entry.monthly_price ? String(entry.monthly_price) : ''}
+                          onChange={e => {
+                            const raw = e.target.value.replace(/[^0-9.]/g, '');
+                            setEntries(prev => prev.map(p => (
+                              p.id === entry.id ? { ...p, monthly_price: raw === '' ? null : Number(raw) } : p
+                            )));
+                          }}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">Monthly price note</label>
+                        <input
+                          type="text"
+                          value={entry.monthly_label ?? ''}
+                          onChange={e => setEntries(prev => prev.map(p => (
+                            p.id === entry.id ? { ...p, monthly_label: e.target.value || null } : p
+                          )))}
+                          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        />
+                      </div>
+                      <label className="flex items-center gap-2 text-sm text-gray-700 mt-2 cursor-pointer select-none md:col-span-2">
+                        <button
+                          type="button"
+                          role="switch"
+                          aria-checked={entry.is_active}
+                          onClick={() => setEntries(prev => prev.map(p => (
+                            p.id === entry.id ? { ...p, is_active: !p.is_active } : p
+                          )))}
+                          className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${entry.is_active ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                        >
+                          <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${entry.is_active ? 'translate-x-4' : 'translate-x-0'}`} />
+                        </button>
+                        Active in wizard
+                      </label>
+                    </div>
+
+                    <div className="flex items-center gap-2 border-t border-gray-50 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => saveEntry(entry)}
+                        disabled={savingId === entry.id}
+                        className="px-4 py-2 text-sm font-medium rounded-lg bg-brand-primary text-white hover:bg-brand-primary-dark disabled:opacity-50"
+                      >
+                        {savingId === entry.id ? 'Saving...' : 'Save'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          if (window.confirm(`Delete "${entry.name || 'this template'}"? This can't be undone.`)) {
+                            removeEntry(entry.id);
+                          }
+                        }}
+                        disabled={deletingId === entry.id}
+                        className="px-4 py-2 text-sm font-medium rounded-lg border border-red-200 text-red-600 hover:bg-red-50 disabled:opacity-50"
+                      >
+                        {deletingId === entry.id ? 'Deleting...' : 'Delete'}
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })
