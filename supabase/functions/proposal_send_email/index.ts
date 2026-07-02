@@ -1,11 +1,12 @@
 // Send (or resend) a proposal to the client. Staff-only. Handles the full
 // go-live transition server-side: token generation, contract snapshot,
-// validity window, draft -> sent. Email delivery is optional — without
-// RESEND_API_KEY the transition still happens and the link is returned.
+// validity window, draft -> sent. Email delivery is optional: without
+// SMTP_USER/SMTP_PASS configured the transition still happens and the link
+// is returned for the sender to copy.
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { assertServiceRoleClient, requireStaffUserId } from "../_shared/auth.ts";
 import { PROPOSAL_CORS_HEADERS, proposalJson } from "../_shared/proposal-public.ts";
-import { proposalEmailHtml, resolveFromAddress, sendEmail } from "../_shared/resend.ts";
+import { proposalEmailHtml, resolveFromAddress, sendEmail } from "../_shared/mailer.ts";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -104,14 +105,16 @@ serve(async (req) => {
     if (updateErr) throw updateErr;
 
     const origin = (body.app_url ?? "").trim() || (Deno.env.get("APP_URL") ?? "").trim() || (req.headers.get("origin") ?? "").trim();
-    const proposalUrl = `${origin.replace(/\/$/, "")}/proposal/${token}`;
+    const cleanOrigin = origin.replace(/\/$/, "");
+    const proposalUrl = `${cleanOrigin}/proposal/${token}`;
+    const logoUrl = cleanOrigin ? `${cleanOrigin}/cropped-favicon-192x192.webp` : undefined;
     const companyName = proposal.client?.company_name ?? "your company";
 
     const emailResult = await sendEmail({
       to: [recipientEmail],
       from: resolveFromAddress(settings.email),
       replyTo: settings.email?.reply_to ?? undefined,
-      subject: `Proposal for ${companyName} — ECD Digital Strategy`,
+      subject: `Proposal for ${companyName} from ECD Digital Strategy`,
       html: proposalEmailHtml({
         heading: `Your proposal is ready`,
         bodyLines: [
@@ -122,6 +125,7 @@ serve(async (req) => {
         ],
         ctaLabel: "View & sign proposal",
         ctaUrl: proposalUrl,
+        logoUrl,
       }),
     });
 
@@ -133,7 +137,7 @@ serve(async (req) => {
       metadata: {
         email_to: recipientEmail,
         email_status: emailResult.status,
-        ...(emailResult.status === "sent" ? { resend_id: emailResult.id } : { email_note: emailResult.reason }),
+        ...(emailResult.status === "sent" ? { message_id: emailResult.id } : { email_note: emailResult.reason }),
       },
     });
 

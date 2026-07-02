@@ -57,7 +57,7 @@ export async function createProposalFromAudit(audit: Audit, client: Client): Pro
     client_id: client.id,
     audit_id: audit.id,
     template_id: template?.id ?? null,
-    title: `Proposal — ${client.company_name}`,
+    title: `Proposal for ${client.company_name}`,
     content_blocks: template?.content_blocks?.map(b => ({ ...b })) ?? [],
     include_contracts: template?.default_contracts ? [...template.default_contracts] : [],
     recipient_name: client.name ?? '',
@@ -81,7 +81,7 @@ export async function createProposalFromTemplate(
   const proposal = await createProposal({
     client_id: client.id,
     template_id: template?.id ?? null,
-    title: `Proposal — ${client.company_name}`,
+    title: `Proposal for ${client.company_name}`,
     content_blocks: template?.content_blocks?.map(b => ({ ...b })) ?? [],
     include_contracts: template?.default_contracts ? [...template.default_contracts] : [],
     recipient_name: client.name ?? '',

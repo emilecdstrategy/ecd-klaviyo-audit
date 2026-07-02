@@ -205,7 +205,7 @@ export default function PublicProposal() {
     } else if (result.code === 'expired') {
       setSignError('This proposal has expired. Please contact ECD to renew it.');
     } else {
-      setSignError(result.message || 'Signing failed — please try again.');
+      setSignError(result.message || 'Signing failed. Please try again.');
     }
     setSigning(false);
   };
@@ -253,14 +253,14 @@ export default function PublicProposal() {
   };
 
   return (
-    <div className="min-h-screen bg-[#f4f4f8]">
-      <main className="mx-auto max-w-[880px] px-5 py-8 pb-32 sm:px-8">
+    <div className="min-h-screen bg-[#f4f4f8] print:bg-white">
+      <main className="mx-auto max-w-[880px] px-5 py-8 pb-32 sm:px-8 print:max-w-none print:px-0 print:py-0 print:pb-0">
         {(isSigned || justSigned) && (
           <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 print:hidden">
             <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
             <div>
               <p className="text-sm font-semibold text-emerald-800">
-                {justSigned ? 'Thank you — this proposal has been signed.' : 'This proposal has been signed.'}
+                {justSigned ? 'Thank you! This proposal has been signed.' : 'This proposal has been signed.'}
               </p>
               <p className="mt-0.5 text-xs text-emerald-700">
                 {payload.proposal.countersigned_at

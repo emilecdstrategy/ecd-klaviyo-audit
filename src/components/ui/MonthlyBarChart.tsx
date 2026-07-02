@@ -17,6 +17,23 @@ function monthLabel(month: string): string {
   return MONTH_LABELS[idx] ?? month;
 }
 
+function monthLabelFull(month: string): string {
+  const [year, m] = month.split('-');
+  const idx = Number(m) - 1;
+  return `${MONTH_LABELS[idx] ?? month} ${year}`;
+}
+
+/** Round-number y-axis ticks (0, step, 2*step, ...) sized so counts never repeat a label. */
+function computeTicks(maxValue: number): number[] {
+  const rounded = Math.max(1, Math.ceil(maxValue));
+  const candidateSteps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500];
+  const step = candidateSteps.find(s => rounded / s <= 4) ?? candidateSteps[candidateSteps.length - 1];
+  const top = Math.ceil(rounded / step) * step;
+  const ticks: number[] = [];
+  for (let v = 0; v <= top; v += step) ticks.push(v);
+  return ticks;
+}
+
 /** Dependency-free grouped bar chart (SVG). */
 export default function MonthlyBarChart({
   data,
@@ -31,15 +48,17 @@ export default function MonthlyBarChart({
   const padBottom = 24;
   const padX = 8;
   const chartHeight = height - padTop - padBottom;
-  const maxValue = Math.max(
-    1,
-    ...data.flatMap(d => series.map(s => d.series[s.key] ?? 0)),
-  );
+  const rawMax = Math.max(0, ...data.flatMap(d => series.map(s => d.series[s.key] ?? 0)));
+  const ticks = computeTicks(rawMax);
+  const axisMax = ticks[ticks.length - 1];
   const bandWidth = (width - padX * 2) / Math.max(data.length, 1);
   const barGap = 4;
   const barWidth = Math.min(28, (bandWidth - barGap * (series.length + 1)) / series.length);
-  const gridLines = [0.25, 0.5, 0.75, 1];
-  const allZero = data.every(d => series.every(s => (d.series[s.key] ?? 0) === 0));
+  const allZero = rawMax === 0;
+  const hovered = hoverIndex !== null ? data[hoverIndex] : null;
+  const tooltipLeftPct = hoverIndex !== null
+    ? Math.min(88, Math.max(12, ((padX + (hoverIndex + 0.5) * bandWidth) / width) * 100))
+    : 0;
 
   return (
     <div className="relative">
@@ -53,13 +72,13 @@ export default function MonthlyBarChart({
       </div>
 
       <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label="Monthly chart">
-        {gridLines.map(frac => {
-          const y = padTop + chartHeight * (1 - frac);
+        {ticks.map(tick => {
+          const y = padTop + chartHeight * (1 - tick / axisMax);
           return (
-            <g key={frac}>
+            <g key={tick}>
               <line x1={padX} x2={width - padX} y1={y} y2={y} stroke="#f3f4f6" strokeWidth={1} />
               <text x={padX} y={y - 3} className="fill-gray-300" fontSize={9}>
-                {formatValue(Math.round(maxValue * frac))}
+                {formatValue(tick)}
               </text>
             </g>
           );
@@ -82,7 +101,7 @@ export default function MonthlyBarChart({
             <g key={d.month} opacity={dim ? 0.45 : 1} style={{ transition: 'opacity 120ms' }}>
               {series.map((s, si) => {
                 const value = d.series[s.key] ?? 0;
-                const barH = Math.max(value > 0 ? 3 : 2, (value / maxValue) * chartHeight);
+                const barH = Math.max(value > 0 ? 3 : 2, (value / axisMax) * chartHeight);
                 return (
                   <rect
                     key={s.key}
@@ -118,17 +137,25 @@ export default function MonthlyBarChart({
         })}
       </svg>
 
-      {hoverIndex !== null && data[hoverIndex] && (
+      {hovered && (
         <div
-          className="pointer-events-none absolute -top-1 z-10 -translate-x-1/2 rounded-lg border border-gray-100 bg-white px-3 py-1.5 text-xs shadow-md"
-          style={{ left: `${((padX + (hoverIndex + 0.5) * bandWidth) / width) * 100}%` }}
+          className="pointer-events-none absolute -top-1 z-10 min-w-[7rem] -translate-x-1/2 rounded-lg border border-gray-100 bg-white px-3 py-2 text-xs shadow-md"
+          style={{ left: `${tooltipLeftPct}%` }}
         >
-          <span className="font-semibold text-gray-800">{monthLabel(data[hoverIndex].month)}</span>
-          {series.map(s => (
-            <span key={s.key} className="ml-2 text-gray-500">
-              {formatValue(data[hoverIndex].series[s.key] ?? 0)} {s.label.toLowerCase()}
-            </span>
-          ))}
+          <p className="mb-1 font-semibold text-gray-800">{monthLabelFull(hovered.month)}</p>
+          <div className="space-y-0.5">
+            {series.map(s => (
+              <p key={s.key} className="flex items-center justify-between gap-3">
+                <span className="flex items-center gap-1.5 text-gray-500">
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full" style={{ backgroundColor: s.color }} />
+                  {s.label}
+                </span>
+                <span className="font-semibold tabular-nums text-gray-800">
+                  {formatValue(hovered.series[s.key] ?? 0)}
+                </span>
+              </p>
+            ))}
+          </div>
         </div>
       )}
 

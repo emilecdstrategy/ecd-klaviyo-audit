@@ -54,7 +54,7 @@ function numeric(value: number | string | null): number | null {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : null;
 }
 
-/** Mirror of src/lib/proposal-pricing.ts computeProposalTotals — the sign function
+/** Mirror of src/lib/proposal-pricing.ts computeProposalTotals; the sign function
  * recomputes totals server-side and freezes them into the signed event metadata. */
 export function computeProposalTotals(items: LineItemRow[], discount: DiscountFields): ProposalTotals {
   let oneTimeSubtotal = 0;
@@ -101,7 +101,7 @@ export function isProposalExpired(proposal: { status: string; valid_until: strin
 }
 
 /** Fetch a proposal by public token with its public-safe relations. Returns null for
- * unknown tokens AND drafts (indistinguishable to callers — no status oracle). */
+ * unknown tokens AND drafts (indistinguishable to callers; no status oracle). */
 export async function fetchPublicProposal(sb: SupabaseClient, token: string) {
   if (!PUBLIC_TOKEN_RE.test(token)) return null;
 
@@ -130,7 +130,7 @@ export async function fetchPublicProposal(sb: SupabaseClient, token: string) {
   return { proposal, lineItems: (lineItems ?? []) as LineItemRow[], signatures: signatures ?? [] };
 }
 
-/** Public payload: only fields the client-facing page needs — never internal notes,
+/** Public payload: only fields the client-facing page needs; never internal notes,
  * created_by, recipient contact details, or the event log. */
 export async function serializePublicProposal(
   sb: SupabaseClient,

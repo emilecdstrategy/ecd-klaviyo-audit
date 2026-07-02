@@ -19,7 +19,7 @@ export default function ProposalContractSection({
         <RichAuditContent text={content} autoTagEntities={false} />
       ) : (
         <p className="text-gray-400 italic">
-          This document has no content yet — add it under Proposals → Contract Docs.
+          This document has no content yet. Add it under Proposals → Contract Docs.
         </p>
       )}
     </div>

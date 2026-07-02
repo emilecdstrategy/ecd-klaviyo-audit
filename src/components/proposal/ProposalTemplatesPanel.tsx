@@ -438,7 +438,7 @@ export default function ProposalTemplatesPanel() {
                 <div className="mb-3 rounded-lg border border-gray-200 bg-white p-2 max-h-52 overflow-y-auto space-y-1">
                   {catalog.length === 0 ? (
                     <p className="text-xs text-gray-400 px-2 py-1.5">
-                      No services in the catalog yet — add them under Settings → Revenue Opportunities.
+                      No services in the catalog yet. Add them under Settings → Revenue Opportunities.
                     </p>
                   ) : (
                     catalog.map(t => (

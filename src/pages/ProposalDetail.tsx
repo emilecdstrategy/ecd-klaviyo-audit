@@ -81,7 +81,7 @@ export default function ProposalDetail() {
       const updated = proposal.public_token ? proposal : await markProposalSent(proposal);
       const url = `${window.location.origin}/proposal/${updated.public_token}`;
       await navigator.clipboard.writeText(url);
-      toast('Link copied — the proposal is now live');
+      toast('Link copied. The proposal is now live.');
       if (!proposal.public_token) await reload();
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Failed to copy link');
@@ -139,7 +139,7 @@ export default function ProposalDetail() {
   };
 
   return (
-    <div className="min-h-screen bg-brand-surface">
+    <div className="min-h-screen bg-brand-surface print:bg-white">
       <header className="sticky top-0 z-20 border-b border-gray-100 bg-white/90 backdrop-blur print:hidden">
         <div className="mx-auto flex h-14 max-w-[1280px] items-center gap-4 px-4">
           <Link
@@ -298,14 +298,14 @@ export default function ProposalDetail() {
           toast(
             emailStatus === 'sent'
               ? 'Proposal emailed to the client'
-              : 'Proposal is live — email skipped (Resend not configured), copy the link instead',
+              : 'Proposal is live. Email sending isn’t configured yet, so copy the link and send it yourself.',
           );
           await reload();
         }}
       />
 
-      <main className="mx-auto flex max-w-[1280px] flex-col gap-8 px-4 py-8 sm:px-6 lg:flex-row">
-        <div className="min-w-0 flex-1">
+      <main className="mx-auto flex max-w-[1280px] flex-col gap-8 px-4 py-8 sm:px-6 lg:flex-row print:block print:max-w-none print:gap-0 print:px-0 print:py-0">
+        <div className="min-w-0 flex-1 print:w-full">
           <ProposalEditProvider mode="preview" proposal={proposal} lineItems={lineItems}>
             <ProposalDocument
               proposal={proposal}

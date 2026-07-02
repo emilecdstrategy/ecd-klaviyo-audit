@@ -163,7 +163,7 @@ export default function ProposalSettingsPanel() {
           <div>
             <h3 className="text-sm font-semibold text-gray-900">Email & defaults</h3>
             <p className="text-xs text-gray-500">
-              Requires a Resend API key configured on the backend; until then, sending falls back to copy-link.
+              Sent through the mail server configured on the backend. Until that&apos;s set up, sending falls back to copy-link.
             </p>
           </div>
         </div>
@@ -184,10 +184,10 @@ export default function ProposalSettingsPanel() {
               type="email"
               value={settings.email.from_email ?? ''}
               onChange={e => patch({ email: { ...settings.email, from_email: e.target.value || null } })}
-              placeholder="proposals@mail.ecdigitalstrategy.com"
+              placeholder="hello@ecdigitalstrategy.com"
               className={inputClass}
             />
-            <p className="mt-1 text-[11px] text-gray-400">Must be on a domain verified in Resend.</p>
+            <p className="mt-1 text-[11px] text-gray-400">Leave blank to send from the configured mail account.</p>
           </div>
           <div>
             <label className="mb-1 block text-xs font-medium text-gray-500">Reply-to (optional)</label>

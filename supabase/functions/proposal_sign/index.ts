@@ -11,7 +11,13 @@ import {
   isProposalExpired,
   proposalJson,
 } from "../_shared/proposal-public.ts";
-import { proposalEmailHtml, resolveFromAddress, sendEmail } from "../_shared/resend.ts";
+import { proposalEmailHtml, resolveFromAddress, sendEmail } from "../_shared/mailer.ts";
+
+/** The request Origin is the real proposal domain; APP_URL is only a fallback for server-triggered calls. */
+function resolveLogoUrl(req: Request): string | undefined {
+  const origin = (req.headers.get("origin") || Deno.env.get("APP_URL") || "").trim().replace(/\/$/, "");
+  return origin ? `${origin}/cropped-favicon-192x192.webp` : undefined;
+}
 
 const MAX_SIGNATURE_LENGTH = 300000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -109,7 +115,7 @@ serve(async (req) => {
       },
     ]);
 
-    // Team notification (best effort — signing already succeeded).
+    // Team notification (best effort; signing already succeeded).
     const { data: settingsRow } = await sb
       .from("platform_settings")
       .select("proposal_settings")
@@ -125,14 +131,15 @@ serve(async (req) => {
       await sendEmail({
         to: teamEmails,
         from: resolveFromAddress(settings.email),
-        subject: `🎉 Proposal signed — ${company}`,
+        subject: `🎉 Proposal signed by ${company}`,
         html: proposalEmailHtml({
           heading: `${typedName} signed the ${company} proposal`,
           bodyLines: [
             `Proposal ECD-${String(proposal.proposal_number).padStart(4, "0")} (“${proposal.title}”) was just signed and marked won.`,
-            `Totals: ${money(totals.oneTimeTotal)} one-time + ${money(totals.monthlyTotal)}/mo.`,
+            `Totals: ${money(totals.oneTimeTotal)} one-time plus ${money(totals.monthlyTotal)}/mo.`,
             `Next step: countersign it from the proposal page.`,
           ],
+          logoUrl: resolveLogoUrl(req),
         }),
       });
     }

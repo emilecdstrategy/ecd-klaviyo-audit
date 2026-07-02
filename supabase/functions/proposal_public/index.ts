@@ -11,7 +11,13 @@ import {
   proposalJson,
   serializePublicProposal,
 } from "../_shared/proposal-public.ts";
-import { proposalEmailHtml, resolveFromAddress, sendEmail } from "../_shared/resend.ts";
+import { proposalEmailHtml, resolveFromAddress, sendEmail } from "../_shared/mailer.ts";
+
+/** The request Origin is the real proposal domain; APP_URL is only a fallback for server-triggered calls. */
+function resolveLogoUrl(req: Request): string | undefined {
+  const origin = (req.headers.get("origin") || Deno.env.get("APP_URL") || "").trim().replace(/\/$/, "");
+  return origin ? `${origin}/cropped-favicon-192x192.webp` : undefined;
+}
 
 // Email link scanners (Outlook SafeLinks, security proxies) prefetch URLs and
 // would otherwise flip proposals to "viewed" before a human opens them.
@@ -86,12 +92,13 @@ serve(async (req) => {
           await sendEmail({
             to: teamEmails,
             from: resolveFromAddress(settings.email),
-            subject: `Proposal viewed — ${company}`,
+            subject: `Proposal viewed by ${company}`,
             html: proposalEmailHtml({
               heading: `${company} just opened their proposal`,
               bodyLines: [
                 `Proposal ECD-${String(proposal.proposal_number).padStart(4, "0")} (“${proposal.title}”) was viewed for the first time.`,
               ],
+              logoUrl: resolveLogoUrl(req),
             }),
           });
         }
