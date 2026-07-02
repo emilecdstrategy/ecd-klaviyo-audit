@@ -22,6 +22,7 @@ import {
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
 import Modal from '../components/ui/Modal';
+import ImageUploadZone from '../components/ui/ImageUploadZone';
 import AnnotationLayer from '../components/audit/AnnotationLayer';
 import { useAuth } from '../contexts/AuthContext';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -1173,45 +1174,19 @@ function RevenueOpportunitiesTab() {
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Default screenshot</label>
-                      <div className="flex items-start gap-3">
-                        {entry.image_url ? (
-                          <img
-                            src={entry.image_url}
-                            alt=""
-                            className="h-20 w-28 shrink-0 rounded-lg border border-gray-200 object-cover"
-                          />
-                        ) : (
-                          <div className="flex h-20 w-28 shrink-0 items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-gray-300">
-                            <ImageIcon className="h-6 w-6" />
-                          </div>
-                        )}
-                        <div className="flex flex-col gap-1.5">
-                          <label className="inline-flex cursor-pointer items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">
-                            <ImageIcon className="h-3.5 w-3.5" />
-                            {uploadingImageId === entry.id ? 'Uploading…' : entry.image_url ? 'Replace image' : 'Upload image'}
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              disabled={uploadingImageId === entry.id}
-                              onChange={e => {
-                                handleEntryImageUpload(entry.id, e.target.files?.[0]);
-                                e.target.value = '';
-                              }}
-                            />
-                          </label>
-                          {entry.image_url && (
-                            <button
-                              type="button"
-                              onClick={() => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, image_url: null } : p)))}
-                              className="text-left text-[11px] font-medium text-red-600 hover:underline"
-                            >
-                              Remove image
-                            </button>
-                          )}
-                          <p className="text-[11px] text-gray-400">Shown by default on the report add-on card.</p>
-                        </div>
-                      </div>
+                      <ImageUploadZone
+                        compact
+                        className="max-w-md"
+                        previewUrl={entry.image_url}
+                        previewAlt={`${entry.name} screenshot`}
+                        label={entry.image_url ? 'Replace image' : 'Add screenshot'}
+                        hint="Click, then paste with Ctrl+V, or drag & drop"
+                        replaceLabel="Replace image"
+                        uploading={uploadingImageId === entry.id}
+                        onFile={file => handleEntryImageUpload(entry.id, file)}
+                        onRemove={entry.image_url ? () => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, image_url: null } : p))) : undefined}
+                      />
+                      <p className="mt-1.5 text-[11px] text-gray-400">Shown by default on the report add-on card.</p>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Details doc URL</label>
