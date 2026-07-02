@@ -17,6 +17,9 @@ const AuditWorkspace = lazy(() => import('./pages/AuditWorkspace'));
 const PublicReport = lazy(() => import('./pages/PublicReport'));
 const AdminArea = lazy(() => import('./pages/AdminArea'));
 const Proposals = lazy(() => import('./pages/Proposals'));
+const NewProposal = lazy(() => import('./pages/NewProposal'));
+const ProposalDetail = lazy(() => import('./pages/ProposalDetail'));
+const ProposalEditor = lazy(() => import('./pages/ProposalEditor'));
 
 function ViewerLanding() {
   const { user, signOut } = useAuth();
@@ -90,6 +93,9 @@ function AppRoutes() {
             <Route path="/audits/new" element={<NewAudit />} />
             <Route path="/audits/:id" element={<AuditWorkspace />} />
             <Route path="/proposals" element={<Proposals />} />
+            <Route path="/proposals/new" element={<NewProposal />} />
+            <Route path="/proposals/:id" element={<ProposalDetail />} />
+            <Route path="/proposals/:id/edit" element={<ProposalEditor />} />
             <Route path="/admin" element={<AdminArea />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>
@@ -118,6 +124,14 @@ function AppRoutes() {
                 className="max-w-7xl"
               >
                 <NewAudit asModal />
+              </Modal>
+            }
+          />
+          <Route
+            path="/proposals/new"
+            element={
+              <Modal open title="New Proposal" onClose={() => navigate(-1)} className="max-w-2xl">
+                <NewProposal asModal />
               </Modal>
             }
           />

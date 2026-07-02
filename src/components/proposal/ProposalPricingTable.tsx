@@ -1,0 +1,431 @@
+import { useEffect, useState } from 'react';
+import { Receipt, ArrowUp, ArrowDown, Trash2, Plus, ChevronDown, BadgePercent, X } from 'lucide-react';
+import { cn } from '../../lib/utils';
+import { MenuPriceRow, SummaryTotalRow } from './PriceRows';
+import ProposalPlainText from './edit/ProposalPlainText';
+import ProposalCurrency from './edit/ProposalCurrency';
+import { useProposalEdit } from './edit/ProposalEditContext';
+import {
+  buildProposalPriceLines,
+  computeProposalTotals,
+  formatProposalTotal,
+  lineItemHasPricing,
+  proposalDiscountFromRow,
+} from '../../lib/proposal-pricing';
+import { formatCurrency } from '../../lib/revenue-calculator';
+import { listRevenueOpportunityTemplates } from '../../lib/db';
+import type {
+  Proposal,
+  ProposalLineItem,
+  ProposalTemplateLineItem,
+  RevenueOpportunityTemplate,
+} from '../../lib/types';
+
+function catalogToTemplateItem(t: RevenueOpportunityTemplate): ProposalTemplateLineItem {
+  return {
+    template_slug: t.slug,
+    name: t.name,
+    description: t.description,
+    content: t.content ?? '',
+    one_time_price: t.one_time_price ?? null,
+    one_time_label: t.one_time_label ?? null,
+    monthly_price: t.monthly_price ?? null,
+    monthly_label: t.monthly_label ?? null,
+    image_url: t.image_url ?? null,
+    display_order: 0,
+  };
+}
+
+function EditableLineItemRow({
+  item,
+  isFirst,
+  isLast,
+}: {
+  item: ProposalLineItem;
+  isFirst: boolean;
+  isLast: boolean;
+}) {
+  const { updateLineItem, removeLineItem, moveLineItem } = useProposalEdit();
+
+  return (
+    <div className="group/item relative rounded-xl border border-gray-100 bg-gray-50/40 px-4 py-3.5">
+      <div className="absolute -right-2 -top-2 z-10 flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-1 py-1 opacity-0 shadow-sm transition-opacity group-hover/item:opacity-100 focus-within:opacity-100 print:hidden">
+        <button
+          type="button"
+          onClick={() => moveLineItem(item.id, -1)}
+          disabled={isFirst}
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:opacity-30"
+          title="Move up"
+        >
+          <ArrowUp className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => moveLineItem(item.id, 1)}
+          disabled={isLast}
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-gray-50 hover:text-gray-600 disabled:opacity-30"
+          title="Move down"
+        >
+          <ArrowDown className="h-3.5 w-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => removeLineItem(item.id)}
+          className="inline-flex h-6 w-6 items-center justify-center rounded text-gray-400 hover:bg-red-50 hover:text-red-600"
+          title="Remove line item"
+        >
+          <Trash2 className="h-3.5 w-3.5" />
+        </button>
+      </div>
+
+      <ProposalPlainText
+        value={item.name}
+        onSave={value => updateLineItem(item.id, { name: value })}
+        as="p"
+        placeholder="Line item name"
+        className="text-base font-semibold text-gray-900"
+      />
+      <ProposalPlainText
+        value={item.description}
+        onSave={value => updateLineItem(item.id, { description: value })}
+        as="p"
+        placeholder="Short description shown under the name (optional)"
+        className="mt-1 text-sm leading-relaxed text-gray-500"
+      />
+
+      <div className="mt-3 flex flex-wrap items-center gap-x-6 gap-y-2 text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">One-time</span>
+          <ProposalCurrency
+            value={item.one_time_price}
+            onSave={value => updateLineItem(item.id, { one_time_price: value })}
+            ariaLabel={`${item.name} one-time price`}
+            className="text-sm font-semibold text-gray-900"
+          />
+        </div>
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Monthly</span>
+          <ProposalCurrency
+            value={item.monthly_price}
+            onSave={value => updateLineItem(item.id, { monthly_price: value })}
+            ariaLabel={`${item.name} monthly price`}
+            className="text-sm font-semibold text-gray-900"
+          />
+        </div>
+        {!lineItemHasPricing(item) && (
+          <span className="text-[11px] text-amber-600">No pricing — hidden from the pricing table</span>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function DiscountEditor({ proposal }: { proposal: Proposal }) {
+  const { updateDiscount } = useProposalEdit();
+  const hasDiscount = proposal.discount_type !== 'none' && proposal.discount_value > 0;
+  const [open, setOpen] = useState(hasDiscount);
+
+  useEffect(() => {
+    if (hasDiscount) setOpen(true);
+  }, [hasDiscount]);
+
+  if (!open) {
+    return (
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(true);
+          updateDiscount({ discount_type: 'fixed' });
+        }}
+        className="inline-flex items-center gap-1.5 text-xs font-medium text-brand-primary hover:underline print:hidden"
+      >
+        <BadgePercent className="h-3.5 w-3.5" />
+        Add discount
+      </button>
+    );
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-emerald-100 bg-emerald-50/50 px-3 py-2 print:hidden">
+      <input
+        type="text"
+        value={proposal.discount_label ?? ''}
+        onChange={e => updateDiscount({ discount_label: e.target.value || null })}
+        placeholder="Discount label (e.g. Founding client discount)"
+        className="min-w-0 flex-1 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-xs focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+      />
+      <div className="flex overflow-hidden rounded-md border border-gray-200 bg-white">
+        {(['fixed', 'percent'] as const).map(kind => (
+          <button
+            key={kind}
+            type="button"
+            onClick={() => updateDiscount({ discount_type: kind })}
+            className={cn(
+              'px-2.5 py-1.5 text-xs font-semibold transition-colors',
+              proposal.discount_type === kind
+                ? 'bg-brand-primary text-white'
+                : 'text-gray-500 hover:bg-gray-50',
+            )}
+          >
+            {kind === 'fixed' ? '$' : '%'}
+          </button>
+        ))}
+      </div>
+      <input
+        type="text"
+        inputMode="decimal"
+        value={proposal.discount_value ? String(proposal.discount_value) : ''}
+        onChange={e => {
+          const raw = e.target.value.replace(/[^0-9.]/g, '');
+          updateDiscount({ discount_value: raw ? Number(raw) : 0 });
+        }}
+        placeholder="0"
+        aria-label="Discount value"
+        className="w-20 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-right text-xs tabular-nums focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+      />
+      <select
+        value={proposal.discount_applies_to}
+        onChange={e =>
+          updateDiscount({ discount_applies_to: e.target.value as Proposal['discount_applies_to'] })
+        }
+        aria-label="Discount applies to"
+        className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs focus:border-brand-primary focus:outline-none"
+      >
+        <option value="one_time">One-time</option>
+        <option value="monthly">Monthly</option>
+        <option value="both">Both</option>
+      </select>
+      <button
+        type="button"
+        onClick={() => {
+          setOpen(false);
+          updateDiscount({ discount_type: 'none', discount_value: 0, discount_label: null });
+        }}
+        className="inline-flex h-7 w-7 items-center justify-center rounded-md text-gray-400 hover:bg-white hover:text-red-600"
+        title="Remove discount"
+      >
+        <X className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+}
+
+type ProposalPricingTableProps = {
+  proposal: Proposal;
+  lineItems: ProposalLineItem[];
+};
+
+export default function ProposalPricingTable({ proposal, lineItems }: ProposalPricingTableProps) {
+  const { editMode, addLineItem } = useProposalEdit();
+  const [catalogOpen, setCatalogOpen] = useState(false);
+  const [catalog, setCatalog] = useState<RevenueOpportunityTemplate[] | null>(null);
+
+  const sorted = [...lineItems].sort((a, b) => a.display_order - b.display_order);
+  const pricedItems = sorted.filter(lineItemHasPricing);
+  const priceLines = buildProposalPriceLines(sorted);
+  const discount = proposalDiscountFromRow(proposal);
+  const totals = computeProposalTotals(sorted, discount);
+
+  useEffect(() => {
+    if (!catalogOpen || catalog !== null) return;
+    listRevenueOpportunityTemplates({ activeOnly: true })
+      .then(setCatalog)
+      .catch(() => setCatalog([]));
+  }, [catalogOpen, catalog]);
+
+  const showOneTime = totals.oneTimeSubtotal > 0 || totals.oneTimeHasLabelOnly;
+  const showMonthly = totals.monthlySubtotal > 0 || totals.monthlyHasLabelOnly;
+  const discountLabel = proposal.discount_label?.trim() || 'Discount';
+
+  return (
+    <section className="proposal-section overflow-hidden rounded-2xl border border-gray-100 bg-white shadow-sm">
+      <div className="flex items-start gap-3 border-b border-gray-200 bg-gray-50 px-6 py-4">
+        <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-brand-primary/10 ring-1 ring-brand-primary/15">
+          <Receipt className="h-5 w-5 text-brand-primary" strokeWidth={2.25} />
+        </div>
+        <div className="min-w-0">
+          <h2 className="text-lg font-bold text-gray-900">Investment</h2>
+          <p className="text-sm text-gray-500">Services and pricing included in this proposal.</p>
+        </div>
+      </div>
+
+      <div className="px-6 py-5">
+        {editMode ? (
+          <div className="space-y-3">
+            {sorted.length === 0 ? (
+              <p className="rounded-xl border border-dashed border-gray-200 px-4 py-8 text-center text-sm text-gray-400">
+                No line items yet — add your first service below.
+              </p>
+            ) : (
+              sorted.map((item, index) => (
+                <EditableLineItemRow
+                  key={item.id}
+                  item={item}
+                  isFirst={index === 0}
+                  isLast={index === sorted.length - 1}
+                />
+              ))
+            )}
+
+            <div className="relative flex flex-wrap items-center gap-3 pt-1 print:hidden">
+              <button
+                type="button"
+                onClick={() => addLineItem()}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                Add line item
+              </button>
+              <button
+                type="button"
+                onClick={() => setCatalogOpen(v => !v)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                <Plus className="h-3.5 w-3.5" />
+                From catalog
+                <ChevronDown className={cn('h-3 w-3 transition-transform', catalogOpen && 'rotate-180')} />
+              </button>
+            </div>
+            {catalogOpen && (
+              <div className="max-h-56 overflow-y-auto rounded-lg border border-gray-200 bg-white p-2 shadow-sm print:hidden">
+                {catalog === null ? (
+                  <p className="px-2 py-1.5 text-xs text-gray-400">Loading catalog…</p>
+                ) : catalog.length === 0 ? (
+                  <p className="px-2 py-1.5 text-xs text-gray-400">
+                    No services in the catalog — add them under Settings → Revenue Opportunities.
+                  </p>
+                ) : (
+                  catalog.map(t => {
+                    const templateItem = catalogToTemplateItem(t);
+                    const priceParts: string[] = [];
+                    if (t.one_time_price) priceParts.push(formatCurrency(Number(t.one_time_price)));
+                    if (t.monthly_price) priceParts.push(`${formatCurrency(Number(t.monthly_price))}/mo`);
+                    return (
+                      <button
+                        key={t.id}
+                        type="button"
+                        onClick={() => {
+                          addLineItem(templateItem);
+                          setCatalogOpen(false);
+                        }}
+                        className="flex w-full items-center justify-between gap-3 rounded-md px-2.5 py-1.5 text-left hover:bg-gray-50"
+                      >
+                        <span className="truncate text-sm text-gray-800">{t.name}</span>
+                        <span className="shrink-0 text-xs tabular-nums text-gray-400">
+                          {priceParts.join(' + ') || 'No pricing'}
+                        </span>
+                      </button>
+                    );
+                  })
+                )}
+              </div>
+            )}
+          </div>
+        ) : pricedItems.length === 0 ? (
+          <p className="py-6 text-center text-sm text-gray-500">No priced services in this proposal yet.</p>
+        ) : (
+          <div>
+            <div className="mb-1 flex items-center gap-2 text-[11px] font-bold uppercase tracking-wide text-gray-400">
+              <span className="flex-1">Service</span>
+              <span className="shrink-0">Investment</span>
+            </div>
+            <div className="divide-y divide-gray-100">
+              {pricedItems.map(item => {
+                const lines = priceLines.filter(line => line.lineItemId === item.id);
+                return (
+                  <div key={item.id}>
+                    {lines.map((line, lineIndex) => (
+                      <MenuPriceRow
+                        key={`${line.lineItemId}-${line.unit}`}
+                        label={
+                          lineIndex === 0
+                            ? item.name
+                            : line.unit === 'monthly'
+                              ? 'Monthly retainer'
+                              : 'One-time implementation'
+                        }
+                        amount={line.headline}
+                        caption={line.caption}
+                        labelClassName={lineIndex > 0 ? 'pl-3 text-sm font-normal text-gray-600' : undefined}
+                      />
+                    ))}
+                    {item.description ? (
+                      <p className="-mt-1 pb-2.5 pr-[30%] text-xs leading-relaxed text-gray-500">
+                        {item.description}
+                      </p>
+                    ) : null}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {(showOneTime || showMonthly) && (
+          <div className="mt-6 border-t border-gray-200 pt-5">
+            <div className="space-y-1">
+              {showOneTime && (
+                <SummaryTotalRow
+                  label="One-time subtotal"
+                  amount={formatProposalTotal(totals.oneTimeSubtotal, totals.oneTimeHasLabelOnly)}
+                />
+              )}
+              {showMonthly && (
+                <SummaryTotalRow
+                  label="Monthly subtotal"
+                  amount={formatProposalTotal(totals.monthlySubtotal, totals.monthlyHasLabelOnly)}
+                  suffix="/mo"
+                />
+              )}
+              {totals.oneTimeDiscount > 0 && (
+                <SummaryTotalRow
+                  label={discountLabel}
+                  amount={`−${formatCurrency(totals.oneTimeDiscount)}`}
+                  tone="discount"
+                />
+              )}
+              {totals.monthlyDiscount > 0 && (
+                <SummaryTotalRow
+                  label={`${discountLabel} (monthly)`}
+                  amount={`−${formatCurrency(totals.monthlyDiscount)}`}
+                  suffix="/mo"
+                  tone="discount"
+                />
+              )}
+            </div>
+
+            {editMode && (
+              <div className="mt-3">
+                <DiscountEditor proposal={proposal} />
+              </div>
+            )}
+
+            <div className="mt-5 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-4">
+              <p className="mb-3 text-[11px] font-bold uppercase tracking-wide text-gray-500">
+                Proposal total
+              </p>
+              <div className="space-y-1">
+                {showOneTime && (
+                  <SummaryTotalRow
+                    label="One-time"
+                    amount={formatProposalTotal(totals.oneTimeTotal, totals.oneTimeHasLabelOnly)}
+                    suffix="total"
+                    emphasis
+                  />
+                )}
+                {showMonthly && (
+                  <SummaryTotalRow
+                    label="Monthly"
+                    amount={formatProposalTotal(totals.monthlyTotal, totals.monthlyHasLabelOnly)}
+                    suffix="/mo"
+                    emphasis
+                  />
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}

@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ExternalLink } from 'lucide-react';
+import { ExternalLink, FileSignature } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import SiteFavicon from '../components/ui/SiteFavicon';
 import { ReportEditProvider } from '../components/report/edit/ReportEditContext';
@@ -25,6 +25,7 @@ import {
   updateAuditStatus,
   updateAuditSection,
 } from '../lib/db';
+import { createProposalFromAudit } from '../lib/proposal-convert';
 import { klaviyoScopePermissionWarnings } from '../lib/klaviyo-fetch-diagnostics';
 import { lazyAuditReportView, preloadAuditReportView } from '../lib/preload-audit-report-view';
 import { supabase } from '../lib/supabase';
@@ -61,6 +62,7 @@ export default function AuditWorkspace() {
   const [revenueDrawerOpen, setRevenueDrawerOpen] = useState(false);
 
   const saveTimers = useRef<Record<string, number>>({});
+  const [creatingProposal, setCreatingProposal] = useState(false);
   const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
   const [scopeWarnings, setScopeWarnings] = useState<string[]>([]);
   const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
@@ -252,6 +254,27 @@ export default function AuditWorkspace() {
           leadingIcon={client ? <SiteFavicon url={client.website_url} size="md" /> : undefined}
           actions={
             <div className="flex items-center gap-3">
+              {client ? (
+                <button
+                  type="button"
+                  disabled={creatingProposal}
+                  onClick={async () => {
+                    if (!client || creatingProposal) return;
+                    setCreatingProposal(true);
+                    try {
+                      const proposal = await createProposalFromAudit(audit, client);
+                      navigate(`/proposals/${proposal.id}/edit`);
+                    } catch (e) {
+                      toast(e instanceof Error ? e.message : 'Failed to create proposal');
+                      setCreatingProposal(false);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  <FileSignature className="w-4 h-4" />
+                  {creatingProposal ? 'Creating…' : 'Create Proposal'}
+                </button>
+              ) : null}
               {audit.public_share_token ? (
                 <a
                   href={`/report/${audit.public_share_token}`}

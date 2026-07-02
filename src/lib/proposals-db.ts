@@ -5,9 +5,54 @@ import type {
   ProposalEvent,
   ProposalEventType,
   ProposalLineItem,
+  ProposalSettings,
   ProposalSignature,
   ProposalTemplate,
 } from './types';
+
+export const DEFAULT_PROPOSAL_SETTINGS: ProposalSettings = {
+  cover: {
+    background_url: null,
+    logo_url: null,
+    tagline: 'Lifecycle marketing that compounds.',
+  },
+  email: {
+    from_name: 'ECD Digital Strategy',
+    from_email: null,
+    reply_to: null,
+    team_notification_emails: [],
+  },
+  defaults: {
+    valid_days: 30,
+  },
+};
+
+export function mergeProposalSettings(raw: unknown): ProposalSettings {
+  const value = (raw ?? {}) as Partial<ProposalSettings>;
+  return {
+    cover: { ...DEFAULT_PROPOSAL_SETTINGS.cover, ...(value.cover ?? {}) },
+    email: { ...DEFAULT_PROPOSAL_SETTINGS.email, ...(value.email ?? {}) },
+    defaults: { ...DEFAULT_PROPOSAL_SETTINGS.defaults, ...(value.defaults ?? {}) },
+  };
+}
+
+export async function getProposalSettings(): Promise<ProposalSettings> {
+  const { data, error } = await supabase
+    .from('platform_settings')
+    .select('proposal_settings')
+    .eq('id', 'default')
+    .maybeSingle();
+  if (error || !data) return DEFAULT_PROPOSAL_SETTINGS;
+  return mergeProposalSettings(data.proposal_settings);
+}
+
+export async function updateProposalSettings(settings: ProposalSettings): Promise<void> {
+  const { error } = await supabase
+    .from('platform_settings')
+    .update({ proposal_settings: settings, updated_at: new Date().toISOString() })
+    .eq('id', 'default');
+  if (error) throw error;
+}
 
 const PROPOSAL_LIST_SELECT = '*, client:clients(*), line_items:proposal_line_items(*)';
 

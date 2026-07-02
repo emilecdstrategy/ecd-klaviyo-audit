@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
-import { FileSignature, LayoutTemplate, FileCheck2 } from 'lucide-react';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { FileSignature, LayoutTemplate, FileCheck2, Plus } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import ProposalList from '../components/proposal/ProposalList';
 import ProposalTemplatesPanel from '../components/proposal/ProposalTemplatesPanel';
@@ -18,9 +18,14 @@ const TABS = [
 type TabId = (typeof TABS)[number]['id'];
 
 export default function Proposals() {
+  const navigate = useNavigate();
+  const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const tab: TabId = TABS.some(t => t.id === tabParam) ? (tabParam as TabId) : 'overview';
+
+  const openNewProposal = () =>
+    navigate('/proposals/new', { state: { backgroundLocation: location } });
 
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -47,7 +52,19 @@ export default function Proposals() {
 
   return (
     <div>
-      <TopBar title="Proposals" subtitle={`${proposals.length} total proposals`} />
+      <TopBar
+        title="Proposals"
+        subtitle={`${proposals.length} total proposals`}
+        actions={
+          <button
+            onClick={openNewProposal}
+            className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+          >
+            <Plus className="w-4 h-4" />
+            New Proposal
+          </button>
+        }
+      />
 
       <div className="p-8 animate-fade-in">
         <div className="flex gap-2 mb-6 border-b border-gray-100 pb-3">
@@ -78,6 +95,15 @@ export default function Proposals() {
               <ProposalList
                 proposals={proposals}
                 onDeleted={id => setProposals(prev => prev.filter(p => p.id !== id))}
+                emptyAction={
+                  <button
+                    onClick={openNewProposal}
+                    className="flex items-center gap-2 px-5 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+                  >
+                    <Plus className="w-4 h-4" />
+                    Create First Proposal
+                  </button>
+                }
               />
             )}
           </>
