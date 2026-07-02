@@ -15,6 +15,7 @@ const Audits = lazy(() => import('./pages/Audits'));
 const NewAudit = lazy(() => import('./pages/NewAudit'));
 const AuditWorkspace = lazy(() => import('./pages/AuditWorkspace'));
 const PublicReport = lazy(() => import('./pages/PublicReport'));
+const PublicProposal = lazy(() => import('./pages/PublicProposal'));
 const AdminArea = lazy(() => import('./pages/AdminArea'));
 const Proposals = lazy(() => import('./pages/Proposals'));
 const NewProposal = lazy(() => import('./pages/NewProposal'));
@@ -57,7 +58,8 @@ function AppRoutes() {
   const navigate = useNavigate();
   const state = location.state as any;
   const backgroundLocation = state?.backgroundLocation as ReturnType<typeof useLocation> | undefined;
-  const isPublicReportRoute = location.pathname.startsWith('/report/');
+  const isPublicReportRoute =
+    location.pathname.startsWith('/report/') || location.pathname.startsWith('/proposal/');
 
   if (isLoading && !isPublicReportRoute) {
     return <AppPreloader />;
@@ -72,6 +74,7 @@ function AppRoutes() {
     <Suspense fallback={<AppPreloader />}>
       <Routes location={backgroundLocation || location}>
         <Route path="/report/:token" element={<PublicReport />} />
+        <Route path="/proposal/:token" element={<PublicProposal />} />
 
         {!user ? (
           <>

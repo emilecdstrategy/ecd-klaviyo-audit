@@ -253,6 +253,156 @@ export async function deleteProposalLineItem(id: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Sending / public link
+
+function generatePublicToken(): string {
+  const bytes = new Uint8Array(12);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+}
+
+/**
+ * Ensure a proposal is shareable: generates the public token, freezes the
+ * contract snapshot, sets valid_until, and flips draft -> sent. Refreshes the
+ * contract snapshot on every call while the proposal is unsigned so contract
+ * edits reach clients who have not signed yet.
+ */
+export async function markProposalSent(proposal: Proposal): Promise<Proposal> {
+  if (proposal.client_signed_at) return proposal;
+
+  const [settings, contractDocs] = await Promise.all([
+    getProposalSettings(),
+    listContractDocuments(),
+  ]);
+
+  const snapshot = contractDocs
+    .filter(doc => proposal.include_contracts.includes(doc.slug))
+    .map(doc => ({
+      slug: doc.slug,
+      name: doc.name,
+      content: doc.content,
+      version_updated_at: doc.updated_at,
+    }));
+
+  const validDays = settings.defaults.valid_days || 30;
+  const validUntil =
+    proposal.valid_until ??
+    new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
+  const wasDraft = proposal.status === 'draft';
+  const updates: Record<string, unknown> = {
+    public_token: proposal.public_token ?? generatePublicToken(),
+    contracts_snapshot: snapshot,
+    valid_until: validUntil,
+    updated_at: new Date().toISOString(),
+  };
+  if (wasDraft) {
+    updates.status = 'sent';
+    updates.sent_at = new Date().toISOString();
+  }
+
+  const { data, error } = await supabase
+    .from('proposals')
+    .update(updates)
+    .eq('id', proposal.id)
+    .select(PROPOSAL_LIST_SELECT)
+    .single();
+  if (error) throw error;
+
+  if (wasDraft) {
+    await recordProposalEvent(proposal.id, 'sent', { via: 'link' });
+  }
+  return mapProposalRow(data);
+}
+
+/** Extend (or shorten) the valid-until date; un-expires a proposal. */
+export async function extendProposalValidity(id: string, validUntil: string): Promise<Proposal> {
+  return updateProposal(id, { valid_until: validUntil });
+}
+
+// ---------------------------------------------------------------------------
+// Public page + signing (edge functions; no session required for the first two)
+
+export type PublicProposalPayload = {
+  proposal: Pick<
+    Proposal,
+    | 'proposal_number'
+    | 'title'
+    | 'status'
+    | 'cover'
+    | 'content_blocks'
+    | 'include_contracts'
+    | 'contracts_snapshot'
+    | 'discount_type'
+    | 'discount_value'
+    | 'discount_applies_to'
+    | 'discount_label'
+    | 'recipient_name'
+    | 'valid_until'
+    | 'sent_at'
+    | 'created_at'
+    | 'client_signed_at'
+    | 'countersigned_at'
+  >;
+  client: { company_name: string; website_url: string | null };
+  line_items: ProposalLineItem[];
+  signatures: Pick<ProposalSignature, 'role' | 'signer_name' | 'signature_image' | 'signed_at'>[];
+  expired: boolean;
+  settings: { cover: Partial<ProposalSettings['cover']> };
+};
+
+export async function fetchPublicProposal(
+  token: string,
+  options: { preview?: boolean } = {},
+): Promise<PublicProposalPayload | null> {
+  const { data, error } = await supabase.functions.invoke('proposal_public', {
+    body: { token, preview: options.preview ?? false },
+  });
+  if (error) {
+    // FunctionsHttpError with 404 means unknown token/draft — treat as not found.
+    return null;
+  }
+  if (data?.ok !== true) return null;
+  return data as PublicProposalPayload;
+}
+
+export async function signProposalPublic(input: {
+  token: string;
+  typed_name: string;
+  signer_email: string;
+  signature_image: string;
+}): Promise<{ ok: boolean; code?: string; message?: string }> {
+  const { data, error } = await supabase.functions.invoke('proposal_sign', { body: input });
+  if (error) {
+    // Supabase wraps non-2xx responses; surface the coded errors we return.
+    const context = (error as { context?: Response }).context;
+    if (context) {
+      try {
+        const body = await context.json();
+        return { ok: false, code: body?.error?.code, message: body?.error?.message };
+      } catch {
+        /* fall through */
+      }
+    }
+    return { ok: false, message: error.message };
+  }
+  if (data?.ok !== true) {
+    return { ok: false, code: data?.error?.code, message: data?.error?.message };
+  }
+  return { ok: true };
+}
+
+export async function countersignProposal(input: {
+  proposal_id: string;
+  typed_name: string;
+  signature_image: string;
+}): Promise<void> {
+  const { data, error } = await supabase.functions.invoke('proposal_countersign', { body: input });
+  if (error) throw error;
+  if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to countersign');
+}
+
+// ---------------------------------------------------------------------------
 // Events & signatures
 
 export async function listProposalEvents(proposalId: string): Promise<ProposalEvent[]> {

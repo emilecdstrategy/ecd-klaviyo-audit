@@ -1,24 +1,54 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Pencil, Trophy, XCircle, RotateCcw, Clock } from 'lucide-react';
+import {
+  ArrowLeft,
+  Pencil,
+  Trophy,
+  XCircle,
+  RotateCcw,
+  Clock,
+  Link2,
+  ExternalLink,
+  PenLine,
+  Printer,
+} from 'lucide-react';
 import AppPreloader from '../components/ui/AppPreloader';
 import StatusBadge from '../components/ui/StatusBadge';
 import Modal from '../components/ui/Modal';
+import { useToast } from '../components/ui/Toast';
 import ProposalDocument from '../components/proposal/ProposalDocument';
 import ProposalActivityTimeline from '../components/proposal/ProposalActivityTimeline';
+import SignaturePad, { type SignaturePadHandle } from '../components/proposal/SignaturePad';
 import { ProposalEditProvider } from '../components/proposal/edit/ProposalEditContext';
+import { useAuth } from '../contexts/AuthContext';
 import { useProposalData } from '../hooks/useProposalData';
-import { markProposalLost, markProposalWon, reopenProposal } from '../lib/proposals-db';
+import {
+  countersignProposal,
+  markProposalLost,
+  markProposalSent,
+  markProposalWon,
+  reopenProposal,
+} from '../lib/proposals-db';
 import { deriveProposalStatus } from '../lib/proposal-status';
 
 export default function ProposalDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const toast = useToast();
+  const { user } = useAuth();
   const { data, loading, loadError, reload } = useProposalData(id);
   const [confirmAction, setConfirmAction] = useState<'won' | 'lost' | 'reopen' | null>(null);
   const [lostReason, setLostReason] = useState('');
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [linkBusy, setLinkBusy] = useState(false);
+  const [confirmDraftLink, setConfirmDraftLink] = useState(false);
+  const [countersignOpen, setCountersignOpen] = useState(false);
+  const [countersignName, setCountersignName] = useState('');
+  const [countersignBusy, setCountersignBusy] = useState(false);
+  const [countersignError, setCountersignError] = useState('');
+  const [countersignPadEmpty, setCountersignPadEmpty] = useState(true);
+  const countersignPadRef = useRef<SignaturePadHandle>(null);
 
   if (loading) return <AppPreloader />;
 
@@ -37,6 +67,55 @@ export default function ProposalDetail() {
   const displayStatus = deriveProposalStatus(proposal);
   const isSigned = Boolean(proposal.client_signed_at);
   const isClosed = proposal.status === 'won' || proposal.status === 'lost';
+  const needsCountersign = isSigned && !proposal.countersigned_at;
+  const publicUrl = proposal.public_token
+    ? `${window.location.origin}/proposal/${proposal.public_token}`
+    : null;
+
+  const copyLink = async () => {
+    setLinkBusy(true);
+    try {
+      const updated = proposal.public_token ? proposal : await markProposalSent(proposal);
+      const url = `${window.location.origin}/proposal/${updated.public_token}`;
+      await navigator.clipboard.writeText(url);
+      toast('Link copied — the proposal is now live');
+      if (!proposal.public_token) await reload();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to copy link');
+    } finally {
+      setLinkBusy(false);
+      setConfirmDraftLink(false);
+    }
+  };
+
+  const submitCountersign = async () => {
+    setCountersignError('');
+    const name = countersignName.trim() || user?.name || '';
+    if (!name) {
+      setCountersignError('Please type your full name.');
+      return;
+    }
+    const image = countersignPadRef.current?.toDataURL();
+    if (!image) {
+      setCountersignError('Please draw your signature.');
+      return;
+    }
+    setCountersignBusy(true);
+    try {
+      await countersignProposal({
+        proposal_id: proposal.id,
+        typed_name: name,
+        signature_image: image,
+      });
+      setCountersignOpen(false);
+      toast('Countersigned');
+      await reload();
+    } catch (e) {
+      setCountersignError(e instanceof Error ? e.message : 'Failed to countersign');
+    } finally {
+      setCountersignBusy(false);
+    }
+  };
 
   const runAction = async () => {
     if (!confirmAction) return;
@@ -136,6 +215,78 @@ export default function ProposalDetail() {
         </div>
       </Modal>
 
+      <Modal
+        open={confirmDraftLink}
+        title="Share this draft?"
+        onClose={() => (linkBusy ? undefined : setConfirmDraftLink(false))}
+        className="max-w-lg"
+      >
+        <div className="p-5">
+          <p className="text-sm text-gray-700">
+            Copying the link makes this proposal live: it gets a public URL, the contract text is locked in,
+            the validity window starts, and the status changes to <strong>Sent</strong>.
+          </p>
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={linkBusy}
+              onClick={() => setConfirmDraftLink(false)}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={linkBusy}
+              onClick={copyLink}
+              className="rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {linkBusy ? 'Working…' : 'Go live & copy link'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={countersignOpen}
+        title="Countersign proposal"
+        onClose={() => (countersignBusy ? undefined : setCountersignOpen(false))}
+        className="max-w-lg"
+      >
+        <div className="space-y-3 p-5">
+          <div>
+            <label className="mb-1 block text-xs font-medium text-gray-500">Full name</label>
+            <input
+              type="text"
+              value={countersignName}
+              onChange={e => setCountersignName(e.target.value)}
+              placeholder={user?.name || 'Your full name'}
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+            />
+          </div>
+          <SignaturePad ref={countersignPadRef} onChange={setCountersignPadEmpty} />
+          {countersignError && <p className="text-sm text-red-600">{countersignError}</p>}
+          <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
+            <button
+              type="button"
+              disabled={countersignBusy}
+              onClick={() => setCountersignOpen(false)}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={countersignBusy || countersignPadEmpty}
+              onClick={submitCountersign}
+              className="rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {countersignBusy ? 'Signing…' : 'Countersign'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
       <main className="mx-auto flex max-w-[1280px] flex-col gap-8 px-4 py-8 sm:px-6 lg:flex-row">
         <div className="min-w-0 flex-1">
           <ProposalEditProvider mode="preview" proposal={proposal} lineItems={lineItems}>
@@ -215,6 +366,47 @@ export default function ProposalDetail() {
                   Edit proposal
                 </button>
               )}
+              {needsCountersign && (
+                <button
+                  type="button"
+                  onClick={() => setCountersignOpen(true)}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                >
+                  <PenLine className="h-3.5 w-3.5" />
+                  Countersign
+                </button>
+              )}
+              <button
+                type="button"
+                disabled={linkBusy}
+                onClick={() => {
+                  if (!proposal.public_token && proposal.status === 'draft') setConfirmDraftLink(true);
+                  else copyLink();
+                }}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+              >
+                <Link2 className="h-3.5 w-3.5" />
+                {linkBusy ? 'Working…' : 'Copy client link'}
+              </button>
+              {publicUrl && (
+                <a
+                  href={`${publicUrl}?preview=1`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                  Open client view
+                </a>
+              )}
+              <button
+                type="button"
+                onClick={() => window.print()}
+                className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+              >
+                <Printer className="h-3.5 w-3.5" />
+                Download PDF
+              </button>
               {!isClosed && (
                 <button
                   type="button"
@@ -247,7 +439,7 @@ export default function ProposalDetail() {
               )}
             </div>
             <p className="mt-3 text-[11px] text-gray-400">
-              Sending, public link, and client signing are coming in the next update.
+              Email sending arrives in the next update — for now, copy the client link and send it yourself.
             </p>
           </div>
 

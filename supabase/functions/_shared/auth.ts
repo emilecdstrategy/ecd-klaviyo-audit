@@ -57,3 +57,13 @@ export async function requireAdminUserId(req: Request): Promise<string> {
   if (profile?.role !== "admin") throw new Error("Forbidden");
   return uid;
 }
+
+/** Like requireAdminUserId but accepts both staff roles (admin, auditor). */
+export async function requireStaffUserId(req: Request): Promise<string> {
+  const uid = await getUserIdFromAuthorization(req);
+  const sb = assertServiceRoleClient();
+  const { data: profile, error: pErr } = await sb.from("profiles").select("role").eq("id", uid).maybeSingle();
+  if (pErr) throw pErr;
+  if (profile?.role !== "admin" && profile?.role !== "auditor") throw new Error("Forbidden");
+  return uid;
+}
