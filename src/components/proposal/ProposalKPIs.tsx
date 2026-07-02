@@ -1,6 +1,8 @@
+import { useMemo, useState } from 'react';
 import { FileSignature, Send, Eye, Trophy, XCircle, Percent, TrendingUp } from 'lucide-react';
 import KPICard from '../ui/KPICard';
 import MonthlyBarChart from '../ui/MonthlyBarChart';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import { deriveProposalStatus, isProposalOpen } from '../../lib/proposal-status';
 import {
   computeProposalTotals,
@@ -9,6 +11,18 @@ import {
 } from '../../lib/proposal-pricing';
 import { formatCurrency } from '../../lib/revenue-calculator';
 import type { Proposal } from '../../lib/types';
+
+const PERIOD_OPTIONS = [
+  { value: '3', label: 'Last 3 months' },
+  { value: '6', label: 'Last 6 months' },
+  { value: '12', label: 'Last 12 months' },
+  { value: '24', label: 'Last 24 months' },
+  { value: 'all', label: 'All time' },
+] as const;
+
+function monthsBetween(start: Date, end: Date): number {
+  return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
+}
 
 function lastMonths(count: number): string[] {
   const months: string[] = [];
@@ -25,6 +39,7 @@ function monthOf(iso: string | null): string | null {
 }
 
 export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
+  const [period, setPeriod] = useState<string>('6');
   const statuses = proposals.map(p => deriveProposalStatus(p));
   const sentCount = proposals.filter(p => p.sent_at).length;
   const viewedCount = proposals.filter(p => p.first_viewed_at).length;
@@ -40,7 +55,18 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
       return sum + proposalPipelineValue(totals);
     }, 0);
 
-  const months = lastMonths(6);
+  const monthCount = useMemo(() => {
+    if (period !== 'all') return Number(period);
+    const earliestDates = proposals
+      .map(p => p.created_at)
+      .filter((d): d is string => Boolean(d))
+      .map(d => new Date(d));
+    if (earliestDates.length === 0) return 6;
+    const earliest = new Date(Math.min(...earliestDates.map(d => d.getTime())));
+    return Math.max(1, monthsBetween(earliest, new Date()) + 1);
+  }, [period, proposals]);
+
+  const months = lastMonths(monthCount);
   const chartData = months.map(month => ({
     month,
     series: {
@@ -67,8 +93,23 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
 
       <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <div className="rounded-xl bg-white p-5 card-shadow lg:col-span-2">
-          <h3 className="mb-1 text-sm font-semibold text-gray-900">Sent vs won</h3>
-          <p className="mb-3 text-xs text-gray-400">Last 6 months</p>
+          <div className="mb-3 flex items-center justify-between gap-3">
+            <h3 className="text-sm font-semibold text-gray-900">Sent vs won</h3>
+            <div className="w-40 shrink-0">
+              <Select value={period} onValueChange={setPeriod}>
+                <SelectTrigger className="h-8 text-xs">
+                  <SelectValue placeholder="Last 6 months" />
+                </SelectTrigger>
+                <SelectContent>
+                  {PERIOD_OPTIONS.map(opt => (
+                    <SelectItem key={opt.value} value={opt.value}>
+                      <SelectItemText>{opt.label}</SelectItemText>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
           <MonthlyBarChart
             data={chartData}
             series={[

@@ -195,7 +195,7 @@ export default function ProposalSettingsPanel() {
               type="email"
               value={settings.email.reply_to ?? ''}
               onChange={e => patch({ email: { ...settings.email, reply_to: e.target.value || null } })}
-              placeholder="zak@ecdigitalstrategy.com"
+              placeholder="emil@ecdigitalstrategy.com"
               className={inputClass}
             />
           </div>
@@ -219,7 +219,7 @@ export default function ProposalSettingsPanel() {
               type="text"
               value={teamEmailsRaw}
               onChange={e => setTeamEmailsRaw(e.target.value)}
-              placeholder="zak@ecdigitalstrategy.com, emil@ecdigitalstrategy.com"
+              placeholder="emil@ecdigitalstrategy.com"
               className={inputClass}
             />
             <p className="mt-1 text-[11px] text-gray-400">Comma-separated email addresses.</p>

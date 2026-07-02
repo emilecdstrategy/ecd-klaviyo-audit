@@ -19,6 +19,7 @@ export default function NewClient({ asModal }: NewClientProps) {
     company_name: '',
     industry: '',
     notes: '',
+    website_url: '',
     api_key: '',
   });
   const [saving, setSaving] = useState(false);
@@ -34,9 +35,6 @@ export default function NewClient({ asModal }: NewClientProps) {
     try {
       setSaving(true);
       const apiKey = form.api_key.trim();
-      if (!apiKey) {
-        throw new Error('Klaviyo Private API key is required to create a client.');
-      }
       const existing = await findClientByCompanyName(form.company_name);
       if (existing) {
         throw new Error(`A client named “${existing.company_name}” already exists. Open that client to run a new audit.`);
@@ -44,7 +42,7 @@ export default function NewClient({ asModal }: NewClientProps) {
       const payload = await ensureClientCreator(user, {
         name: form.name,
         company_name: form.company_name,
-        website_url: '',
+        website_url: form.website_url.trim(),
         industry: form.industry,
         esp_platform: 'Klaviyo',
         api_key_placeholder: '',
@@ -52,20 +50,22 @@ export default function NewClient({ asModal }: NewClientProps) {
       });
       const created = await createClient(payload as any);
 
-      try {
-        const { data, error: fnErr } = await supabase.functions.invoke('klaviyo_connect_client', {
-          body: { client_id: created.id, api_key: apiKey },
-        });
-        if (fnErr) throw fnErr;
-        if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to connect Klaviyo');
-      } catch (connectErr) {
-        // Best-effort rollback so we don't leave behind disconnected clients.
+      if (apiKey) {
         try {
-          await supabase.from('clients').delete().eq('id', created.id);
-        } catch {
-          // ignore rollback failures
+          const { data, error: fnErr } = await supabase.functions.invoke('klaviyo_connect_client', {
+            body: { client_id: created.id, api_key: apiKey },
+          });
+          if (fnErr) throw fnErr;
+          if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to connect Klaviyo');
+        } catch (connectErr) {
+          // Best-effort rollback so we don't leave behind disconnected clients.
+          try {
+            await supabase.from('clients').delete().eq('id', created.id);
+          } catch {
+            // ignore rollback failures
+          }
+          throw connectErr;
         }
-        throw connectErr;
       }
 
       navigate('/clients');
@@ -111,6 +111,20 @@ export default function NewClient({ asModal }: NewClientProps) {
             </div>
 
             <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Website URL</label>
+              <input
+                type="text"
+                value={form.website_url}
+                onChange={e => updateField('website_url', e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                placeholder="acme.com"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Auto-filled from Klaviyo if you connect an API key below; otherwise used for the client favicon.
+              </p>
+            </div>
+
+            <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Notes</label>
               <textarea
                 value={form.notes}
@@ -123,9 +137,12 @@ export default function NewClient({ asModal }: NewClientProps) {
         </div>
 
         <div className="bg-white rounded-xl p-6 card-shadow">
-          <h2 className="text-base font-semibold text-gray-900">API Connection</h2>
+          <h2 className="text-base font-semibold text-gray-900">
+            API Connection <span className="font-normal text-gray-400">(optional)</span>
+          </h2>
           <p className="text-sm text-gray-500 mt-1">
-            Required. Connect the Klaviyo Private API key now (stored encrypted). We’ll fetch the website URL automatically from Klaviyo.
+            Connect a Klaviyo Private API key to run audits for this client, or skip it to just track proposals
+            or other non-audit work. You can connect Klaviyo later from the client page.
           </p>
           <div className="mt-4">
             <div className="mb-1 flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
@@ -136,9 +153,8 @@ export default function NewClient({ asModal }: NewClientProps) {
               type="password"
               value={form.api_key}
               onChange={e => updateField('api_key', e.target.value)}
-              required
               className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-              placeholder="pk_..."
+              placeholder="pk_... (optional)"
             />
           </div>
         </div>

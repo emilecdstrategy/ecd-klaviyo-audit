@@ -33,6 +33,12 @@ function SignatureSlot({
                 day: 'numeric',
               })}
             </p>
+            {signature.signer_email ? (
+              <p className="text-[11px] text-gray-400">{signature.signer_email}</p>
+            ) : null}
+            {signature.ip_address ? (
+              <p className="text-[11px] text-gray-400">IP address: {signature.ip_address}</p>
+            ) : null}
           </div>
         </div>
       ) : liveArea ? (

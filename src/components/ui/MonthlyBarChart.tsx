@@ -12,9 +12,11 @@ type MonthlyBarChartProps = {
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-function monthLabel(month: string): string {
-  const idx = Number(month.slice(5, 7)) - 1;
-  return MONTH_LABELS[idx] ?? month;
+function monthLabel(month: string, includeYear: boolean): string {
+  const [year, m] = month.split('-');
+  const idx = Number(m) - 1;
+  const base = MONTH_LABELS[idx] ?? month;
+  return includeYear ? `${base} '${year.slice(2)}` : base;
 }
 
 function monthLabelFull(month: string): string {
@@ -55,6 +57,8 @@ export default function MonthlyBarChart({
   const barGap = 4;
   const barWidth = Math.min(28, (bandWidth - barGap * (series.length + 1)) / series.length);
   const allZero = rawMax === 0;
+  const spansMultipleYears = new Set(data.map(d => d.month.slice(0, 4))).size > 1;
+  const showEveryLabel = data.length <= 12;
   const hovered = hoverIndex !== null ? data[hoverIndex] : null;
   const tooltipLeftPct = hoverIndex !== null
     ? Math.min(88, Math.max(12, ((padX + (hoverIndex + 0.5) * bandWidth) / width) * 100))
@@ -114,15 +118,17 @@ export default function MonthlyBarChart({
                   />
                 );
               })}
-              <text
-                x={bandX + bandWidth / 2}
-                y={height - 8}
-                textAnchor="middle"
-                className="fill-gray-400"
-                fontSize={10}
-              >
-                {monthLabel(d.month)}
-              </text>
+              {(showEveryLabel || i % Math.ceil(data.length / 12) === 0) && (
+                <text
+                  x={bandX + bandWidth / 2}
+                  y={height - 8}
+                  textAnchor="middle"
+                  className="fill-gray-400"
+                  fontSize={10}
+                >
+                  {monthLabel(d.month, spansMultipleYears)}
+                </text>
+              )}
               <rect
                 x={bandX}
                 y={0}
