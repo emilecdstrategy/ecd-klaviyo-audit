@@ -11,6 +11,11 @@ const labels: Record<string, string> = {
   viewer_only: 'Viewer Only',
   published: 'Published',
   approved: 'Approved',
+  sent: 'Sent',
+  viewed: 'Viewed',
+  won: 'Won',
+  lost: 'Lost',
+  expired: 'Expired',
 };
 
 export default function StatusBadge({ status, size = 'sm' }: StatusBadgeProps) {

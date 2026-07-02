@@ -16,6 +16,7 @@ const NewAudit = lazy(() => import('./pages/NewAudit'));
 const AuditWorkspace = lazy(() => import('./pages/AuditWorkspace'));
 const PublicReport = lazy(() => import('./pages/PublicReport'));
 const AdminArea = lazy(() => import('./pages/AdminArea'));
+const Proposals = lazy(() => import('./pages/Proposals'));
 
 function ViewerLanding() {
   const { user, signOut } = useAuth();
@@ -88,6 +89,7 @@ function AppRoutes() {
             <Route path="/audits" element={<Audits />} />
             <Route path="/audits/new" element={<NewAudit />} />
             <Route path="/audits/:id" element={<AuditWorkspace />} />
+            <Route path="/proposals" element={<Proposals />} />
             <Route path="/admin" element={<AdminArea />} />
             <Route path="*" element={<Navigate to="/" replace />} />
           </Route>

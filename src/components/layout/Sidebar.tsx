@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   Users,
   ClipboardCheck,
+  FileSignature,
   Settings,
   LogOut,
   ChevronLeft,
@@ -19,6 +20,7 @@ interface SidebarProps {
 const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/audits', icon: ClipboardCheck, label: 'Audits' },
+  { to: '/proposals', icon: FileSignature, label: 'Proposals' },
   { to: '/clients', icon: Users, label: 'Clients' },
 ];
 
@@ -30,6 +32,7 @@ const NAV_PREFETCH: Record<string, () => Promise<unknown>> = {
   '/': () => import('../../pages/Dashboard'),
   '/clients': () => import('../../pages/Clients'),
   '/audits': () => import('../../pages/Audits'),
+  '/proposals': () => import('../../pages/Proposals'),
 };
 
 export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }: SidebarProps) {

@@ -39,4 +39,10 @@ export const STATUS_COLORS: Record<string, { bg: string; text: string }> = {
   viewer_only: { bg: 'bg-blue-50', text: 'text-blue-700' },
   published: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
   approved: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
+  // Proposal statuses
+  sent: { bg: 'bg-blue-50', text: 'text-blue-700' },
+  viewed: { bg: 'bg-purple-50', text: 'text-purple-700' },
+  won: { bg: 'bg-emerald-50', text: 'text-emerald-700' },
+  lost: { bg: 'bg-red-50', text: 'text-red-700' },
+  expired: { bg: 'bg-gray-100', text: 'text-gray-500' },
 };

@@ -315,6 +315,174 @@ export interface AuditEmailDesign {
 
 export type UserRole = 'admin' | 'viewer';
 
+// ---------------------------------------------------------------------------
+// Proposals
+
+/** Stored proposal statuses. 'expired' is derived from valid_until, never stored. */
+export type ProposalStatus = 'draft' | 'sent' | 'viewed' | 'won' | 'lost';
+/** Stored statuses plus the derived 'expired' display status. */
+export type ProposalDisplayStatus = ProposalStatus | 'expired';
+
+export interface ProposalBlock {
+  key: string;
+  title: string;
+  /** Markdown rich text. */
+  content: string;
+}
+
+export type ProposalDiscountType = 'none' | 'fixed' | 'percent';
+export type ProposalDiscountAppliesTo = 'one_time' | 'monthly' | 'both';
+
+export interface ProposalCoverOverrides {
+  tagline?: string | null;
+  background_url?: string | null;
+  logo_url?: string | null;
+  display_date?: string | null;
+}
+
+export interface ProposalContractSnapshot {
+  slug: string;
+  name: string;
+  /** Markdown rich text frozen at send time. */
+  content: string;
+  version_updated_at: string;
+}
+
+export interface Proposal {
+  id: string;
+  proposal_number: number;
+  client_id: string;
+  audit_id: string | null;
+  template_id: string | null;
+  title: string;
+  status: ProposalStatus;
+  cover: ProposalCoverOverrides;
+  content_blocks: ProposalBlock[];
+  /** Contract document slugs toggled on for this proposal. */
+  include_contracts: string[];
+  contracts_snapshot: ProposalContractSnapshot[] | null;
+  discount_type: ProposalDiscountType;
+  discount_value: number;
+  discount_applies_to: ProposalDiscountAppliesTo;
+  discount_label: string | null;
+  recipient_name: string;
+  recipient_email: string;
+  public_token: string | null;
+  valid_until: string | null;
+  sent_at: string | null;
+  first_viewed_at: string | null;
+  client_signed_at: string | null;
+  countersigned_at: string | null;
+  won_at: string | null;
+  lost_at: string | null;
+  lost_reason: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+  client?: Client;
+  line_items?: ProposalLineItem[];
+}
+
+export interface ProposalLineItem {
+  id: string;
+  proposal_id: string;
+  /** Provenance only — snapshot survives template deletion. */
+  template_slug: string | null;
+  name: string;
+  description: string;
+  /** Markdown rich text. */
+  content: string;
+  one_time_price: number | null;
+  one_time_label: string | null;
+  monthly_price: number | null;
+  monthly_label: string | null;
+  image_url: string | null;
+  display_order: number;
+  created_at: string;
+}
+
+/** Line-item shape stored inside proposal_templates.default_line_items JSONB. */
+export type ProposalTemplateLineItem = Omit<ProposalLineItem, 'id' | 'proposal_id' | 'created_at'>;
+
+export interface ProposalTemplate {
+  id: string;
+  name: string;
+  content_blocks: ProposalBlock[];
+  default_line_items: ProposalTemplateLineItem[];
+  /** Contract document slugs included by default. */
+  default_contracts: string[];
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContractDocument {
+  id: string;
+  slug: string;
+  name: string;
+  /** Markdown rich text. */
+  content: string;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProposalEventType =
+  | 'created'
+  | 'updated'
+  | 'sent'
+  | 'resent'
+  | 'viewed'
+  | 'signed'
+  | 'countersigned'
+  | 'won'
+  | 'lost'
+  | 'reopened';
+
+export interface ProposalEvent {
+  id: string;
+  proposal_id: string;
+  event_type: ProposalEventType;
+  actor: 'admin' | 'client' | 'system';
+  actor_user_id: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface ProposalSignature {
+  id: string;
+  proposal_id: string;
+  role: 'client' | 'agency';
+  signer_name: string;
+  signer_email: string;
+  signer_user_id: string | null;
+  /** PNG data URL. */
+  signature_image: string;
+  typed_name: string;
+  ip_address: string;
+  user_agent: string;
+  signed_at: string;
+}
+
+export interface ProposalSettings {
+  cover: {
+    background_url: string | null;
+    logo_url: string | null;
+    tagline: string | null;
+  };
+  email: {
+    from_name: string | null;
+    from_email: string | null;
+    reply_to: string | null;
+    team_notification_emails: string[];
+  };
+  defaults: {
+    valid_days: number;
+  };
+}
+
 /** Optional inputs for Phase 2 AI refinement (stored on audit row). */
 export interface AuditContext {
   meeting_notes?: string;
