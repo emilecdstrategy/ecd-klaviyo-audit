@@ -70,10 +70,10 @@ export default function ProposalSettingsPanel() {
   };
 
   const inputClass =
-    'w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20';
+    'w-full max-w-md rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20';
 
   return (
-    <div className="max-w-3xl space-y-4 animate-slide-up">
+    <div className="space-y-4 animate-slide-up">
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h2 className="text-base font-semibold text-gray-900">Proposal Settings</h2>

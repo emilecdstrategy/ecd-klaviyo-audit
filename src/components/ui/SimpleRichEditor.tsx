@@ -1,6 +1,6 @@
 import { useRef, useCallback, useEffect } from 'react';
 import { Bold, Highlighter, Italic, Underline, List } from 'lucide-react';
-import { htmlToMd, auditTextToEditorHtml } from '../../lib/audit-markdown';
+import { htmlToMd, auditTextToEditorHtml, markdownToEditorHtml } from '../../lib/audit-markdown';
 import { HIGHLIGHT_SHORTCUT_LABEL, isHighlightShortcut, toggleSelectionHighlight } from '../../lib/entity-editor';
 import type { EntityType } from '../../lib/entity-tags';
 import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
@@ -36,7 +36,7 @@ export default function SimpleRichEditor({
     }
     const html = entityTags
       ? auditTextToEditorHtml(value || '', entityLookup, false, entityHighlightsEnabled)
-      : (value || '');
+      : markdownToEditorHtml(value || '');
     if (editorRef.current.innerHTML !== html) {
       editorRef.current.innerHTML = html;
     }

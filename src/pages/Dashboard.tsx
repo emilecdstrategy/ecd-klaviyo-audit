@@ -19,12 +19,17 @@ import { formatCurrency } from '../lib/revenue-calculator';
 import { isLikelyAuditGenerating } from '../lib/audit-pipeline-status';
 import { listAudits, listClients } from '../lib/db';
 import { listProposals } from '../lib/proposals-db';
-import { isProposalOpen } from '../lib/proposal-status';
+import { deriveProposalStatus, isProposalOpen } from '../lib/proposal-status';
 import { computeProposalTotals, proposalDiscountFromRow, proposalPipelineValue } from '../lib/proposal-pricing';
 import { canSeeProposalsBeta } from '../lib/feature-flags';
 import { useAuth } from '../contexts/AuthContext';
 import GeneratingBadge from '../components/ui/GeneratingBadge';
 import type { Audit, Client, Proposal } from '../lib/types';
+
+function proposalValue(proposal: Proposal): number {
+  const totals = computeProposalTotals(proposal.line_items ?? [], proposalDiscountFromRow(proposal));
+  return proposalPipelineValue(totals);
+}
 
 export default function Dashboard() {
   const navigate = useNavigate();
@@ -59,10 +64,7 @@ export default function Dashboard() {
   const inReview = audits.filter(a => a.status === 'in_review').length;
   const published = audits.filter(a => a.status === 'published').length;
   const totalRevOpp = audits.reduce((s, a) => s + a.total_revenue_opportunity, 0);
-  const openPipelineValue = proposals.filter(isProposalOpen).reduce((sum, p) => {
-    const totals = computeProposalTotals(p.line_items ?? [], proposalDiscountFromRow(p));
-    return sum + proposalPipelineValue(totals);
-  }, 0);
+  const openPipelineValue = proposals.filter(isProposalOpen).reduce((sum, p) => sum + proposalValue(p), 0);
 
   return (
     <div>
@@ -103,6 +105,15 @@ export default function Dashboard() {
             <UserPlus className="w-4 h-4" />
             Add Client
           </button>
+          {showProposals && (
+            <button
+              onClick={() => navigate('/proposals/new', { state: { backgroundLocation: location } })}
+              className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <FileSignature className="w-4 h-4" />
+              Create Proposal
+            </button>
+          )}
         </div>
 
         {loading ? (
@@ -189,6 +200,50 @@ export default function Dashboard() {
                 })}
               </div>
             </div>
+
+            {showProposals && (
+              <div className="bg-white rounded-xl card-shadow">
+                <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
+                  <h2 className="text-sm font-semibold text-gray-900">Recent Proposals</h2>
+                  <button
+                    onClick={() => navigate('/proposals')}
+                    className="text-xs text-brand-primary font-medium hover:underline flex items-center gap-1"
+                  >
+                    View All <ArrowRight className="w-3 h-3" />
+                  </button>
+                </div>
+                <div className="divide-y divide-gray-50">
+                  {[...proposals]
+                    .sort((a, b) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+                    .slice(0, 5)
+                    .map(proposal => (
+                    <button
+                      key={proposal.id}
+                      onClick={() => navigate(`/proposals/${proposal.id}`)}
+                      className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/50 transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <SiteFavicon url={proposal.client?.website_url} size="md" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {proposal.title || 'Untitled proposal'}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5">
+                            {proposal.client?.company_name || 'Unknown'}
+                          </p>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-4 shrink-0 ml-4">
+                        <span className="text-sm font-semibold text-gray-900">
+                          {formatCurrency(proposalValue(proposal))}
+                        </span>
+                        <StatusBadge status={deriveProposalStatus(proposal)} />
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
         </div>
         )}

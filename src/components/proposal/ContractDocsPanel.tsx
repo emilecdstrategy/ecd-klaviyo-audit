@@ -62,7 +62,7 @@ export default function ContractDocsPanel() {
   }
 
   return (
-    <div className="space-y-4 animate-slide-up max-w-4xl">
+    <div className="space-y-4 animate-slide-up">
       <div>
         <h2 className="text-base font-semibold text-gray-900">Contract Documents</h2>
         <p className="text-sm text-gray-500 mt-0.5">
