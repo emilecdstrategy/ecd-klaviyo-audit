@@ -94,6 +94,16 @@ export async function listProposals(): Promise<Proposal[]> {
   return (data ?? []).map(mapProposalRow);
 }
 
+export async function listProposalsByClient(clientId: string): Promise<Proposal[]> {
+  const { data, error } = await supabase
+    .from('proposals')
+    .select(PROPOSAL_LIST_SELECT)
+    .eq('client_id', clientId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return (data ?? []).map(mapProposalRow);
+}
+
 export async function getProposal(id: string): Promise<Proposal | null> {
   const { data, error } = await supabase
     .from('proposals')

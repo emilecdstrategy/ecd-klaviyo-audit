@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { Search, LayoutTemplate, FileText, ArrowLeft } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import SiteFavicon from '../components/ui/SiteFavicon';
@@ -12,6 +12,8 @@ type NewProposalProps = { asModal?: boolean };
 
 export default function NewProposal({ asModal }: NewProposalProps) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const prefillClientId = (location.state as { clientId?: string } | null)?.clientId;
   const [clients, setClients] = useState<Client[]>([]);
   const [templates, setTemplates] = useState<ProposalTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -31,6 +33,10 @@ export default function NewProposal({ asModal }: NewProposalProps) {
         if (cancelled) return;
         setClients(c);
         setTemplates(t);
+        if (prefillClientId) {
+          const match = c.find(client => client.id === prefillClientId);
+          if (match) setSelectedClient(match);
+        }
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load clients');
       } finally {
@@ -38,7 +44,7 @@ export default function NewProposal({ asModal }: NewProposalProps) {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [prefillClientId]);
 
   const filteredClients = useMemo(() => {
     const q = search.toLowerCase();

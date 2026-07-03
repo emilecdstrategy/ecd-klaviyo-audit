@@ -4,6 +4,7 @@ import {
   Globe,
   Mail,
   FileText,
+  FileSignature,
   Plus,
   ExternalLink,
   CheckCircle2,
@@ -22,8 +23,12 @@ import { formatCurrency } from '../lib/revenue-calculator';
 import { isLikelyAuditGenerating } from '../lib/audit-pipeline-status';
 import GeneratingBadge from '../components/ui/GeneratingBadge';
 import { useEffect, useState } from 'react';
-import type { Audit, Client } from '../lib/types';
+import type { Audit, Client, Proposal } from '../lib/types';
 import { getClient, listAuditsByClient, updateClient } from '../lib/db';
+import { listProposalsByClient } from '../lib/proposals-db';
+import { deriveProposalStatus } from '../lib/proposal-status';
+import { computeProposalTotals, proposalDiscountFromRow, proposalPipelineValue } from '../lib/proposal-pricing';
+import { canSeeProposalsBeta } from '../lib/feature-flags';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/ui/Modal';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
@@ -32,10 +37,12 @@ export default function ClientDetail() {
   const { id } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
-  const { hasRole } = useAuth();
+  const { user, hasRole } = useAuth();
+  const showProposals = canSeeProposalsBeta(user?.email);
 
   const [client, setClient] = useState<Client | null>(null);
   const [clientAudits, setClientAudits] = useState<Audit[]>([]);
+  const [clientProposals, setClientProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [editingKey, setEditingKey] = useState(false);
@@ -57,10 +64,11 @@ export default function ClientDetail() {
       try {
         setLoading(true);
         setError('');
-        const [c, a] = await Promise.all([getClient(id), listAuditsByClient(id)]);
+        const [c, a, p] = await Promise.all([getClient(id), listAuditsByClient(id), listProposalsByClient(id)]);
         if (cancelled) return;
         setClient(c);
         setClientAudits(a);
+        setClientProposals(p);
       } catch (e: unknown) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : 'Failed to load client');
@@ -166,6 +174,14 @@ export default function ClientDetail() {
     ).toLocaleDateString()
     : '—';
 
+  function proposalValue(proposal: Proposal): number {
+    const totals = computeProposalTotals(proposal.line_items ?? [], proposalDiscountFromRow(proposal));
+    return proposalPipelineValue(totals);
+  }
+
+  const totalProposalValue = clientProposals.reduce((sum, p) => sum + proposalValue(p), 0);
+  const wonProposalsCount = clientProposals.filter(p => deriveProposalStatus(p) === 'won').length;
+
   return (
     <div>
       <TopBar
@@ -173,13 +189,24 @@ export default function ClientDetail() {
         subtitle={client.website_url || ' '}
         leadingIcon={<SiteFavicon url={client.website_url} size="md" />}
         actions={
-          <button
-            onClick={() => navigate('/audits/new', { state: { clientId: client.id, backgroundLocation: location } })}
-            className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-4 h-4" />
-            New Audit
-          </button>
+          <div className="flex items-center gap-2">
+            {showProposals && (
+              <button
+                onClick={() => navigate('/proposals/new', { state: { clientId: client.id, backgroundLocation: location } })}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <FileSignature className="w-4 h-4" />
+                New Proposal
+              </button>
+            )}
+            <button
+              onClick={() => navigate('/audits/new', { state: { clientId: client.id, backgroundLocation: location } })}
+              className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+            >
+              <Plus className="w-4 h-4" />
+              New Audit
+            </button>
+          </div>
         }
       />
       <Modal
@@ -422,6 +449,58 @@ export default function ClientDetail() {
                 </div>
               )}
             </div>
+
+            {showProposals && (
+              <div className="bg-white rounded-xl card-shadow">
+                <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
+                  <h2 className="text-base font-semibold text-gray-900">Proposals</h2>
+                  <span className="text-xs text-gray-400">{clientProposals.length} proposals</span>
+                </div>
+                {clientProposals.length === 0 ? (
+                  <div className="p-8 text-center">
+                    <FileSignature className="w-8 h-8 text-gray-200 mx-auto mb-2" />
+                    <p className="text-sm text-gray-500">No proposals yet for this client.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-50">
+                    {clientProposals.map(proposal => (
+                      <div
+                        key={proposal.id}
+                        onClick={() => navigate(`/proposals/${proposal.id}`)}
+                        className="w-full flex items-center justify-between px-6 py-4 hover:bg-gray-50/50 transition-colors text-left cursor-pointer"
+                      >
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">
+                            {proposal.title || 'Untitled proposal'}
+                          </p>
+                          <p className="text-xs text-gray-500 mt-0.5 tabular-nums">
+                            ECD-{String(proposal.proposal_number).padStart(4, '0')}
+                            {' · '}
+                            {new Date(proposal.updated_at).toLocaleDateString()}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3 shrink-0 ml-4">
+                          <span className="text-sm font-semibold text-gray-900">
+                            {formatCurrency(proposalValue(proposal))}
+                          </span>
+                          <StatusBadge status={deriveProposalStatus(proposal)} />
+                          <a
+                            href={`/proposals/${proposal.id}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            onClick={e => e.stopPropagation()}
+                            className="p-1.5 rounded hover:bg-gray-100 transition-colors inline-flex"
+                            title="Open proposal in new tab"
+                          >
+                            <ExternalLink className="w-3.5 h-3.5 text-gray-400" />
+                          </a>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
           </div>
 
           <div className="space-y-6">
@@ -507,6 +586,25 @@ export default function ClientDetail() {
                     {firstAuditDate}
                   </span>
                 </div>
+                {showProposals && clientProposals.length > 0 && (
+                  <>
+                    <div className="pt-3 border-t border-gray-50" />
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-500">Total Proposals</span>
+                      <span className="text-sm font-semibold text-gray-900">{clientProposals.length}</span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-500">Proposal Value</span>
+                      <span className="text-sm font-semibold text-emerald-700">
+                        {formatCurrency(totalProposalValue)}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between">
+                      <span className="text-sm text-gray-500">Proposals Won</span>
+                      <span className="text-sm text-gray-900">{wonProposalsCount}</span>
+                    </div>
+                  </>
+                )}
               </div>
             </div>
           </div>
