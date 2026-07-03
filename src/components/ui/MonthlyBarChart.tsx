@@ -25,11 +25,21 @@ function monthLabelFull(month: string): string {
   return `${MONTH_LABELS[idx] ?? month} ${year}`;
 }
 
-/** Round-number y-axis ticks (0, step, 2*step, ...) sized so counts never repeat a label. */
+/** 1/2/5 * 10^n candidate steps, generated up to a magnitude comfortably above any
+ * proposal dollar value so the same tick logic works for both counts and currency. */
+function niceStepCandidates(): number[] {
+  const steps: number[] = [];
+  for (let magnitude = 1; magnitude <= 10_000_000; magnitude *= 10) {
+    steps.push(magnitude, magnitude * 2, magnitude * 5);
+  }
+  return steps;
+}
+const STEP_CANDIDATES = niceStepCandidates();
+
+/** Round-number y-axis ticks (0, step, 2*step, ...) sized so labels never repeat. */
 function computeTicks(maxValue: number): number[] {
   const rounded = Math.max(1, Math.ceil(maxValue));
-  const candidateSteps = [1, 2, 5, 10, 20, 25, 50, 100, 200, 500];
-  const step = candidateSteps.find(s => rounded / s <= 4) ?? candidateSteps[candidateSteps.length - 1];
+  const step = STEP_CANDIDATES.find(s => rounded / s <= 4) ?? STEP_CANDIDATES[STEP_CANDIDATES.length - 1];
   const top = Math.ceil(rounded / step) * step;
   const ticks: number[] = [];
   for (let v = 0; v <= top; v += step) ticks.push(v);
