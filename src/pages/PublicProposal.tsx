@@ -294,23 +294,35 @@ export default function PublicProposal() {
         </ProposalEditProvider>
       </main>
 
-      {canSign && (
+      {(canSign || justSigned) && (
         <div className="fixed inset-x-0 bottom-0 z-30 border-t border-gray-200 bg-white/95 backdrop-blur print:hidden">
           <div className="mx-auto flex max-w-[880px] items-center justify-between gap-4 px-5 py-3 pb-[max(0.75rem,env(safe-area-inset-bottom))] sm:px-8">
-            <div className="min-w-0">
-              <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Total</p>
-              <p className="truncate text-base font-bold tabular-nums text-gray-900">
-                {totalParts.join(' + ') || '—'}
-              </p>
-            </div>
-            <button
-              type="button"
-              onClick={scrollToSignature}
-              className="inline-flex shrink-0 items-center gap-2 rounded-lg gradient-bg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
-            >
-              <PenLine className="h-4 w-4" />
-              Accept & sign
-            </button>
+            {justSigned ? (
+              <div className="flex items-center gap-3">
+                <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-emerald-800">Thank you! This proposal has been signed.</p>
+                  <p className="text-xs text-emerald-700">A countersigned copy will follow from ECD Digital Strategy.</p>
+                </div>
+              </div>
+            ) : (
+              <>
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Total</p>
+                  <p className="truncate text-base font-bold tabular-nums text-gray-900">
+                    {totalParts.join(' + ') || '—'}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={scrollToSignature}
+                  className="inline-flex shrink-0 items-center gap-2 rounded-lg gradient-bg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                >
+                  <PenLine className="h-4 w-4" />
+                  Accept & sign
+                </button>
+              </>
+            )}
           </div>
         </div>
       )}

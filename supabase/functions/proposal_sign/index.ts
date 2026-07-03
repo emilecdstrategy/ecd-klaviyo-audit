@@ -11,13 +11,8 @@ import {
   isProposalExpired,
   proposalJson,
 } from "../_shared/proposal-public.ts";
-import { proposalEmailHtml, resolveFromAddress, sendEmail } from "../_shared/mailer.ts";
-
-/** The request Origin is the real proposal domain; APP_URL is only a fallback for server-triggered calls. */
-function resolveLogoUrl(req: Request): string | undefined {
-  const origin = (req.headers.get("origin") || Deno.env.get("APP_URL") || "").trim().replace(/\/$/, "");
-  return origin ? `${origin}/cropped-favicon-192x192.webp` : undefined;
-}
+import { proposalEmailHtml, resolveFromAddress, resolveOrigin, sendEmail } from "../_shared/mailer.ts";
+import { escapeHtml, proposalReferenceLink } from "../_shared/proposal-links.ts";
 
 const MAX_SIGNATURE_LENGTH = 300000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -126,20 +121,24 @@ serve(async (req) => {
     };
     const teamEmails = (settings.email?.team_notification_emails ?? []).filter(Boolean);
     if (teamEmails.length > 0) {
+      const origin = resolveOrigin(req);
       const company = proposal.client?.company_name ?? "a client";
+      const proposalUrl = origin ? `${origin}/proposals/${proposal.id}` : null;
       const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
       await sendEmail({
         to: teamEmails,
         from: resolveFromAddress(settings.email),
         subject: `🎉 Proposal signed by ${company}`,
         html: proposalEmailHtml({
-          heading: `${typedName} signed the ${company} proposal`,
+          heading: `${escapeHtml(typedName)} signed the ${escapeHtml(company)} proposal`,
           bodyLines: [
-            `Proposal ECD-${String(proposal.proposal_number).padStart(4, "0")} (“${proposal.title}”) was just signed and marked won.`,
+            `${proposalReferenceLink(origin, proposal)} was just signed by <a href="mailto:${escapeHtml(signerEmail)}" style="color:#4b3afe;text-decoration:underline;">${escapeHtml(signerEmail)}</a> and marked won.`,
             `Totals: ${money(totals.oneTimeTotal)} one-time plus ${money(totals.monthlyTotal)}/mo.`,
-            `Next step: countersign it from the proposal page.`,
+            proposalUrl
+              ? `Next step: <a href="${proposalUrl}" style="color:#4b3afe;text-decoration:underline;">countersign it from the proposal page</a>.`
+              : `Next step: countersign it from the proposal page.`,
           ],
-          logoUrl: resolveLogoUrl(req),
+          logoUrl: origin ? `${origin}/cropped-favicon-192x192.webp` : undefined,
         }),
       });
     }

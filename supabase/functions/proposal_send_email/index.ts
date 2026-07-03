@@ -7,6 +7,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { assertServiceRoleClient, requireStaffUserId } from "../_shared/auth.ts";
 import { PROPOSAL_CORS_HEADERS, proposalJson } from "../_shared/proposal-public.ts";
 import { proposalEmailHtml, resolveFromAddress, sendEmail } from "../_shared/mailer.ts";
+import { escapeHtml } from "../_shared/proposal-links.ts";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
@@ -118,9 +119,9 @@ serve(async (req) => {
       html: proposalEmailHtml({
         heading: `Your proposal is ready`,
         bodyLines: [
-          `Hi${recipientName ? ` ${recipientName.split(" ")[0]}` : ""},`,
-          ...(message ? [message] : []),
-          `Please review the proposal we prepared for ${companyName}. You can read and sign it directly from the link below.`,
+          `Hi${recipientName ? ` ${escapeHtml(recipientName.split(" ")[0])}` : ""},`,
+          ...(message ? [escapeHtml(message)] : []),
+          `Please review the proposal we prepared for ${escapeHtml(companyName)}. You can read and sign it directly from the link below.`,
           ...(validUntil ? [`This proposal is valid until ${validUntil}.`] : []),
         ],
         ctaLabel: "View & sign proposal",

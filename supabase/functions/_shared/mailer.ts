@@ -20,6 +20,15 @@ export function mailerConfigured(): boolean {
   return Boolean((Deno.env.get("SMTP_USER") ?? "").trim() && (Deno.env.get("SMTP_PASS") ?? "").trim());
 }
 
+/** Strip trailing whitespace from every line so quoted-printable encoding never has to
+ * escape a trailing space before a line break (the exact trigger for stray "=20" output). */
+function sanitizeHtmlForQuotedPrintable(html: string): string {
+  return html
+    .split("\n")
+    .map((line) => line.replace(/[ \t]+$/, ""))
+    .join("\n");
+}
+
 export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult> {
   const host = (Deno.env.get("SMTP_HOST") ?? "smtp.gmail.com").trim();
   const port = Number(Deno.env.get("SMTP_PORT") ?? "587");
@@ -48,8 +57,12 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
       from: input.from?.trim() || `ECD Digital Strategy <${user}>`,
       to: input.to,
       subject: input.subject,
-      html: input.html,
-      content: "This email requires an HTML-capable mail client to view.",
+      // HTML only: denomailer's quoted-printable encoder escapes any trailing
+      // space before a line break as "=20"; adding a second (text/plain)
+      // MIME part multiplies the boundary/encoding surface area and some
+      // clients (observed with Gmail) leak a stray "=20" from it. A single
+      // HTML part sidesteps that entirely.
+      html: sanitizeHtmlForQuotedPrintable(input.html),
       ...(input.replyTo ? { replyTo: input.replyTo } : {}),
     });
     return { status: "sent", id: crypto.randomUUID() };
@@ -62,6 +75,12 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
       // Connection may already be closed; nothing to do.
     }
   }
+}
+
+/** The request Origin is the real app domain the client/staff member is on;
+ * APP_URL is only a fallback for server-triggered calls with no Origin header. */
+export function resolveOrigin(req: Request): string {
+  return (req.headers.get("origin") || Deno.env.get("APP_URL") || "").trim().replace(/\/$/, "");
 }
 
 type EmailSettings = {
