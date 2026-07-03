@@ -9,6 +9,7 @@ export type SendEmailInput = {
   html: string;
   from?: string;
   replyTo?: string;
+  cc?: string[];
 };
 
 export type SendEmailResult =
@@ -64,6 +65,7 @@ export async function sendEmail(input: SendEmailInput): Promise<SendEmailResult>
       // HTML part sidesteps that entirely.
       html: sanitizeHtmlForQuotedPrintable(input.html),
       ...(input.replyTo ? { replyTo: input.replyTo } : {}),
+      ...(input.cc?.length ? { cc: input.cc } : {}),
     });
     return { status: "sent", id: crypto.randomUUID() };
   } catch (e) {

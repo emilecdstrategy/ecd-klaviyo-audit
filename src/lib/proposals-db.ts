@@ -407,6 +407,7 @@ export async function sendProposalEmail(input: {
   recipient_email: string;
   recipient_name?: string;
   message?: string;
+  reply_to_emails?: string[];
 }): Promise<{ public_token: string; email_status: 'sent' | 'skipped' }> {
   const { data, error } = await supabase.functions.invoke('proposal_send_email', {
     body: { ...input, app_url: window.location.origin },

@@ -30,11 +30,15 @@ serve(async (req) => {
       recipient_name?: string;
       message?: string;
       app_url?: string;
+      reply_to_emails?: string[];
     };
     const proposalId = (body.proposal_id ?? "").trim();
     const recipientEmail = (body.recipient_email ?? "").trim();
     const recipientName = (body.recipient_name ?? "").trim();
     const message = (body.message ?? "").trim();
+    const replyToEmails = (body.reply_to_emails ?? [])
+      .map((e) => e.trim())
+      .filter((e) => EMAIL_RE.test(e));
 
     if (!proposalId) {
       return proposalJson({ ok: false, error: { code: "bad_request", message: "Missing proposal_id" }, correlationId }, { status: 400 });
@@ -111,10 +115,17 @@ serve(async (req) => {
     const logoUrl = cleanOrigin ? `${cleanOrigin}/cropped-favicon-192x192.webp` : undefined;
     const companyName = proposal.client?.company_name ?? "your company";
 
+    const [primaryReplyTo, ...ccReplyTos] = replyToEmails.length
+      ? replyToEmails
+      : settings.email?.reply_to
+      ? [settings.email.reply_to]
+      : [];
+
     const emailResult = await sendEmail({
       to: [recipientEmail],
       from: resolveFromAddress(settings.email),
-      replyTo: settings.email?.reply_to ?? undefined,
+      replyTo: primaryReplyTo,
+      cc: ccReplyTos,
       subject: `Proposal for ${companyName} from ECD Digital Strategy`,
       html: proposalEmailHtml({
         heading: `Your proposal is ready`,
@@ -138,6 +149,7 @@ serve(async (req) => {
       metadata: {
         email_to: recipientEmail,
         email_status: emailResult.status,
+        ...(replyToEmails.length ? { reply_to: replyToEmails } : {}),
         ...(emailResult.status === "sent" ? { message_id: emailResult.id } : { email_note: emailResult.reason }),
       },
     });

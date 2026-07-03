@@ -193,6 +193,16 @@ export async function deleteClient(id: string): Promise<void> {
   if (error) throw error;
 }
 
+export async function listAdminProfiles(): Promise<Profile[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('*')
+    .eq('role', 'admin')
+    .order('name');
+  if (error) throw error;
+  return data ?? [];
+}
+
 export async function listAudits(): Promise<Audit[]> {
   const { data, error } = await supabase
     .from('audits')
