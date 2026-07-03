@@ -1,6 +1,7 @@
 import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { getZoneRedirectOrigin } from './lib/route-zones';
 import AppShell from './components/layout/AppShell';
 import Login from './pages/Login';
 import Modal from './components/ui/Modal';
@@ -65,6 +66,20 @@ function AppRoutes() {
   // (e.g. the session-hydration race where isLoading clears before `user` does), send
   // them back to the page they actually clicked instead of defaulting to "/".
   const deepLinkFrom = typeof state?.from === 'string' ? state.from : null;
+
+  // Proposals live on proposal.ecdigitalstrategy.com; everything else (dashboard,
+  // audits, clients, admin) lives on audit.ecdigitalstrategy.com. Checked against
+  // whatever's actually being rendered (the modal system swaps in a background
+  // location while a "New X" modal is open, so a proposals modal opened from an
+  // audit-zone page shouldn't itself trigger a cross-domain redirect). Runs before
+  // the auth gate below since the session cookie is shared across both domains
+  // anyway, so whichever domain we land on already knows the login state.
+  const zonedPathname = (backgroundLocation ?? location).pathname;
+  const zoneRedirectOrigin = getZoneRedirectOrigin(zonedPathname);
+  if (zoneRedirectOrigin) {
+    window.location.replace(`${zoneRedirectOrigin}${location.pathname}${location.search}`);
+    return null;
+  }
 
   if (isLoading && !isPublicReportRoute) {
     return <AppPreloader />;
