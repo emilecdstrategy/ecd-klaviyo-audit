@@ -1,8 +1,9 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ArrowLeft, ChevronDown, Plus, Send, X } from 'lucide-react';
 import Modal from '../ui/Modal';
 import { sendProposalEmail } from '../../lib/proposals-db';
 import { listAdminProfiles, updateClient } from '../../lib/db';
+import { buildProposalEmailPreview } from '../../lib/proposal-email-preview';
 import type { Client, Profile, Proposal } from '../../lib/types';
 
 type SendProposalModalProps = {
@@ -105,12 +106,24 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
 
   const noClientEmailOnFile = !client?.email;
 
+  const emailPreview = useMemo(
+    () =>
+      buildProposalEmailPreview({
+        recipientName,
+        message,
+        companyName: client?.company_name || proposal.client?.company_name || 'your company',
+        validUntil: proposal.valid_until,
+        logoUrl: `${window.location.origin}/cropped-favicon-192x192.webp`,
+      }),
+    [recipientName, message, client?.company_name, proposal.client?.company_name, proposal.valid_until],
+  );
+
   return (
     <Modal
       open={open}
       title={isResend ? 'Resend proposal' : 'Send proposal'}
       onClose={() => (sending ? undefined : onClose())}
-      className="max-w-lg"
+      className={step === 'confirm' ? 'max-w-2xl' : 'max-w-lg'}
     >
       {step === 'edit' ? (
         <div className="space-y-4 p-5">
@@ -138,7 +151,7 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
           </div>
           {noClientEmailOnFile && !proposal.recipient_email && (
             <p className="text-xs text-amber-600">
-              No email is on file for this client yet — the address you enter here will also be saved to their client profile.
+              No email is on file for this client yet. The address you enter here will also be saved to their client profile.
             </p>
           )}
           <div>
@@ -207,7 +220,7 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
                 </span>
               ))}
               {replyToEmails.length === 0 && (
-                <span className="text-xs text-gray-400">No one — replies go straight to the client's inbox.</span>
+                <span className="text-xs text-gray-400">No one selected. Replies go straight to the client's inbox.</span>
               )}
               <div className="relative">
                 <button
@@ -231,7 +244,7 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
                             className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
                           >
                             <span className="font-medium">{a.name || a.email}</span>
-                            {a.name && <span className="text-gray-400"> — {a.email}</span>}
+                            {a.name && <span className="text-gray-400"> · {a.email}</span>}
                           </button>
                         ))}
                       </div>
@@ -257,6 +270,21 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
                   </div>
                 )}
               </div>
+            </div>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-gray-500">Email preview</p>
+            <div className="overflow-hidden rounded-lg border border-gray-200">
+              <div className="border-b border-gray-200 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                <span className="font-medium text-gray-700">Subject:</span> {emailPreview.subject}
+              </div>
+              <iframe
+                title="Email preview"
+                srcDoc={emailPreview.html}
+                sandbox=""
+                className="h-[320px] w-full bg-white"
+              />
             </div>
           </div>
 

@@ -138,6 +138,13 @@
     display: none !important;
   }
 
+  /* AppShell reserves space for the fixed sidebar via a left margin on its content
+     wrapper; hiding the sidebar above doesn't remove that margin, so without this
+     the printed page keeps a blank ~240px strip on the left. */
+  .app-shell-offset {
+    margin-left: 0 !important;
+  }
+
   /* Plain (non-Tailwind-variant) classes so the print layout doesn't depend on
      print: utilities surviving the Tailwind content scan/purge — this is the
      one part of the layout we can't afford to silently lose. */

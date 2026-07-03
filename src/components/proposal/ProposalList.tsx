@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
   FileSignature,
@@ -69,7 +70,7 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
   const [statusFilter, setStatusFilter] = useState('__all__');
   const [deletingProposal, setDeletingProposal] = useState<Proposal | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ proposal: Proposal; top: number; right: number } | null>(null);
   const [sendProposal, setSendProposal] = useState<Proposal | null>(null);
   const [draftLinkProposal, setDraftLinkProposal] = useState<Proposal | null>(null);
   const [linkBusyId, setLinkBusyId] = useState<string | null>(null);
@@ -79,6 +80,17 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
   const [actionError, setActionError] = useState('');
 
   const patch = (updated: Proposal) => onUpdated?.(updated);
+
+  useEffect(() => {
+    if (!menuAnchor) return;
+    const close = () => setMenuAnchor(null);
+    window.addEventListener('scroll', close, true);
+    window.addEventListener('resize', close);
+    return () => {
+      window.removeEventListener('scroll', close, true);
+      window.removeEventListener('resize', close);
+    };
+  }, [menuAnchor]);
 
   const copyLink = async (proposal: Proposal) => {
     setLinkBusyId(proposal.id);
@@ -378,102 +390,23 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
                       {new Date(proposal.updated_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="relative flex items-center justify-end">
+                      <div className="flex items-center justify-end">
                         <button
                           type="button"
                           onClick={e => {
                             e.stopPropagation();
-                            setOpenMenuId(prev => (prev === proposal.id ? null : proposal.id));
+                            if (menuAnchor?.proposal.id === proposal.id) {
+                              setMenuAnchor(null);
+                            } else {
+                              const rect = e.currentTarget.getBoundingClientRect();
+                              setMenuAnchor({ proposal, top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                            }
                           }}
                           className="p-1.5 rounded hover:bg-gray-100 transition-colors"
                           title="More actions"
                         >
                           <MoreVertical className="w-4 h-4 text-gray-400" />
                         </button>
-                        {openMenuId === proposal.id && (
-                          <>
-                            <div
-                              className="fixed inset-0 z-10"
-                              onClick={e => { e.stopPropagation(); setOpenMenuId(null); }}
-                            />
-                            <div
-                              onClick={e => e.stopPropagation()}
-                              className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
-                            >
-                              {!isClosedProposal(proposal) && (
-                                <button
-                                  type="button"
-                                  onClick={() => { setOpenMenuId(null); setSendProposal(proposal); }}
-                                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                                >
-                                  <Send className="h-3.5 w-3.5 text-gray-400" />
-                                  {proposal.status === 'draft' ? 'Send to client' : 'Resend'}
-                                </button>
-                              )}
-                              <button
-                                type="button"
-                                disabled={linkBusyId === proposal.id}
-                                onClick={() => {
-                                  setOpenMenuId(null);
-                                  if (!proposal.public_token && proposal.status === 'draft') {
-                                    setDraftLinkProposal(proposal);
-                                  } else {
-                                    copyLink(proposal);
-                                  }
-                                }}
-                                className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-                              >
-                                <Link2 className="h-3.5 w-3.5 text-gray-400" />
-                                Copy client link
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setOpenMenuId(null);
-                                  navigate(`/proposals/${proposal.id}?print=1`);
-                                }}
-                                className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
-                              >
-                                <Printer className="h-3.5 w-3.5 text-gray-400" />
-                                Download PDF
-                              </button>
-                              {!isClosedProposal(proposal) && (
-                                <>
-                                  <div className="my-1 border-t border-gray-100" />
-                                  <button
-                                    type="button"
-                                    onClick={() => { setOpenMenuId(null); setActionTarget({ proposal, action: 'won' }); }}
-                                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50"
-                                  >
-                                    <Trophy className="h-3.5 w-3.5" />
-                                    Mark won
-                                  </button>
-                                  <button
-                                    type="button"
-                                    onClick={() => { setOpenMenuId(null); setActionTarget({ proposal, action: 'lost' }); }}
-                                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                                  >
-                                    <XCircle className="h-3.5 w-3.5" />
-                                    Mark lost
-                                  </button>
-                                </>
-                              )}
-                              {hasRole('admin') && (
-                                <>
-                                  <div className="my-1 border-t border-gray-100" />
-                                  <button
-                                    type="button"
-                                    onClick={() => { setOpenMenuId(null); setDeletingProposal(proposal); }}
-                                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                                  >
-                                    <Trash2 className="h-3.5 w-3.5" />
-                                    Remove proposal
-                                  </button>
-                                </>
-                              )}
-                            </div>
-                          </>
-                        )}
                       </div>
                     </td>
                   </tr>
@@ -482,6 +415,91 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
             </tbody>
           </table>
         </div>
+      )}
+
+      {menuAnchor && createPortal(
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setMenuAnchor(null)} />
+          <div
+            style={{ top: menuAnchor.top, right: menuAnchor.right }}
+            className="fixed z-50 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+          >
+            {!isClosedProposal(menuAnchor.proposal) && (
+              <button
+                type="button"
+                onClick={() => { const p = menuAnchor.proposal; setMenuAnchor(null); setSendProposal(p); }}
+                className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+              >
+                <Send className="h-3.5 w-3.5 text-gray-400" />
+                {menuAnchor.proposal.status === 'draft' ? 'Send to client' : 'Resend'}
+              </button>
+            )}
+            <button
+              type="button"
+              disabled={linkBusyId === menuAnchor.proposal.id}
+              onClick={() => {
+                const p = menuAnchor.proposal;
+                setMenuAnchor(null);
+                if (!p.public_token && p.status === 'draft') {
+                  setDraftLinkProposal(p);
+                } else {
+                  copyLink(p);
+                }
+              }}
+              className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              <Link2 className="h-3.5 w-3.5 text-gray-400" />
+              Copy client link
+            </button>
+            <button
+              type="button"
+              onClick={() => {
+                const p = menuAnchor.proposal;
+                setMenuAnchor(null);
+                navigate(`/proposals/${p.id}?print=1`);
+              }}
+              className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+            >
+              <Printer className="h-3.5 w-3.5 text-gray-400" />
+              Download PDF
+            </button>
+            {!isClosedProposal(menuAnchor.proposal) && (
+              <>
+                <div className="my-1 border-t border-gray-100" />
+                <button
+                  type="button"
+                  onClick={() => { const p = menuAnchor.proposal; setMenuAnchor(null); setActionTarget({ proposal: p, action: 'won' }); }}
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50"
+                >
+                  <Trophy className="h-3.5 w-3.5" />
+                  Mark won
+                </button>
+                <button
+                  type="button"
+                  onClick={() => { const p = menuAnchor.proposal; setMenuAnchor(null); setActionTarget({ proposal: p, action: 'lost' }); }}
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                >
+                  <XCircle className="h-3.5 w-3.5" />
+                  Mark lost
+                </button>
+              </>
+            )}
+            {hasRole('admin') && (
+              <>
+                <div className="my-1 border-t border-gray-100" />
+                <button
+                  type="button"
+                  onClick={() => { const p = menuAnchor.proposal; setMenuAnchor(null); setDeletingProposal(p); }}
+                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                  Remove proposal
+                </button>
+              </>
+            )}
+          </div>
+        </>,
+        document.body,
       )}
     </div>
   );
