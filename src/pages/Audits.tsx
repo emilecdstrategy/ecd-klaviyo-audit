@@ -1,4 +1,4 @@
-import { useLocation, useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import {
   Plus,
   Search,
@@ -6,6 +6,10 @@ import {
   ExternalLink,
   Filter,
   Trash2,
+  Palette,
+  BarChart3,
+  Workflow,
+  Image as ImageIcon,
 } from 'lucide-react';
 import { useState } from 'react';
 import TopBar from '../components/layout/TopBar';
@@ -23,11 +27,30 @@ import type { Audit, Client } from '../lib/types';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import Modal from '../components/ui/Modal';
 import { supabase } from '../lib/supabase';
+import PlatformReportSettingsPanel from '../components/admin/PlatformReportSettingsPanel';
+import BenchmarkSettingsPanel from '../components/admin/BenchmarkSettingsPanel';
+import CoreFlowStandardsPanel from '../components/admin/CoreFlowStandardsPanel';
+import EmailLibraryPanel from '../components/admin/EmailLibraryPanel';
+
+const TABS = [
+  { id: 'overview', label: 'Audits', icon: ClipboardCheck, adminOnly: false },
+  { id: 'report_display', label: 'Report Display', icon: Palette, adminOnly: true },
+  { id: 'klaviyo_benchmarks', label: 'Klaviyo Benchmarks', icon: BarChart3, adminOnly: true },
+  { id: 'core_flow_standards', label: 'Core Flow Standards', icon: Workflow, adminOnly: true },
+  { id: 'email_library', label: 'Email Library', icon: ImageIcon, adminOnly: true },
+] as const;
+
+type TabId = (typeof TABS)[number]['id'];
 
 export default function Audits() {
   const navigate = useNavigate();
   const location = useLocation();
   const { hasRole } = useAuth();
+  const isAdmin = hasRole('admin');
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab');
+  const availableTabs = TABS.filter(t => !t.adminOnly || isAdmin);
+  const tab: TabId = availableTabs.some(t => t.id === tabParam) ? (tabParam as TabId) : 'overview';
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('__all__');
 
@@ -74,17 +97,45 @@ export default function Audits() {
         title="Audits"
         subtitle={`${audits.length} total audits`}
         actions={
-          <button
-            onClick={() => navigate('/audits/new', { state: { backgroundLocation: location } })}
-            className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-4 h-4" />
-            New Audit
-          </button>
+          tab === 'overview' ? (
+            <button
+              onClick={() => navigate('/audits/new', { state: { backgroundLocation: location } })}
+              className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+            >
+              <Plus className="w-4 h-4" />
+              New Audit
+            </button>
+          ) : undefined
         }
       />
 
       <div className="p-8 animate-fade-in">
+        {availableTabs.length > 1 && (
+          <div className="flex gap-2 mb-6 border-b border-gray-100 pb-3">
+            {availableTabs.map(t => (
+              <button
+                key={t.id}
+                onClick={() => setSearchParams(t.id === 'overview' ? {} : { tab: t.id }, { replace: true })}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+                  tab === t.id
+                    ? 'bg-brand-primary/10 text-brand-primary'
+                    : 'text-gray-500 hover:text-gray-700 hover:bg-gray-50'
+                }`}
+              >
+                <t.icon className="w-4 h-4" />
+                {t.label}
+              </button>
+            ))}
+          </div>
+        )}
+
+        {tab === 'report_display' && <PlatformReportSettingsPanel />}
+        {tab === 'klaviyo_benchmarks' && <BenchmarkSettingsPanel />}
+        {tab === 'core_flow_standards' && <CoreFlowStandardsPanel />}
+        {tab === 'email_library' && <EmailLibraryPanel />}
+
+        {tab === 'overview' && (
+        <>
         <Modal
           open={deleteConfirmOpen}
           title="Delete audit?"
@@ -276,6 +327,8 @@ export default function Audits() {
               </tbody>
             </table>
           </div>
+        )}
+        </>
         )}
       </div>
     </div>

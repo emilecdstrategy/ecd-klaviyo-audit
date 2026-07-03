@@ -438,7 +438,7 @@ export default function ProposalTemplatesPanel() {
                 <div className="mb-3 rounded-lg border border-gray-200 bg-white p-2 max-h-52 overflow-y-auto space-y-1">
                   {catalog.length === 0 ? (
                     <p className="text-xs text-gray-400 px-2 py-1.5">
-                      No services in the catalog yet. Add them under Settings → Revenue Opportunities.
+                      No services in the catalog yet. Add them under Settings → Line Item Catalog.
                     </p>
                   ) : (
                     catalog.map(t => (
@@ -526,7 +526,7 @@ export default function ProposalTemplatesPanel() {
                 </div>
               )}
               <p className="mt-1.5 text-[11px] text-gray-400">
-                Prices come from the Revenue Opportunities catalog and can be adjusted per proposal.
+                Prices come from the Line Item Catalog and can be adjusted per proposal.
               </p>
             </div>
 

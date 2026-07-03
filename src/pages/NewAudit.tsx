@@ -900,12 +900,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             {revenueTemplates.length > 0 && (
               <details className="group border border-gray-200 rounded-lg" open>
                 <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 font-medium text-gray-900 bg-gray-50/80 rounded-lg group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
-                  <span>Predefined Revenue Opportunities</span>
+                  <span>Predefined Line Items</span>
                   <span className="text-xs text-gray-500 font-normal">Optional report add-ons</span>
                 </summary>
                 <div className="px-4 pb-4 pt-2 border-t border-gray-100 space-y-2">
                   <p className="text-xs text-gray-500">
-                    Select opportunities to include in this report. You can edit their copy and monthly value later in the Revenue Opportunity editor.
+                    Select opportunities to include in this report. You can edit their copy and monthly value later in the Line Item Catalog.
                   </p>
                   <div className="space-y-2">
                     {revenueTemplates.map(template => {

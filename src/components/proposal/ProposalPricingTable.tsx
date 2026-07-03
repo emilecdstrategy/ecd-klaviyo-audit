@@ -292,7 +292,7 @@ export default function ProposalPricingTable({ proposal, lineItems }: ProposalPr
                   <p className="px-2 py-1.5 text-xs text-gray-400">Loading catalog…</p>
                 ) : catalog.length === 0 ? (
                   <p className="px-2 py-1.5 text-xs text-gray-400">
-                    No services in the catalog. Add them under Settings → Revenue Opportunities.
+                    No services in the catalog. Add them under Settings → Line Item Catalog.
                   </p>
                 ) : (
                   catalog.map(t => {

@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -70,7 +70,9 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
   const [statusFilter, setStatusFilter] = useState('__all__');
   const [deletingProposal, setDeletingProposal] = useState<Proposal | null>(null);
   const [deleting, setDeleting] = useState(false);
-  const [menuAnchor, setMenuAnchor] = useState<{ proposal: Proposal; top: number; right: number } | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{ proposal: Proposal; buttonTop: number; buttonBottom: number; right: number } | null>(null);
+  const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
   const [sendProposal, setSendProposal] = useState<Proposal | null>(null);
   const [draftLinkProposal, setDraftLinkProposal] = useState<Proposal | null>(null);
   const [linkBusyId, setLinkBusyId] = useState<string | null>(null);
@@ -90,6 +92,23 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
       window.removeEventListener('scroll', close, true);
       window.removeEventListener('resize', close);
     };
+  }, [menuAnchor]);
+
+  useLayoutEffect(() => {
+    if (!menuAnchor) {
+      setMenuPos(null);
+      return;
+    }
+    const el = menuRef.current;
+    if (!el) return;
+    const height = el.getBoundingClientRect().height;
+    const spaceBelow = window.innerHeight - menuAnchor.buttonBottom - 8;
+    const spaceAbove = menuAnchor.buttonTop - 8;
+    if (height > spaceBelow && spaceAbove > spaceBelow) {
+      setMenuPos({ bottom: window.innerHeight - menuAnchor.buttonTop + 4, right: menuAnchor.right });
+    } else {
+      setMenuPos({ top: menuAnchor.buttonBottom + 4, right: menuAnchor.right });
+    }
   }, [menuAnchor]);
 
   const copyLink = async (proposal: Proposal) => {
@@ -399,7 +418,14 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
                               setMenuAnchor(null);
                             } else {
                               const rect = e.currentTarget.getBoundingClientRect();
-                              setMenuAnchor({ proposal, top: rect.bottom + 4, right: window.innerWidth - rect.right });
+                              const anchor = {
+                                proposal,
+                                buttonTop: rect.top,
+                                buttonBottom: rect.bottom,
+                                right: window.innerWidth - rect.right,
+                              };
+                              setMenuAnchor(anchor);
+                              setMenuPos({ top: anchor.buttonBottom + 4, right: anchor.right });
                             }
                           }}
                           className="p-1.5 rounded hover:bg-gray-100 transition-colors"
@@ -421,7 +447,8 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
         <>
           <div className="fixed inset-0 z-40" onClick={() => setMenuAnchor(null)} />
           <div
-            style={{ top: menuAnchor.top, right: menuAnchor.right }}
+            ref={menuRef}
+            style={{ top: menuPos?.top, bottom: menuPos?.bottom, right: menuPos?.right ?? menuAnchor.right }}
             className="fixed z-50 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
           >
             {!isClosedProposal(menuAnchor.proposal) && (
