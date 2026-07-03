@@ -49,3 +49,6 @@ scripts/mcp-deploy-from-file.cjs
 scripts/repair-audit-findings.mjs
 scripts/preview-repair-payload.mjs
 scripts/write-repair-migration.mjs
+
+# Local Netlify folder
+.netlify

@@ -32,6 +32,7 @@ import {
   reopenProposal,
 } from '../lib/proposals-db';
 import { deriveProposalStatus } from '../lib/proposal-status';
+import { publicProposalOrigin } from '../lib/public-origin';
 
 export default function ProposalDetail() {
   const { id } = useParams<{ id: string }>();
@@ -87,14 +88,14 @@ export default function ProposalDetail() {
   const isClosed = proposal.status === 'won' || proposal.status === 'lost';
   const needsCountersign = isSigned && !proposal.countersigned_at;
   const publicUrl = proposal.public_token
-    ? `${window.location.origin}/proposal/${proposal.public_token}`
+    ? `${publicProposalOrigin()}/proposal/${proposal.public_token}`
     : null;
 
   const copyLink = async () => {
     setLinkBusy(true);
     try {
       const updated = proposal.public_token ? proposal : await markProposalSent(proposal);
-      const url = `${window.location.origin}/proposal/${updated.public_token}`;
+      const url = `${publicProposalOrigin()}/proposal/${updated.public_token}`;
       await navigator.clipboard.writeText(url);
       toast('Link copied. The proposal is now live.');
       if (!proposal.public_token) await reload();

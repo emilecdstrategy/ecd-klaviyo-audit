@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { attachActorNames } from './actor-names';
+import { publicProposalOrigin } from './public-origin';
 import type {
   ContractDocument,
   Proposal,
@@ -422,7 +423,7 @@ export async function sendProposalEmail(input: {
   reply_to_emails?: string[];
 }): Promise<{ public_token: string; email_status: 'sent' | 'skipped' }> {
   const { data, error } = await supabase.functions.invoke('proposal_send_email', {
-    body: { ...input, app_url: window.location.origin },
+    body: { ...input, app_url: publicProposalOrigin() },
   });
   if (error) {
     const context = (error as { context?: Response }).context;

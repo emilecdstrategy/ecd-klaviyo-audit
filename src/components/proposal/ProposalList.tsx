@@ -31,6 +31,7 @@ import {
 import { deriveProposalStatus, PROPOSAL_STATUS_LABELS } from '../../lib/proposal-status';
 import { computeProposalTotals, formatProposalTotal, proposalDiscountFromRow } from '../../lib/proposal-pricing';
 import { formatCurrency } from '../../lib/revenue-calculator';
+import { publicProposalOrigin } from '../../lib/public-origin';
 import type { Proposal, ProposalDisplayStatus } from '../../lib/types';
 
 const FILTERABLE_STATUSES: ProposalDisplayStatus[] = ['draft', 'sent', 'viewed', 'won', 'lost', 'expired'];
@@ -115,7 +116,7 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
     setLinkBusyId(proposal.id);
     try {
       const updated = proposal.public_token ? proposal : await markProposalSent(proposal);
-      const url = `${window.location.origin}/proposal/${updated.public_token}`;
+      const url = `${publicProposalOrigin()}/proposal/${updated.public_token}`;
       await navigator.clipboard.writeText(url);
       toast(proposal.public_token ? 'Link copied.' : 'Link copied. The proposal is now live.');
       if (!proposal.public_token) patch(updated);
