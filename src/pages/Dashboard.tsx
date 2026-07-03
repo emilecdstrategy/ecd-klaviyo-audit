@@ -4,6 +4,7 @@ import {
   ClipboardCheck,
   TrendingUp,
   FileText,
+  FileSignature,
   Plus,
   UserPlus,
   ArrowRight,
@@ -17,25 +18,34 @@ import SiteFavicon from '../components/ui/SiteFavicon';
 import { formatCurrency } from '../lib/revenue-calculator';
 import { isLikelyAuditGenerating } from '../lib/audit-pipeline-status';
 import { listAudits, listClients } from '../lib/db';
+import { listProposals } from '../lib/proposals-db';
+import { isProposalOpen } from '../lib/proposal-status';
+import { computeProposalTotals, proposalDiscountFromRow, proposalPipelineValue } from '../lib/proposal-pricing';
+import { canSeeProposalsBeta } from '../lib/feature-flags';
+import { useAuth } from '../contexts/AuthContext';
 import GeneratingBadge from '../components/ui/GeneratingBadge';
-import type { Audit, Client } from '../lib/types';
+import type { Audit, Client, Proposal } from '../lib/types';
 
 export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
+  const { user } = useAuth();
+  const showProposals = canSeeProposalsBeta(user?.email);
 
   const [clients, setClients] = useState<Client[]>([]);
   const [audits, setAudits] = useState<Audit[]>([]);
+  const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
       try {
-        const [c, a] = await Promise.all([listClients(), listAudits()]);
+        const [c, a, p] = await Promise.all([listClients(), listAudits(), listProposals()]);
         if (cancelled) return;
         setClients(c);
         setAudits(a);
+        setProposals(p);
       } catch {
         // dashboard should still render even if lists fail
       } finally {
@@ -49,6 +59,10 @@ export default function Dashboard() {
   const inReview = audits.filter(a => a.status === 'in_review').length;
   const published = audits.filter(a => a.status === 'published').length;
   const totalRevOpp = audits.reduce((s, a) => s + a.total_revenue_opportunity, 0);
+  const openPipelineValue = proposals.filter(isProposalOpen).reduce((sum, p) => {
+    const totals = computeProposalTotals(p.line_items ?? [], proposalDiscountFromRow(p));
+    return sum + proposalPipelineValue(totals);
+  }, 0);
 
   return (
     <div>
@@ -58,11 +72,19 @@ export default function Dashboard() {
         {loading ? (
           <SkeletonKPICards />
         ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${showProposals ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
             <KPICard icon={ClipboardCheck} label="Total Audits" value={totalAudits} accent="primary" />
-            <KPICard icon={Clock} label="In Review" value={inReview} accent="warning" />
-            <KPICard icon={FileText} label="Published" value={published} accent="success" />
+            <KPICard icon={Clock} label="Audits in Review" value={inReview} accent="warning" />
+            <KPICard icon={FileText} label="Audits Published" value={published} accent="success" />
             <KPICard icon={TrendingUp} label="Revenue Identified" value={formatCurrency(totalRevOpp)} accent="secondary" />
+            {showProposals && (
+              <KPICard
+                icon={FileSignature}
+                label="Open Proposal Pipeline"
+                value={formatCurrency(openPipelineValue)}
+                accent="primary"
+              />
+            )}
           </div>
         )}
 
