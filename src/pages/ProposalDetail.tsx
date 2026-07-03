@@ -1,5 +1,5 @@
-import { useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { useEffect, useRef, useState } from 'react';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   ArrowLeft,
   Pencil,
@@ -39,6 +39,8 @@ export default function ProposalDetail() {
   const toast = useToast();
   const { user } = useAuth();
   const { data, loading, loadError, reload } = useProposalData(id);
+  const [searchParams, setSearchParams] = useSearchParams();
+  const printTriggeredRef = useRef(false);
   const [confirmAction, setConfirmAction] = useState<'won' | 'lost' | 'reopen' | null>(null);
   const [lostReason, setLostReason] = useState('');
   const [acting, setActing] = useState(false);
@@ -52,6 +54,19 @@ export default function ProposalDetail() {
   const [countersignError, setCountersignError] = useState('');
   const [countersignPadEmpty, setCountersignPadEmpty] = useState(true);
   const countersignPadRef = useRef<SignaturePadHandle>(null);
+
+  useEffect(() => {
+    if (!data || printTriggeredRef.current) return;
+    if (searchParams.get('print') === '1') {
+      printTriggeredRef.current = true;
+      window.print();
+      setSearchParams(prev => {
+        const next = new URLSearchParams(prev);
+        next.delete('print');
+        return next;
+      }, { replace: true });
+    }
+  }, [data, searchParams, setSearchParams]);
 
   if (loading) return <AppPreloader />;
 

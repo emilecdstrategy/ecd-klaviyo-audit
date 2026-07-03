@@ -100,6 +100,7 @@ export default function Proposals() {
               <ProposalList
                 proposals={proposals}
                 onDeleted={id => setProposals(prev => prev.filter(p => p.id !== id))}
+                onUpdated={updated => setProposals(prev => prev.map(p => (p.id === updated.id ? updated : p)))}
                 emptyAction={
                   <button
                     onClick={openNewProposal}

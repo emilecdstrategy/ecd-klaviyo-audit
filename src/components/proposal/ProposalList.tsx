@@ -1,19 +1,42 @@
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { FileSignature, Search, Filter, Trash2 } from 'lucide-react';
+import {
+  FileSignature,
+  Search,
+  Filter,
+  Trash2,
+  MoreVertical,
+  Send,
+  Link2,
+  Printer,
+  Trophy,
+  XCircle,
+} from 'lucide-react';
 import StatusBadge from '../ui/StatusBadge';
 import SiteFavicon from '../ui/SiteFavicon';
 import EmptyState from '../ui/EmptyState';
 import Modal from '../ui/Modal';
+import { useToast } from '../ui/Toast';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import { useAuth } from '../../contexts/AuthContext';
-import { deleteProposal } from '../../lib/proposals-db';
+import SendProposalModal from './SendProposalModal';
+import {
+  deleteProposal,
+  getProposal,
+  markProposalLost,
+  markProposalSent,
+  markProposalWon,
+} from '../../lib/proposals-db';
 import { deriveProposalStatus, PROPOSAL_STATUS_LABELS } from '../../lib/proposal-status';
 import { computeProposalTotals, formatProposalTotal, proposalDiscountFromRow } from '../../lib/proposal-pricing';
 import { formatCurrency } from '../../lib/revenue-calculator';
 import type { Proposal, ProposalDisplayStatus } from '../../lib/types';
 
 const FILTERABLE_STATUSES: ProposalDisplayStatus[] = ['draft', 'sent', 'viewed', 'won', 'lost', 'expired'];
+
+function isClosedProposal(proposal: Proposal): boolean {
+  return proposal.status === 'won' || proposal.status === 'lost';
+}
 
 function proposalValueSummary(proposal: Proposal): string {
   const items = proposal.line_items ?? [];
@@ -34,16 +57,63 @@ function proposalValueSummary(proposal: Proposal): string {
 type ProposalListProps = {
   proposals: Proposal[];
   onDeleted: (id: string) => void;
+  onUpdated?: (proposal: Proposal) => void;
   emptyAction?: React.ReactNode;
 };
 
-export default function ProposalList({ proposals, onDeleted, emptyAction }: ProposalListProps) {
+export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAction }: ProposalListProps) {
   const navigate = useNavigate();
+  const toast = useToast();
   const { hasRole } = useAuth();
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('__all__');
   const [deletingProposal, setDeletingProposal] = useState<Proposal | null>(null);
   const [deleting, setDeleting] = useState(false);
+  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [sendProposal, setSendProposal] = useState<Proposal | null>(null);
+  const [draftLinkProposal, setDraftLinkProposal] = useState<Proposal | null>(null);
+  const [linkBusyId, setLinkBusyId] = useState<string | null>(null);
+  const [actionTarget, setActionTarget] = useState<{ proposal: Proposal; action: 'won' | 'lost' } | null>(null);
+  const [lostReason, setLostReason] = useState('');
+  const [acting, setActing] = useState(false);
+  const [actionError, setActionError] = useState('');
+
+  const patch = (updated: Proposal) => onUpdated?.(updated);
+
+  const copyLink = async (proposal: Proposal) => {
+    setLinkBusyId(proposal.id);
+    try {
+      const updated = proposal.public_token ? proposal : await markProposalSent(proposal);
+      const url = `${window.location.origin}/proposal/${updated.public_token}`;
+      await navigator.clipboard.writeText(url);
+      toast(proposal.public_token ? 'Link copied.' : 'Link copied. The proposal is now live.');
+      if (!proposal.public_token) patch(updated);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to copy link');
+    } finally {
+      setLinkBusyId(null);
+      setDraftLinkProposal(null);
+    }
+  };
+
+  const runAction = async () => {
+    if (!actionTarget) return;
+    setActing(true);
+    setActionError('');
+    try {
+      const updated =
+        actionTarget.action === 'won'
+          ? await markProposalWon(actionTarget.proposal.id)
+          : await markProposalLost(actionTarget.proposal.id, lostReason.trim() || null);
+      patch(updated);
+      setActionTarget(null);
+      setLostReason('');
+    } catch (e) {
+      setActionError(e instanceof Error ? e.message : 'Failed to update proposal');
+    } finally {
+      setActing(false);
+    }
+  };
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
@@ -103,6 +173,114 @@ export default function ProposalList({ proposals, onDeleted, emptyAction }: Prop
               className="px-4 py-2 rounded-lg bg-red-600 text-white text-sm font-medium hover:bg-red-700 disabled:opacity-50 disabled:cursor-not-allowed"
             >
               {deleting ? 'Deleting…' : 'Delete proposal'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {sendProposal && (
+        <SendProposalModal
+          open={Boolean(sendProposal)}
+          proposal={sendProposal}
+          client={sendProposal.client}
+          onClose={() => setSendProposal(null)}
+          onSent={async emailStatus => {
+            toast(
+              emailStatus === 'sent'
+                ? 'Proposal emailed to the client'
+                : 'Proposal is live. Email sending isn’t configured yet, so copy the link and send it yourself.',
+            );
+            try {
+              const updated = await getProposal(sendProposal.id);
+              if (updated) patch(updated);
+            } catch {
+              // best effort refresh
+            }
+          }}
+        />
+      )}
+
+      <Modal
+        open={Boolean(draftLinkProposal)}
+        title="Share this draft?"
+        onClose={() => (linkBusyId ? undefined : setDraftLinkProposal(null))}
+        className="max-w-lg"
+      >
+        <div className="p-5">
+          <p className="text-sm text-gray-700">
+            Copying the link makes this proposal live: it gets a public URL, the contract text is locked in,
+            the validity window starts, and the status changes to <strong>Sent</strong>.
+          </p>
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={Boolean(linkBusyId)}
+              onClick={() => setDraftLinkProposal(null)}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={Boolean(linkBusyId)}
+              onClick={() => draftLinkProposal && copyLink(draftLinkProposal)}
+              className="rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+            >
+              {linkBusyId ? 'Working…' : 'Go live & copy link'}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={Boolean(actionTarget)}
+        title={actionTarget?.action === 'won' ? 'Mark proposal as won?' : 'Mark proposal as lost?'}
+        onClose={() => {
+          if (acting) return;
+          setActionTarget(null);
+          setActionError('');
+        }}
+        className="max-w-lg"
+      >
+        <div className="p-5">
+          {actionTarget?.action === 'won' && (
+            <p className="text-sm text-gray-700">
+              {actionTarget.proposal.client_signed_at
+                ? 'Mark this signed proposal as won.'
+                : 'This marks the proposal won without a client signature.'}
+            </p>
+          )}
+          {actionTarget?.action === 'lost' && (
+            <div>
+              <p className="text-sm text-gray-700">Optionally note why this proposal was lost:</p>
+              <input
+                type="text"
+                value={lostReason}
+                onChange={e => setLostReason(e.target.value)}
+                placeholder="e.g. Went with another agency, budget cut…"
+                className="mt-3 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+              />
+            </div>
+          )}
+          {actionError && <p className="mt-3 text-sm text-red-600">{actionError}</p>}
+          <div className="mt-5 flex items-center justify-end gap-2">
+            <button
+              type="button"
+              disabled={acting}
+              onClick={() => { setActionTarget(null); setActionError(''); }}
+              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={acting}
+              onClick={runAction}
+              className={`rounded-lg px-4 py-2 text-sm font-medium text-white disabled:opacity-50 ${
+                actionTarget?.action === 'lost' ? 'bg-red-600 hover:bg-red-700' : 'gradient-bg hover:opacity-90'
+              }`}
+            >
+              {acting ? 'Working…' : actionTarget?.action === 'won' ? 'Mark won' : 'Mark lost'}
             </button>
           </div>
         </div>
@@ -200,19 +378,101 @@ export default function ProposalList({ proposals, onDeleted, emptyAction }: Prop
                       {new Date(proposal.updated_at).toLocaleDateString()}
                     </td>
                     <td className="px-6 py-4">
-                      <div className="flex items-center justify-end gap-1">
-                        {hasRole('admin') && (
-                          <button
-                            type="button"
-                            onClick={e => {
-                              e.stopPropagation();
-                              setDeletingProposal(proposal);
-                            }}
-                            className="p-1.5 rounded hover:bg-red-50 transition-colors"
-                            title="Delete proposal"
-                          >
-                            <Trash2 className="w-3.5 h-3.5 text-gray-400 hover:text-red-600" />
-                          </button>
+                      <div className="relative flex items-center justify-end">
+                        <button
+                          type="button"
+                          onClick={e => {
+                            e.stopPropagation();
+                            setOpenMenuId(prev => (prev === proposal.id ? null : proposal.id));
+                          }}
+                          className="p-1.5 rounded hover:bg-gray-100 transition-colors"
+                          title="More actions"
+                        >
+                          <MoreVertical className="w-4 h-4 text-gray-400" />
+                        </button>
+                        {openMenuId === proposal.id && (
+                          <>
+                            <div
+                              className="fixed inset-0 z-10"
+                              onClick={e => { e.stopPropagation(); setOpenMenuId(null); }}
+                            />
+                            <div
+                              onClick={e => e.stopPropagation()}
+                              className="absolute right-0 top-full z-20 mt-1 w-52 overflow-hidden rounded-lg border border-gray-200 bg-white py-1 shadow-lg"
+                            >
+                              {!isClosedProposal(proposal) && (
+                                <button
+                                  type="button"
+                                  onClick={() => { setOpenMenuId(null); setSendProposal(proposal); }}
+                                  className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                                >
+                                  <Send className="h-3.5 w-3.5 text-gray-400" />
+                                  {proposal.status === 'draft' ? 'Send to client' : 'Resend'}
+                                </button>
+                              )}
+                              <button
+                                type="button"
+                                disabled={linkBusyId === proposal.id}
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  if (!proposal.public_token && proposal.status === 'draft') {
+                                    setDraftLinkProposal(proposal);
+                                  } else {
+                                    copyLink(proposal);
+                                  }
+                                }}
+                                className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                              >
+                                <Link2 className="h-3.5 w-3.5 text-gray-400" />
+                                Copy client link
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setOpenMenuId(null);
+                                  navigate(`/proposals/${proposal.id}?print=1`);
+                                }}
+                                className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50"
+                              >
+                                <Printer className="h-3.5 w-3.5 text-gray-400" />
+                                Download PDF
+                              </button>
+                              {!isClosedProposal(proposal) && (
+                                <>
+                                  <div className="my-1 border-t border-gray-100" />
+                                  <button
+                                    type="button"
+                                    onClick={() => { setOpenMenuId(null); setActionTarget({ proposal, action: 'won' }); }}
+                                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-emerald-700 hover:bg-emerald-50"
+                                  >
+                                    <Trophy className="h-3.5 w-3.5" />
+                                    Mark won
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => { setOpenMenuId(null); setActionTarget({ proposal, action: 'lost' }); }}
+                                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                                  >
+                                    <XCircle className="h-3.5 w-3.5" />
+                                    Mark lost
+                                  </button>
+                                </>
+                              )}
+                              {hasRole('admin') && (
+                                <>
+                                  <div className="my-1 border-t border-gray-100" />
+                                  <button
+                                    type="button"
+                                    onClick={() => { setOpenMenuId(null); setDeletingProposal(proposal); }}
+                                    className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                                  >
+                                    <Trash2 className="h-3.5 w-3.5" />
+                                    Remove proposal
+                                  </button>
+                                </>
+                              )}
+                            </div>
+                          </>
                         )}
                       </div>
                     </td>
