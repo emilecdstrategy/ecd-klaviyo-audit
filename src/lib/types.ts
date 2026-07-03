@@ -10,6 +10,7 @@ export interface Client {
   id: string;
   name: string;
   company_name: string;
+  email: string;
   website_url: string;
   industry: string;
   esp_platform: string;

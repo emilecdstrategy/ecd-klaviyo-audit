@@ -293,6 +293,7 @@ export default function ProposalDetail() {
       <SendProposalModal
         open={sendOpen}
         proposal={proposal}
+        client={client}
         onClose={() => setSendOpen(false)}
         onSent={async emailStatus => {
           toast(

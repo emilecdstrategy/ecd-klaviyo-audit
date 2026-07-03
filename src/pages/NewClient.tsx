@@ -17,6 +17,7 @@ export default function NewClient({ asModal }: NewClientProps) {
   const [form, setForm] = useState({
     name: '',
     company_name: '',
+    email: '',
     industry: '',
     notes: '',
     website_url: '',
@@ -42,6 +43,7 @@ export default function NewClient({ asModal }: NewClientProps) {
       const payload = await ensureClientCreator(user, {
         name: form.name,
         company_name: form.company_name,
+        email: form.email.trim(),
         website_url: form.website_url.trim(),
         industry: form.industry,
         esp_platform: 'Klaviyo',
@@ -108,6 +110,20 @@ export default function NewClient({ asModal }: NewClientProps) {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
                 <IndustrySelectWithCustom value={form.industry} onValueChange={v => updateField('industry', v)} />
               </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={e => updateField('email', e.target.value)}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                placeholder="jane@company.com"
+              />
+              <p className="mt-1 text-xs text-gray-400">
+                Used as the default recipient when sending proposals to this client.
+              </p>
             </div>
 
             <div>

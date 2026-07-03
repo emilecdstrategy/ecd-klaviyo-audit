@@ -42,6 +42,10 @@ export default function ClientDetail() {
   const [newApiKey, setNewApiKey] = useState('');
   const [keySaving, setKeySaving] = useState(false);
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [editingEmail, setEditingEmail] = useState(false);
+  const [emailDraft, setEmailDraft] = useState('');
+  const [emailSaving, setEmailSaving] = useState(false);
+  const [emailError, setEmailError] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletingAudit, setDeletingAudit] = useState<Audit | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -132,6 +136,28 @@ export default function ClientDetail() {
       setKeySaving(false);
     }
   };
+  const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const handleSaveEmail = async () => {
+    if (!client) return;
+    const trimmed = emailDraft.trim();
+    if (trimmed && !EMAIL_RE.test(trimmed)) {
+      setEmailError('Please enter a valid email address.');
+      return;
+    }
+    setEmailSaving(true);
+    setEmailError('');
+    try {
+      await updateClient(client.id, { email: trimmed });
+      setClient(prev => (prev ? { ...prev, email: trimmed } : prev));
+      setEditingEmail(false);
+    } catch (e: unknown) {
+      setEmailError(e instanceof Error ? e.message : 'Failed to save email');
+    } finally {
+      setEmailSaving(false);
+    }
+  };
+
   const firstAuditDate = clientAudits.length
     ? new Date(
       clientAudits
@@ -240,6 +266,57 @@ export default function ClientDetail() {
                     <Mail className="w-3.5 h-3.5 text-gray-400" />
                     <p className="text-sm text-gray-900">{client.esp_platform}</p>
                   </div>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Contact Email</p>
+                  {editingEmail ? (
+                    <div className="space-y-1.5">
+                      <input
+                        type="email"
+                        autoFocus
+                        value={emailDraft}
+                        onChange={e => setEmailDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleSaveEmail();
+                          if (e.key === 'Escape') { setEditingEmail(false); setEmailError(''); }
+                        }}
+                        placeholder="jane@company.com"
+                        className="w-full max-w-[220px] rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                      {emailError && <p className="text-xs text-red-600">{emailError}</p>}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveEmail}
+                          disabled={emailSaving}
+                          className="text-xs font-medium text-brand-primary hover:underline disabled:opacity-50"
+                        >
+                          {emailSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingEmail(false); setEmailError(''); }}
+                          disabled={emailSaving}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setEmailDraft(client.email || ''); setEditingEmail(true); setEmailError(''); }}
+                      className="flex items-center gap-1.5 text-sm hover:underline"
+                    >
+                      <Mail className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      {client.email ? (
+                        <span className="text-gray-900">{client.email}</span>
+                      ) : (
+                        <span className="text-gray-400">Add email</span>
+                      )}
+                    </button>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Industry</p>
