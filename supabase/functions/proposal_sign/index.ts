@@ -146,10 +146,10 @@ serve(async (req) => {
           bodyLines: [
             `${proposalReferenceLink(origin, proposal)} was just signed by <a href="mailto:${escapeHtml(signerEmail)}" style="color:#4b3afe;text-decoration:underline;">${escapeHtml(signerEmail)}</a> and marked won.`,
             `Totals: ${money(totals.oneTimeTotal)} one-time plus ${money(totals.monthlyTotal)}/mo.`,
-            proposalUrl
-              ? `Next step: <a href="${proposalUrl}" style="color:#4b3afe;text-decoration:underline;">countersign it from the proposal page</a>.`
-              : `Next step: countersign it from the proposal page.`,
+            ...(proposalUrl ? [] : [`Next step: countersign it from the proposal page.`]),
           ],
+          ctaLabel: proposalUrl ? "Countersign now" : undefined,
+          ctaUrl: proposalUrl ?? undefined,
           logoUrl: origin ? `${origin}/cropped-favicon-192x192.webp` : undefined,
         }),
       });
