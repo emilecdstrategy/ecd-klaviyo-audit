@@ -62,6 +62,9 @@ serve(async (req) => {
     // Client-scoped tables
     await sb.from("client_secrets").delete().eq("client_id", clientId);
     await sb.from("klaviyo_connections").delete().eq("client_id", clientId);
+    // proposals.client_id is ON DELETE RESTRICT; its children (line items,
+    // signatures, events) cascade automatically once the proposal rows go.
+    await sb.from("proposals").delete().eq("client_id", clientId);
 
     // Finally delete the client
     const { error: cErr } = await sb.from("clients").delete().eq("id", clientId);

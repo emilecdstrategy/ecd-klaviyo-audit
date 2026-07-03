@@ -6,8 +6,10 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { assertServiceRoleClient } from "../_shared/auth.ts";
 import {
   PROPOSAL_CORS_HEADERS,
+  buildSignedPayloadSnapshot,
   computeProposalTotals,
   fetchPublicProposal,
+  hashSignedPayload,
   isProposalExpired,
   proposalJson,
 } from "../_shared/proposal-public.ts";
@@ -83,6 +85,8 @@ serve(async (req) => {
 
     // Server-verified totals frozen into the legal record of the signing.
     const totals = computeProposalTotals(lineItems, proposal);
+    const payloadSnapshot = buildSignedPayloadSnapshot(proposal, lineItems, totals);
+    const payloadHash = await hashSignedPayload(payloadSnapshot);
 
     const { error: updateError } = await sb
       .from("proposals")
@@ -100,7 +104,15 @@ serve(async (req) => {
         proposal_id: proposal.id,
         event_type: "signed",
         actor: "client",
-        metadata: { ip, user_agent: userAgent, signer_email: signerEmail, typed_name: typedName, totals },
+        metadata: {
+          ip,
+          user_agent: userAgent,
+          signer_email: signerEmail,
+          typed_name: typedName,
+          totals,
+          payload_hash: payloadHash,
+          payload_hash_algo: "sha256",
+        },
       },
       {
         proposal_id: proposal.id,

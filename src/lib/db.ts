@@ -40,12 +40,88 @@ import {
 
 const FLOW_SNAPSHOT_SELECT =
   'id, audit_id, client_id, flow_id, name, status, trigger_type, archived, created_at_klaviyo, updated_at_klaviyo, fetched_at, action_count:raw->attributes->action_count, flow_actions:raw->relationships->flow_actions->data';
+// Segments/campaigns only need a few fields out of Klaviyo's `raw` API response (segment
+// definitions and campaign audience refs), but the full `raw` blob can run into the
+// megabytes per row across a few hundred rows -- enough to blow past an edge function's
+// memory ceiling (see audit_public). Projecting just the needed JSON paths here cuts that
+// by roughly an order of magnitude; `reshapeSegmentSnapshotRow`/`reshapeCampaignSnapshotRow`
+// below put the projected fields back under a synthetic `raw` shape so downstream code in
+// campaign-audiences.ts/segment-definition.ts (which expects to read through `snapshot.raw...`)
+// doesn't need to change.
+//
+// `_ecd_group_names`/`_ecd_metric_names` are account-wide lookup maps that Klaviyo fetch
+// duplicates identically onto every single row's `raw` -- selecting them per-row multiplied
+// a ~40KB/~9KB map by hundreds of rows (tens of MB), which was the actual cause of the
+// memory ceiling, dwarfing everything else in the payload. They're fetched once via
+// `fetchSharedGroupAndMetricNameMaps` below and stitched onto every row in-memory instead.
 const SEGMENT_SNAPSHOT_SELECT =
-  'id, audit_id, client_id, segment_id, name, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order, raw';
+  'id, audit_id, client_id, segment_id, name, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order, _definition:raw->attributes->definition, _definition_legacy:raw->definition';
 const FORM_SNAPSHOT_SELECT =
   'id, audit_id, client_id, form_id, name, status, ab_test, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order';
 const CAMPAIGN_SNAPSHOT_SELECT =
-  'id, audit_id, client_id, campaign_id, name, status, send_channel, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order, raw';
+  'id, audit_id, client_id, campaign_id, name, status, send_channel, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order, _audiences:raw->attributes->audiences';
+
+type SharedGroupAndMetricNameMaps = {
+  groupNames: Record<string, unknown> | null;
+  metricNames: Record<string, unknown> | null;
+};
+
+/** Fetches the account-wide group-name/metric-name maps from a single row instead of
+ * every row -- see the comment above SEGMENT_SNAPSHOT_SELECT for why that matters. */
+async function fetchSharedGroupAndMetricNameMaps(auditId: string): Promise<SharedGroupAndMetricNameMaps> {
+  const [segRow, campRow] = await Promise.all([
+    supabase
+      .from('klaviyo_segment_snapshots')
+      .select('_ecd_group_names:raw->_ecd_group_names, _ecd_metric_names:raw->_ecd_metric_names')
+      .eq('audit_id', auditId)
+      .limit(1)
+      .maybeSingle(),
+    supabase
+      .from('klaviyo_campaign_snapshots')
+      .select('_ecd_group_names:raw->_ecd_group_names')
+      .eq('audit_id', auditId)
+      .limit(1)
+      .maybeSingle(),
+  ]);
+  const segData = segRow.data as { _ecd_group_names?: Record<string, unknown>; _ecd_metric_names?: Record<string, unknown> } | null;
+  const campData = campRow.data as { _ecd_group_names?: Record<string, unknown> } | null;
+  return {
+    groupNames: segData?._ecd_group_names ?? campData?._ecd_group_names ?? null,
+    metricNames: segData?._ecd_metric_names ?? null,
+  };
+}
+
+/** Reassembles the narrow JSON-path projections above into the `raw` shape that
+ * campaign-audiences.ts/segment-definition.ts already know how to read. */
+function reshapeSegmentSnapshotRow(
+  row: Record<string, unknown>,
+  shared: SharedGroupAndMetricNameMaps,
+): Record<string, unknown> {
+  const { _definition, _definition_legacy, ...rest } = row;
+  return {
+    ...rest,
+    raw: {
+      attributes: { definition: _definition ?? undefined },
+      definition: _definition_legacy ?? undefined,
+      _ecd_metric_names: shared.metricNames ?? undefined,
+      _ecd_group_names: shared.groupNames ?? undefined,
+    },
+  };
+}
+
+function reshapeCampaignSnapshotRow(
+  row: Record<string, unknown>,
+  shared: SharedGroupAndMetricNameMaps,
+): Record<string, unknown> {
+  const { _audiences, ...rest } = row;
+  return {
+    ...rest,
+    raw: {
+      attributes: { audiences: _audiences ?? undefined },
+      _ecd_group_names: shared.groupNames ?? undefined,
+    },
+  };
+}
 
 const AUDIT_LIST_SELECT = '*, audit_sections(audit_id, section_key, revenue_opportunity, section_config)';
 
@@ -488,9 +564,7 @@ export async function deleteAnnotation(id: string): Promise<void> {
   if (error) throw error;
 }
 
-export async function fetchAuditReportBundleForAudit(
-  audit: Audit,
-): Promise<{
+type AuditReportBundle = {
   audit: Audit;
   client: Client;
   sections: AuditSection[];
@@ -503,6 +577,7 @@ export async function fetchAuditReportBundleForAudit(
   campaignSnapshots: KlaviyoCampaignSnapshot[];
   emailDesign: AuditEmailDesign | null;
   reportingDiagnostic?: string | null;
+  klaviyoGroupNameMap?: GroupNameMap;
   accountSnapshot?: {
     total_profiles_count?: number | null;
     email_subscribed_profiles_count: number | null;
@@ -523,41 +598,34 @@ export async function fetchAuditReportBundleForAudit(
     revenue_breakdown?: RevenueBreakdown | null;
     deliverability?: DeliverabilitySnapshot | null;
   } | null;
-} | null> {
-  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, rollups, emailDesignRes] = await Promise.all([
-    supabase.from('clients').select('*').eq('id', audit.client_id).maybeSingle(),
-    supabase.from('audit_sections').select('*, annotations(*)').eq('audit_id', audit.id),
-    supabase.from('audit_assets').select('*').eq('audit_id', audit.id),
-    supabase.from('flow_performance').select('*').eq('audit_id', audit.id),
-    supabase.from('klaviyo_flow_snapshots').select(FLOW_SNAPSHOT_SELECT).eq('audit_id', audit.id),
-    supabase.from('klaviyo_segment_snapshots').select(SEGMENT_SNAPSHOT_SELECT).eq('audit_id', audit.id),
-    supabase.from('klaviyo_form_snapshots').select(FORM_SNAPSHOT_SELECT).eq('audit_id', audit.id),
-    supabase.from('klaviyo_campaign_snapshots').select(CAMPAIGN_SNAPSHOT_SELECT).eq('audit_id', audit.id),
-    supabase.from('klaviyo_reporting_rollups').select('timeframe_key, computed, campaigns').eq('audit_id', audit.id),
-    supabase.from('audit_email_design').select('*, ecd_example:industry_email_library(*)').eq('audit_id', audit.id).maybeSingle(),
-  ]);
+};
 
-  if (client.error) throw client.error;
-  if (sections.error) throw sections.error;
-  if (assets.error) throw assets.error;
-  if (flows.error) throw flows.error;
-  if (flowSnaps.error) throw flowSnaps.error;
-  if (segSnaps.error) throw segSnaps.error;
-  if (formSnaps.error) throw formSnaps.error;
-  if (campSnaps.error) throw campSnaps.error;
-  if (rollups.error) throw rollups.error;
+type RawAuditReportBundle = {
+  client: Client | null;
+  sections: AuditSectionWithAnnotations[];
+  assets: AuditAsset[];
+  flowPerformance: FlowPerformance[];
+  flowSnapshots: KlaviyoFlowSnapshot[];
+  segmentSnapshots: KlaviyoSegmentSnapshot[];
+  formSnapshots: KlaviyoFormSnapshot[];
+  campaignSnapshots: KlaviyoCampaignSnapshot[];
+  rollups: Array<{ timeframe_key: string; computed?: any; campaigns?: any }>;
+  emailDesign: AuditEmailDesign | null;
+};
 
-  if (!client.data) return null;
+/** Shared enrichment (revenue opportunity computation, account snapshot extraction,
+ * annotation flattening) applied whether the raw rows came from direct authenticated
+ * queries or from the audit_public edge function. */
+function hydrateAuditReportBundle(audit: Audit, raw: RawAuditReportBundle): AuditReportBundle | null {
+  if (!raw.client) return null;
 
-  const { sections: allSections, annotations } = flattenSectionsWithAnnotations(
-    (sections.data ?? []) as AuditSectionWithAnnotations[],
-  );
+  const { sections: allSections, annotations } = flattenSectionsWithAnnotations(raw.sections);
 
-  const reportingDiagnostic = ((rollups.data ?? []) as any[])
-    .find((row: any) => row.timeframe_key === 'last_30_days')?.computed?.reporting_errors?.[0]?.message
+  const reportingDiagnostic = raw.rollups
+    .find(row => row.timeframe_key === 'last_30_days')?.computed?.reporting_errors?.[0]?.message
     ?? null;
 
-  const rollup30 = ((rollups.data ?? []) as any[]).find((row: any) => row.timeframe_key === 'last_30_days');
+  const rollup30 = raw.rollups.find(row => row.timeframe_key === 'last_30_days');
   const klaviyoGroupNameMap = rollup30?.computed?.group_name_map as GroupNameMap | undefined;
   const accountSnapshotRaw = rollup30?.computed?.account_snapshot ?? null;
   const campaignRprStored = accountSnapshotRaw?.campaign_revenue_per_recipient_30d;
@@ -580,20 +648,86 @@ export async function fetchAuditReportBundleForAudit(
 
   return {
     audit: auditWithRevenue,
-    client: client.data as Client,
+    client: raw.client,
     sections: allSections,
-    assets: (assets.data ?? []) as AuditAsset[],
+    assets: raw.assets,
     annotations,
-    flowPerformance: (flows.data ?? []) as FlowPerformance[],
-    flowSnapshots: (flowSnaps.data ?? []) as KlaviyoFlowSnapshot[],
-    segmentSnapshots: (segSnaps.data ?? []) as KlaviyoSegmentSnapshot[],
-    formSnapshots: (formSnaps.data ?? []) as KlaviyoFormSnapshot[],
-    campaignSnapshots: (campSnaps.data ?? []) as KlaviyoCampaignSnapshot[],
-    emailDesign: (emailDesignRes.data ?? null) as AuditEmailDesign | null,
+    flowPerformance: raw.flowPerformance,
+    flowSnapshots: raw.flowSnapshots,
+    segmentSnapshots: raw.segmentSnapshots,
+    formSnapshots: raw.formSnapshots,
+    campaignSnapshots: raw.campaignSnapshots,
+    emailDesign: raw.emailDesign,
     reportingDiagnostic,
     klaviyoGroupNameMap,
     accountSnapshot,
   };
+}
+
+export async function fetchAuditReportBundleForAudit(audit: Audit): Promise<AuditReportBundle | null> {
+  const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, rollups, emailDesignRes, sharedNames] = await Promise.all([
+    supabase.from('clients').select('*').eq('id', audit.client_id).maybeSingle(),
+    supabase.from('audit_sections').select('*, annotations(*)').eq('audit_id', audit.id),
+    supabase.from('audit_assets').select('*').eq('audit_id', audit.id),
+    supabase.from('flow_performance').select('*').eq('audit_id', audit.id),
+    supabase.from('klaviyo_flow_snapshots').select(FLOW_SNAPSHOT_SELECT).eq('audit_id', audit.id),
+    supabase.from('klaviyo_segment_snapshots').select(SEGMENT_SNAPSHOT_SELECT).eq('audit_id', audit.id),
+    supabase.from('klaviyo_form_snapshots').select(FORM_SNAPSHOT_SELECT).eq('audit_id', audit.id),
+    supabase.from('klaviyo_campaign_snapshots').select(CAMPAIGN_SNAPSHOT_SELECT).eq('audit_id', audit.id),
+    supabase.from('klaviyo_reporting_rollups').select('timeframe_key, computed, campaigns').eq('audit_id', audit.id),
+    supabase.from('audit_email_design').select('*, ecd_example:industry_email_library(*)').eq('audit_id', audit.id).maybeSingle(),
+    fetchSharedGroupAndMetricNameMaps(audit.id),
+  ]);
+
+  if (client.error) throw client.error;
+  if (sections.error) throw sections.error;
+  if (assets.error) throw assets.error;
+  if (flows.error) throw flows.error;
+  if (flowSnaps.error) throw flowSnaps.error;
+  if (segSnaps.error) throw segSnaps.error;
+  if (formSnaps.error) throw formSnaps.error;
+  if (campSnaps.error) throw campSnaps.error;
+  if (rollups.error) throw rollups.error;
+
+  return hydrateAuditReportBundle(audit, {
+    client: client.data as Client | null,
+    sections: (sections.data ?? []) as AuditSectionWithAnnotations[],
+    assets: (assets.data ?? []) as AuditAsset[],
+    flowPerformance: (flows.data ?? []) as FlowPerformance[],
+    flowSnapshots: (flowSnaps.data ?? []) as KlaviyoFlowSnapshot[],
+    segmentSnapshots: ((segSnaps.data ?? []) as Record<string, unknown>[]).map(row => reshapeSegmentSnapshotRow(row, sharedNames)) as unknown as KlaviyoSegmentSnapshot[],
+    formSnapshots: (formSnaps.data ?? []) as KlaviyoFormSnapshot[],
+    campaignSnapshots: ((campSnaps.data ?? []) as Record<string, unknown>[]).map(row => reshapeCampaignSnapshotRow(row, sharedNames)) as unknown as KlaviyoCampaignSnapshot[],
+    rollups: (rollups.data ?? []) as RawAuditReportBundle['rollups'],
+    emailDesign: (emailDesignRes.data ?? null) as AuditEmailDesign | null,
+  });
+}
+
+/** Public report fetch: validates the share token server-side (service role, no anon
+ * RLS involved) via the audit_public edge function, then runs the same enrichment as
+ * the authenticated path. Returns null for an unknown/unpublished token. */
+export async function fetchPublicAuditReportBundle(token: string): Promise<AuditReportBundle | null> {
+  const { data, error } = await supabase.functions.invoke('audit_public', { body: { token } });
+  if (error) return null;
+  if (data?.ok !== true) return null;
+
+  const sharedNames: SharedGroupAndMetricNameMaps = {
+    groupNames: (data.groupNames ?? null) as Record<string, unknown> | null,
+    metricNames: (data.metricNames ?? null) as Record<string, unknown> | null,
+  };
+
+  return hydrateAuditReportBundle(data.audit as Audit, {
+    client: (data.client ?? null) as Client | null,
+    sections: (data.sections ?? []) as AuditSectionWithAnnotations[],
+    assets: (data.assets ?? []) as AuditAsset[],
+    flowPerformance: (data.flowPerformance ?? []) as FlowPerformance[],
+    flowSnapshots: (data.flowSnapshots ?? []) as KlaviyoFlowSnapshot[],
+    segmentSnapshots: ((data.segmentSnapshots ?? []) as Record<string, unknown>[]).map(row => reshapeSegmentSnapshotRow(row, sharedNames)) as unknown as KlaviyoSegmentSnapshot[],
+    formSnapshots: (data.formSnapshots ?? []) as KlaviyoFormSnapshot[],
+    campaignSnapshots: ((data.campaignSnapshots ?? []) as Record<string, unknown>[]).map(row => reshapeCampaignSnapshotRow(row, sharedNames)) as unknown as KlaviyoCampaignSnapshot[],
+    rollups: (data.rollups ?? []) as RawAuditReportBundle['rollups'],
+    emailDesign: (data.emailDesign ?? null) as AuditEmailDesign | null,
+  });
 }
 
 export async function fetchAuditWorkspaceShell(auditId: string): Promise<{
@@ -629,18 +763,11 @@ export async function getAuditReportBundleById(auditId: string): Promise<Awaited
 }
 
 export async function getPublicReportByToken(token: string): Promise<Awaited<ReturnType<typeof fetchAuditReportBundleForAudit>>> {
-  const { data: publishedAudit, error: publishedErr } = await supabase
-    .from('audits')
-    .select('*')
-    .eq('public_share_token', token)
-    .eq('status', 'published')
-    .maybeSingle();
-  if (publishedErr) throw publishedErr;
-
-  if (publishedAudit) {
-    const bundle = await fetchAuditReportBundleForAudit(publishedAudit as Audit);
-    return finalizePublicReportSections(bundle);
-  }
+  // Anonymous path: the audit_public edge function validates the token server-side
+  // with the service role (no anon RLS is involved). Falls through to the
+  // authenticated staff-preview path below for viewer_only/unpublished audits.
+  const publicBundle = await fetchPublicAuditReportBundle(token);
+  if (publicBundle) return finalizePublicReportSections(publicBundle);
 
   const { data: sessionData } = await supabase.auth.getSession();
   if (!sessionData.session) return null;

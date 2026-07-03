@@ -93,6 +93,59 @@ export function computeProposalTotals(items: LineItemRow[], discount: DiscountFi
   };
 }
 
+/** Deterministic snapshot of exactly what the client saw and agreed to at signing
+ * time: content, pricing, and contract text, but not administrative/mutable fields
+ * like status or timestamps. Hashed and frozen into the "signed" event so any later
+ * edit to the proposal or contract docs is detectable against what was signed. */
+export function buildSignedPayloadSnapshot(
+  proposal: {
+    title: string;
+    content_blocks: unknown;
+    include_contracts: unknown;
+    contracts_snapshot: unknown;
+    discount_type: string;
+    discount_value: number | string;
+    discount_applies_to: string;
+    discount_label: string | null;
+  },
+  lineItems: LineItemRow[],
+  totals: ProposalTotals,
+) {
+  return {
+    title: proposal.title,
+    content_blocks: proposal.content_blocks ?? [],
+    include_contracts: proposal.include_contracts ?? [],
+    contracts_snapshot: proposal.contracts_snapshot ?? [],
+    discount_type: proposal.discount_type,
+    discount_value: Number(proposal.discount_value ?? 0),
+    discount_applies_to: proposal.discount_applies_to,
+    discount_label: proposal.discount_label ?? null,
+    line_items: lineItems.map((item) => ({
+      id: item.id,
+      name: item.name,
+      description: item.description,
+      content: item.content,
+      one_time_price: numeric(item.one_time_price),
+      one_time_label: item.one_time_label ?? null,
+      monthly_price: numeric(item.monthly_price),
+      monthly_label: item.monthly_label ?? null,
+      display_order: item.display_order,
+    })),
+    totals,
+  };
+}
+
+/** SHA-256 hex digest of a JSON-serializable value, used as a tamper-evidence
+ * fingerprint for what was signed (JSON.stringify preserves object key insertion
+ * order, so the same input always produces the same hash). */
+export async function hashSignedPayload(payload: unknown): Promise<string> {
+  const bytes = new TextEncoder().encode(JSON.stringify(payload));
+  const digest = await crypto.subtle.digest("SHA-256", bytes);
+  return Array.from(new Uint8Array(digest))
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 export function isProposalExpired(proposal: { status: string; valid_until: string | null }): boolean {
   if (proposal.status !== "sent" && proposal.status !== "viewed") return false;
   if (!proposal.valid_until) return false;
