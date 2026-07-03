@@ -26,6 +26,8 @@ import {
   updateAuditSection,
 } from '../lib/db';
 import { createProposalFromAudit } from '../lib/proposal-convert';
+import { canSeeProposalsBeta } from '../lib/feature-flags';
+import { useAuth } from '../contexts/AuthContext';
 import { klaviyoScopePermissionWarnings } from '../lib/klaviyo-fetch-diagnostics';
 import { lazyAuditReportView, preloadAuditReportView } from '../lib/preload-audit-report-view';
 import { supabase } from '../lib/supabase';
@@ -47,6 +49,7 @@ export default function AuditWorkspace() {
   const { id } = useParams();
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
 
   const [audit, setAudit] = useState<Audit | null>(null);
   const [client, setClient] = useState<Client | null>(null);
@@ -254,7 +257,7 @@ export default function AuditWorkspace() {
           leadingIcon={client ? <SiteFavicon url={client.website_url} size="md" /> : undefined}
           actions={
             <div className="flex items-center gap-3">
-              {client ? (
+              {client && canSeeProposalsBeta(user?.email) ? (
                 <button
                   type="button"
                   disabled={creatingProposal}

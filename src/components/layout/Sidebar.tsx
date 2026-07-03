@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
+import { canSeeProposalsBeta } from '../../lib/feature-flags';
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -43,6 +44,7 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
     if (collapsedProp === undefined) setCollapsedState(next);
   };
   const { user, hasRole, signOut } = useAuth();
+  const navItems = NAV_ITEMS.filter(item => item.to !== '/proposals' || canSeeProposalsBeta(user?.email));
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileAreaRef = useRef<HTMLDivElement>(null);
   const initials = (user?.name || user?.email || 'U')
@@ -104,7 +106,7 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
       </Link>
 
       <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-        {NAV_ITEMS.map(item => (
+        {navItems.map(item => (
           <NavLink
             key={item.to}
             to={item.to}
