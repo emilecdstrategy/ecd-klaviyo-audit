@@ -114,7 +114,7 @@ export default function NewProposal({ asModal }: NewProposalProps) {
           <button
             type="button"
             onClick={() => setSelectedClient(null)}
-            className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-900"
+            className="mb-4 inline-flex items-center gap-1.5 text-xs font-medium leading-none text-gray-500 hover:text-gray-900"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             {selectedClient.company_name}

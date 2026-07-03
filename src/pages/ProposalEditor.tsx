@@ -65,7 +65,7 @@ export default function ProposalEditor() {
           <div className="mx-auto flex h-14 max-w-[960px] items-center gap-4 px-4">
             <Link
               to={`/proposals/${proposal.id}`}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-900"
+              className="inline-flex items-center gap-1.5 text-sm font-medium leading-none text-gray-500 hover:text-gray-900"
             >
               <ArrowLeft className="h-4 w-4" />
               Back

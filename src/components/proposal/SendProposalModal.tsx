@@ -299,7 +299,7 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
               type="button"
               disabled={sending}
               onClick={() => setStep('edit')}
-              className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-600 hover:text-gray-800 disabled:opacity-50"
+              className="inline-flex items-center gap-1.5 text-sm font-medium leading-none text-gray-600 hover:text-gray-800 disabled:opacity-50"
             >
               <ArrowLeft className="h-3.5 w-3.5" />
               Back

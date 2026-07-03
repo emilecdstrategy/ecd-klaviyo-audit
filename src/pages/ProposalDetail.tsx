@@ -159,7 +159,7 @@ export default function ProposalDetail() {
         <div className="mx-auto flex h-14 max-w-[1280px] items-center gap-4 px-4">
           <Link
             to="/proposals"
-            className="inline-flex items-center gap-1.5 text-sm font-medium text-gray-500 hover:text-gray-900"
+            className="inline-flex items-center gap-1.5 text-sm font-medium leading-none text-gray-500 hover:text-gray-900"
           >
             <ArrowLeft className="h-4 w-4" />
             Proposals
