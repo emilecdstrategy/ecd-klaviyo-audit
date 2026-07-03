@@ -138,8 +138,27 @@
     display: none !important;
   }
 
+  /* Plain (non-Tailwind-variant) classes so the print layout doesn't depend on
+     print: utilities surviving the Tailwind content scan/purge — this is the
+     one part of the layout we can't afford to silently lose. */
+  .proposal-print-page {
+    display: block !important;
+    max-width: none !important;
+    width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    gap: 0 !important;
+  }
+
+  .proposal-print-content {
+    width: 100% !important;
+    max-width: none !important;
+    flex: none !important;
+  }
+
   .proposal-print-root {
     max-width: none !important;
+    width: 100% !important;
     margin: 0 !important;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;

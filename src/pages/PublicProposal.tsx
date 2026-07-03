@@ -254,7 +254,7 @@ export default function PublicProposal() {
 
   return (
     <div className="min-h-screen bg-[#f4f4f8] print:bg-white">
-      <main className="mx-auto max-w-[880px] px-5 py-8 pb-32 sm:px-8 print:max-w-none print:px-0 print:py-0 print:pb-0">
+      <main className="proposal-print-page mx-auto max-w-[880px] px-5 py-8 pb-32 sm:px-8 print:max-w-none print:px-0 print:py-0 print:pb-0">
         {(isSigned || justSigned) && (
           <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 print:hidden">
             <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
