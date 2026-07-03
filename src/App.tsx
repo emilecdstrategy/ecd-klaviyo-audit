@@ -60,6 +60,11 @@ function AppRoutes() {
   const backgroundLocation = state?.backgroundLocation as ReturnType<typeof useLocation> | undefined;
   const isPublicReportRoute =
     location.pathname.startsWith('/report/') || location.pathname.startsWith('/proposal/');
+  // Set when an unauthenticated visit got bounced to /login (see the `!user` branch
+  // below). If auth resolves while still sitting on /login or another unmatched route
+  // (e.g. the session-hydration race where isLoading clears before `user` does), send
+  // them back to the page they actually clicked instead of defaulting to "/".
+  const deepLinkFrom = typeof state?.from === 'string' ? state.from : null;
 
   if (isLoading && !isPublicReportRoute) {
     return <AppPreloader />;
@@ -93,7 +98,7 @@ function AppRoutes() {
         ) : isViewer ? (
           <>
             <Route path="/" element={<ViewerLanding />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to={deepLinkFrom || '/'} replace />} />
           </>
         ) : (
           <Route element={<AppShell />}>
@@ -109,7 +114,7 @@ function AppRoutes() {
             <Route path="/proposals/:id" element={<ProposalDetail />} />
             <Route path="/proposals/:id/edit" element={<ProposalEditor />} />
             <Route path="/admin" element={<AdminArea />} />
-            <Route path="*" element={<Navigate to="/" replace />} />
+            <Route path="*" element={<Navigate to={deepLinkFrom || '/'} replace />} />
           </Route>
         )}
       </Routes>

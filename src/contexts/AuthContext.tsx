@@ -92,16 +92,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      const finishInitialLoad = () => {
+        if (event === 'INITIAL_SESSION' && isMounted) setIsLoading(false);
+      };
+
       if (session?.user) {
-        void handleSessionUser({ id: session.user.id, email: session.user.email });
+        // Wait for the profile fetch to resolve before clearing isLoading -- otherwise
+        // there's a window where the session is known but `user` is still null, which
+        // App.tsx reads as "logged out" and bounces to /login, losing the deep link the
+        // user actually clicked (e.g. a proposal notification email).
+        void handleSessionUser({ id: session.user.id, email: session.user.email }).finally(finishInitialLoad);
       } else {
         handlingUserId.current = null;
         setUser(null);
         clearCachedProfile();
-      }
-
-      if (event === 'INITIAL_SESSION' && isMounted) {
-        setIsLoading(false);
+        finishInitialLoad();
       }
     });
 
