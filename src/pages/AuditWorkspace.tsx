@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ExternalLink, FileSignature } from 'lucide-react';
+import { ExternalLink, FileSignature, History } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import SiteFavicon from '../components/ui/SiteFavicon';
+import Modal from '../components/ui/Modal';
+import AuditActivityTimeline from '../components/audit/AuditActivityTimeline';
 import { ReportEditProvider } from '../components/report/edit/ReportEditContext';
 import WorkspacePublishBar from '../components/audit/WorkspacePublishBar';
 import { mergeReportBundle, type AuditReportBundle } from '../hooks/useAuditReportData';
@@ -14,12 +16,13 @@ import {
   fetchAuditPipelineStatus,
   markAuditGenerationActive,
 } from '../lib/audit-pipeline-status';
-import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary } from '../lib/types';
+import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary, AuditEvent } from '../lib/types';
 import type { Audit, Client } from '../lib/types';
 import {
   fetchAuditReportBundleForAudit,
   fetchAuditWorkspaceShell,
   getAuditReportBundleById,
+  listAuditEvents,
   listIndustryEmailLibrary,
   publishAudit,
   updateAuditStatus,
@@ -71,7 +74,22 @@ export default function AuditWorkspace() {
   const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
   const [analysisInProgress, setAnalysisInProgress] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [activityOpen, setActivityOpen] = useState(false);
+  const [activityEvents, setActivityEvents] = useState<AuditEvent[]>([]);
+  const [activityLoading, setActivityLoading] = useState(false);
   const emailDesignSection = sections.find(section => section.section_key === 'email_design');
+
+  const openActivity = async () => {
+    setActivityOpen(true);
+    setActivityLoading(true);
+    try {
+      setActivityEvents(await listAuditEvents(audit!.id));
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to load activity');
+    } finally {
+      setActivityLoading(false);
+    }
+  };
 
   useEffect(() => {
     void preloadAuditReportView();
@@ -257,6 +275,14 @@ export default function AuditWorkspace() {
           leadingIcon={client ? <SiteFavicon url={client.website_url} size="md" /> : undefined}
           actions={
             <div className="flex items-center gap-3">
+              <button
+                type="button"
+                onClick={openActivity}
+                className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <History className="w-4 h-4" />
+                Activity
+              </button>
               {client && canSeeProposalsBeta(user?.email) ? (
                 <button
                   type="button"
@@ -378,6 +404,16 @@ export default function AuditWorkspace() {
             </RevenueOpportunitiesDrawer>
           </Suspense>
         )}
+
+        <Modal open={activityOpen} onClose={() => setActivityOpen(false)} title="Activity">
+          <div className="p-5">
+            {activityLoading ? (
+              <p className="text-xs text-gray-400">Loading…</p>
+            ) : (
+              <AuditActivityTimeline events={activityEvents} />
+            )}
+          </div>
+        </Modal>
       </div>
     </ReportEditProvider>
   );

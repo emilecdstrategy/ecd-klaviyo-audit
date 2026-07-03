@@ -260,6 +260,10 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   const isPreview = audit.status === 'draft' || audit.status === 'in_review';
 
   const revenueBreakdown = accountSnapshot?.revenue_breakdown ?? null;
+  // The Klaviyo fetch caps campaign snapshots at 500 (see klaviyo_fetch_snapshot);
+  // show "500+" instead of an exact count when that cap was hit so the number doesn't
+  // read as the account's true total.
+  const campaignsTruncated = Boolean(accountSnapshot?.campaigns_truncated) || campaignSnapshots.length >= 500;
 
   const reportSections = useMemo(
     () => sections.filter(section => section.section_key !== 'revenue_summary' && section.status !== 'draft'),
@@ -1145,11 +1149,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 title={campaignsCfg.blocks.campaignTable?.title ?? 'Campaign inventory'}
                 subtitle={campaignsCfg.blocks.campaignTable?.subtitle}
                 count={campaignSnapshots.filter((c: { is_hidden?: boolean }) => !c.is_hidden).length}
+                countDisplay={campaignsTruncated ? '500+' : undefined}
                 countLabel="campaigns"
                 modalTitle={campaignsCfg.blocks.campaignTable?.title ?? 'Campaign inventory'}
                 modalSubtitle="Inventory of campaigns pulled directly from Klaviyo for this audit."
               >
-                <ReportCampaignTable campaigns={campaignSnapshots as any} scrollable />
+                <ReportCampaignTable campaigns={campaignSnapshots as any} scrollable truncated={campaignsTruncated} />
               </ReportInventoryLauncher>
             )}
 

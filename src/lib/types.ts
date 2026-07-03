@@ -448,6 +448,21 @@ export interface ProposalEvent {
   event_type: ProposalEventType;
   actor: 'admin' | 'client' | 'system';
   actor_user_id: string | null;
+  /** Display name of actor_user_id, resolved client-side; null for client/system actors. */
+  actor_name?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export type AuditEventType = 'created' | 'edited' | 'published' | 'unpublished' | 'status_changed';
+
+export interface AuditEvent {
+  id: string;
+  audit_id: string;
+  event_type: AuditEventType;
+  actor_user_id: string | null;
+  /** Display name of actor_user_id, resolved client-side. */
+  actor_name?: string | null;
   metadata: Record<string, unknown>;
   created_at: string;
 }

@@ -7,7 +7,7 @@ interface AuthState {
   user: Profile | null;
   isLoading: boolean;
   authError: string;
-  sendMagicLink: (email: string) => Promise<void>;
+  sendMagicLink: (email: string, redirectPath?: string) => Promise<void>;
   signOut: () => Promise<void>;
   hasRole: (role: UserRole | UserRole[]) => boolean;
 }
@@ -111,14 +111,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
-  const sendMagicLink = async (email: string) => {
+  const sendMagicLink = async (email: string, redirectPath?: string) => {
     const trimmed = email.trim().toLowerCase();
     setAuthError('');
+
+    // Preserve the page the user was trying to reach (e.g. a proposal link from an
+    // email notification) so the magic link drops them back there instead of at "/".
+    const target = redirectPath && redirectPath.startsWith('/')
+      ? `${window.location.origin}${redirectPath}`
+      : window.location.origin;
 
     const { error } = await supabase.auth.signInWithOtp({
       email: trimmed,
       options: {
-        emailRedirectTo: window.location.origin,
+        emailRedirectTo: target,
         shouldCreateUser: true,
       },
     });

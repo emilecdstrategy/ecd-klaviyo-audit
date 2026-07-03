@@ -6,6 +6,7 @@ export default function ReportInventoryLauncher({
   title,
   subtitle,
   count,
+  countDisplay,
   countLabel,
   modalTitle,
   modalSubtitle,
@@ -14,6 +15,9 @@ export default function ReportInventoryLauncher({
   title?: string;
   subtitle?: string;
   count: number;
+  /** Overrides how `count` is rendered (e.g. "500+" when the fetch was capped)
+   * without changing the singular/zero logic below, which still keys off `count`. */
+  countDisplay?: string;
   countLabel: string;
   modalTitle?: string;
   modalSubtitle?: string;
@@ -21,12 +25,13 @@ export default function ReportInventoryLauncher({
 }) {
   const [open, setOpen] = useState(false);
   const displayTitle = title || `Klaviyo ${countLabel} inventory`;
+  const displayCount = countDisplay ?? String(count);
   const buttonLabel =
     count === 0
       ? `View ${countLabel} inventory`
       : count === 1
         ? `View 1 ${countLabel.replace(/s$/, '')}`
-        : `View all ${count} ${countLabel}`;
+        : `View all ${displayCount} ${countLabel}`;
 
   return (
     <>
@@ -42,7 +47,7 @@ export default function ReportInventoryLauncher({
                 {subtitle ||
                   (count === 0
                     ? `No ${countLabel} were found in Klaviyo for this audit.`
-                    : `${count} ${countLabel} pulled directly from Klaviyo for this audit.`)}
+                    : `${displayCount} ${countLabel} pulled directly from Klaviyo for this audit.`)}
               </p>
             </div>
           </div>

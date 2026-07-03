@@ -79,7 +79,16 @@ function AppRoutes() {
         {!user ? (
           <>
             <Route path="/login" element={<Login />} />
-            <Route path="*" element={<Navigate to="/login" replace />} />
+            <Route
+              path="*"
+              element={
+                <Navigate
+                  to="/login"
+                  replace
+                  state={{ from: location.pathname + location.search }}
+                />
+              }
+            />
           </>
         ) : isViewer ? (
           <>

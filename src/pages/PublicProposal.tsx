@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
-import { CheckCircle2, Clock, FileX2, PenLine } from 'lucide-react';
+import { CheckCircle2, Clock, Download, FileX2, PenLine } from 'lucide-react';
 import AppPreloader from '../components/ui/AppPreloader';
 import ProposalDocument from '../components/proposal/ProposalDocument';
 import SignaturePad, { type SignaturePadHandle } from '../components/proposal/SignaturePad';
@@ -51,7 +51,6 @@ function toDocumentModels(payload: PublicProposalPayload): {
     won_at: null,
     lost_at: null,
     lost_reason: null,
-    recipient_email: '',
     created_by: null,
     updated_at: payload.proposal.created_at,
     ...payload.proposal,
@@ -81,18 +80,20 @@ function toDocumentModels(payload: PublicProposalPayload): {
 
 function ClientSignArea({
   recipientName,
+  recipientEmail,
   onSign,
   signing,
   error,
 }: {
   recipientName: string;
+  recipientEmail: string;
   onSign: (typedName: string, email: string, signatureImage: string) => void;
   signing: boolean;
   error: string;
 }) {
   const padRef = useRef<SignaturePadHandle>(null);
   const [typedName, setTypedName] = useState(recipientName);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(recipientEmail);
   const [padEmpty, setPadEmpty] = useState(true);
   const [localError, setLocalError] = useState('');
 
@@ -254,6 +255,16 @@ export default function PublicProposal() {
 
   return (
     <div className="min-h-screen bg-[#f4f4f8] print:bg-white">
+      <div className="mx-auto flex max-w-[880px] justify-end px-5 pt-6 sm:px-8 print:hidden">
+        <button
+          type="button"
+          onClick={() => window.print()}
+          className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-sm font-medium text-gray-600 shadow-sm hover:bg-gray-50"
+        >
+          <Download className="h-3.5 w-3.5" />
+          Download PDF
+        </button>
+      </div>
       <main className="proposal-print-page mx-auto max-w-[880px] px-5 py-8 pb-32 sm:px-8 print:max-w-none print:px-0 print:py-0 print:pb-0">
         {(isSigned || justSigned) && (
           <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 print:hidden">
@@ -284,6 +295,7 @@ export default function PublicProposal() {
               canSign ? (
                 <ClientSignArea
                   recipientName={payload.proposal.recipient_name}
+                  recipientEmail={payload.proposal.recipient_email ?? ''}
                   onSign={handleSign}
                   signing={signing}
                   error={signError}

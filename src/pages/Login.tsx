@@ -1,10 +1,16 @@
 import { useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { ArrowRight, Mail } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ReportBrandMark from '../components/report/ReportBrandMark';
 
 export default function Login() {
   const { sendMagicLink, authError } = useAuth();
+  const location = useLocation();
+  // Set by App.tsx when an unauthenticated user hits a deep link (e.g. a proposal
+  // countersign link from an email) -- carries the destination through the magic
+  // link so signing in drops them back where they were headed, not at "/".
+  const from = (location.state as { from?: string } | null)?.from;
   const [email, setEmail] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
@@ -15,7 +21,7 @@ export default function Login() {
     setError('');
     setLoading(true);
     try {
-      await sendMagicLink(email);
+      await sendMagicLink(email, from);
       setSent(true);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : 'An error occurred');

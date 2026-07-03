@@ -267,23 +267,23 @@ export default function ProposalPricingTable({ proposal, lineItems }: ProposalPr
               ))
             )}
 
-            <div className="relative flex flex-wrap items-center gap-3 pt-1 print:hidden">
-              <button
-                type="button"
-                onClick={() => addLineItem()}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
-              >
-                <Plus className="h-3.5 w-3.5" />
-                Add line item
-              </button>
+            <div className="relative flex flex-wrap items-center gap-3 pt-2 print:hidden">
               <button
                 type="button"
                 onClick={() => setCatalogOpen(v => !v)}
-                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                className="inline-flex items-center gap-2 rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-brand-primary/90"
               >
-                <Plus className="h-3.5 w-3.5" />
+                <Plus className="h-4 w-4" />
                 From catalog
-                <ChevronDown className={cn('h-3 w-3 transition-transform', catalogOpen && 'rotate-180')} />
+                <ChevronDown className={cn('h-3.5 w-3.5 transition-transform', catalogOpen && 'rotate-180')} />
+              </button>
+              <button
+                type="button"
+                onClick={() => addLineItem()}
+                className="inline-flex items-center gap-2 rounded-lg border border-gray-300 px-4 py-2.5 text-sm font-semibold text-gray-700 hover:bg-gray-50"
+              >
+                <Plus className="h-4 w-4" />
+                Add line item
               </button>
             </div>
             {catalogOpen && (

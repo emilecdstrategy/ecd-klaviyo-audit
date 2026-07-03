@@ -1,7 +1,10 @@
 import { supabase } from './supabase';
+import { attachActorNames } from './actor-names';
 import type {
   Audit,
   AuditSection,
+  AuditEvent,
+  AuditEventType,
   Client,
   Profile,
   Annotation,
@@ -335,15 +338,70 @@ export async function getAudit(id: string): Promise<Audit | null> {
   return attachComputedRevenueOpportunity([data as Audit], sections)[0] ?? null;
 }
 
+// ---------------------------------------------------------------------------
+// Activity log: audits have no autosave signal from the DB itself, so every
+// content-editing entry point below calls recordAuditEvent. 'edited' events are
+// throttled per-audit (recordEditEventThrottled) so a burst of autosaves while
+// someone is actively editing collapses into one timeline entry instead of one
+// per keystroke; discrete actions (create/publish/status change) always record.
+
+const EDIT_EVENT_THROTTLE_MS = 3 * 60 * 1000;
+const lastEditedEventAt = new Map<string, number>();
+
+async function recordAuditEvent(
+  auditId: string,
+  eventType: AuditEventType,
+  metadata: Record<string, unknown> = {},
+): Promise<void> {
+  try {
+    const { data: userData } = await supabase.auth.getUser();
+    const userId = userData?.user?.id;
+    if (!userId) return;
+    const { error } = await supabase
+      .from('audit_events')
+      .insert({ audit_id: auditId, event_type: eventType, actor_user_id: userId, metadata });
+    if (error) throw error;
+  } catch (e) {
+    console.error('Failed to record audit event', e);
+  }
+}
+
+function recordEditEventThrottled(auditId: string): void {
+  const now = Date.now();
+  const last = lastEditedEventAt.get(auditId) ?? 0;
+  if (now - last < EDIT_EVENT_THROTTLE_MS) return;
+  lastEditedEventAt.set(auditId, now);
+  void recordAuditEvent(auditId, 'edited');
+}
+
+export async function listAuditEvents(auditId: string): Promise<AuditEvent[]> {
+  const { data, error } = await supabase
+    .from('audit_events')
+    .select('*')
+    .eq('audit_id', auditId)
+    .order('created_at', { ascending: false });
+  if (error) throw error;
+  return attachActorNames((data ?? []) as AuditEvent[]);
+}
+
 export async function createAudit(input: Omit<Audit, 'id' | 'created_at' | 'updated_at' | 'published_at' | 'public_share_token'>): Promise<Audit> {
   const { data, error } = await supabase.from('audits').insert(input).select('*').single();
   if (error) throw error;
+  void recordAuditEvent((data as Audit).id, 'created');
   return data as Audit;
 }
+
+// Keys that dedicated entry points (publish/status-change) already log a discrete
+// event for -- an updateAudit() call touching only these shouldn't also log 'edited'.
+const AUDIT_STRUCTURAL_UPDATE_KEYS = new Set<keyof Audit>(['status', 'public_share_token', 'published_at']);
 
 export async function updateAudit(id: string, updates: Partial<Audit>): Promise<Audit> {
   const { data, error } = await supabase.from('audits').update(updates).eq('id', id).select('*').single();
   if (error) throw error;
+  const isContentEdit = Object.keys(updates).some(
+    k => !AUDIT_STRUCTURAL_UPDATE_KEYS.has(k as keyof Audit),
+  );
+  if (isContentEdit) recordEditEventThrottled(id);
   return data as Audit;
 }
 
@@ -360,7 +418,9 @@ export async function publishAudit(auditId: string): Promise<Audit> {
 
   const token = audit.public_share_token || crypto.randomUUID().replace(/-/g, '').slice(0, 24);
   const now = new Date().toISOString();
-  return updateAudit(auditId, { status: 'published', public_share_token: token, published_at: now });
+  const result = await updateAudit(auditId, { status: 'published', public_share_token: token, published_at: now });
+  void recordAuditEvent(auditId, 'published');
+  return result;
 }
 
 export async function updateAuditStatus(auditId: string, status: Audit['status']): Promise<Audit> {
@@ -369,9 +429,13 @@ export async function updateAuditStatus(auditId: string, status: Audit['status']
     const audit = await getAudit(auditId);
     if (!audit) throw new Error('Audit not found');
     const token = audit.public_share_token || crypto.randomUUID().replace(/-/g, '').slice(0, 24);
-    return updateAudit(auditId, { status: 'viewer_only', public_share_token: token });
+    const result = await updateAudit(auditId, { status: 'viewer_only', public_share_token: token });
+    void recordAuditEvent(auditId, 'status_changed', { status: 'viewer_only' });
+    return result;
   }
-  return updateAudit(auditId, { status });
+  const result = await updateAudit(auditId, { status });
+  void recordAuditEvent(auditId, 'status_changed', { status });
+  return result;
 }
 
 export async function listAuditSections(auditId: string): Promise<AuditSection[]> {
@@ -383,6 +447,8 @@ export async function listAuditSections(auditId: string): Promise<AuditSection[]
 export async function updateAuditSection(id: string, updates: Partial<AuditSection>): Promise<AuditSection> {
   const { data, error } = await supabase.from('audit_sections').update(updates).eq('id', id).select('*').single();
   if (error) throw error;
+  const auditId = (data as AuditSection).audit_id;
+  if (auditId) recordEditEventThrottled(auditId);
   return data as AuditSection;
 }
 

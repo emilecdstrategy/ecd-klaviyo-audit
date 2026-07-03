@@ -24,9 +24,13 @@ const COLLAPSED_COUNT = 2;
 export default function ReportCampaignTable({
   campaigns,
   scrollable = false,
+  truncated = false,
 }: {
   campaigns: KlaviyoCampaignSnapshot[];
   scrollable?: boolean;
+  /** True when the Klaviyo fetch hit its 500-campaign cap, so the exact row count
+   * isn't the account's true total -- show "500+" instead of the literal number. */
+  truncated?: boolean;
 }) {
   const rows = [...campaigns]
     .filter(c => !c.is_hidden)
@@ -107,7 +111,7 @@ export default function ReportCampaignTable({
               onClick={() => setExpanded(true)}
               className="flex items-center gap-1.5 text-sm font-semibold text-brand-primary hover:text-brand-primary-dark transition-colors duration-200 pointer-events-auto"
             >
-              Show all {rows.length} campaigns <ChevronDown className="w-4 h-4 transition-transform duration-300" />
+              Show all {truncated ? '500+' : rows.length} campaigns <ChevronDown className="w-4 h-4 transition-transform duration-300" />
             </button>
           </div>
         </>

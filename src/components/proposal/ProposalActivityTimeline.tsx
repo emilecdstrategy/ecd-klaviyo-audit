@@ -47,6 +47,7 @@ export default function ProposalActivityTimeline({ events }: { events: ProposalE
           typeof event.metadata?.signer_email === 'string' && event.metadata.signer_email
             ? event.metadata.signer_email
             : null;
+        const actorName = event.actor === 'admin' ? event.actor_name ?? null : null;
         return (
           <li key={event.id} className="relative flex gap-3 pb-4 last:pb-0">
             {index < events.length - 1 && (
@@ -56,7 +57,10 @@ export default function ProposalActivityTimeline({ events }: { events: ProposalE
               <Icon className="h-3.5 w-3.5" />
             </span>
             <div className="min-w-0 pt-1">
-              <p className="text-xs font-medium text-gray-800">{meta.label}</p>
+              <p className="text-xs font-medium text-gray-800">
+                {meta.label}
+                {actorName ? <span className="font-normal text-gray-400"> · by {actorName}</span> : null}
+              </p>
               <p className="text-[11px] text-gray-400">{formatEventTime(event.created_at)}</p>
               {reason ? <p className="mt-0.5 text-[11px] italic text-gray-500">“{reason}”</p> : null}
               {(signerEmail || ip) && (

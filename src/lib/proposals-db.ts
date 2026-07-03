@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { attachActorNames } from './actor-names';
 import type {
   ContractDocument,
   Proposal,
@@ -348,6 +349,7 @@ export type PublicProposalPayload = {
     | 'discount_applies_to'
     | 'discount_label'
     | 'recipient_name'
+    | 'recipient_email'
     | 'valid_until'
     | 'sent_at'
     | 'created_at'
@@ -448,7 +450,7 @@ export async function listProposalEvents(proposalId: string): Promise<ProposalEv
     .eq('proposal_id', proposalId)
     .order('created_at', { ascending: false });
   if (error) throw error;
-  return (data ?? []) as ProposalEvent[];
+  return attachActorNames((data ?? []) as ProposalEvent[]);
 }
 
 export async function recordProposalEvent(

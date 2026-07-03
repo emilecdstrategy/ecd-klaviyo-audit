@@ -183,8 +183,9 @@ export async function fetchPublicProposal(sb: SupabaseClient, token: string) {
   return { proposal, lineItems: (lineItems ?? []) as LineItemRow[], signatures: signatures ?? [] };
 }
 
-/** Public payload: only fields the client-facing page needs; never internal notes,
- * created_by, recipient contact details, or the event log. */
+/** Public payload: only fields the client-facing page needs (including recipient_email,
+ * used to pre-fill the sign form -- whoever holds this link already has that address);
+ * never internal notes, created_by, or the event log. */
 export async function serializePublicProposal(
   sb: SupabaseClient,
   bundle: NonNullable<Awaited<ReturnType<typeof fetchPublicProposal>>>,
@@ -215,6 +216,7 @@ export async function serializePublicProposal(
       discount_applies_to: proposal.discount_applies_to,
       discount_label: proposal.discount_label,
       recipient_name: proposal.recipient_name,
+      recipient_email: proposal.recipient_email,
       valid_until: proposal.valid_until,
       sent_at: proposal.sent_at,
       created_at: proposal.created_at,

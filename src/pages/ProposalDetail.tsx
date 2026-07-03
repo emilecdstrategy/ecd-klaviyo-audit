@@ -412,7 +412,10 @@ export default function ProposalDetail() {
               {needsCountersign && (
                 <button
                   type="button"
-                  onClick={() => setCountersignOpen(true)}
+                  onClick={() => {
+                    setCountersignName(user?.name ?? '');
+                    setCountersignOpen(true);
+                  }}
                   className="flex w-full items-center justify-center gap-2 rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90"
                 >
                   <PenLine className="h-3.5 w-3.5" />
