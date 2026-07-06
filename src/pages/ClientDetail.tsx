@@ -53,6 +53,10 @@ export default function ClientDetail() {
   const [emailDraft, setEmailDraft] = useState('');
   const [emailSaving, setEmailSaving] = useState(false);
   const [emailError, setEmailError] = useState('');
+  const [editingWebsite, setEditingWebsite] = useState(false);
+  const [websiteDraft, setWebsiteDraft] = useState('');
+  const [websiteSaving, setWebsiteSaving] = useState(false);
+  const [websiteError, setWebsiteError] = useState('');
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletingAudit, setDeletingAudit] = useState<Audit | null>(null);
   const [deleting, setDeleting] = useState(false);
@@ -134,10 +138,16 @@ export default function ClientDetail() {
       });
       if (fnErr) throw fnErr;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to connect Klaviyo');
+      const klaviyoWebsite = typeof data?.account?.websiteUrl === 'string' ? data.account.websiteUrl.trim() : '';
+      let nextWebsite = client.website_url?.trim() ?? '';
+      if (klaviyoWebsite && !nextWebsite) {
+        const updated = await updateClient(client.id, { website_url: klaviyoWebsite });
+        nextWebsite = updated.website_url;
+      }
       setKeyMsg({ ok: true, text: 'API key updated successfully.' });
       setEditingKey(false);
       setNewApiKey('');
-      setClient(prev => prev ? { ...prev, klaviyo_connected: true } as any : prev);
+      setClient(prev => prev ? { ...prev, klaviyo_connected: true, website_url: nextWebsite } as Client : prev);
     } catch (e: unknown) {
       setKeyMsg({ ok: false, text: e instanceof Error ? e.message : 'Failed to update API key' });
     } finally {
@@ -163,6 +173,21 @@ export default function ClientDetail() {
       setEmailError(e instanceof Error ? e.message : 'Failed to save email');
     } finally {
       setEmailSaving(false);
+    }
+  };
+
+  const handleSaveWebsite = async () => {
+    if (!client) return;
+    setWebsiteSaving(true);
+    setWebsiteError('');
+    try {
+      const updated = await updateClient(client.id, { website_url: websiteDraft.trim() });
+      setClient(prev => (prev ? { ...prev, website_url: updated.website_url } : prev));
+      setEditingWebsite(false);
+    } catch (e: unknown) {
+      setWebsiteError(e instanceof Error ? e.message : 'Failed to save website');
+    } finally {
+      setWebsiteSaving(false);
     }
   };
 
@@ -359,21 +384,54 @@ export default function ClientDetail() {
                 </div>
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Website</p>
-                  <div className="flex items-center gap-1.5">
-                    <Globe className="w-3.5 h-3.5 text-gray-400" />
-                    {client.website_url ? (
-                      <a
-                        href={client.website_url}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-sm text-brand-primary hover:underline"
-                      >
-                        {client.website_url}
-                      </a>
-                    ) : (
-                      <p className="text-sm text-gray-500">Not provided</p>
-                    )}
-                  </div>
+                  {editingWebsite ? (
+                    <div className="space-y-1.5">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={websiteDraft}
+                        onChange={e => setWebsiteDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleSaveWebsite();
+                          if (e.key === 'Escape') { setEditingWebsite(false); setWebsiteError(''); }
+                        }}
+                        placeholder="lazyleaf.com"
+                        className="w-full max-w-[260px] rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                      {websiteError && <p className="text-xs text-red-600">{websiteError}</p>}
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveWebsite}
+                          disabled={websiteSaving}
+                          className="text-xs font-medium text-brand-primary hover:underline disabled:opacity-50"
+                        >
+                          {websiteSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => { setEditingWebsite(false); setWebsiteError(''); }}
+                          disabled={websiteSaving}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setWebsiteDraft(client.website_url || ''); setEditingWebsite(true); setWebsiteError(''); }}
+                      className="flex items-center gap-1.5 text-sm hover:underline text-left"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      {client.website_url ? (
+                        <span className="text-brand-primary">{client.website_url}</span>
+                      ) : (
+                        <span className="text-gray-400">Add website</span>
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
               {client.notes && (

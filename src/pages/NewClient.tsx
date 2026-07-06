@@ -5,7 +5,7 @@ import TopBar from '../components/layout/TopBar';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { useAuth } from '../contexts/AuthContext';
-import { createClient, ensureClientCreator, findClientByCompanyName } from '../lib/db';
+import { createClient, ensureClientCreator, findClientByCompanyName, updateClient } from '../lib/db';
 
 import { supabase } from '../lib/supabase';
 
@@ -41,16 +41,16 @@ export default function NewClient({ asModal }: NewClientProps) {
         throw new Error(`A client named “${existing.company_name}” already exists. Open that client to run a new audit.`);
       }
       const payload = await ensureClientCreator(user, {
-        name: form.name,
+        name: form.name.trim() || form.company_name.trim(),
         company_name: form.company_name,
         email: form.email.trim(),
-        website_url: form.website_url.trim(),
+        website_url: form.website_url,
         industry: form.industry,
         esp_platform: 'Klaviyo',
         api_key_placeholder: '',
         notes: form.notes,
       });
-      const created = await createClient(payload as any);
+      let created = await createClient(payload as any);
 
       if (apiKey) {
         try {
@@ -59,6 +59,11 @@ export default function NewClient({ asModal }: NewClientProps) {
           });
           if (fnErr) throw fnErr;
           if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to connect Klaviyo');
+
+          const klaviyoWebsite = typeof data?.account?.websiteUrl === 'string' ? data.account.websiteUrl : '';
+          if (klaviyoWebsite.trim() && !created.website_url?.trim()) {
+            created = await updateClient(created.id, { website_url: klaviyoWebsite });
+          }
         } catch (connectErr) {
           // Best-effort rollback so we don't leave behind disconnected clients.
           try {
@@ -136,7 +141,7 @@ export default function NewClient({ asModal }: NewClientProps) {
                 placeholder="acme.com"
               />
               <p className="mt-1 text-xs text-gray-400">
-                Auto-filled from Klaviyo if you connect an API key below; otherwise used for the client favicon.
+                Used for the client favicon across the app. Klaviyo can auto-fill this when you connect an API key below, but add it manually if their Klaviyo account has no website on file.
               </p>
             </div>
 

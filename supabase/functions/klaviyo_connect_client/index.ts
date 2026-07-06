@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization } from "../_shared/auth.ts";
+import { normalizeStorefrontUrl } from "../_shared/competing-sms-detect.ts";
 import { KLAVIYO_BASE, KLAVIYO_REVISION } from "../_shared/klaviyo-api.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
@@ -158,8 +159,12 @@ serve(async (req) => {
     );
 
     await sb.from("clients").update({ klaviyo_connected: true }).eq("id", clientId);
-    if (websiteUrl) {
-      await sb.from("clients").update({ website_url: websiteUrl }).eq("id", clientId);
+    const normalizedWebsite = normalizeStorefrontUrl(websiteUrl);
+    if (normalizedWebsite) {
+      const { data: existingClient } = await sb.from("clients").select("website_url").eq("id", clientId).maybeSingle();
+      if (!normalizeStorefrontUrl(existingClient?.website_url)) {
+        await sb.from("clients").update({ website_url: normalizedWebsite }).eq("id", clientId);
+      }
     }
 
     await sb.from("klaviyo_connections").upsert(
@@ -167,7 +172,7 @@ serve(async (req) => {
         client_id: clientId,
         account_id: accountId,
         account_name: accountName,
-        website_url: websiteUrl,
+        website_url: normalizedWebsite,
         timezone,
         preferred_currency: preferredCurrency,
         revision: KLAVIYO_REVISION,
@@ -182,7 +187,7 @@ serve(async (req) => {
       {
         ok: true,
         correlationId,
-        account: { id: accountId, name: accountName, websiteUrl, timezone, preferredCurrency },
+        account: { id: accountId, name: accountName, websiteUrl: normalizedWebsite, timezone, preferredCurrency },
       },
       { status: 200 },
     );

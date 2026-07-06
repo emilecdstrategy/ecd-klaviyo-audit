@@ -9,6 +9,28 @@ export function websiteHostname(websiteUrl?: string | null): string | null {
   }
 }
 
+/** Canonical https origin used when persisting client website URLs. */
+export function normalizeClientWebsiteUrl(raw?: string | null): string | null {
+  const trimmed = (raw ?? '').trim();
+  if (!trimmed) return null;
+  try {
+    const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+    const url = new URL(withProtocol);
+    if (!url.hostname) return null;
+    return url.origin;
+  } catch {
+    return null;
+  }
+}
+
+/** Prefer an explicit client URL, then a Klaviyo-synced override when present. */
+export function resolveClientWebsiteUrl(
+  client?: { website_url?: string | null } | null,
+  override?: string | null,
+): string | null {
+  return normalizeClientWebsiteUrl(override) ?? normalizeClientWebsiteUrl(client?.website_url) ?? null;
+}
+
 export function faviconUrlFromWebsite(websiteUrl?: string | null, size = 32): string | null {
   const hostname = websiteHostname(websiteUrl);
   if (!hostname) return null;
@@ -21,11 +43,3 @@ export function faviconFallbackUrlFromWebsite(websiteUrl?: string | null): strin
   return `https://icons.duckduckgo.com/ip3/${encodeURIComponent(hostname)}.ico`;
 }
 
-/** Prefer stored client URL; callers can pass a Klaviyo-synced override when present. */
-export function resolveClientWebsiteUrl(
-  client?: { website_url?: string | null } | null,
-  override?: string | null,
-): string | null {
-  const candidate = (override ?? client?.website_url ?? '').trim();
-  return candidate || null;
-}

@@ -25,6 +25,7 @@ import {
   type EntityHighlightStyle,
 } from './entity-highlight-styles';
 import { dedupeClientsByCompany, normalizeCompanyKey } from './client-display';
+import { normalizeClientWebsiteUrl } from './site-favicon';
 import { resolveRevenueOpportunityContent } from './revenue-opportunity-content';
 import type { GroupNameMap } from './segment-definition';
 import { computeAuditTotalRevenueOpportunity, REVENUE_OPPORTUNITY_SECTION_KEYS } from './revenue-calculator';
@@ -256,13 +257,18 @@ export async function getClient(id: string): Promise<Client | null> {
 }
 
 export async function createClient(input: Omit<Client, 'id' | 'created_at'>): Promise<Client> {
-  const { data, error } = await supabase.from('clients').insert(input).select('*').single();
+  const website_url = normalizeClientWebsiteUrl(input.website_url) ?? '';
+  const { data, error } = await supabase.from('clients').insert({ ...input, website_url }).select('*').single();
   if (error) throw error;
   return data;
 }
 
 export async function updateClient(id: string, updates: Partial<Omit<Client, 'id' | 'created_at'>>): Promise<Client> {
-  const { data, error } = await supabase.from('clients').update(updates).eq('id', id).select('*').single();
+  const patch = { ...updates };
+  if ('website_url' in patch) {
+    patch.website_url = normalizeClientWebsiteUrl(patch.website_url) ?? '';
+  }
+  const { data, error } = await supabase.from('clients').update(patch).eq('id', id).select('*').single();
   if (error) throw error;
   return data as Client;
 }
