@@ -112,7 +112,7 @@ export function proposalEmailHtml(options: {
   return `<!doctype html>
 <html>
   <body style="margin:0;padding:0;background:#f4f4f8;font-family:-apple-system,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
-    <div style="max-width:560px;margin:0 auto;padding:32px 20px;">
+    <div style="max-width:576px;margin:0 auto;padding:32px 20px;">
       <div style="background:#ffffff;border-radius:16px;padding:32px;border:1px solid #ececf3;">
         <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px;">
           <tr>
@@ -128,7 +128,8 @@ export function proposalEmailHtml(options: {
         ${bodyLines.map(line => `<p style="margin:0 0 12px;font-size:14px;line-height:1.6;color:#374151;">${line}</p>`).join("")}
         ${ctaUrl && ctaLabel
           ? `<a href="${ctaUrl}" style="display:inline-block;margin-top:8px;background:#4b3afe;color:#ffffff;text-decoration:none;font-size:14px;font-weight:600;padding:12px 24px;border-radius:10px;">${ctaLabel}</a>
-             <p style="margin:16px 0 0;font-size:12px;color:#9ca3af;">Or copy this link: <span style="word-break:break-all;">${ctaUrl}</span></p>`
+             <p style="margin:16px 0 0;font-size:12px;color:#9ca3af;">Or copy this link:</p>
+             <p style="margin:4px 0 0;font-size:11px;line-height:1.5;color:#6b7280;word-break:break-all;">${ctaUrl}</p>`
           : ""}
       </div>
       <p style="margin:16px 0 0;text-align:center;font-size:11px;color:#9ca3af;">Sent by ECD Digital Strategy</p>
