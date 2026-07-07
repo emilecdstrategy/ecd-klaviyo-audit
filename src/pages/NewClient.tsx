@@ -117,18 +117,33 @@ export default function NewClient({ asModal }: NewClientProps) {
               </div>
             </div>
 
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
-              <input
-                type="email"
-                value={form.email}
-                onChange={e => updateField('email', e.target.value)}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                placeholder="jane@company.com"
-              />
-              <p className="mt-1 text-xs text-gray-400">
-                Used as the default recipient when sending proposals to this client.
-              </p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Name</label>
+                <input
+                  type="text"
+                  value={form.name}
+                  onChange={e => updateField('name', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  placeholder="Jane Smith"
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Defaults to the company name if left blank. Used as the recipient name on proposals.
+                </p>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Contact Email</label>
+                <input
+                  type="email"
+                  value={form.email}
+                  onChange={e => updateField('email', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  placeholder="jane@company.com"
+                />
+                <p className="mt-1 text-xs text-gray-400">
+                  Used as the default recipient when sending proposals to this client.
+                </p>
+              </div>
             </div>
 
             <div>

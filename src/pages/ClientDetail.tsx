@@ -49,6 +49,9 @@ export default function ClientDetail() {
   const [newApiKey, setNewApiKey] = useState('');
   const [keySaving, setKeySaving] = useState(false);
   const [keyMsg, setKeyMsg] = useState<{ ok: boolean; text: string } | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [nameDraft, setNameDraft] = useState('');
+  const [nameSaving, setNameSaving] = useState(false);
   const [editingEmail, setEditingEmail] = useState(false);
   const [emailDraft, setEmailDraft] = useState('');
   const [emailSaving, setEmailSaving] = useState(false);
@@ -155,6 +158,21 @@ export default function ClientDetail() {
     }
   };
   const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+  const handleSaveName = async () => {
+    if (!client) return;
+    const trimmed = nameDraft.trim();
+    setNameSaving(true);
+    try {
+      await updateClient(client.id, { name: trimmed || client.company_name });
+      setClient(prev => (prev ? { ...prev, name: trimmed || client.company_name } : prev));
+      setEditingName(false);
+    } catch {
+      // keep the field open so the user can retry
+    } finally {
+      setNameSaving(false);
+    }
+  };
 
   const handleSaveEmail = async () => {
     if (!client) return;
@@ -318,6 +336,51 @@ export default function ClientDetail() {
                     <Mail className="w-3.5 h-3.5 text-gray-400" />
                     <p className="text-sm text-gray-900">{client.esp_platform}</p>
                   </div>
+                </div>
+                <div>
+                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Contact Name</p>
+                  {editingName ? (
+                    <div className="space-y-1.5">
+                      <input
+                        type="text"
+                        autoFocus
+                        value={nameDraft}
+                        onChange={e => setNameDraft(e.target.value)}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') handleSaveName();
+                          if (e.key === 'Escape') setEditingName(false);
+                        }}
+                        placeholder="Jane Smith"
+                        className="w-full max-w-[220px] rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                      <div className="flex items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={handleSaveName}
+                          disabled={nameSaving}
+                          className="text-xs font-medium text-brand-primary hover:underline disabled:opacity-50"
+                        >
+                          {nameSaving ? 'Saving…' : 'Save'}
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setEditingName(false)}
+                          disabled={nameSaving}
+                          className="text-xs text-gray-500 hover:text-gray-700"
+                        >
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => { setNameDraft(client.name === client.company_name ? '' : client.name); setEditingName(true); }}
+                      className="text-sm hover:underline text-left"
+                    >
+                      <span className="text-gray-900">{client.name}</span>
+                    </button>
+                  )}
                 </div>
                 <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Contact Email</p>
