@@ -58,7 +58,9 @@ export default function AppPreloader({
             className="relative h-12 w-12 rounded-full object-cover shadow-md ring-2 ring-white"
             width={48}
             height={48}
-            fetchPriority="high"
+            // React 18 only forwards the lowercase form to the DOM (camelCase
+            // fetchPriority is dropped with a warning; supported in React 19+).
+            {...({ fetchpriority: 'high' } as object)}
             decoding="async"
           />
         </div>

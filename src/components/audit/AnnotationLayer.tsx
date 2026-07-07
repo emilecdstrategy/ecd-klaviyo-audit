@@ -219,6 +219,8 @@ export default function AnnotationLayer({
           <img
             src={imageUrl}
             alt={`${side} state`}
+            loading="lazy"
+            decoding="async"
             className="w-full h-auto object-cover rounded-lg"
             draggable={false}
           />

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ClipboardCheck,
@@ -59,6 +59,8 @@ export default function Dashboard() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  const clientById = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
 
   const totalAudits = audits.length;
   const inReview = audits.filter(a => a.status === 'in_review').length;
@@ -136,7 +138,7 @@ export default function Dashboard() {
               </div>
               <div className="divide-y divide-gray-50">
                 {audits.slice(0, 5).map(audit => {
-                  const client = clients.find(c => c.id === audit.client_id);
+                  const client = clientById.get(audit.client_id);
                   return (
                     <button
                       key={audit.id}

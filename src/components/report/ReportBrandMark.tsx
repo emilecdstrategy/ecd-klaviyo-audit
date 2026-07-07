@@ -2,10 +2,10 @@ import { cn } from '../../lib/utils';
 
 type Size = 'sm' | 'md' | 'lg';
 
-const sizeClasses: Record<Size, { img: string; title: string; subtitle: string; gap: string }> = {
-  sm: { img: 'h-7 w-7', title: 'text-sm', subtitle: 'text-[10px]', gap: 'gap-2' },
-  md: { img: 'h-9 w-9', title: 'text-sm', subtitle: 'text-xs', gap: 'gap-3' },
-  lg: { img: 'h-11 w-11', title: 'text-base', subtitle: 'text-xs', gap: 'gap-3.5' },
+const sizeClasses: Record<Size, { img: string; imgPx: number; title: string; subtitle: string; gap: string }> = {
+  sm: { img: 'h-7 w-7', imgPx: 28, title: 'text-sm', subtitle: 'text-[10px]', gap: 'gap-2' },
+  md: { img: 'h-9 w-9', imgPx: 36, title: 'text-sm', subtitle: 'text-xs', gap: 'gap-3' },
+  lg: { img: 'h-11 w-11', imgPx: 44, title: 'text-base', subtitle: 'text-xs', gap: 'gap-3.5' },
 };
 
 export default function ReportBrandMark({
@@ -23,6 +23,8 @@ export default function ReportBrandMark({
       <img
         src="/cropped-favicon-192x192.webp"
         alt="ECD Digital Strategy"
+        width={s.imgPx}
+        height={s.imgPx}
         className={cn(s.img, 'rounded-lg object-cover shadow-sm ring-1', inverted ? 'ring-white/20' : 'ring-black/5')}
       />
       <div className="flex flex-col gap-1">

@@ -11,7 +11,7 @@ import {
   Workflow,
   Image as ImageIcon,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
 import SiteFavicon from '../components/ui/SiteFavicon';
@@ -82,8 +82,10 @@ export default function Audits() {
     return () => { cancelled = true; };
   }, []);
 
+  const clientById = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
+
   const filtered = audits.filter(a => {
-    const client = clients.find(c => c.id === a.client_id);
+    const client = clientById.get(a.client_id);
     const matchSearch =
       a.title.toLowerCase().includes(search.toLowerCase()) ||
       (client?.company_name || '').toLowerCase().includes(search.toLowerCase());
@@ -261,7 +263,7 @@ export default function Audits() {
               </thead>
               <tbody className="divide-y divide-gray-50">
                 {filtered.map(audit => {
-                  const client = clients.find(c => c.id === audit.client_id);
+                  const client = clientById.get(audit.client_id);
                   return (
                     <tr
                       key={audit.id}

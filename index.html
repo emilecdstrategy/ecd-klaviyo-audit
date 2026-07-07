@@ -9,6 +9,9 @@
     <title>ECD Klaviyo Audit Dashboard</title>
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <!-- Every page load immediately hits Supabase (auth + data); pre-establish
+         DNS+TCP+TLS. crossorigin because Supabase calls are CORS fetches. -->
+    <link rel="preconnect" href="https://wuvqwuviwubthmuncuya.supabase.co" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap" rel="stylesheet" />
   </head>
   <body>

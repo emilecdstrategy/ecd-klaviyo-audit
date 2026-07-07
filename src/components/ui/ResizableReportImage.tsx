@@ -137,6 +137,8 @@ export default function ResizableReportImage({
           src={src}
           alt={alt}
           draggable={false}
+          loading="lazy"
+          decoding="async"
           className={cn('pointer-events-none block h-auto w-full select-none object-contain', imageClassName)}
         />
         {isResizable ? (

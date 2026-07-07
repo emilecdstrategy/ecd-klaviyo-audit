@@ -44,6 +44,7 @@ export default function ImageLightbox({ src, alt, onClose }: ImageLightboxProps)
         src={src}
         alt={alt ?? ''}
         onClick={e => e.stopPropagation()}
+        decoding="async"
         className="max-h-[90vh] max-w-[90vw] rounded-xl object-contain shadow-2xl"
       />
     </div>,
