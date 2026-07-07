@@ -107,6 +107,9 @@ function UsersTab() {
   const [savingRoleFor, setSavingRoleFor] = useState<string | null>(null);
   const [removingFor, setRemovingFor] = useState<string | null>(null);
   const [removeConfirmUser, setRemoveConfirmUser] = useState<AdminUserRow | null>(null);
+  const [editingNameFor, setEditingNameFor] = useState<string | null>(null);
+  const [nameDraft, setNameDraft] = useState('');
+  const [savingNameFor, setSavingNameFor] = useState<string | null>(null);
 
   const currentUserId = currentUser?.id || '';
 
@@ -191,6 +194,31 @@ function UsersTab() {
       setError(e instanceof Error ? e.message : 'Failed to save role');
     } finally {
       setSavingRoleFor(null);
+    }
+  };
+
+  const onSaveName = async (userId: string) => {
+    const name = nameDraft.trim();
+    if (!name) {
+      setError('Name cannot be empty.');
+      return;
+    }
+    setError('');
+    const prev = users;
+    setUsers(u => u.map(x => x.id === userId ? { ...x, name } : x));
+    try {
+      setSavingNameFor(userId);
+      const { data, error } = await supabase.functions.invoke('admin_users', {
+        body: { action: 'update_name', user_id: userId, name },
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to save name');
+      setEditingNameFor(null);
+    } catch (e) {
+      setUsers(prev);
+      setError(e instanceof Error ? e.message : 'Failed to save name');
+    } finally {
+      setSavingNameFor(null);
     }
   };
 
@@ -294,8 +322,46 @@ function UsersTab() {
                   .join('')
                   .toUpperCase()}
               </div>
-              <div>
-                <p className="text-sm font-medium text-gray-900">{user.name || '—'}</p>
+              <div className="min-w-0">
+                {editingNameFor === user.id ? (
+                  <div className="flex items-center gap-1.5">
+                    <input
+                      type="text"
+                      autoFocus
+                      value={nameDraft}
+                      onChange={e => setNameDraft(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') onSaveName(user.id);
+                        if (e.key === 'Escape') setEditingNameFor(null);
+                      }}
+                      className="w-40 rounded-lg border border-gray-200 px-2 py-1 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => onSaveName(user.id)}
+                      disabled={savingNameFor === user.id}
+                      className="text-xs font-medium text-brand-primary hover:underline disabled:opacity-50"
+                    >
+                      {savingNameFor === user.id ? 'Saving…' : 'Save'}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingNameFor(null)}
+                      disabled={savingNameFor === user.id}
+                      className="text-xs text-gray-500 hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => { setNameDraft(user.name || ''); setEditingNameFor(user.id); }}
+                    className="text-sm font-medium text-gray-900 hover:underline text-left"
+                  >
+                    {user.name || 'Add name'}
+                  </button>
+                )}
                 <p className="text-xs text-gray-500">{user.email || '—'}</p>
               </div>
             </div>

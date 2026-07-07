@@ -31,6 +31,7 @@ serve(async (req) => {
       | { action: "list" }
       | { action: "invite"; email: string }
       | { action: "update_role"; user_id: string; role: Role }
+      | { action: "update_name"; user_id: string; name: string }
       | { action: "remove"; user_id: string };
 
     const sb = assertServiceRoleClient();
@@ -69,6 +70,16 @@ serve(async (req) => {
         return json({ ok: false, error: { code: "bad_request", message: "Invalid role" } }, { status: 200 });
       }
       const { error } = await sb.from("profiles").update({ role }).eq("id", body.user_id);
+      if (error) throw error;
+      return json({ ok: true });
+    }
+
+    if (body.action === "update_name") {
+      const name = body.name.trim();
+      if (!name) {
+        return json({ ok: false, error: { code: "bad_request", message: "Name cannot be empty" } }, { status: 200 });
+      }
+      const { error } = await sb.from("profiles").update({ name }).eq("id", body.user_id);
       if (error) throw error;
       return json({ ok: true });
     }
