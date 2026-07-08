@@ -22,8 +22,11 @@ import ProposalActivityTimeline from '../components/proposal/ProposalActivityTim
 import SendProposalModal from '../components/proposal/SendProposalModal';
 import SignaturePad, { type SignaturePadHandle } from '../components/proposal/SignaturePad';
 import { ProposalEditProvider } from '../components/proposal/edit/ProposalEditContext';
+import { ProposalAgentProvider } from '../components/proposal/agent/ProposalAgentContext';
+import { ProposalAgentLayout, AgentToggleButton } from '../components/proposal/agent/ProposalAgentLayout';
 import { useAuth } from '../contexts/AuthContext';
 import { useProposalData } from '../hooks/useProposalData';
+import { applyEditSet, buildSnapshot, type ProposalEditSet } from '../lib/proposal-agent';
 import {
   countersignProposal,
   markProposalLost,
@@ -154,7 +157,25 @@ export default function ProposalDetail() {
     }
   };
 
+  const onApplyEdits = isSigned
+    ? undefined
+    : async (edits: ProposalEditSet) => {
+        await applyEditSet(proposal, lineItems, edits);
+        await reload();
+      };
+  const agentBlockTitles = new Map(proposal.content_blocks.map(b => [b.key, b.title]));
+  const agentItemNames = new Map(lineItems.map(li => [li.id, li.name]));
+
   return (
+    <ProposalAgentProvider
+      config={{
+        proposalId: proposal.id,
+        clientId: proposal.client_id,
+        getSnapshot: () => buildSnapshot(proposal, lineItems),
+        onApplyEdits,
+      }}
+    >
+    <ProposalAgentLayout blockTitles={agentBlockTitles} itemNames={agentItemNames}>
     <div className="min-h-screen bg-brand-surface print:bg-white">
       <header className="sticky top-0 z-20 border-b border-gray-100 bg-white/90 backdrop-blur print:hidden">
         <div className="mx-auto flex h-14 max-w-[1280px] items-center gap-4 px-4">
@@ -173,6 +194,7 @@ export default function ProposalDetail() {
               </span>
             </p>
           </div>
+          <AgentToggleButton />
           <StatusBadge status={displayStatus} size="md" />
         </div>
       </header>
@@ -494,5 +516,7 @@ export default function ProposalDetail() {
         </aside>
       </main>
     </div>
+    </ProposalAgentLayout>
+    </ProposalAgentProvider>
   );
 }

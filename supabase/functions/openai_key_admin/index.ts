@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { assertServiceRoleClient, requireAdminUserId } from "../_shared/auth.ts";
 const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
+const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -72,22 +73,29 @@ serve(async (req) => {
 
   try {
     await requireAdminUserId(req);
-    const body = (await req.json()) as { action?: "set" | "status"; openai_api_key?: string };
+    const body = (await req.json()) as {
+      action?: "set" | "status";
+      provider?: "openai" | "anthropic";
+      api_key?: string;
+      openai_api_key?: string;
+    };
 
     const sb = assertServiceRoleClient();
+    const provider = body.provider === "anthropic" ? "anthropic" : "openai";
+    const secretKey = provider === "anthropic" ? "anthropic_api_key" : "openai_api_key";
 
     if (body.action === "status") {
-      const { data, error } = await sb.from("app_secrets").select("key, updated_at").eq("key", "openai_api_key").maybeSingle();
+      const { data, error } = await sb.from("app_secrets").select("key, updated_at").eq("key", secretKey).maybeSingle();
       if (error) throw error;
       return json({ ok: true, configured: Boolean(data?.key), updated_at: data?.updated_at ?? null });
     }
 
     if (body.action === "set") {
-      const key = (body.openai_api_key ?? "").trim();
-      if (!key) return json({ ok: false, error: { code: "bad_request", message: "Missing openai_api_key" } }, { status: 400 });
+      const key = (body.api_key ?? body.openai_api_key ?? "").trim();
+      if (!key) return json({ ok: false, error: { code: "bad_request", message: "Missing api_key" } }, { status: 400 });
       const enc = await encryptString(key);
       const { error } = await sb.from("app_secrets").upsert(
-        { key: "openai_api_key", ciphertext: enc.ciphertext, iv: enc.iv, alg: enc.alg, updated_at: new Date().toISOString() },
+        { key: secretKey, ciphertext: enc.ciphertext, iv: enc.iv, alg: enc.alg, updated_at: new Date().toISOString() },
         { onConflict: "key" },
       );
       if (error) throw error;

@@ -1,0 +1,230 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from 'react';
+import {
+  sendAgentMessage,
+  type AgentSnapshot,
+  type ProposalDraftPayload,
+  type ProposalEditSet,
+} from '../../../lib/proposal-agent';
+import {
+  getLatestConversation,
+  listConversationMessages,
+  markAgentMessageApplied,
+} from '../../../lib/proposal-agent-db';
+import type { ProposalAgentMessage } from '../../../lib/types';
+
+export type AgentChatMessage = Pick<
+  ProposalAgentMessage,
+  'id' | 'role' | 'content' | 'payload' | 'payload_kind' | 'applied_at'
+> & { pending?: boolean };
+
+export type ProposalAgentHostConfig = {
+  /** Proposal the chat is attached to; null on the proposals list (draft-from-scratch chats). */
+  proposalId: string | null;
+  clientId?: string | null;
+  /** Fresh proposal snapshot for edit mode; omit for proposal-less chats. */
+  getSnapshot?: () => AgentSnapshot | null;
+  /** Host strategy for applying a full draft (creates a proposal, navigates, links conversation). */
+  onApplyDraft?: (draft: ProposalDraftPayload, conversationId: string) => Promise<void>;
+  /** Host strategy for applying an edit set against the open proposal. */
+  onApplyEdits?: (edits: ProposalEditSet) => Promise<void>;
+};
+
+type ProposalAgentContextValue = {
+  isOpen: boolean;
+  open: () => void;
+  close: () => void;
+  toggle: () => void;
+  messages: AgentChatMessage[];
+  sending: boolean;
+  loadingHistory: boolean;
+  error: string | null;
+  applyingMessageId: string | null;
+  canApply: boolean;
+  sendMessage: (text: string) => Promise<void>;
+  applyMessage: (message: AgentChatMessage) => Promise<void>;
+};
+
+const ProposalAgentContext = createContext<ProposalAgentContextValue | null>(null);
+
+export function useProposalAgent(): ProposalAgentContextValue {
+  const ctx = useContext(ProposalAgentContext);
+  if (!ctx) throw new Error('useProposalAgent must be used inside ProposalAgentProvider');
+  return ctx;
+}
+
+function tempId(): string {
+  return `tmp_${Math.random().toString(36).slice(2, 10)}`;
+}
+
+export function ProposalAgentProvider({
+  config,
+  children,
+}: {
+  config: ProposalAgentHostConfig;
+  children: ReactNode;
+}) {
+  const [isOpen, setIsOpen] = useState(false);
+  const [conversationId, setConversationId] = useState<string | null>(null);
+  const [messages, setMessages] = useState<AgentChatMessage[]>([]);
+  const [sending, setSending] = useState(false);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [applyingMessageId, setApplyingMessageId] = useState<string | null>(null);
+  const historyLoadedFor = useRef<string | null>(null);
+
+  const configRef = useRef(config);
+  configRef.current = config;
+
+  // Load persisted history the first time the panel opens (per proposal).
+  useEffect(() => {
+    if (!isOpen) return;
+    const key = config.proposalId ?? '__new__';
+    if (historyLoadedFor.current === key) return;
+    historyLoadedFor.current = key;
+    let cancelled = false;
+    (async () => {
+      setLoadingHistory(true);
+      try {
+        const conv = await getLatestConversation(config.proposalId);
+        if (cancelled) return;
+        if (conv) {
+          setConversationId(conv.id);
+          const rows = await listConversationMessages(conv.id);
+          if (cancelled) return;
+          setMessages(
+            rows
+              .filter(r => r.role !== 'tool')
+              .map(r => ({
+                id: r.id,
+                role: r.role,
+                content: r.content,
+                payload: r.payload,
+                payload_kind: r.payload_kind,
+                applied_at: r.applied_at,
+              })),
+          );
+        }
+      } catch {
+        // History is a convenience; the chat still works without it.
+      } finally {
+        if (!cancelled) setLoadingHistory(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, config.proposalId]);
+
+  const sendMessage = useCallback(
+    async (text: string) => {
+      const trimmed = text.trim();
+      if (!trimmed || sending) return;
+      setError(null);
+      const userMsg: AgentChatMessage = {
+        id: tempId(),
+        role: 'user',
+        content: trimmed,
+        payload: null,
+        payload_kind: null,
+        applied_at: null,
+        pending: true,
+      };
+      setMessages(prev => [...prev, userMsg]);
+      setSending(true);
+      try {
+        const cfg = configRef.current;
+        const res = await sendAgentMessage({
+          conversation_id: conversationId,
+          proposal_id: cfg.proposalId,
+          client_id: cfg.clientId ?? null,
+          message: trimmed,
+          snapshot: cfg.getSnapshot?.() ?? null,
+        });
+        setConversationId(res.conversation_id);
+        setMessages(prev => [
+          ...prev.map(m => (m.id === userMsg.id ? { ...m, pending: false } : m)),
+          {
+            id: res.assistant_message_id,
+            role: 'assistant',
+            content: res.assistant_text,
+            payload: res.question ?? res.draft ?? res.edits ?? null,
+            payload_kind: res.question ? 'question' : res.draft ? 'draft' : res.edits ? 'edits' : null,
+            applied_at: null,
+          },
+        ]);
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'The assistant request failed');
+      } finally {
+        setSending(false);
+      }
+    },
+    [conversationId, sending],
+  );
+
+  const applyMessage = useCallback(
+    async (message: AgentChatMessage) => {
+      if (!message.payload || message.applied_at || applyingMessageId) return;
+      const cfg = configRef.current;
+      setApplyingMessageId(message.id);
+      setError(null);
+      try {
+        if (message.payload_kind === 'draft' && cfg.onApplyDraft) {
+          await cfg.onApplyDraft(message.payload as ProposalDraftPayload, conversationId ?? '');
+        } else if (message.payload_kind === 'edits' && cfg.onApplyEdits) {
+          await cfg.onApplyEdits(message.payload as ProposalEditSet);
+        } else {
+          return;
+        }
+        await markAgentMessageApplied(message.id).catch(() => {});
+        setMessages(prev =>
+          prev.map(m => (m.id === message.id ? { ...m, applied_at: new Date().toISOString() } : m)),
+        );
+      } catch (e) {
+        setError(e instanceof Error ? e.message : 'Could not apply the changes');
+      } finally {
+        setApplyingMessageId(null);
+      }
+    },
+    [applyingMessageId, conversationId],
+  );
+
+  const value = useMemo<ProposalAgentContextValue>(
+    () => ({
+      isOpen,
+      open: () => setIsOpen(true),
+      close: () => setIsOpen(false),
+      toggle: () => setIsOpen(v => !v),
+      messages,
+      sending,
+      loadingHistory,
+      error,
+      applyingMessageId,
+      canApply: Boolean(config.onApplyDraft || config.onApplyEdits),
+      sendMessage,
+      applyMessage,
+    }),
+    [
+      isOpen,
+      messages,
+      sending,
+      loadingHistory,
+      error,
+      applyingMessageId,
+      config.onApplyDraft,
+      config.onApplyEdits,
+      sendMessage,
+      applyMessage,
+    ],
+  );
+
+  return <ProposalAgentContext.Provider value={value}>{children}</ProposalAgentContext.Provider>;
+}

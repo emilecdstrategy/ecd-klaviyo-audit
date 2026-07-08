@@ -454,6 +454,34 @@ export interface ProposalEvent {
   created_at: string;
 }
 
+// ---------------------------------------------------------------------------
+// Proposal agent chat
+
+export interface ProposalAgentConversation {
+  id: string;
+  proposal_id: string | null;
+  client_id: string | null;
+  title: string;
+  status: 'active' | 'archived';
+  context_summary: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type ProposalAgentPayloadKind = 'question' | 'draft' | 'edits' | 'doc_fetch' | 'catalog';
+
+export interface ProposalAgentMessage {
+  id: string;
+  conversation_id: string;
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  payload: unknown;
+  payload_kind: ProposalAgentPayloadKind | null;
+  applied_at: string | null;
+  created_at: string;
+}
+
 export type AuditEventType = 'created' | 'edited' | 'published' | 'unpublished' | 'status_changed';
 
 export interface AuditEvent {

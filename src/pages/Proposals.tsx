@@ -8,7 +8,11 @@ import ProposalTemplatesPanel from '../components/proposal/ProposalTemplatesPane
 import ContractDocsPanel from '../components/proposal/ContractDocsPanel';
 import ProposalSettingsPanel from '../components/proposal/ProposalSettingsPanel';
 import { SkeletonTable } from '../components/ui/Skeleton';
+import { ProposalAgentProvider } from '../components/proposal/agent/ProposalAgentContext';
+import { ProposalAgentLayout, AgentToggleButton } from '../components/proposal/agent/ProposalAgentLayout';
 import { listProposals } from '../lib/proposals-db';
+import { applyDraftAsNewProposal, type ProposalDraftPayload } from '../lib/proposal-agent';
+import { linkConversationToProposal } from '../lib/proposal-agent-db';
 import type { Proposal } from '../lib/types';
 
 const TABS = [
@@ -53,19 +57,35 @@ export default function Proposals() {
     return () => { cancelled = true; };
   }, []);
 
+  const onApplyDraft = async (draft: ProposalDraftPayload, conversationId: string) => {
+    if (!draft.client_id) {
+      throw new Error('No client selected. Ask the assistant which client this proposal is for.');
+    }
+    const proposal = await applyDraftAsNewProposal(draft, draft.client_id);
+    if (conversationId) {
+      await linkConversationToProposal(conversationId, proposal.id).catch(() => {});
+    }
+    navigate(`/proposals/${proposal.id}/edit`);
+  };
+
   return (
+    <ProposalAgentProvider config={{ proposalId: null, onApplyDraft }}>
+    <ProposalAgentLayout>
     <div>
       <TopBar
         title="Proposals"
         subtitle={`${proposals.length} total proposals`}
         actions={
-          <button
-            onClick={openNewProposal}
-            className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
-          >
-            <Plus className="w-4 h-4" />
-            New Proposal
-          </button>
+          <div className="flex items-center gap-2">
+            <AgentToggleButton className="px-4 py-2 text-sm" />
+            <button
+              onClick={openNewProposal}
+              className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+            >
+              <Plus className="w-4 h-4" />
+              New Proposal
+            </button>
+          </div>
         }
       />
 
@@ -120,5 +140,7 @@ export default function Proposals() {
         {tab === 'settings' && <ProposalSettingsPanel />}
       </div>
     </div>
+    </ProposalAgentLayout>
+    </ProposalAgentProvider>
   );
 }
