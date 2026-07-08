@@ -1019,7 +1019,19 @@ function RevenueOpportunitiesTab() {
   );
 }
 
-function SettingsTab() {
+function ApiKeyCard({
+  provider,
+  title,
+  description,
+  placeholder,
+  savedMessage,
+}: {
+  provider: 'openai' | 'anthropic';
+  title: string;
+  description: string;
+  placeholder: string;
+  savedMessage: string;
+}) {
   const [status, setStatus] = useState<{ configured: boolean; updated_at: string | null } | null>(null);
   const [statusLoading, setStatusLoading] = useState(true);
   const [apiKey, setApiKey] = useState('');
@@ -1035,11 +1047,11 @@ function SettingsTab() {
         setStatusLoading(true);
         // Supabase client attaches the session JWT automatically — skip extra getSession() round trip.
         const { data, error } = await supabase.functions.invoke('openai_key_admin', {
-          body: { action: 'status' },
+          body: { action: 'status', provider },
         });
         if (cancelled) return;
         if (error) throw error;
-        if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to load OpenAI key status');
+        if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to load key status');
         setStatus({ configured: Boolean(data.configured), updated_at: data.updated_at ?? null });
       } catch (e) {
         if (!cancelled) setError(e instanceof Error ? e.message : 'Failed to load status');
@@ -1048,7 +1060,7 @@ function SettingsTab() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [provider]);
 
   const onSave = async () => {
     setError('');
@@ -1056,14 +1068,14 @@ function SettingsTab() {
     try {
       setSaving(true);
       const { data, error } = await supabase.functions.invoke('openai_key_admin', {
-        body: { action: 'set', openai_api_key: apiKey },
+        body: { action: 'set', provider, api_key: apiKey },
       });
       if (error) throw error;
       if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to save key');
       setApiKey('');
       setEditing(false);
-      setSuccess('Saved. Edge Functions will use this key for AI analysis.');
-      const st = await supabase.functions.invoke('openai_key_admin', { body: { action: 'status' } });
+      setSuccess(savedMessage);
+      const st = await supabase.functions.invoke('openai_key_admin', { body: { action: 'status', provider } });
       if (!st.error && st.data?.ok === true) {
         setStatus({ configured: Boolean(st.data.configured), updated_at: st.data.updated_at ?? null });
       }
@@ -1075,15 +1087,13 @@ function SettingsTab() {
   };
 
   return (
-    <div className="space-y-6 max-w-2xl animate-slide-up">
       <div className="bg-white rounded-xl p-6 card-shadow">
         <div className="flex items-center gap-2 mb-4">
           <Key className="w-4 h-4 text-gray-400" />
-          <h3 className="text-base font-semibold text-gray-900">OpenAI Integration</h3>
+          <h3 className="text-base font-semibold text-gray-900">{title}</h3>
         </div>
         <p className="text-sm text-gray-500 mb-4">
-          Configure your OpenAI API key to enable AI-powered audit analysis. This key is stored securely
-          and used only for generating audit findings.
+          {description}
         </p>
         {statusLoading ? (
           <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-4" aria-busy="true">
@@ -1122,7 +1132,7 @@ function SettingsTab() {
               </label>
           <input
             type="password"
-            placeholder="sk-..."
+            placeholder={placeholder}
             className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                 value={apiKey}
                 onChange={e => setApiKey(e.target.value)}
@@ -1156,6 +1166,27 @@ function SettingsTab() {
           </>
         )}
       </div>
+  );
+}
+
+function SettingsTab() {
+  return (
+    <div className="space-y-6 max-w-2xl animate-slide-up">
+      <ApiKeyCard
+        provider="openai"
+        title="OpenAI Integration"
+        description="Configure your OpenAI API key to enable AI-powered audit analysis. This key is stored securely and used only for generating audit findings."
+        placeholder="sk-..."
+        savedMessage="Saved. Edge Functions will use this key for AI analysis."
+      />
+
+      <ApiKeyCard
+        provider="anthropic"
+        title="Anthropic (Claude) Integration"
+        description="Configure your Anthropic API key to power the AI proposal assistant. Create one at console.anthropic.com. This key is stored securely and used server-side only."
+        placeholder="sk-ant-..."
+        savedMessage="Saved. The proposal assistant will use this key."
+      />
 
       {SHOW_ADMIN_SETTINGS_PLACEHOLDERS && (
         <>
