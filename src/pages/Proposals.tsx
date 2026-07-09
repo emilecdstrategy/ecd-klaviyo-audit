@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FileSignature, LayoutTemplate, FileCheck2, Plus, Settings2 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
@@ -8,13 +8,14 @@ import ProposalKPIs from '../components/proposal/ProposalKPIs';
 import ProposalTemplatesPanel from '../components/proposal/ProposalTemplatesPanel';
 import ContractDocsPanel from '../components/proposal/ContractDocsPanel';
 import ProposalSettingsPanel from '../components/proposal/ProposalSettingsPanel';
+import ClientPickerModal from '../components/proposal/agent/ClientPickerModal';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { ProposalAgentProvider } from '../components/proposal/agent/ProposalAgentContext';
 import { ProposalAgentLayout, AgentToggleButton } from '../components/proposal/agent/ProposalAgentLayout';
 import { listProposals } from '../lib/proposals-db';
-import { applyDraftAsNewProposal, type ProposalDraftPayload } from '../lib/proposal-agent';
+import { applyDraftAsNewProposal, ApplyCancelled, type ProposalDraftPayload } from '../lib/proposal-agent';
 import { linkConversationToProposal } from '../lib/proposal-agent-db';
-import type { Proposal } from '../lib/types';
+import type { Client, Proposal } from '../lib/types';
 
 const TABS = [
   { id: 'overview', label: 'Overview', icon: FileSignature },
@@ -58,19 +59,65 @@ export default function Proposals() {
     return () => { cancelled = true; };
   }, []);
 
-  const onApplyDraft = async (draft: ProposalDraftPayload, conversationId: string) => {
-    if (!draft.client_id) {
-      throw new Error('No client selected. Ask the assistant which client this proposal is for.');
-    }
-    const proposal = await applyDraftAsNewProposal(draft, draft.client_id);
+  // When the assistant proposes a draft with no client resolved, open a picker
+  // and resolve/reject the Apply promise based on the user's choice.
+  const [clientPickerOpen, setClientPickerOpen] = useState(false);
+  const pickerResolve = useRef<((client: Client) => void) | null>(null);
+  const pickerReject = useRef<((err: Error) => void) | null>(null);
+
+  const applyDraftForClient = async (
+    draft: ProposalDraftPayload,
+    conversationId: string,
+    client: Client,
+  ) => {
+    const filledDraft: ProposalDraftPayload = {
+      ...draft,
+      recipient_name: draft.recipient_name || client.name || '',
+      recipient_email: draft.recipient_email || client.email || '',
+    };
+    const proposal = await applyDraftAsNewProposal(filledDraft, client.id);
     if (conversationId) {
       await linkConversationToProposal(conversationId, proposal.id).catch(() => {});
     }
     navigate(`/proposals/${proposal.id}/edit`);
   };
 
+  const onApplyDraft = async (draft: ProposalDraftPayload, conversationId: string) => {
+    if (draft.client_id) {
+      const proposal = await applyDraftAsNewProposal(draft, draft.client_id);
+      if (conversationId) {
+        await linkConversationToProposal(conversationId, proposal.id).catch(() => {});
+      }
+      navigate(`/proposals/${proposal.id}/edit`);
+      return;
+    }
+    // No client resolved: let the user pick one.
+    const client = await new Promise<Client>((resolve, reject) => {
+      pickerResolve.current = resolve;
+      pickerReject.current = reject;
+      setClientPickerOpen(true);
+    });
+    await applyDraftForClient(draft, conversationId, client);
+  };
+
+  const closeClientPicker = () => {
+    setClientPickerOpen(false);
+    pickerReject.current?.(new ApplyCancelled());
+    pickerResolve.current = null;
+    pickerReject.current = null;
+  };
+
+  const selectClientForDraft = (client: Client) => {
+    setClientPickerOpen(false);
+    const resolve = pickerResolve.current;
+    pickerResolve.current = null;
+    pickerReject.current = null;
+    resolve?.(client);
+  };
+
   return (
     <ProposalAgentProvider config={{ proposalId: null, onApplyDraft }}>
+    <ClientPickerModal open={clientPickerOpen} onClose={closeClientPicker} onSelect={selectClientForDraft} />
     <ProposalAgentLayout>
     <div>
       <TopBar

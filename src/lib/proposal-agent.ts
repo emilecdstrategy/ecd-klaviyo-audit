@@ -116,6 +116,14 @@ export class ProposalAgentError extends Error {
   }
 }
 
+/** Thrown when the user dismisses the client picker instead of applying a draft. */
+export class ApplyCancelled extends Error {
+  constructor() {
+    super('cancelled');
+    this.name = 'ApplyCancelled';
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Copy sanitizing (belt and braces; the edge function sanitizes too)
 

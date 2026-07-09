@@ -9,6 +9,7 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  ApplyCancelled,
   sendAgentMessage,
   type AgentSnapshot,
   type ProposalDraftPayload,
@@ -201,6 +202,7 @@ export function ProposalAgentProvider({
           prev.map(m => (m.id === message.id ? { ...m, applied_at: new Date().toISOString() } : m)),
         );
       } catch (e) {
+        if (e instanceof ApplyCancelled) return; // user dismissed the client picker
         setError(e instanceof Error ? e.message : 'Could not apply the changes');
       } finally {
         setApplyingMessageId(null);

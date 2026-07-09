@@ -221,11 +221,18 @@ serve(async (req) => {
         } else if (turn.name === "get_contracts") {
           result = contracts;
         } else if (turn.name === "get_clients") {
-          const { data } = await sb
+          const { data, error } = await sb
             .from("clients")
-            .select("id, company_name, contact_name, website_url")
+            .select("id, company_name, name, website_url, email")
             .order("company_name", { ascending: true });
-          result = data ?? [];
+          if (error) throw error;
+          result = (data ?? []).map((c: any) => ({
+            id: c.id,
+            company_name: c.company_name,
+            contact_name: c.name ?? null,
+            website_url: c.website_url ?? null,
+            email: c.email ?? null,
+          }));
         } else {
           result = { error: `Unknown tool ${turn.name}` };
         }
