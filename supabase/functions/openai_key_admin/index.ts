@@ -75,14 +75,18 @@ serve(async (req) => {
     await requireAdminUserId(req);
     const body = (await req.json()) as {
       action?: "set" | "status";
-      provider?: "openai" | "anthropic";
+      provider?: "openai" | "anthropic" | "hubspot";
       api_key?: string;
       openai_api_key?: string;
     };
 
     const sb = assertServiceRoleClient();
-    const provider = body.provider === "anthropic" ? "anthropic" : "openai";
-    const secretKey = provider === "anthropic" ? "anthropic_api_key" : "openai_api_key";
+    const SECRET_KEYS: Record<string, string> = {
+      openai: "openai_api_key",
+      anthropic: "anthropic_api_key",
+      hubspot: "hubspot_private_app_token",
+    };
+    const secretKey = SECRET_KEYS[body.provider ?? "openai"] ?? "openai_api_key";
 
     if (body.action === "status") {
       const { data, error } = await sb.from("app_secrets").select("key, updated_at").eq("key", secretKey).maybeSingle();

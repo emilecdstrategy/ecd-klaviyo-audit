@@ -17,6 +17,8 @@ export interface Client {
   api_key_placeholder: string;
   klaviyo_connected?: boolean;
   notes: string;
+  /** Set when the client was imported from (or linked to) a HubSpot company. */
+  hubspot_company_id?: string | null;
   created_by: string;
   created_at: string;
 }

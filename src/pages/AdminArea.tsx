@@ -13,6 +13,7 @@ import {
   ArrowUp,
   ArrowDown,
   ChevronDown,
+  RefreshCw,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -1026,7 +1027,7 @@ function ApiKeyCard({
   placeholder,
   savedMessage,
 }: {
-  provider: 'openai' | 'anthropic';
+  provider: 'openai' | 'anthropic' | 'hubspot';
   title: string;
   description: string;
   placeholder: string;
@@ -1169,6 +1170,100 @@ function ApiKeyCard({
   );
 }
 
+type HubSpotSyncState = {
+  last_synced_at: string | null;
+  backfill_cursor: string | null;
+  last_result: {
+    ok?: boolean;
+    mode?: string;
+    scanned?: number;
+    created?: number;
+    linked?: number;
+    skipped?: number;
+    backfill_remaining?: boolean;
+    at?: string;
+    error?: { code?: string; message?: string };
+  } | null;
+};
+
+function HubSpotSyncCard() {
+  const [state, setState] = useState<HubSpotSyncState | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState('');
+
+  const loadState = useCallback(async () => {
+    const { data } = await supabase
+      .from('hubspot_sync_state')
+      .select('last_synced_at, backfill_cursor, last_result')
+      .eq('id', 'default')
+      .maybeSingle();
+    setState((data as HubSpotSyncState) ?? null);
+  }, []);
+
+  useEffect(() => {
+    void loadState();
+  }, [loadState]);
+
+  const syncNow = async () => {
+    setSyncing(true);
+    setError('');
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('hubspot_sync', { body: {} });
+      if (fnError) throw fnError;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Sync failed');
+      await loadState();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Sync failed');
+      await loadState().catch(() => {});
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  const result = state?.last_result;
+  return (
+    <div className="bg-white rounded-xl p-6 card-shadow">
+      <div className="flex items-center justify-between gap-3 mb-4">
+        <div className="flex items-center gap-2">
+          <RefreshCw className="w-4 h-4 text-gray-400" />
+          <h3 className="text-base font-semibold text-gray-900">HubSpot Sync</h3>
+        </div>
+        <button
+          type="button"
+          onClick={syncNow}
+          disabled={syncing}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-3.5 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+        >
+          <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin' : ''}`} />
+          {syncing ? 'Syncing…' : 'Sync now'}
+        </button>
+      </div>
+      <p className="text-sm text-gray-500 mb-4">
+        New HubSpot companies are pulled in automatically every 15 minutes and created as clients
+        (with their primary contact's name and email). Companies matching an existing client by
+        name or website are linked instead of duplicated.
+      </p>
+      <div className="rounded-lg border border-gray-100 bg-gray-50 px-4 py-3 text-xs text-gray-600 space-y-1">
+        <p>
+          <span className="text-gray-400">Last synced:</span>{' '}
+          {state?.last_synced_at ? new Date(state.last_synced_at).toLocaleString() : 'Never (first sync runs a backfill)'}
+        </p>
+        {result?.ok === true && (
+          <p>
+            <span className="text-gray-400">Last run:</span>{' '}
+            {result.created ?? 0} created · {result.linked ?? 0} linked · {result.skipped ?? 0} already synced
+            {result.backfill_remaining ? ' · backfill still in progress, run Sync now again' : ''}
+          </p>
+        )}
+        {result?.ok === false && (
+          <p className="text-red-600">Last run failed: {result.error?.message ?? 'Unknown error'}</p>
+        )}
+      </div>
+      {error && <div className="mt-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>}
+    </div>
+  );
+}
+
 function SettingsTab() {
   return (
     <div className="space-y-6 max-w-2xl animate-slide-up">
@@ -1187,6 +1282,16 @@ function SettingsTab() {
         placeholder="sk-ant-..."
         savedMessage="Saved. The proposal assistant will use this key."
       />
+
+      <ApiKeyCard
+        provider="hubspot"
+        title="HubSpot Integration"
+        description="Connect HubSpot with a Private App access token to auto-create clients from new HubSpot companies. In HubSpot: Settings, Integrations, Private Apps, create an app with the crm.objects.companies.read and crm.objects.contacts.read scopes, then paste the token here."
+        placeholder="pat-..."
+        savedMessage="Saved. Run Sync now below to import your HubSpot companies."
+      />
+
+      <HubSpotSyncCard />
 
       {SHOW_ADMIN_SETTINGS_PLACEHOLDERS && (
         <>

@@ -8,6 +8,7 @@ const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 const ENV_OVERRIDES: Record<string, string> = {
   openai_api_key: "OPENAI_API_KEY",
   anthropic_api_key: "ANTHROPIC_API_KEY",
+  hubspot_private_app_token: "HUBSPOT_PRIVATE_APP_TOKEN",
 };
 
 function b64decode(b64: string) {
