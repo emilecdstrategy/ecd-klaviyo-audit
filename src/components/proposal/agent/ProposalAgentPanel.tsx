@@ -41,20 +41,20 @@ function QuestionChips({
   question,
   active,
   onAnswer,
-  onOther,
 }: {
   question: AgentQuestion;
   active: boolean;
   onAnswer: (value: string) => void;
-  onOther: () => void;
 }) {
   const [selected, setSelected] = useState<string[]>([]);
+  const [otherOpen, setOtherOpen] = useState(false);
+  const [otherText, setOtherText] = useState('');
   const multi = Boolean(question.multi_select);
 
   if (!active) return null;
 
   return (
-    <div className="mt-2 flex flex-wrap gap-2">
+    <div className="mt-3 space-y-2">
       {question.options.map(opt => {
         const isSelected = selected.includes(opt.value);
         return (
@@ -70,26 +70,75 @@ function QuestionChips({
               );
             }}
             className={cn(
-              'rounded-full border px-3 py-1.5 text-xs font-medium transition-colors',
+              'flex w-full items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left text-sm font-medium transition-colors',
               isSelected
                 ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
-                : 'border-gray-200 bg-white text-gray-700 hover:border-brand-primary/40 hover:text-brand-primary',
+                : 'border-gray-200 bg-white text-gray-700 hover:border-brand-primary/40 hover:bg-gray-50',
             )}
           >
-            {opt.label}
+            {multi && (
+              <span
+                className={cn(
+                  'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
+                  isSelected ? 'border-brand-primary bg-brand-primary text-white' : 'border-gray-300',
+                )}
+              >
+                {isSelected && <Check className="h-3 w-3" />}
+              </span>
+            )}
+            <span className="flex-1">{opt.label}</span>
           </button>
         );
       })}
-      <button
-        onClick={onOther}
-        className="rounded-full border border-dashed border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-500 hover:border-gray-400 hover:text-gray-700"
-      >
-        Other…
-      </button>
+
+      {otherOpen ? (
+        <div className="rounded-xl border border-brand-primary/40 bg-white p-2">
+          <textarea
+            autoFocus
+            value={otherText}
+            onChange={e => setOtherText(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter' && !e.shiftKey) {
+                e.preventDefault();
+                if (otherText.trim()) onAnswer(otherText.trim());
+              }
+            }}
+            rows={2}
+            placeholder="Type your own answer…"
+            className="w-full resize-none bg-transparent px-1.5 py-1 text-sm text-gray-900 outline-none placeholder:text-gray-400"
+          />
+          <div className="flex justify-end gap-2 pt-1">
+            <button
+              onClick={() => {
+                setOtherOpen(false);
+                setOtherText('');
+              }}
+              className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700"
+            >
+              Cancel
+            </button>
+            <button
+              onClick={() => otherText.trim() && onAnswer(otherText.trim())}
+              disabled={!otherText.trim()}
+              className="rounded-lg bg-brand-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-40"
+            >
+              Send
+            </button>
+          </div>
+        </div>
+      ) : (
+        <button
+          onClick={() => setOtherOpen(true)}
+          className="flex w-full items-center gap-2.5 rounded-xl border border-dashed border-gray-300 px-3.5 py-2.5 text-left text-sm font-medium text-gray-500 hover:border-gray-400 hover:text-gray-700"
+        >
+          Other (type your own answer)…
+        </button>
+      )}
+
       {multi && selected.length > 0 && (
         <button
           onClick={() => onAnswer(selected.join('; '))}
-          className="rounded-full bg-brand-primary px-3 py-1.5 text-xs font-medium text-white hover:bg-brand-primary-dark"
+          className="w-full rounded-xl bg-brand-primary px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-primary-dark"
         >
           Send {selected.length} selected
         </button>
@@ -303,14 +352,12 @@ function MessageBubble({
   blockTitles,
   itemNames,
   onAnswer,
-  onOther,
 }: {
   message: AgentChatMessage;
   isLast: boolean;
   blockTitles: Map<string, string>;
   itemNames: Map<string, string>;
   onAnswer: (value: string) => void;
-  onOther: () => void;
 }) {
   const { applyMessage, applyingMessageId, canApply } = useProposalAgent();
   const [discarded, setDiscarded] = useState(false);
@@ -319,7 +366,7 @@ function MessageBubble({
     return (
       <div className="flex justify-end px-4 py-1.5">
         <div className={cn('max-w-[85%] rounded-2xl rounded-br-md bg-brand-primary px-3.5 py-2 text-sm text-white', message.pending && 'opacity-70')}>
-          <p className="whitespace-pre-wrap">{message.content}</p>
+          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
         </div>
       </div>
     );
@@ -336,7 +383,7 @@ function MessageBubble({
         {message.content && (
           <RichAuditContent
             text={message.content}
-            className="text-sm leading-relaxed text-gray-700 [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:space-y-1"
+            className="text-sm leading-relaxed text-gray-700 break-words [overflow-wrap:anywhere] [&_ul]:list-disc [&_ul]:pl-4 [&_ul]:space-y-1"
             autoTagEntities={false}
           />
         )}
@@ -346,7 +393,7 @@ function MessageBubble({
             {message.content && !message.content.includes(question.question) && (
               <p className="mt-1 text-sm text-gray-700">{question.question}</p>
             )}
-            <QuestionChips question={question} active={isLast} onAnswer={onAnswer} onOther={onOther} />
+            <QuestionChips question={question} active={isLast} onAnswer={onAnswer} />
           </>
         )}
         {draft && <DraftPreviewCard draft={draft} />}
@@ -386,9 +433,15 @@ export default function ProposalAgentPanel({
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending, isOpen]);
 
+  // While the assistant is waiting on a choice, block the free-form composer so
+  // the answer flows through the options (the "Other" chip handles free text).
+  const lastMessage = messages[messages.length - 1];
+  const awaitingChoice =
+    !sending && !loadingHistory && lastMessage?.role === 'assistant' && lastMessage.payload_kind === 'question';
+
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
-    if (!input.trim() || sending) return;
+    if (!input.trim() || sending || awaitingChoice) return;
     void sendMessage(input);
     setInput('');
   };
@@ -428,7 +481,6 @@ export default function ProposalAgentPanel({
               blockTitles={blockTitles ?? new Map()}
               itemNames={itemNames ?? new Map()}
               onAnswer={value => void sendMessage(value)}
-              onOther={() => inputRef.current?.focus()}
             />
           ))
         )}
@@ -439,10 +491,19 @@ export default function ProposalAgentPanel({
       </div>
 
       <form onSubmit={submit} className="shrink-0 border-t border-gray-100 p-3">
-        <div className="flex items-end gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 focus-within:border-brand-primary/50">
+        {awaitingChoice && (
+          <p className="mb-2 px-1 text-xs text-gray-400">Choose an option above to continue.</p>
+        )}
+        <div
+          className={cn(
+            'flex items-end gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 focus-within:border-brand-primary/50',
+            awaitingChoice && 'opacity-50',
+          )}
+        >
           <textarea
             ref={inputRef}
             value={input}
+            disabled={awaitingChoice}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => {
               if (e.key === 'Enter' && !e.shiftKey) {
@@ -451,12 +512,12 @@ export default function ProposalAgentPanel({
               }
             }}
             rows={Math.min(5, Math.max(1, input.split('\n').length))}
-            placeholder="Message the assistant…"
-            className="max-h-32 flex-1 resize-none bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400"
+            placeholder={awaitingChoice ? 'Pick an option above…' : 'Message the assistant…'}
+            className="max-h-32 flex-1 resize-none bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
           />
           <button
             type="submit"
-            disabled={!input.trim() || sending}
+            disabled={!input.trim() || sending || awaitingChoice}
             className="rounded-lg bg-brand-primary p-1.5 text-white hover:bg-brand-primary-dark disabled:opacity-40"
             aria-label="Send message"
           >
