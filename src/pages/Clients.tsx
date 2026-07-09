@@ -235,6 +235,17 @@ export default function Clients() {
                           {client.company_name}
                         </h3>
                         <p className="text-xs text-gray-500 mt-0.5">{client.industry}</p>
+                        {client.hubspot_company_id && (
+                          <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600">
+                            <img
+                              src="https://www.hubspot.com/favicon.ico"
+                              alt=""
+                              className="h-2.5 w-2.5 shrink-0"
+                              onError={e => { e.currentTarget.style.display = 'none'; }}
+                            />
+                            Auto-synced from HubSpot
+                          </span>
+                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
