@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Users, Plus, Search, ArrowRight, Globe, Calendar } from 'lucide-react';
+import { Users, Plus, Search, ArrowRight, Globe, Calendar, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import EmptyState from '../components/ui/EmptyState';
 import SiteFavicon from '../components/ui/SiteFavicon';
@@ -10,12 +10,26 @@ import { listAudits, listClients } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/ui/Modal';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
+
+const PAGE_SIZE = 100;
+
+type SortOption = 'newest' | 'oldest' | 'name_asc' | 'name_desc';
+
+const SORT_LABELS: Record<SortOption, string> = {
+  newest: 'Newest first',
+  oldest: 'Oldest first',
+  name_asc: 'Name (A to Z)',
+  name_desc: 'Name (Z to A)',
+};
 
 export default function Clients() {
   const navigate = useNavigate();
   const location = useLocation();
   const { hasRole } = useAuth();
   const [search, setSearch] = useState('');
+  const [sort, setSort] = useState<SortOption>('newest');
+  const [page, setPage] = useState(1);
 
   const [clients, setClients] = useState<Client[]>([]);
   const [audits, setAudits] = useState<Audit[]>([]);
@@ -47,12 +61,36 @@ export default function Clients() {
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
-    return clients.filter(
+    const matched = clients.filter(
       c =>
         c.name.toLowerCase().includes(q) ||
         c.company_name.toLowerCase().includes(q),
     );
-  }, [clients, search]);
+    const sorted = [...matched].sort((a, b) => {
+      switch (sort) {
+        case 'oldest':
+          return new Date(a.created_at).getTime() - new Date(b.created_at).getTime();
+        case 'name_asc':
+          return a.company_name.localeCompare(b.company_name);
+        case 'name_desc':
+          return b.company_name.localeCompare(a.company_name);
+        default:
+          return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+      }
+    });
+    return sorted;
+  }, [clients, search, sort]);
+
+  // Reset to page 1 whenever the filtered/sorted set changes shape.
+  useEffect(() => {
+    setPage(1);
+  }, [search, sort]);
+
+  const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
+  const pageClients = useMemo(
+    () => filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE),
+    [filtered, page],
+  );
 
   return (
     <div>
@@ -129,8 +167,8 @@ export default function Clients() {
           </div>
         </Modal>
 
-        <div className="mb-6">
-          <div className="relative max-w-md">
+        <div className="mb-6 flex flex-wrap items-center gap-3">
+          <div className="relative max-w-md flex-1 min-w-[220px]">
             <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
             <input
               type="text"
@@ -140,6 +178,19 @@ export default function Clients() {
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
+          <Select value={sort} onValueChange={v => setSort(v as SortOption)}>
+            <SelectTrigger className="w-auto min-w-[168px] h-[42px] gap-2">
+              <ArrowUpDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              <SelectValue>{SORT_LABELS[sort]}</SelectValue>
+            </SelectTrigger>
+            <SelectContent>
+              {(Object.keys(SORT_LABELS) as SortOption[]).map(opt => (
+                <SelectItem key={opt} value={opt}>
+                  <SelectItemText>{SORT_LABELS[opt]}</SelectItemText>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
 
         {error && (
@@ -167,7 +218,7 @@ export default function Clients() {
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map(client => {
+            {pageClients.map(client => {
               const clientAudits = audits.filter(a => a.client_id === client.id);
               const lastAudit = clientAudits[0];
               return (
@@ -233,6 +284,37 @@ export default function Clients() {
                 </button>
               );
             })}
+          </div>
+        )}
+
+        {!loading && filtered.length > PAGE_SIZE && (
+          <div className="mt-6 flex items-center justify-between">
+            <p className="text-xs text-gray-400">
+              Showing {(page - 1) * PAGE_SIZE + 1}–{Math.min(page * PAGE_SIZE, filtered.length)} of {filtered.length} clients
+            </p>
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.max(1, p - 1))}
+                disabled={page === 1}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                Previous
+              </button>
+              <span className="text-xs font-medium text-gray-500 px-2">
+                Page {page} of {totalPages}
+              </span>
+              <button
+                type="button"
+                onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+                disabled={page === totalPages}
+                className="flex items-center gap-1 px-3 py-1.5 rounded-lg border border-gray-200 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:bg-transparent"
+              >
+                Next
+                <ChevronRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
           </div>
         )}
       </div>

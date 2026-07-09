@@ -34,6 +34,7 @@ import {
   markProposalSent,
   markProposalWon,
   reopenProposal,
+  updateProposal,
 } from '../lib/proposals-db';
 import { deriveProposalStatus } from '../lib/proposal-status';
 import { publicProposalOrigin } from '../lib/public-origin';
@@ -59,6 +60,10 @@ export default function ProposalDetail() {
   const [countersignError, setCountersignError] = useState('');
   const [countersignPadEmpty, setCountersignPadEmpty] = useState(true);
   const [editClientOpen, setEditClientOpen] = useState(false);
+  const [editingRecipient, setEditingRecipient] = useState(false);
+  const [recipientNameDraft, setRecipientNameDraft] = useState('');
+  const [recipientEmailDraft, setRecipientEmailDraft] = useState('');
+  const [recipientSaving, setRecipientSaving] = useState(false);
   const countersignPadRef = useRef<SignaturePadHandle>(null);
 
   useEffect(() => {
@@ -95,6 +100,28 @@ export default function ProposalDetail() {
   const publicUrl = proposal.public_token
     ? `${publicProposalOrigin()}/proposal/${proposal.public_token}`
     : null;
+
+  const openRecipientEdit = () => {
+    setRecipientNameDraft(proposal.recipient_name || '');
+    setRecipientEmailDraft(proposal.recipient_email || '');
+    setEditingRecipient(true);
+  };
+
+  const saveRecipient = async () => {
+    setRecipientSaving(true);
+    try {
+      await updateProposal(proposal.id, {
+        recipient_name: recipientNameDraft.trim(),
+        recipient_email: recipientEmailDraft.trim(),
+      });
+      setEditingRecipient(false);
+      await reload();
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to update recipient');
+    } finally {
+      setRecipientSaving(false);
+    }
+  };
 
   const copyLink = async () => {
     setLinkBusy(true);
@@ -391,6 +418,88 @@ export default function ProposalDetail() {
               >
                 {client.website_url}
               </a>
+            )}
+          </div>
+
+          <div className="rounded-xl bg-white p-5 card-shadow">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">Recipient</h3>
+              {!isSigned && !editingRecipient && (
+                <button
+                  type="button"
+                  onClick={openRecipientEdit}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit
+                </button>
+              )}
+            </div>
+            <p className="mt-1 text-[11px] text-gray-400">
+              Who this proposal is addressed and sent to. Set independently of the client record.
+            </p>
+            {editingRecipient ? (
+              <div className="mt-3 space-y-2.5">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-gray-500">Name</label>
+                  <input
+                    type="text"
+                    autoFocus
+                    value={recipientNameDraft}
+                    onChange={e => setRecipientNameDraft(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-gray-500">Email</label>
+                  <input
+                    type="email"
+                    value={recipientEmailDraft}
+                    onChange={e => setRecipientEmailDraft(e.target.value)}
+                    className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                </div>
+                {(client.name || client.email) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (client.name) setRecipientNameDraft(client.name);
+                      if (client.email) setRecipientEmailDraft(client.email);
+                    }}
+                    className="text-xs font-medium text-brand-primary hover:underline"
+                  >
+                    Copy from client ({client.name || client.email})
+                  </button>
+                )}
+                <div className="flex items-center gap-2 pt-0.5">
+                  <button
+                    type="button"
+                    onClick={saveRecipient}
+                    disabled={recipientSaving}
+                    className="text-xs font-medium text-brand-primary hover:underline disabled:opacity-50"
+                  >
+                    {recipientSaving ? 'Saving…' : 'Save'}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setEditingRecipient(false)}
+                    disabled={recipientSaving}
+                    className="text-xs text-gray-500 hover:text-gray-700"
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                <p className="mt-2 text-sm font-medium text-gray-900">{proposal.recipient_name || '—'}</p>
+                <p className="text-xs text-gray-500">{proposal.recipient_email || '—'}</p>
+              </>
+            )}
+            {isSigned && (
+              <p className="mt-2 text-[11px] text-amber-600">
+                Locked: the client has signed, so the recipient on record cannot be changed.
+              </p>
             )}
           </div>
 
