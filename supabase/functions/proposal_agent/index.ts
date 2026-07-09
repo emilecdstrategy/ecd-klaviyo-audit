@@ -39,6 +39,7 @@ type MessageRow = {
   content: string;
   payload: any;
   payload_kind: string | null;
+  actor_user_id: string | null;
   created_at: string;
 };
 
@@ -126,12 +127,13 @@ serve(async (req) => {
       conversation_id: conversationId,
       role: "user",
       content: message,
+      actor_user_id: uid,
     });
     if (userInsertErr) throw userInsertErr;
 
     const { data: historyRows, error: historyErr } = await sb
       .from("proposal_agent_messages")
-      .select("id, role, content, payload, payload_kind, created_at")
+      .select("id, role, content, payload, payload_kind, actor_user_id, created_at")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: false })
       .limit(HISTORY_LIMIT);

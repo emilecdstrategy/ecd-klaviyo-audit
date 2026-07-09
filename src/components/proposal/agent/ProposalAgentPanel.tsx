@@ -371,7 +371,10 @@ function MessageBubble({
 
   if (message.role === 'user') {
     return (
-      <div className="flex justify-end px-4 py-1.5">
+      <div className="flex flex-col items-end px-4 py-1.5">
+        {message.actorName && (
+          <p className="mb-0.5 pr-1 text-[11px] font-medium text-gray-400">{message.actorName}</p>
+        )}
         <div className={cn('max-w-[85%] rounded-2xl rounded-br-md bg-brand-primary px-3.5 py-2 text-sm text-white', message.pending && 'opacity-70')}>
           <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
         </div>

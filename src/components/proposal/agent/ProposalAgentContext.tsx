@@ -22,7 +22,9 @@ import {
   listConversationMessages,
   listConversations,
   markAgentMessageApplied,
+  type ProposalAgentMessageWithAuthor,
 } from '../../../lib/proposal-agent-db';
+import { useAuth } from '../../../contexts/AuthContext';
 import type { ProposalAgentConversation, ProposalAgentMessage } from '../../../lib/types';
 
 export type ConversationSummary = ProposalAgentConversation & { messageCount: number };
@@ -30,7 +32,7 @@ export type ConversationSummary = ProposalAgentConversation & { messageCount: nu
 export type AgentChatMessage = Pick<
   ProposalAgentMessage,
   'id' | 'role' | 'content' | 'payload' | 'payload_kind' | 'applied_at'
-> & { pending?: boolean };
+> & { pending?: boolean; actorName?: string | null };
 
 export type ProposalAgentHostConfig = {
   /** Proposal the chat is attached to; null on the proposals list (draft-from-scratch chats). */
@@ -100,10 +102,11 @@ export function ProposalAgentProvider({
   const [conversationsLoading, setConversationsLoading] = useState(false);
   const historyLoadedFor = useRef<string | null>(null);
 
+  const { user: currentUser } = useAuth();
   const configRef = useRef(config);
   configRef.current = config;
 
-  const rowsToMessages = (rows: ProposalAgentMessage[]): AgentChatMessage[] =>
+  const rowsToMessages = (rows: ProposalAgentMessageWithAuthor[]): AgentChatMessage[] =>
     rows
       .filter(r => r.role !== 'tool')
       .map(r => ({
@@ -113,6 +116,7 @@ export function ProposalAgentProvider({
         payload: r.payload,
         payload_kind: r.payload_kind,
         applied_at: r.applied_at,
+        actorName: r.actor_name,
       }));
 
   // Load persisted history the first time the panel opens (per proposal).
@@ -157,6 +161,7 @@ export function ProposalAgentProvider({
         payload_kind: null,
         applied_at: null,
         pending: true,
+        actorName: currentUser?.name ?? null,
       };
       setMessages(prev => [...prev, userMsg]);
       setSending(true);

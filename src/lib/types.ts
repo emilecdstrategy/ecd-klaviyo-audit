@@ -481,6 +481,8 @@ export interface ProposalAgentMessage {
   payload: unknown;
   payload_kind: ProposalAgentPayloadKind | null;
   applied_at: string | null;
+  /** Staff member who sent this message (role='user' only). */
+  actor_user_id: string | null;
   created_at: string;
 }
 

@@ -49,16 +49,30 @@ export async function getConversationMessageCounts(
   return counts;
 }
 
+export type ProposalAgentMessageWithAuthor = ProposalAgentMessage & { actor_name: string | null };
+
 export async function listConversationMessages(
   conversationId: string,
-): Promise<ProposalAgentMessage[]> {
+): Promise<ProposalAgentMessageWithAuthor[]> {
   const { data, error } = await supabase
     .from('proposal_agent_messages')
     .select('*')
     .eq('conversation_id', conversationId)
     .order('created_at', { ascending: true });
   if (error) throw error;
-  return (data ?? []) as ProposalAgentMessage[];
+  return attachAgentMessageAuthors((data ?? []) as ProposalAgentMessage[]);
+}
+
+/** Resolves actor_user_id on chat message rows to display names, one query per batch. */
+export async function attachAgentMessageAuthors(
+  messages: ProposalAgentMessage[],
+): Promise<ProposalAgentMessageWithAuthor[]> {
+  const ids = [...new Set(messages.map(m => m.actor_user_id).filter((id): id is string => Boolean(id)))];
+  if (ids.length === 0) return messages.map(m => ({ ...m, actor_name: null }));
+  const { data, error } = await supabase.from('profiles').select('id, name').in('id', ids);
+  if (error) throw error;
+  const nameById = new Map((data ?? []).map(p => [p.id as string, p.name as string]));
+  return messages.map(m => ({ ...m, actor_name: m.actor_user_id ? nameById.get(m.actor_user_id) ?? null : null }));
 }
 
 /** Link a proposal-less conversation to the proposal created from its draft. */
