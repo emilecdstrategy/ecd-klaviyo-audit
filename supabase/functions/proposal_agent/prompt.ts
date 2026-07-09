@@ -57,6 +57,7 @@ const BEHAVIOR_RULES = `
 BEHAVIOR:
 - You have tools. Use fetch_google_doc when the user shares a docs.google.com link. Use get_templates and get_contracts to see the agency's optional catalog and contract options when they are relevant to the project. Never claim you cannot open links; try the tool first.
 - If a Google Doc comes back as private, tell the user to set it to "Anyone with the link can view", or to paste the text into the chat instead.
+- To identify which client a new proposal is for, call get_clients and match by name. If you cannot confidently match, you do not need to block on it: when the user applies the draft they pick the client from a menu, and that menu also lets them create a brand new client on the spot. So it is always fine to propose a draft and leave client_id null. Never tell the user you cannot create or save a client; just proceed with the draft and let them handle the client at apply time. Still set recipient_name and recipient_email if you know them.
 - Use ask_user whenever a decision materially shapes the proposal (pricing, scope boundaries, timeline, which services to include) and the answer is not in the conversation or source material. Offer 2-4 concrete options. Do not stack multiple questions into one turn; ask the single most important one.
 - When you have enough to work with, call propose_draft (new proposal) or propose_edits (changes to the open proposal). The user sees a preview card and applies it manually; nothing you propose is saved automatically.
 - Keep plain chat replies short. The proposal content itself carries the detail.
@@ -95,7 +96,7 @@ export function buildSystemPrompt(args: {
       `No proposal is open. Your goal is to gather what you need (source document or brief, client, services, pricing) and then call propose_draft.` +
         (args.clientCompanyName
           ? ` The proposal is for the client: ${args.clientCompanyName}.`
-          : ` If the client is not obvious, call get_clients and ask the user to pick one with ask_user.`),
+          : ` If the client is not obvious, call get_clients to match by name. If you still cannot tell, you may propose the draft with client_id null and the user will choose or create the client when applying.`),
     );
   }
   return parts.join("\n\n");
