@@ -10,6 +10,7 @@ import { listAudits, listClients } from '../lib/db';
 import type { Audit, Client } from '../lib/types';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/ui/Modal';
+import HoverTooltip from '../components/ui/HoverTooltip';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 
 const PAGE_SIZE = 100;
@@ -236,17 +237,6 @@ export default function Clients() {
                           {client.company_name}
                         </h3>
                         <p className="text-xs text-gray-500 mt-0.5">{client.industry}</p>
-                        {client.hubspot_company_id && (
-                          <span className="mt-1.5 inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600">
-                            <img
-                              src="https://www.hubspot.com/favicon.ico"
-                              alt=""
-                              className="h-2.5 w-2.5 shrink-0"
-                              onError={e => { e.currentTarget.style.display = 'none'; }}
-                            />
-                            Auto-synced from HubSpot
-                          </span>
-                        )}
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
@@ -283,15 +273,33 @@ export default function Clients() {
                     </div>
                   </div>
 
-                  <div className="mt-4 pt-3 border-t border-gray-50 flex items-center justify-between">
-                    <span className="text-xs text-gray-400">
+                  <div className="mt-4 pt-3 border-t border-gray-50 flex items-center justify-between gap-2">
+                    <span className="text-xs text-gray-400 shrink-0">
                       {clientAudits.length} audit{clientAudits.length !== 1 ? 's' : ''}
                     </span>
-                    {lastAudit && (
-                      <span className="text-xs text-gray-400">
-                        Last: {new Date(lastAudit.updated_at).toLocaleDateString()}
-                      </span>
-                    )}
+                    <div className="flex items-center gap-2 shrink-0">
+                      {lastAudit && (
+                        <span className="text-xs text-gray-400">
+                          Last: {new Date(lastAudit.updated_at).toLocaleDateString()}
+                        </span>
+                      )}
+                      {client.hubspot_company_id && (
+                        <HoverTooltip label="Auto-synced from HubSpot" align="end">
+                          <span
+                            className="inline-flex items-center gap-1 rounded-full bg-orange-50 px-2 py-0.5 text-[10px] font-medium text-orange-600 cursor-default"
+                            onClick={e => e.stopPropagation()}
+                          >
+                            <img
+                              src="https://www.hubspot.com/favicon.ico"
+                              alt=""
+                              className="h-3.5 w-3.5 shrink-0"
+                              onError={e => { e.currentTarget.style.display = 'none'; }}
+                            />
+                            Auto-synced
+                          </span>
+                        </HoverTooltip>
+                      )}
+                    </div>
                   </div>
                 </button>
               );
