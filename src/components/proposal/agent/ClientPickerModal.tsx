@@ -70,7 +70,6 @@ export default function ClientPickerModal({
         esp_platform: '',
         api_key_placeholder: '',
         notes: '',
-        created_by: '',
       } as Omit<Client, 'id' | 'created_at'>);
       onSelect(client);
     } catch (e) {

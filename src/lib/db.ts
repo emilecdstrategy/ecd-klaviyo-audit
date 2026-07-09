@@ -258,7 +258,18 @@ export async function getClient(id: string): Promise<Client | null> {
 
 export async function createClient(input: Omit<Client, 'id' | 'created_at'>): Promise<Client> {
   const website_url = normalizeClientWebsiteUrl(input.website_url) ?? '';
-  const { data, error } = await supabase.from('clients').insert({ ...input, website_url }).select('*').single();
+  // created_by is a uuid column; never send an empty string. Stamp from the
+  // current session when a caller did not supply a valid id.
+  let created_by: string | null = input.created_by || null;
+  if (!created_by) {
+    const { data: userData } = await supabase.auth.getUser();
+    created_by = userData?.user?.id ?? null;
+  }
+  const { data, error } = await supabase
+    .from('clients')
+    .insert({ ...input, website_url, created_by })
+    .select('*')
+    .single();
   if (error) throw error;
   return data;
 }

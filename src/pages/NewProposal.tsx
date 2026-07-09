@@ -74,7 +74,6 @@ export default function NewProposal({ asModal }: NewProposalProps) {
         esp_platform: '',
         api_key_placeholder: '',
         notes: '',
-        created_by: '',
       } as Omit<Client, 'id' | 'created_at'>);
       setClients(prev => [...prev, client]);
       setSelectedClient(client);

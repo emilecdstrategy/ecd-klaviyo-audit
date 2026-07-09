@@ -27,12 +27,12 @@ function TypingIndicator() {
   }, []);
   return (
     <div className="flex items-center gap-2 px-4 py-3 text-xs text-gray-400">
-      <span className="flex gap-1">
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300 [animation-delay:0ms]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300 [animation-delay:150ms]" />
-        <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-gray-300 [animation-delay:300ms]" />
+      <span className="flex items-center gap-1">
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-300 [animation-delay:0ms]" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-300 [animation-delay:200ms]" />
+        <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-300 [animation-delay:400ms]" />
       </span>
-      {TYPING_LABELS[labelIndex]}…
+      <span className="leading-none">{TYPING_LABELS[labelIndex]}…</span>
     </div>
   );
 }
@@ -49,7 +49,14 @@ function QuestionChips({
   const [selected, setSelected] = useState<string[]>([]);
   const [otherOpen, setOtherOpen] = useState(false);
   const [otherText, setOtherText] = useState('');
+  const otherRef = useRef<HTMLDivElement>(null);
   const multi = Boolean(question.multi_select);
+
+  // Opening the free-text box grows the panel; bring it into view so the
+  // textarea is fully visible without manual scrolling.
+  useEffect(() => {
+    if (otherOpen) otherRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
+  }, [otherOpen]);
 
   if (!active) return null;
 
@@ -92,7 +99,7 @@ function QuestionChips({
       })}
 
       {otherOpen ? (
-        <div className="rounded-xl border border-brand-primary/40 bg-white p-2">
+        <div ref={otherRef} className="rounded-xl border border-brand-primary/40 bg-white p-2">
           <textarea
             autoFocus
             value={otherText}
