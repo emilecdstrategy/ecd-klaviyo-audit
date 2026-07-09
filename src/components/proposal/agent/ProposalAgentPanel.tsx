@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Check, ChevronDown, ChevronUp, Send, Sparkles, X } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp, Send, Sparkles, SquarePen, X } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { formatCurrency } from '../../../lib/revenue-calculator';
 import { RichAuditContent } from '../../ui/RichAuditText';
@@ -423,7 +423,7 @@ export default function ProposalAgentPanel({
   /** line item id -> name map for readable edit previews. */
   itemNames?: Map<string, string>;
 }) {
-  const { isOpen, close, messages, sending, loadingHistory, error, sendMessage } = useProposalAgent();
+  const { isOpen, close, messages, sending, loadingHistory, error, sendMessage, resetChat } = useProposalAgent();
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -432,6 +432,14 @@ export default function ProposalAgentPanel({
     if (!scrollRef.current) return;
     scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending, isOpen]);
+
+  // Auto-grow the composer as the user types or pastes long content.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 200)}px`;
+  }, [input, isOpen]);
 
   // While the assistant is waiting on a choice, block the free-form composer so
   // the answer flows through the options (the "Other" chip handles free text).
@@ -451,6 +459,16 @@ export default function ProposalAgentPanel({
       <div className="flex h-14 shrink-0 items-center gap-2 border-b border-gray-100 px-4">
         <Sparkles className="h-4 w-4 text-brand-primary" />
         <p className="flex-1 text-sm font-semibold text-gray-900">AI Assistant</p>
+        {messages.length > 0 && (
+          <button
+            onClick={() => void resetChat()}
+            className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+            title="Start a new chat"
+          >
+            <SquarePen className="h-3.5 w-3.5" />
+            New chat
+          </button>
+        )}
         <button
           onClick={close}
           className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-50 hover:text-gray-600"
@@ -511,9 +529,9 @@ export default function ProposalAgentPanel({
                 submit();
               }
             }}
-            rows={Math.min(5, Math.max(1, input.split('\n').length))}
+            rows={2}
             placeholder={awaitingChoice ? 'Pick an option above…' : 'Message the assistant…'}
-            className="max-h-32 flex-1 resize-none bg-transparent text-sm text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
+            className="max-h-[200px] min-h-[3rem] flex-1 resize-none bg-transparent text-sm leading-relaxed text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
           />
           <button
             type="submit"
@@ -530,14 +548,22 @@ export default function ProposalAgentPanel({
 
   return (
     <>
-      {/* Desktop: push-aside column */}
+      {/* Desktop: spacer reserves width so page content shrinks; the panel
+          itself is fixed to the viewport so it stays put while the page scrolls. */}
+      <div
+        aria-hidden
+        className={cn(
+          'hidden shrink-0 transition-[width] duration-300 ease-in-out lg:block',
+          isOpen ? 'w-[420px]' : 'w-0',
+        )}
+      />
       <div
         className={cn(
-          'hidden shrink-0 overflow-hidden border-l border-gray-100 transition-[width] duration-300 ease-in-out lg:block',
-          isOpen ? 'w-[420px]' : 'w-0 border-l-0',
+          'fixed right-0 top-0 z-30 hidden h-screen w-[420px] transform border-l border-gray-100 bg-white shadow-sm transition-transform duration-300 ease-in-out lg:block',
+          isOpen ? 'translate-x-0' : 'translate-x-full',
         )}
       >
-        <div className="sticky top-0 h-screen w-[420px]">{body}</div>
+        {body}
       </div>
 
       {/* Mobile: overlay */}

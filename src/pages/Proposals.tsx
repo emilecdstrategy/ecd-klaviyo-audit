@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { FileSignature, LayoutTemplate, FileCheck2, Plus, Settings2 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
+import GlobalSearch from '../components/ui/GlobalSearch';
 import ProposalList from '../components/proposal/ProposalList';
 import ProposalKPIs from '../components/proposal/ProposalKPIs';
 import ProposalTemplatesPanel from '../components/proposal/ProposalTemplatesPanel';
@@ -75,9 +76,10 @@ export default function Proposals() {
       <TopBar
         title="Proposals"
         subtitle={`${proposals.length} total proposals`}
+        hideSearch
         actions={
-          <div className="flex items-center gap-2">
-            <AgentToggleButton className="px-4 py-2 text-sm" />
+          <div className="flex items-center gap-3">
+            <GlobalSearch />
             <button
               onClick={openNewProposal}
               className="flex items-center gap-2 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
@@ -85,6 +87,7 @@ export default function Proposals() {
               <Plus className="w-4 h-4" />
               New Proposal
             </button>
+            <AgentToggleButton className="px-4 py-2 text-sm" />
           </div>
         }
       />

@@ -15,6 +15,7 @@ import {
   type ProposalEditSet,
 } from '../../../lib/proposal-agent';
 import {
+  archiveConversation,
   getLatestConversation,
   listConversationMessages,
   markAgentMessageApplied,
@@ -51,6 +52,7 @@ type ProposalAgentContextValue = {
   canApply: boolean;
   sendMessage: (text: string) => Promise<void>;
   applyMessage: (message: AgentChatMessage) => Promise<void>;
+  resetChat: () => Promise<void>;
 };
 
 const ProposalAgentContext = createContext<ProposalAgentContextValue | null>(null);
@@ -170,6 +172,16 @@ export function ProposalAgentProvider({
     [conversationId, sending],
   );
 
+  const resetChat = useCallback(async () => {
+    const id = conversationId;
+    setMessages([]);
+    setConversationId(null);
+    setError(null);
+    // The history-load effect has already run for this proposal key, so it will
+    // not repopulate; the next message starts a fresh conversation.
+    if (id) await archiveConversation(id).catch(() => {});
+  }, [conversationId]);
+
   const applyMessage = useCallback(
     async (message: AgentChatMessage) => {
       if (!message.payload || message.applied_at || applyingMessageId) return;
@@ -211,6 +223,7 @@ export function ProposalAgentProvider({
       canApply: Boolean(config.onApplyDraft || config.onApplyEdits),
       sendMessage,
       applyMessage,
+      resetChat,
     }),
     [
       isOpen,
@@ -223,6 +236,7 @@ export function ProposalAgentProvider({
       config.onApplyEdits,
       sendMessage,
       applyMessage,
+      resetChat,
     ],
   );
 
