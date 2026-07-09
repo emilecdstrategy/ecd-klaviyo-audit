@@ -17,6 +17,38 @@ export async function getLatestConversation(
   return (data as ProposalAgentConversation) ?? null;
 }
 
+/** All conversations for a proposal (or proposal-less chats when proposalId is null), newest first. */
+export async function listConversations(
+  proposalId: string | null,
+): Promise<ProposalAgentConversation[]> {
+  let query = supabase
+    .from('proposal_agent_conversations')
+    .select('*')
+    .order('updated_at', { ascending: false });
+  query = proposalId ? query.eq('proposal_id', proposalId) : query.is('proposal_id', null);
+  const { data, error } = await query;
+  if (error) throw error;
+  return (data ?? []) as ProposalAgentConversation[];
+}
+
+/** Message count per conversation, for the history list. */
+export async function getConversationMessageCounts(
+  conversationIds: string[],
+): Promise<Record<string, number>> {
+  if (conversationIds.length === 0) return {};
+  const { data, error } = await supabase
+    .from('proposal_agent_messages')
+    .select('conversation_id')
+    .in('conversation_id', conversationIds)
+    .neq('role', 'tool');
+  if (error) throw error;
+  const counts: Record<string, number> = {};
+  for (const row of (data ?? []) as { conversation_id: string }[]) {
+    counts[row.conversation_id] = (counts[row.conversation_id] ?? 0) + 1;
+  }
+  return counts;
+}
+
 export async function listConversationMessages(
   conversationId: string,
 ): Promise<ProposalAgentMessage[]> {

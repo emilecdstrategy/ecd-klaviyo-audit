@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { Check, ChevronDown, ChevronUp, Send, Sparkles, SquarePen, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronUp, History, MessageSquare, Send, Sparkles, SquarePen, X } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { formatCurrency } from '../../../lib/revenue-calculator';
 import { RichAuditContent } from '../../ui/RichAuditText';
-import { useProposalAgent, type AgentChatMessage } from './ProposalAgentContext';
+import { useProposalAgent, type AgentChatMessage, type ConversationSummary } from './ProposalAgentContext';
 import type {
   AgentQuestion,
   ProposalDraftPayload,
@@ -414,6 +414,80 @@ function MessageBubble({
   );
 }
 
+function relativeTime(iso: string): string {
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '';
+  const diff = Date.now() - then;
+  const min = Math.round(diff / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  if (day < 7) return `${day}d ago`;
+  return new Date(iso).toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+}
+
+function ChatHistoryList({
+  conversations,
+  loading,
+  currentId,
+  onSelect,
+  onBack,
+}: {
+  conversations: ConversationSummary[];
+  loading: boolean;
+  currentId: string | null;
+  onSelect: (id: string) => void;
+  onBack: () => void;
+}) {
+  return (
+    <div className="flex h-full flex-col bg-white">
+      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-gray-100 px-4">
+        <button
+          onClick={onBack}
+          className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-50 hover:text-gray-600"
+          aria-label="Back to chat"
+        >
+          <ArrowLeft className="h-4 w-4" />
+        </button>
+        <p className="flex-1 text-sm font-semibold text-gray-900">Chat history</p>
+      </div>
+      <div className="flex-1 overflow-y-auto p-3">
+        {loading ? (
+          <p className="px-1 py-2 text-xs text-gray-400">Loading chats…</p>
+        ) : conversations.length === 0 ? (
+          <p className="px-1 py-6 text-center text-sm text-gray-400">No saved chats yet.</p>
+        ) : (
+          <div className="space-y-1">
+            {conversations.map(c => (
+              <button
+                key={c.id}
+                onClick={() => onSelect(c.id)}
+                className={cn(
+                  'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
+                  c.id === currentId
+                    ? 'border-brand-primary/40 bg-brand-primary/[0.04]'
+                    : 'border-transparent hover:border-gray-200 hover:bg-gray-50',
+                )}
+              >
+                <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-sm font-medium text-gray-900">{c.title || 'Untitled chat'}</span>
+                  <span className="mt-0.5 block text-xs text-gray-400">
+                    {relativeTime(c.updated_at)} · {c.messageCount} message{c.messageCount === 1 ? '' : 's'}
+                    {c.id === currentId ? ' · current' : ''}
+                  </span>
+                </span>
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function ProposalAgentPanel({
   blockTitles,
   itemNames,
@@ -423,7 +497,23 @@ export default function ProposalAgentPanel({
   /** line item id -> name map for readable edit previews. */
   itemNames?: Map<string, string>;
 }) {
-  const { isOpen, close, messages, sending, loadingHistory, error, sendMessage, resetChat } = useProposalAgent();
+  const {
+    isOpen,
+    close,
+    messages,
+    sending,
+    loadingHistory,
+    error,
+    sendMessage,
+    resetChat,
+    historyView,
+    openHistory,
+    closeHistory,
+    conversations,
+    conversationsLoading,
+    conversationId,
+    selectConversation,
+  } = useProposalAgent();
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -454,19 +544,35 @@ export default function ProposalAgentPanel({
     setInput('');
   };
 
-  const body = (
+  const body = historyView ? (
+    <ChatHistoryList
+      conversations={conversations}
+      loading={conversationsLoading}
+      currentId={conversationId}
+      onSelect={id => void selectConversation(id)}
+      onBack={closeHistory}
+    />
+  ) : (
     <div className="flex h-full flex-col bg-white">
-      <div className="flex h-14 shrink-0 items-center gap-2 border-b border-gray-100 px-4">
+      <div className="flex h-14 shrink-0 items-center gap-1 border-b border-gray-100 px-4">
         <Sparkles className="h-4 w-4 text-brand-primary" />
         <p className="flex-1 text-sm font-semibold text-gray-900">AI Assistant</p>
+        <button
+          onClick={openHistory}
+          className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700"
+          title="Chat history"
+        >
+          <History className="h-3.5 w-3.5" />
+          History
+        </button>
         {messages.length > 0 && (
           <button
-            onClick={() => void resetChat()}
+            onClick={resetChat}
             className="inline-flex items-center gap-1.5 rounded-lg px-2 py-1.5 text-xs font-medium text-gray-500 hover:bg-gray-50 hover:text-gray-700"
             title="Start a new chat"
           >
             <SquarePen className="h-3.5 w-3.5" />
-            New chat
+            New
           </button>
         )}
         <button

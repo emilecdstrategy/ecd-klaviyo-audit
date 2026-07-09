@@ -16,12 +16,15 @@ import {
   type ProposalEditSet,
 } from '../../../lib/proposal-agent';
 import {
-  archiveConversation,
+  getConversationMessageCounts,
   getLatestConversation,
   listConversationMessages,
+  listConversations,
   markAgentMessageApplied,
 } from '../../../lib/proposal-agent-db';
-import type { ProposalAgentMessage } from '../../../lib/types';
+import type { ProposalAgentConversation, ProposalAgentMessage } from '../../../lib/types';
+
+export type ConversationSummary = ProposalAgentConversation & { messageCount: number };
 
 export type AgentChatMessage = Pick<
   ProposalAgentMessage,
@@ -46,6 +49,7 @@ type ProposalAgentContextValue = {
   close: () => void;
   toggle: () => void;
   messages: AgentChatMessage[];
+  conversationId: string | null;
   sending: boolean;
   loadingHistory: boolean;
   error: string | null;
@@ -53,7 +57,14 @@ type ProposalAgentContextValue = {
   canApply: boolean;
   sendMessage: (text: string) => Promise<void>;
   applyMessage: (message: AgentChatMessage) => Promise<void>;
-  resetChat: () => Promise<void>;
+  resetChat: () => void;
+  // History
+  historyView: boolean;
+  conversations: ConversationSummary[];
+  conversationsLoading: boolean;
+  openHistory: () => void;
+  closeHistory: () => void;
+  selectConversation: (id: string) => Promise<void>;
 };
 
 const ProposalAgentContext = createContext<ProposalAgentContextValue | null>(null);
@@ -82,10 +93,25 @@ export function ProposalAgentProvider({
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applyingMessageId, setApplyingMessageId] = useState<string | null>(null);
+  const [historyView, setHistoryView] = useState(false);
+  const [conversations, setConversations] = useState<ConversationSummary[]>([]);
+  const [conversationsLoading, setConversationsLoading] = useState(false);
   const historyLoadedFor = useRef<string | null>(null);
 
   const configRef = useRef(config);
   configRef.current = config;
+
+  const rowsToMessages = (rows: ProposalAgentMessage[]): AgentChatMessage[] =>
+    rows
+      .filter(r => r.role !== 'tool')
+      .map(r => ({
+        id: r.id,
+        role: r.role,
+        content: r.content,
+        payload: r.payload,
+        payload_kind: r.payload_kind,
+        applied_at: r.applied_at,
+      }));
 
   // Load persisted history the first time the panel opens (per proposal).
   useEffect(() => {
@@ -103,18 +129,7 @@ export function ProposalAgentProvider({
           setConversationId(conv.id);
           const rows = await listConversationMessages(conv.id);
           if (cancelled) return;
-          setMessages(
-            rows
-              .filter(r => r.role !== 'tool')
-              .map(r => ({
-                id: r.id,
-                role: r.role,
-                content: r.content,
-                payload: r.payload,
-                payload_kind: r.payload_kind,
-                applied_at: r.applied_at,
-              })),
-          );
+          setMessages(rowsToMessages(rows));
         }
       } catch {
         // History is a convenience; the chat still works without it.
@@ -173,15 +188,49 @@ export function ProposalAgentProvider({
     [conversationId, sending],
   );
 
-  const resetChat = useCallback(async () => {
-    const id = conversationId;
+  const resetChat = useCallback(() => {
+    // Start a fresh thread. The previous conversation stays saved and shows up
+    // in history; the next message creates a new conversation server-side.
     setMessages([]);
     setConversationId(null);
     setError(null);
-    // The history-load effect has already run for this proposal key, so it will
-    // not repopulate; the next message starts a fresh conversation.
-    if (id) await archiveConversation(id).catch(() => {});
-  }, [conversationId]);
+    setHistoryView(false);
+  }, []);
+
+  const loadConversationList = useCallback(async () => {
+    setConversationsLoading(true);
+    try {
+      const list = await listConversations(configRef.current.proposalId);
+      const counts = await getConversationMessageCounts(list.map(c => c.id));
+      setConversations(list.map(c => ({ ...c, messageCount: counts[c.id] ?? 0 })));
+    } catch {
+      setConversations([]);
+    } finally {
+      setConversationsLoading(false);
+    }
+  }, []);
+
+  const openHistory = useCallback(() => {
+    setHistoryView(true);
+    void loadConversationList();
+  }, [loadConversationList]);
+
+  const closeHistory = useCallback(() => setHistoryView(false), []);
+
+  const selectConversation = useCallback(async (id: string) => {
+    setHistoryView(false);
+    setError(null);
+    setConversationId(id);
+    setLoadingHistory(true);
+    try {
+      const rows = await listConversationMessages(id);
+      setMessages(rowsToMessages(rows));
+    } catch {
+      setMessages([]);
+    } finally {
+      setLoadingHistory(false);
+    }
+  }, []);
 
   const applyMessage = useCallback(
     async (message: AgentChatMessage) => {
@@ -218,6 +267,7 @@ export function ProposalAgentProvider({
       close: () => setIsOpen(false),
       toggle: () => setIsOpen(v => !v),
       messages,
+      conversationId,
       sending,
       loadingHistory,
       error,
@@ -226,10 +276,17 @@ export function ProposalAgentProvider({
       sendMessage,
       applyMessage,
       resetChat,
+      historyView,
+      conversations,
+      conversationsLoading,
+      openHistory,
+      closeHistory,
+      selectConversation,
     }),
     [
       isOpen,
       messages,
+      conversationId,
       sending,
       loadingHistory,
       error,
@@ -239,6 +296,12 @@ export function ProposalAgentProvider({
       sendMessage,
       applyMessage,
       resetChat,
+      historyView,
+      conversations,
+      conversationsLoading,
+      openHistory,
+      closeHistory,
+      selectConversation,
     ],
   );
 
