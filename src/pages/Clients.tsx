@@ -64,7 +64,8 @@ export default function Clients() {
     const matched = clients.filter(
       c =>
         c.name.toLowerCase().includes(q) ||
-        c.company_name.toLowerCase().includes(q),
+        c.company_name.toLowerCase().includes(q) ||
+        (c.website_url ?? '').toLowerCase().includes(q),
     );
     const sorted = [...matched].sort((a, b) => {
       switch (sort) {
