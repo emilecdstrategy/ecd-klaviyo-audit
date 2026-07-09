@@ -24,6 +24,7 @@ export default function ClientPickerModal({
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
   const [createExpanded, setCreateExpanded] = useState(false);
+  const [newName, setNewName] = useState('');
   const [newWebsite, setNewWebsite] = useState('');
 
   useEffect(() => {
@@ -31,6 +32,7 @@ export default function ClientPickerModal({
     setSearch('');
     setError('');
     setCreateExpanded(false);
+    setNewName('');
     setNewWebsite('');
     let cancelled = false;
     (async () => {
@@ -66,7 +68,7 @@ export default function ClientPickerModal({
     setError('');
     try {
       const client = await createClient({
-        name: '',
+        name: newName.trim(),
         company_name: trimmed,
         email: '',
         website_url: newWebsite.trim(),
@@ -120,9 +122,19 @@ export default function ClientPickerModal({
               {trimmed && !exactMatch && createExpanded && (
                 <div className="rounded-lg border border-brand-primary/40 p-3">
                   <p className="text-sm font-medium text-gray-900">New client: {trimmed}</p>
-                  <label className="mt-2 mb-1 block text-xs font-medium text-gray-600">Website (optional)</label>
+                  <label className="mt-2 mb-1 block text-xs font-medium text-gray-600">Contact name (optional)</label>
                   <input
                     autoFocus
+                    value={newName}
+                    onChange={e => setNewName(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') void createAndSelect();
+                    }}
+                    placeholder="Jane Smith"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                  <label className="mt-2 mb-1 block text-xs font-medium text-gray-600">Website (optional)</label>
+                  <input
                     value={newWebsite}
                     onChange={e => setNewWebsite(e.target.value)}
                     onKeyDown={e => {

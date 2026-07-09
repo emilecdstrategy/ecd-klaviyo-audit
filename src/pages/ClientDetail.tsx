@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   Globe,
   Mail,
+  User,
   FileText,
   FileSignature,
   Plus,
@@ -331,13 +332,6 @@ export default function ClientDetail() {
                   </div>
                 </div>
                 <div>
-                  <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">ESP Platform</p>
-                  <div className="flex items-center gap-1.5">
-                    <Mail className="w-3.5 h-3.5 text-gray-400" />
-                    <p className="text-sm text-gray-900">{client.esp_platform}</p>
-                  </div>
-                </div>
-                <div>
                   <p className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Contact Name</p>
                   {editingName ? (
                     <div className="space-y-1.5">
@@ -376,9 +370,14 @@ export default function ClientDetail() {
                     <button
                       type="button"
                       onClick={() => { setNameDraft(client.name === client.company_name ? '' : client.name); setEditingName(true); }}
-                      className="text-sm hover:underline text-left"
+                      className="flex items-center gap-1.5 text-sm hover:underline text-left"
                     >
-                      <span className="text-gray-900">{client.name}</span>
+                      <User className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                      {client.name && client.name !== client.company_name ? (
+                        <span className="text-gray-900">{client.name}</span>
+                      ) : (
+                        <span className="text-gray-400">Add name</span>
+                      )}
                     </button>
                   )}
                 </div>

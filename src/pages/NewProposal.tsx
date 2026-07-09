@@ -48,6 +48,7 @@ export default function NewProposal({ asModal }: NewProposalProps) {
 
   const [creatingClient, setCreatingClient] = useState(false);
   const [createExpanded, setCreateExpanded] = useState(false);
+  const [newName, setNewName] = useState('');
   const [newWebsite, setNewWebsite] = useState('');
 
   const filteredClients = useMemo(() => {
@@ -68,7 +69,7 @@ export default function NewProposal({ asModal }: NewProposalProps) {
     setError('');
     try {
       const client = await createClient({
-        name: '',
+        name: newName.trim(),
         company_name: trimmedSearch,
         email: '',
         website_url: newWebsite.trim(),
@@ -140,9 +141,19 @@ export default function NewProposal({ asModal }: NewProposalProps) {
                 {trimmedSearch && !hasExactMatch && createExpanded && (
                   <div className="rounded-lg border border-brand-primary/40 p-3">
                     <p className="text-sm font-medium text-gray-900">New client: {trimmedSearch}</p>
-                    <label className="mt-2 mb-1 block text-xs font-medium text-gray-600">Website (optional)</label>
+                    <label className="mt-2 mb-1 block text-xs font-medium text-gray-600">Contact name (optional)</label>
                     <input
                       autoFocus
+                      value={newName}
+                      onChange={e => setNewName(e.target.value)}
+                      onKeyDown={e => {
+                        if (e.key === 'Enter') void createAndSelectClient();
+                      }}
+                      placeholder="Jane Smith"
+                      className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                    />
+                    <label className="mt-2 mb-1 block text-xs font-medium text-gray-600">Website (optional)</label>
+                    <input
                       value={newWebsite}
                       onChange={e => setNewWebsite(e.target.value)}
                       onKeyDown={e => {
