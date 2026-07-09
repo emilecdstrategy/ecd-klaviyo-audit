@@ -11,6 +11,7 @@ import { scheduleSavedToast, useToast } from '../../ui/Toast';
 import {
   createProposalLineItems,
   deleteProposalLineItem,
+  listContractDocuments,
   updateProposal,
   updateProposalLineItem,
 } from '../../../lib/proposals-db';
@@ -265,9 +266,38 @@ export function ProposalEditProvider({
       const next = included
         ? [...new Set([...proposal.include_contracts, slug])]
         : proposal.include_contracts.filter(s => s !== slug);
+
+      // Once a proposal has been sent, contracts render from the frozen
+      // contracts_snapshot rather than the live docs (see ProposalDocument).
+      // While it is still unsigned, toggling a contract must also refresh
+      // that snapshot — otherwise a newly-added contract has no content in
+      // the snapshot and silently fails to render. Fetch the live docs first
+      // so the optimistic update and the persisted row apply together.
+      if (proposal.contracts_snapshot && !proposal.client_signed_at) {
+        setSaveStatus('saving');
+        listContractDocuments()
+          .then(docs => {
+            const snapshot = docs
+              .filter(d => next.includes(d.slug))
+              .map(d => ({ slug: d.slug, name: d.name, content: d.content, version_updated_at: d.updated_at }));
+            onProposalChange?.({ ...proposal, include_contracts: next, contracts_snapshot: snapshot } as Proposal);
+            return updateProposal(proposal.id, { include_contracts: next, contracts_snapshot: snapshot });
+          })
+          .then(() => {
+            setSaveStatus('saved');
+            scheduleSavedToast(toast);
+            window.setTimeout(() => setSaveStatus(s => (s === 'saved' ? 'idle' : s)), 2500);
+          })
+          .catch(() => {
+            setSaveStatus('error');
+            toast('Could not save');
+          });
+        return;
+      }
+
       saveProposalPatch('contracts', { include_contracts: next });
     },
-    [proposal.include_contracts, saveProposalPatch],
+    [proposal, onProposalChange, saveProposalPatch, toast],
   );
 
   const value = useMemo<ProposalEditContextValue>(() => {

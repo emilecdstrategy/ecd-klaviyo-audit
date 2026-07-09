@@ -163,6 +163,7 @@ export async function updateProposal(
       | 'cover'
       | 'content_blocks'
       | 'include_contracts'
+      | 'contracts_snapshot'
       | 'discount_type'
       | 'discount_value'
       | 'discount_applies_to'
