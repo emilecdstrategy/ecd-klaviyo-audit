@@ -13,7 +13,7 @@ import Modal from '../components/ui/Modal';
 import HoverTooltip from '../components/ui/HoverTooltip';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 
-const PAGE_SIZE = 100;
+const PAGE_SIZE = 102;
 
 type SortOption = 'newest' | 'oldest' | 'name_asc' | 'name_desc';
 
