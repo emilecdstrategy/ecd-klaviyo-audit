@@ -93,6 +93,7 @@ serve(async (req) => {
 
     // --- Load or create the conversation -----------------------------------
     let conversationId = body.conversation_id ?? null;
+    let conversationWasCreated = false;
     if (!conversationId && body.proposal_id) {
       const { data } = await sb
         .from("proposal_agent_conversations")
@@ -117,6 +118,7 @@ serve(async (req) => {
         .single();
       if (error) throw error;
       conversationId = data.id as string;
+      conversationWasCreated = true;
     }
 
     // --- Persist the user message + load history ---------------------------
@@ -317,6 +319,46 @@ serve(async (req) => {
       .from("proposal_agent_conversations")
       .update({ updated_at: new Date().toISOString() })
       .eq("id", conversationId);
+
+    // On the first turn, generate a concise AI title for the chat. Runs in the
+    // background so it does not delay the response; falls back to the message
+    // snippet already stored if it fails.
+    if (conversationWasCreated) {
+      const convId = conversationId;
+      const summary =
+        (draft as { summary?: string })?.summary ??
+        (edits as { summary?: string })?.summary ??
+        assistantText;
+      const titleTask = (async () => {
+        try {
+          const titleTurn = await llm.runTurn({
+            system:
+              "You generate a very short title (3 to 6 words, Title Case, no surrounding quotes, no trailing punctuation) that summarizes what a client proposal chat is about. Reply with ONLY the title.",
+            messages: [
+              {
+                role: "user",
+                text: `First message: ${message}${summary ? `\nAssistant summary: ${summary}` : ""}`,
+              },
+            ],
+            tools: [],
+          });
+          if (titleTurn.kind === "text") {
+            const title = sanitizeCopy(titleTurn.text)
+              .replace(/^[\s"'#]+|[\s"']+$/g, "")
+              .slice(0, 80)
+              .trim();
+            if (title) {
+              await sb.from("proposal_agent_conversations").update({ title }).eq("id", convId);
+            }
+          }
+        } catch {
+          // Keep the fallback message-snippet title.
+        }
+      })();
+      const runtime = globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } };
+      if (runtime.EdgeRuntime?.waitUntil) runtime.EdgeRuntime.waitUntil(titleTask);
+      else await titleTask;
+    }
 
     return json({
       ok: true,

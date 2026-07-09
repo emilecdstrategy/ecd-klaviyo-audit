@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, Check, ChevronDown, ChevronUp, History, MessageSquare, Send, Sparkles, SquarePen, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronUp, History, MessageSquare, Send, Sparkles, SquarePen, Trash2, X } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { formatCurrency } from '../../../lib/revenue-calculator';
 import { RichAuditContent } from '../../ui/RichAuditText';
@@ -440,12 +440,14 @@ function ChatHistoryList({
   loading,
   currentId,
   onSelect,
+  onDelete,
   onBack,
 }: {
   conversations: ConversationSummary[];
   loading: boolean;
   currentId: string | null;
   onSelect: (id: string) => void;
+  onDelete: (id: string) => void;
   onBack: () => void;
 }) {
   return (
@@ -468,25 +470,37 @@ function ChatHistoryList({
         ) : (
           <div className="space-y-1">
             {conversations.map(c => (
-              <button
+              <div
                 key={c.id}
-                onClick={() => onSelect(c.id)}
                 className={cn(
-                  'flex w-full items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors',
+                  'group flex items-start gap-2 rounded-lg border pr-1.5 transition-colors',
                   c.id === currentId
                     ? 'border-brand-primary/40 bg-brand-primary/[0.04]'
                     : 'border-transparent hover:border-gray-200 hover:bg-gray-50',
                 )}
               >
-                <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
-                <span className="min-w-0 flex-1">
-                  <span className="block truncate text-sm font-medium text-gray-900">{c.title || 'Untitled chat'}</span>
-                  <span className="mt-0.5 block text-xs text-gray-400">
-                    {relativeTime(c.updated_at)} · {c.messageCount} message{c.messageCount === 1 ? '' : 's'}
-                    {c.id === currentId ? ' · current' : ''}
+                <button
+                  onClick={() => onSelect(c.id)}
+                  className="flex min-w-0 flex-1 items-start gap-3 px-3 py-2.5 text-left"
+                >
+                  <MessageSquare className="mt-0.5 h-4 w-4 shrink-0 text-gray-400" />
+                  <span className="min-w-0 flex-1">
+                    <span className="block truncate text-sm font-medium text-gray-900">{c.title || 'Untitled chat'}</span>
+                    <span className="mt-0.5 block text-xs text-gray-400">
+                      {relativeTime(c.updated_at)} · {c.messageCount} message{c.messageCount === 1 ? '' : 's'}
+                      {c.id === currentId ? ' · current' : ''}
+                    </span>
                   </span>
-                </span>
-              </button>
+                </button>
+                <button
+                  onClick={() => onDelete(c.id)}
+                  className="mt-1.5 shrink-0 rounded-md p-1.5 text-gray-300 hover:bg-red-50 hover:text-red-500 lg:opacity-0 lg:group-hover:opacity-100"
+                  aria-label="Delete chat"
+                  title="Delete chat"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
             ))}
           </div>
         )}
@@ -520,6 +534,7 @@ export default function ProposalAgentPanel({
     conversationsLoading,
     conversationId,
     selectConversation,
+    deleteConversation,
   } = useProposalAgent();
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -557,6 +572,9 @@ export default function ProposalAgentPanel({
       loading={conversationsLoading}
       currentId={conversationId}
       onSelect={id => void selectConversation(id)}
+      onDelete={id => {
+        if (window.confirm('Delete this chat? This cannot be undone.')) void deleteConversation(id);
+      }}
       onBack={closeHistory}
     />
   ) : (

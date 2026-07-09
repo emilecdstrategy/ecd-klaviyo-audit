@@ -89,3 +89,12 @@ export async function archiveConversation(conversationId: string): Promise<void>
     .eq('id', conversationId);
   if (error) throw error;
 }
+
+/** Permanently delete a conversation and its messages (messages cascade). */
+export async function deleteConversation(conversationId: string): Promise<void> {
+  const { error } = await supabase
+    .from('proposal_agent_conversations')
+    .delete()
+    .eq('id', conversationId);
+  if (error) throw error;
+}

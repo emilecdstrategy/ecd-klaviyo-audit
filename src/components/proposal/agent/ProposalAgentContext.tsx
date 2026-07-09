@@ -16,6 +16,7 @@ import {
   type ProposalEditSet,
 } from '../../../lib/proposal-agent';
 import {
+  deleteConversation as deleteConversationDb,
   getConversationMessageCounts,
   getLatestConversation,
   listConversationMessages,
@@ -65,6 +66,7 @@ type ProposalAgentContextValue = {
   openHistory: () => void;
   closeHistory: () => void;
   selectConversation: (id: string) => Promise<void>;
+  deleteConversation: (id: string) => Promise<void>;
 };
 
 const ProposalAgentContext = createContext<ProposalAgentContextValue | null>(null);
@@ -217,6 +219,22 @@ export function ProposalAgentProvider({
 
   const closeHistory = useCallback(() => setHistoryView(false), []);
 
+  const deleteConversation = useCallback(
+    async (id: string) => {
+      await deleteConversationDb(id);
+      setConversations(prev => prev.filter(c => c.id !== id));
+      // If the deleted chat was the one on screen, clear to a fresh thread.
+      setConversationId(current => {
+        if (current === id) {
+          setMessages([]);
+          return null;
+        }
+        return current;
+      });
+    },
+    [],
+  );
+
   const selectConversation = useCallback(async (id: string) => {
     setHistoryView(false);
     setError(null);
@@ -282,6 +300,7 @@ export function ProposalAgentProvider({
       openHistory,
       closeHistory,
       selectConversation,
+      deleteConversation,
     }),
     [
       isOpen,
@@ -302,6 +321,7 @@ export function ProposalAgentProvider({
       openHistory,
       closeHistory,
       selectConversation,
+      deleteConversation,
     ],
   );
 
