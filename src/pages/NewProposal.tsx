@@ -1,9 +1,9 @@
 import { useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Search, LayoutTemplate, FileText, ArrowLeft } from 'lucide-react';
+import { Search, LayoutTemplate, FileText, ArrowLeft, Plus } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import SiteFavicon from '../components/ui/SiteFavicon';
-import { listClients } from '../lib/db';
+import { createClient, listClients } from '../lib/db';
 import { listProposalTemplates } from '../lib/proposals-db';
 import { createProposalFromTemplate } from '../lib/proposal-convert';
 import type { Client, ProposalTemplate } from '../lib/types';
@@ -46,12 +46,44 @@ export default function NewProposal({ asModal }: NewProposalProps) {
     return () => { cancelled = true; };
   }, [prefillClientId]);
 
+  const [creatingClient, setCreatingClient] = useState(false);
+
   const filteredClients = useMemo(() => {
     const q = search.toLowerCase();
     return clients.filter(
       c => c.company_name.toLowerCase().includes(q) || c.name.toLowerCase().includes(q),
     );
   }, [clients, search]);
+
+  const trimmedSearch = search.trim();
+  const hasExactMatch = clients.some(
+    c => c.company_name.trim().toLowerCase() === trimmedSearch.toLowerCase(),
+  );
+
+  const createAndSelectClient = async () => {
+    if (!trimmedSearch || creatingClient) return;
+    setCreatingClient(true);
+    setError('');
+    try {
+      const client = await createClient({
+        name: '',
+        company_name: trimmedSearch,
+        email: '',
+        website_url: '',
+        industry: '',
+        esp_platform: '',
+        api_key_placeholder: '',
+        notes: '',
+        created_by: '',
+      } as Omit<Client, 'id' | 'created_at'>);
+      setClients(prev => [...prev, client]);
+      setSelectedClient(client);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not create the client');
+    } finally {
+      setCreatingClient(false);
+    }
+  };
 
   const create = async (template: ProposalTemplate | null) => {
     if (!selectedClient || creating) return;
@@ -80,19 +112,39 @@ export default function NewProposal({ asModal }: NewProposalProps) {
               autoFocus
               value={search}
               onChange={e => setSearch(e.target.value)}
-              placeholder="Search clients..."
+              placeholder="Search clients, or type a new client name..."
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
           <div className="max-h-80 space-y-1 overflow-y-auto">
             {loading ? (
               <p className="px-3 py-6 text-center text-sm text-gray-400">Loading clients…</p>
-            ) : filteredClients.length === 0 ? (
-              <p className="px-3 py-6 text-center text-sm text-gray-400">
-                No clients found. Add a client first.
-              </p>
             ) : (
-              filteredClients.map(client => (
+              <>
+                {trimmedSearch && !hasExactMatch && (
+                  <button
+                    type="button"
+                    disabled={creatingClient}
+                    onClick={createAndSelectClient}
+                    className="flex w-full items-center gap-3 rounded-lg border border-dashed border-brand-primary/40 px-3 py-2.5 text-left hover:bg-brand-primary/[0.03] disabled:opacity-60"
+                  >
+                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand-primary/10 text-brand-primary">
+                      <Plus className="h-4 w-4" />
+                    </span>
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-gray-900">
+                        {creatingClient ? 'Creating…' : `Create new client "${trimmedSearch}"`}
+                      </span>
+                      <span className="block truncate text-xs text-gray-400">Adds a client you can complete later.</span>
+                    </span>
+                  </button>
+                )}
+                {filteredClients.length === 0 && !trimmedSearch ? (
+                  <p className="px-3 py-6 text-center text-sm text-gray-400">
+                    No clients yet. Type a name above to create one.
+                  </p>
+                ) : (
+                  filteredClients.map(client => (
                 <button
                   key={client.id}
                   type="button"
@@ -105,7 +157,9 @@ export default function NewProposal({ asModal }: NewProposalProps) {
                     <span className="block truncate text-xs text-gray-400">{client.name}</span>
                   </span>
                 </button>
-              ))
+                  ))
+                )}
+              </>
             )}
           </div>
         </div>

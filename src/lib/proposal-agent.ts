@@ -229,18 +229,21 @@ export async function applyDraftAsNewProposal(
   draft: ProposalDraftPayload,
   clientId: string,
 ): Promise<Proposal> {
-  const proposal = await createProposal({
-    client_id: clientId,
-    title: sanitizeCopy(draft.title),
-    content_blocks: draft.content_blocks.map(b => ({
-      key: blockKey(),
-      title: sanitizeCopy(b.title),
-      content: sanitizeCopy(b.content),
-    })),
-    include_contracts: draft.include_contracts ?? [],
-    recipient_name: draft.recipient_name ?? '',
-    recipient_email: draft.recipient_email ?? '',
-  });
+  const proposal = await createProposal(
+    {
+      client_id: clientId,
+      title: sanitizeCopy(draft.title),
+      content_blocks: draft.content_blocks.map(b => ({
+        key: blockKey(),
+        title: sanitizeCopy(b.title),
+        content: sanitizeCopy(b.content),
+      })),
+      include_contracts: draft.include_contracts ?? [],
+      recipient_name: draft.recipient_name ?? '',
+      recipient_email: draft.recipient_email ?? '',
+    },
+    { aiAssisted: true },
+  );
 
   await createProposalLineItems(
     draft.line_items.map((item, i) => ({

@@ -125,6 +125,18 @@ export function markdownToEditorHtml(md: string): string {
         const items = block.items.map(item => `<li>${inlineMdToHtml(item)}</li>`).join('');
         return `<ul>${items}</ul>`;
       }
+      // Render markdown ATX headings (#, ##, ...) as bold lines rather than
+      // leaving the literal hashes in the output.
+      if (/^#{1,6}\s+/m.test(block.text)) {
+        const html = block.text
+          .split('\n')
+          .map(line => {
+            const heading = /^\s*#{1,6}\s+(.*)$/.exec(line);
+            return heading ? `<strong>${inlineMdToHtml(heading[1].trim())}</strong>` : inlineMdToHtml(line);
+          })
+          .join('<br>');
+        return `<div>${html}</div>`;
+      }
       return `<div>${inlineMdToHtml(block.text)}</div>`;
     })
     .join('');

@@ -127,7 +127,10 @@ export type CreateProposalInput = {
   recipient_email?: string;
 };
 
-export async function createProposal(input: CreateProposalInput): Promise<Proposal> {
+export async function createProposal(
+  input: CreateProposalInput,
+  options: { aiAssisted?: boolean } = {},
+): Promise<Proposal> {
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData?.user?.id ?? null;
   const { data, error } = await supabase
@@ -147,7 +150,7 @@ export async function createProposal(input: CreateProposalInput): Promise<Propos
     .single();
   if (error) throw error;
   const proposal = mapProposalRow(data);
-  await recordProposalEvent(proposal.id, 'created');
+  await recordProposalEvent(proposal.id, 'created', options.aiAssisted ? { via: 'ai_assistant' } : {});
   return proposal;
 }
 

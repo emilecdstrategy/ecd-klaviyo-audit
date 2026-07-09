@@ -7,6 +7,7 @@ import {
   XCircle,
   RotateCcw,
   PenSquare,
+  Sparkles,
   type LucideIcon,
 } from 'lucide-react';
 import type { ProposalEvent, ProposalEventType } from '../../lib/types';
@@ -48,6 +49,7 @@ export default function ProposalActivityTimeline({ events }: { events: ProposalE
             ? event.metadata.signer_email
             : null;
         const actorName = event.actor === 'admin' ? event.actor_name ?? null : null;
+        const aiAssisted = event.event_type === 'created' && event.metadata?.via === 'ai_assistant';
         return (
           <li key={event.id} className="relative flex gap-3 pb-4 last:pb-0">
             {index < events.length - 1 && (
@@ -57,8 +59,14 @@ export default function ProposalActivityTimeline({ events }: { events: ProposalE
               <Icon className="h-3.5 w-3.5" />
             </span>
             <div className="min-w-0 pt-1">
-              <p className="text-xs font-medium text-gray-800">
+              <p className="flex flex-wrap items-center gap-1.5 text-xs font-medium text-gray-800">
                 {meta.label}
+                {aiAssisted && (
+                  <span className="inline-flex items-center gap-1 rounded-full bg-brand-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-primary">
+                    <Sparkles className="h-2.5 w-2.5" />
+                    AI assisted
+                  </span>
+                )}
                 {actorName ? <span className="font-normal text-gray-400"> · by {actorName}</span> : null}
               </p>
               <p className="text-[11px] text-gray-400">{formatEventTime(event.created_at)}</p>
