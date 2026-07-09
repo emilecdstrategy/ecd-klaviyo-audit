@@ -132,12 +132,32 @@ export function RichAuditContent({
             </ul>
           );
         }
+        // Render markdown ATX headings (#, ##, ...) as bold lines instead of
+        // leaving the literal hashes visible.
+        const lines = block.text.split('\n');
+        const hasHeading = lines.some(line => /^\s*#{1,6}\s+/.test(line));
         return (
           <p
             key={`p-${blockIndex}`}
             className={[paragraphClassName ?? itemClassName, blockIndex > 0 ? 'mt-3' : ''].filter(Boolean).join(' ')}
           >
-            {renderInlineMarkdown(block.text, entityLookup, autoTagEntities, highlightsEnabled)}
+            {hasHeading
+              ? lines.map((line, li) => {
+                  const heading = /^\s*#{1,6}\s+(.*)$/.exec(line);
+                  return (
+                    <span key={li}>
+                      {li > 0 && <br />}
+                      {heading ? (
+                        <strong className="text-gray-900">
+                          {renderInlineMarkdown(heading[1].trim(), entityLookup, autoTagEntities, highlightsEnabled)}
+                        </strong>
+                      ) : (
+                        renderInlineMarkdown(line, entityLookup, autoTagEntities, highlightsEnabled)
+                      )}
+                    </span>
+                  );
+                })
+              : renderInlineMarkdown(block.text, entityLookup, autoTagEntities, highlightsEnabled)}
           </p>
         );
       })}

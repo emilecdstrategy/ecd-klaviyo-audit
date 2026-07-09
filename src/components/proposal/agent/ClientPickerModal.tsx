@@ -23,11 +23,15 @@ export default function ClientPickerModal({
   const [search, setSearch] = useState('');
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState('');
+  const [createExpanded, setCreateExpanded] = useState(false);
+  const [newWebsite, setNewWebsite] = useState('');
 
   useEffect(() => {
     if (!open) return;
     setSearch('');
     setError('');
+    setCreateExpanded(false);
+    setNewWebsite('');
     let cancelled = false;
     (async () => {
       try {
@@ -65,7 +69,7 @@ export default function ClientPickerModal({
         name: '',
         company_name: trimmed,
         email: '',
-        website_url: '',
+        website_url: newWebsite.trim(),
         industry: '',
         esp_platform: '',
         api_key_placeholder: '',
@@ -98,25 +102,53 @@ export default function ClientPickerModal({
             <p className="px-3 py-6 text-center text-sm text-gray-400">Loading clients…</p>
           ) : (
             <>
-              {trimmed && !exactMatch && (
+              {trimmed && !exactMatch && !createExpanded && (
                 <button
                   type="button"
-                  disabled={creating}
-                  onClick={createAndSelect}
-                  className="flex w-full items-center gap-3 rounded-lg border border-dashed border-brand-primary/40 px-3 py-2.5 text-left hover:bg-brand-primary/[0.03] disabled:opacity-60"
+                  onClick={() => setCreateExpanded(true)}
+                  className="flex w-full items-center gap-3 rounded-lg border border-dashed border-brand-primary/40 px-3 py-2.5 text-left hover:bg-brand-primary/[0.03]"
                 >
                   <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-brand-primary/10 text-brand-primary">
                     <Plus className="h-4 w-4" />
                   </span>
                   <span className="min-w-0">
-                    <span className="block truncate text-sm font-medium text-gray-900">
-                      {creating ? 'Creating…' : `Create new client "${trimmed}"`}
-                    </span>
-                    <span className="block truncate text-xs text-gray-400">
-                      Adds a client record you can complete later.
-                    </span>
+                    <span className="block truncate text-sm font-medium text-gray-900">Create new client "{trimmed}"</span>
+                    <span className="block truncate text-xs text-gray-400">Adds a client record you can complete later.</span>
                   </span>
                 </button>
+              )}
+              {trimmed && !exactMatch && createExpanded && (
+                <div className="rounded-lg border border-brand-primary/40 p-3">
+                  <p className="text-sm font-medium text-gray-900">New client: {trimmed}</p>
+                  <label className="mt-2 mb-1 block text-xs font-medium text-gray-600">Website (optional)</label>
+                  <input
+                    autoFocus
+                    value={newWebsite}
+                    onChange={e => setNewWebsite(e.target.value)}
+                    onKeyDown={e => {
+                      if (e.key === 'Enter') void createAndSelect();
+                    }}
+                    placeholder="https://example.com"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                  <div className="mt-2.5 flex justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setCreateExpanded(false)}
+                      className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => void createAndSelect()}
+                      disabled={creating}
+                      className="rounded-lg bg-brand-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-60"
+                    >
+                      {creating ? 'Creating…' : 'Create client'}
+                    </button>
+                  </div>
+                </div>
               )}
               {filtered.length === 0 && !trimmed ? (
                 <p className="px-3 py-6 text-center text-sm text-gray-400">

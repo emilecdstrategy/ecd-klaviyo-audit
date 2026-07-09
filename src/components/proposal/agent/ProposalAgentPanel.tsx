@@ -541,9 +541,20 @@ export default function ProposalAgentPanel({
   const inputRef = useRef<HTMLTextAreaElement>(null);
 
   useEffect(() => {
-    if (!scrollRef.current) return;
-    scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, sending, isOpen]);
+    const el = scrollRef.current;
+    if (!el) return;
+    // Scroll after paint so it lands at the bottom even once markdown/preview
+    // content has expanded the list height (e.g. when opening a saved chat).
+    const scrollDown = () => {
+      el.scrollTop = el.scrollHeight;
+    };
+    scrollDown();
+    const r1 = requestAnimationFrame(() => {
+      scrollDown();
+      requestAnimationFrame(scrollDown);
+    });
+    return () => cancelAnimationFrame(r1);
+  }, [messages, sending, isOpen, loadingHistory]);
 
   // Auto-grow the composer as the user types or pastes long content.
   useEffect(() => {

@@ -24,6 +24,7 @@ import SignaturePad, { type SignaturePadHandle } from '../components/proposal/Si
 import { ProposalEditProvider } from '../components/proposal/edit/ProposalEditContext';
 import { ProposalAgentProvider } from '../components/proposal/agent/ProposalAgentContext';
 import { ProposalAgentLayout, AgentToggleButton } from '../components/proposal/agent/ProposalAgentLayout';
+import ClientEditModal from '../components/client/ClientEditModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useProposalData } from '../hooks/useProposalData';
 import { applyEditSet, buildSnapshot, type ProposalEditSet } from '../lib/proposal-agent';
@@ -57,6 +58,7 @@ export default function ProposalDetail() {
   const [countersignBusy, setCountersignBusy] = useState(false);
   const [countersignError, setCountersignError] = useState('');
   const [countersignPadEmpty, setCountersignPadEmpty] = useState(true);
+  const [editClientOpen, setEditClientOpen] = useState(false);
   const countersignPadRef = useRef<SignaturePadHandle>(null);
 
   useEffect(() => {
@@ -343,6 +345,13 @@ export default function ProposalDetail() {
         }}
       />
 
+      <ClientEditModal
+        open={editClientOpen}
+        client={client}
+        onClose={() => setEditClientOpen(false)}
+        onSaved={() => void reload()}
+      />
+
       <main className="proposal-print-page mx-auto flex max-w-[1280px] flex-col gap-8 px-4 py-8 sm:px-6 lg:flex-row print:block print:max-w-none print:gap-0 print:px-0 print:py-0">
         <div className="proposal-print-content min-w-0 flex-1 print:w-full">
           <ProposalEditProvider mode="preview" proposal={proposal} lineItems={lineItems}>
@@ -358,6 +367,33 @@ export default function ProposalDetail() {
         </div>
 
         <aside className="w-full shrink-0 space-y-4 lg:w-80 print:hidden">
+          <div className="rounded-xl bg-white p-5 card-shadow">
+            <div className="flex items-center justify-between">
+              <h3 className="text-sm font-semibold text-gray-900">Client</h3>
+              <button
+                type="button"
+                onClick={() => setEditClientOpen(true)}
+                className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50"
+              >
+                <Pencil className="h-3 w-3" />
+                Edit client
+              </button>
+            </div>
+            <p className="mt-2 text-sm font-medium text-gray-900">{client.company_name}</p>
+            {client.name && <p className="text-xs text-gray-500">{client.name}</p>}
+            {client.email && <p className="text-xs text-gray-500">{client.email}</p>}
+            {client.website_url && (
+              <a
+                href={client.website_url}
+                target="_blank"
+                rel="noreferrer"
+                className="mt-0.5 block truncate text-xs text-brand-primary hover:underline"
+              >
+                {client.website_url}
+              </a>
+            )}
+          </div>
+
           <div className="rounded-xl bg-white p-5 card-shadow">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Status</h3>

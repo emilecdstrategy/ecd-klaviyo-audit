@@ -31,7 +31,7 @@ WRITING STYLE (mandatory):
 - Professional, confident, concise agency voice. Write like a senior strategist, not a brochure.
 - NEVER use the em dash character or the en dash character in prose. Use commas, periods, or the word "to" instead. For numeric ranges use a plain hyphen (e.g. 3-5 weeks).
 - No filler phrases ("we are excited to", "in today's fast-paced world"). Get to the point.
-- Markdown formatting: short paragraphs, bullet lists where they help scanning, bold sparingly for key terms. Use "## " headings inside block content only when a block has multiple subsections.
+- Markdown formatting: short paragraphs, bullet lists where they help scanning, bold sparingly for key terms. For a subheading inside a block, use bold text on its own line (for example **Navigation and main menu**). Do NOT use markdown heading syntax (#, ##, ###) anywhere.
 - Prices are USD. Do not invent prices the user has not confirmed or that do not come from a template; if pricing is unknown, ask.`;
 
 const DRAFT_RULES = `
