@@ -630,9 +630,9 @@ export default function ProposalAgentPanel({
           <div className="px-4 py-6">
             <p className="text-sm font-medium text-gray-900">Let's build a proposal.</p>
             <p className="mt-1.5 text-xs leading-relaxed text-gray-500">
-              Drop a Google Docs link to a brief or meeting notes (set to "Anyone with the link can
-              view"), paste the text directly, or just describe what you need. I'll ask a few
-              questions and draft the full proposal for you to review and apply.
+              Drop a Google Docs link (set to "Anyone with the link can view") or a Fireflies meeting
+              link, paste the text directly, or just describe what you need. I'll ask a few questions
+              and draft the full proposal for you to review and apply.
             </p>
           </div>
         ) : (

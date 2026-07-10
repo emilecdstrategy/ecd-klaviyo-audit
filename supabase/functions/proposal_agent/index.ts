@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { assertServiceRoleClient, requireStaffUserId } from "../_shared/auth.ts";
 import { createLlmClient, type LlmMessage } from "../_shared/llm-adapter.ts";
 import { fetchGoogleDoc } from "../_shared/fetch-google-doc.ts";
+import { fetchFirefliesTranscript } from "../_shared/fetch-fireflies-transcript.ts";
 import { buildSystemPrompt, type AgentSnapshot } from "./prompt.ts";
 import { AGENT_TOOLS, TERMINAL_TOOLS } from "./tools.ts";
 import { deepSanitize, sanitizeCopy, validateDraft, validateEditSet, validateQuestion } from "./validate.ts";
@@ -59,11 +60,11 @@ function historyToLlmMessages(rows: MessageRow[]): LlmMessage[] {
       }
       if (text) out.push({ role: "assistant", text });
     } else if (row.role === "tool") {
-      // Keep fetched document content available across turns; keep catalog results compact.
+      // Keep fetched document / transcript content available across turns; keep catalog results compact.
       if (row.payload_kind === "doc_fetch" && row.payload?.ok && row.payload?.content) {
         out.push({
           role: "user",
-          text: `[Google Doc content fetched earlier in this conversation]\n${row.payload.content}`,
+          text: `[Source content fetched earlier in this conversation]\n${row.payload.content}`,
         });
       }
     }
@@ -196,6 +197,15 @@ serve(async (req) => {
           payloadKind = "doc_fetch";
           const url = (turn.input as { url?: string })?.url ?? "";
           const fetched = await fetchGoogleDoc(url);
+          if (fetched.ok && fetched.content.length > DOC_CONTENT_CHAR_CAP) {
+            result = { ...fetched, content: fetched.content.slice(0, DOC_CONTENT_CHAR_CAP), truncated: true };
+          } else {
+            result = fetched;
+          }
+        } else if (turn.name === "fetch_fireflies_transcript") {
+          payloadKind = "doc_fetch";
+          const url = (turn.input as { url?: string })?.url ?? "";
+          const fetched = await fetchFirefliesTranscript(url);
           if (fetched.ok && fetched.content.length > DOC_CONTENT_CHAR_CAP) {
             result = { ...fetched, content: fetched.content.slice(0, DOC_CONTENT_CHAR_CAP), truncated: true };
           } else {

@@ -37,6 +37,16 @@ export const AGENT_TOOLS: LlmTool[] = [
     },
   },
   {
+    name: "fetch_fireflies_transcript",
+    description:
+      "Fetch the transcript and summary of a Fireflies meeting (app.fireflies.ai/view/... link). Use whenever the user shares a Fireflies link. Returns not_configured if no Fireflies API key is set, or not_authorized if the key is rejected.",
+    input_schema: {
+      type: "object",
+      properties: { url: { type: "string", description: "The Fireflies transcript URL the user shared" } },
+      required: ["url"],
+    },
+  },
+  {
     name: "get_templates",
     description:
       "List the agency's proposal templates with their section titles and default line items (names and prices). Use to ground drafts in real services and pricing before proposing.",

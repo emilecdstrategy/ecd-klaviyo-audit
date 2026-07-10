@@ -1027,7 +1027,7 @@ function ApiKeyCard({
   placeholder,
   savedMessage,
 }: {
-  provider: 'openai' | 'anthropic' | 'hubspot';
+  provider: 'openai' | 'anthropic' | 'hubspot' | 'fireflies';
   title: string;
   description: string;
   placeholder: string;
@@ -1289,6 +1289,14 @@ function SettingsTab() {
         description="Connect HubSpot with a Private App access token to auto-create clients from new HubSpot companies. In HubSpot: Settings, Integrations, Private Apps, create an app with the crm.objects.companies.read and crm.objects.contacts.read scopes, then paste the token here."
         placeholder="pat-..."
         savedMessage="Saved. Run Sync now below to import your HubSpot companies."
+      />
+
+      <ApiKeyCard
+        provider="fireflies"
+        title="Fireflies Integration"
+        description="Add a Fireflies API key so the proposal assistant can read meeting transcripts from a Fireflies link. In Fireflies: Settings, Developer, copy your API key, then paste it here. Stored securely and used server-side only."
+        placeholder="Fireflies API key"
+        savedMessage="Saved. Paste a Fireflies link into the proposal assistant and it will read the transcript."
       />
 
       <HubSpotSyncCard />
