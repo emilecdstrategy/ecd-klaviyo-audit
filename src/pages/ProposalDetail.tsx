@@ -522,7 +522,7 @@ export default function ProposalDetail() {
           </ProposalEditProvider>
         </div>
 
-        <aside className="w-full shrink-0 space-y-4 lg:w-80 print:hidden">
+        <aside className="w-full shrink-0 space-y-4 lg:w-80 lg:sticky lg:top-[4.5rem] lg:max-h-[calc(100vh-5.5rem)] lg:overflow-y-auto print:hidden">
           <div className="rounded-xl bg-white p-5 card-shadow">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold text-gray-900">Client</h3>
