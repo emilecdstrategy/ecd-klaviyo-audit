@@ -14,6 +14,7 @@ import {
   listContractDocuments,
   updateProposal,
   updateProposalLineItem,
+  updateProposalTemplate,
 } from '../../../lib/proposals-db';
 import type {
   Proposal,
@@ -21,6 +22,7 @@ import type {
   ProposalDiscountAppliesTo,
   ProposalDiscountType,
   ProposalLineItem,
+  ProposalTemplate,
   ProposalTemplateLineItem,
 } from '../../../lib/types';
 
@@ -298,6 +300,261 @@ export function ProposalEditProvider({
       saveProposalPatch('contracts', { include_contracts: next });
     },
     [proposal, onProposalChange, saveProposalPatch, toast],
+  );
+
+  const value = useMemo<ProposalEditContextValue>(() => {
+    if (mode !== 'edit') {
+      return { mode, editMode: false, ...READ_ONLY_VALUE };
+    }
+    return {
+      mode,
+      editMode: true,
+      saveStatus,
+      updateTitle,
+      updateBlock,
+      addBlock,
+      removeBlock,
+      moveBlock,
+      updateLineItem,
+      addLineItem,
+      removeLineItem,
+      moveLineItem,
+      updateDiscount,
+      toggleContract,
+    };
+  }, [
+    mode,
+    saveStatus,
+    updateTitle,
+    updateBlock,
+    addBlock,
+    removeBlock,
+    moveBlock,
+    updateLineItem,
+    addLineItem,
+    removeLineItem,
+    moveLineItem,
+    updateDiscount,
+    toggleContract,
+  ]);
+
+  return <ProposalEditContext.Provider value={value}>{children}</ProposalEditContext.Provider>;
+}
+
+// ---------------------------------------------------------------------------
+// Template editing
+//
+// A proposal template stores the same editable surface as a proposal (text
+// sections, line items, contracts, discount) but persists to a single
+// proposal_templates row: line items live in a JSONB array rather than their
+// own table, and there is no client, cover, signing, or contracts_snapshot.
+// TemplateEditProvider exposes the identical ProposalEditContext so the shared
+// editor components (ProposalRichBlock, ProposalPricingTable, DiscountEditor,
+// contract toggles) work unchanged — only the persistence differs.
+
+/** Client-side id for a template line item so the editor components, which key
+ * line items by id, can track them. Stripped when persisted to the template. */
+export function templateLineItemId(): string {
+  return `tli_${Math.random().toString(36).slice(2, 9)}`;
+}
+
+function toTemplateLineItems(items: ProposalLineItem[]): ProposalTemplateLineItem[] {
+  return [...items]
+    .sort((a, b) => a.display_order - b.display_order)
+    .map((item, index) => ({
+      template_slug: item.template_slug,
+      name: item.name,
+      description: item.description,
+      content: item.content,
+      one_time_price: item.one_time_price,
+      one_time_label: item.one_time_label,
+      monthly_price: item.monthly_price,
+      monthly_label: item.monthly_label,
+      image_url: item.image_url,
+      display_order: (index + 1) * 10,
+    }));
+}
+
+type TemplateEditProviderProps = {
+  mode: ProposalMode;
+  template: ProposalTemplate;
+  lineItems: ProposalLineItem[];
+  onTemplateChange: (next: ProposalTemplate) => void;
+  onLineItemsChange: (next: ProposalLineItem[]) => void;
+  children: ReactNode;
+};
+
+export function TemplateEditProvider({
+  mode,
+  template,
+  lineItems,
+  onTemplateChange,
+  onLineItemsChange,
+  children,
+}: TemplateEditProviderProps) {
+  const toast = useToast();
+  const [saveStatus, setSaveStatus] = useState<ProposalSaveStatus>('idle');
+  const timers = useRef<Record<string, number>>({});
+
+  const schedule = useCallback(
+    (key: string, fn: () => Promise<void>) => {
+      if (timers.current[key]) window.clearTimeout(timers.current[key]);
+      setSaveStatus('saving');
+      timers.current[key] = window.setTimeout(async () => {
+        try {
+          await fn();
+          setSaveStatus('saved');
+          scheduleSavedToast(toast);
+          window.setTimeout(() => setSaveStatus(s => (s === 'saved' ? 'idle' : s)), 2500);
+        } catch {
+          setSaveStatus('error');
+          toast('Could not save');
+        }
+      }, 800) as unknown as number;
+    },
+    [toast],
+  );
+
+  const saveTemplatePatch = useCallback(
+    (key: string, patch: Parameters<typeof updateProposalTemplate>[1], next: ProposalTemplate) => {
+      onTemplateChange(next);
+      schedule(key, async () => {
+        await updateProposalTemplate(template.id, patch);
+      });
+    },
+    [onTemplateChange, schedule, template.id],
+  );
+
+  // Template line items persist as the whole JSONB array on every change.
+  const saveLineItems = useCallback(
+    (next: ProposalLineItem[]) => {
+      onLineItemsChange(next);
+      const payload = toTemplateLineItems(next);
+      schedule('template-line-items', async () => {
+        await updateProposalTemplate(template.id, { default_line_items: payload });
+      });
+    },
+    [onLineItemsChange, schedule, template.id],
+  );
+
+  const updateTitle = useCallback(
+    (value: string) => saveTemplatePatch('name', { name: value }, { ...template, name: value }),
+    [saveTemplatePatch, template],
+  );
+
+  const updateBlock = useCallback(
+    (key: string, patch: Partial<Omit<ProposalBlock, 'key'>>) => {
+      const blocks = template.content_blocks.map(b => (b.key === key ? { ...b, ...patch } : b));
+      saveTemplatePatch('blocks', { content_blocks: blocks }, { ...template, content_blocks: blocks });
+    },
+    [saveTemplatePatch, template],
+  );
+
+  const addBlock = useCallback(
+    (afterKey: string | null) => {
+      const blocks = [...template.content_blocks];
+      const newBlock: ProposalBlock = { key: blockKey(), title: 'New section', content: '' };
+      const index = afterKey ? blocks.findIndex(b => b.key === afterKey) : -1;
+      if (index >= 0) blocks.splice(index + 1, 0, newBlock);
+      else blocks.push(newBlock);
+      saveTemplatePatch('blocks', { content_blocks: blocks }, { ...template, content_blocks: blocks });
+    },
+    [saveTemplatePatch, template],
+  );
+
+  const removeBlock = useCallback(
+    (key: string) => {
+      const blocks = template.content_blocks.filter(b => b.key !== key);
+      saveTemplatePatch('blocks', { content_blocks: blocks }, { ...template, content_blocks: blocks });
+    },
+    [saveTemplatePatch, template],
+  );
+
+  const moveBlock = useCallback(
+    (key: string, dir: -1 | 1) => {
+      const blocks = [...template.content_blocks];
+      const index = blocks.findIndex(b => b.key === key);
+      const target = index + dir;
+      if (index < 0 || target < 0 || target >= blocks.length) return;
+      [blocks[index], blocks[target]] = [blocks[target], blocks[index]];
+      saveTemplatePatch('blocks', { content_blocks: blocks }, { ...template, content_blocks: blocks });
+    },
+    [saveTemplatePatch, template],
+  );
+
+  const updateLineItem = useCallback(
+    (itemId: string, patch: Partial<Omit<ProposalLineItem, 'id' | 'proposal_id' | 'created_at'>>) => {
+      saveLineItems(lineItems.map(item => (item.id === itemId ? { ...item, ...patch } : item)));
+    },
+    [lineItems, saveLineItems],
+  );
+
+  const addLineItem = useCallback(
+    (fromCatalog?: ProposalTemplateLineItem) => {
+      const nextOrder = lineItems.reduce((max, item) => Math.max(max, item.display_order), 0) + 10;
+      const base = fromCatalog ?? {
+        template_slug: null,
+        name: 'New line item',
+        description: '',
+        content: '',
+        one_time_price: null,
+        one_time_label: null,
+        monthly_price: null,
+        monthly_label: null,
+        image_url: null,
+        display_order: nextOrder,
+      };
+      const created: ProposalLineItem = {
+        ...base,
+        id: templateLineItemId(),
+        proposal_id: '',
+        created_at: '',
+        display_order: nextOrder,
+      };
+      saveLineItems([...lineItems, created]);
+    },
+    [lineItems, saveLineItems],
+  );
+
+  const removeLineItem = useCallback(
+    (itemId: string) => {
+      saveLineItems(lineItems.filter(item => item.id !== itemId));
+    },
+    [lineItems, saveLineItems],
+  );
+
+  const moveLineItem = useCallback(
+    (itemId: string, dir: -1 | 1) => {
+      const sorted = [...lineItems].sort((a, b) => a.display_order - b.display_order);
+      const index = sorted.findIndex(item => item.id === itemId);
+      const target = index + dir;
+      if (index < 0 || target < 0 || target >= sorted.length) return;
+      [sorted[index], sorted[target]] = [sorted[target], sorted[index]];
+      saveLineItems(sorted.map((item, i) => ({ ...item, display_order: (i + 1) * 10 })));
+    },
+    [lineItems, saveLineItems],
+  );
+
+  const updateDiscount = useCallback(
+    (patch: {
+      discount_type?: ProposalDiscountType;
+      discount_value?: number;
+      discount_applies_to?: ProposalDiscountAppliesTo;
+      discount_label?: string | null;
+    }) => {
+      saveTemplatePatch('discount', patch, { ...template, ...patch });
+    },
+    [saveTemplatePatch, template],
+  );
+
+  const toggleContract = useCallback(
+    (slug: string, included: boolean) => {
+      const next = included
+        ? [...new Set([...template.default_contracts, slug])]
+        : template.default_contracts.filter(s => s !== slug);
+      saveTemplatePatch('contracts', { default_contracts: next }, { ...template, default_contracts: next });
+    },
+    [saveTemplatePatch, template],
   );
 
   const value = useMemo<ProposalEditContextValue>(() => {

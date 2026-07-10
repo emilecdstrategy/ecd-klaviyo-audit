@@ -17,18 +17,25 @@ import type { ReactNode } from 'react';
 
 type ProposalDocumentProps = {
   proposal: Proposal;
-  client: Client;
+  /** Required in the proposal variant (drives the cover); omitted for templates. */
+  client?: Client;
   lineItems: ProposalLineItem[];
   /** Live contract docs (draft) — superseded by contracts_snapshot once sent. */
   contractDocs: ContractDocument[];
-  signatures: ProposalSignature[];
-  settings: ProposalSettings;
+  signatures?: ProposalSignature[];
+  settings?: ProposalSettings;
   /** Public page: live client signing UI injected into the signature slot. */
   clientSignArea?: ReactNode;
   /** Which client signer slot the live signing UI belongs to (public page). */
   liveSignerIndex?: 1 | 2;
   /** Collapse long contracts behind a disclosure (public mobile). */
   collapsibleContracts?: boolean;
+  /**
+   * 'template' reuses the same editable surface (text sections, pricing,
+   * contracts) for a proposal_templates row, hiding the cover and signature
+   * blocks that only make sense on a real client-bound proposal.
+   */
+  variant?: 'proposal' | 'template';
 };
 
 export default function ProposalDocument({
@@ -36,13 +43,15 @@ export default function ProposalDocument({
   client,
   lineItems,
   contractDocs,
-  signatures,
+  signatures = [],
   settings,
   clientSignArea,
   liveSignerIndex = 1,
   collapsibleContracts = false,
+  variant = 'proposal',
 }: ProposalDocumentProps) {
   const { editMode, addBlock, toggleContract } = useProposalEdit();
+  const isTemplate = variant === 'template';
 
   const clientSignatureAt = (index: number) =>
     signatures.find(s => s.role === 'client' && (s.signer_index ?? 1) === index) ?? null;
@@ -73,7 +82,9 @@ export default function ProposalDocument({
 
   return (
     <div className="proposal-print-root space-y-8">
-      <ProposalCover proposal={proposal} client={client} settings={settings} />
+      {!isTemplate && client && settings && (
+        <ProposalCover proposal={proposal} client={client} settings={settings} />
+      )}
 
       {proposal.content_blocks.length === 0 && editMode ? (
         <div className="flex justify-center print:hidden">
@@ -133,10 +144,12 @@ export default function ProposalDocument({
         />
       ))}
 
-      <ProposalSignatureSection
-        clientSlots={clientSlots}
-        agencySignature={agencySignature}
-      />
+      {!isTemplate && (
+        <ProposalSignatureSection
+          clientSlots={clientSlots}
+          agencySignature={agencySignature}
+        />
+      )}
     </div>
   );
 }

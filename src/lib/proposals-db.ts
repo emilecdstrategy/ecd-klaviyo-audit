@@ -125,6 +125,10 @@ export type CreateProposalInput = {
   include_contracts?: string[];
   recipient_name?: string;
   recipient_email?: string;
+  discount_type?: Proposal['discount_type'];
+  discount_value?: number;
+  discount_applies_to?: Proposal['discount_applies_to'];
+  discount_label?: string | null;
 };
 
 export async function createProposal(
@@ -144,6 +148,10 @@ export async function createProposal(
       include_contracts: input.include_contracts ?? [],
       recipient_name: input.recipient_name ?? '',
       recipient_email: input.recipient_email ?? '',
+      ...(input.discount_type ? { discount_type: input.discount_type } : {}),
+      ...(input.discount_value != null ? { discount_value: input.discount_value } : {}),
+      ...(input.discount_applies_to ? { discount_applies_to: input.discount_applies_to } : {}),
+      ...(input.discount_label !== undefined ? { discount_label: input.discount_label } : {}),
       created_by: userId,
     })
     .select(PROPOSAL_LIST_SELECT)
@@ -522,6 +530,16 @@ export async function listProposalTemplates(
   const { data, error } = await query;
   if (error) throw error;
   return (data ?? []) as ProposalTemplate[];
+}
+
+export async function getProposalTemplate(id: string): Promise<ProposalTemplate | null> {
+  const { data, error } = await supabase
+    .from('proposal_templates')
+    .select('*')
+    .eq('id', id)
+    .maybeSingle();
+  if (error) throw error;
+  return (data as ProposalTemplate | null) ?? null;
 }
 
 export async function createProposalTemplate(

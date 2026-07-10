@@ -12,7 +12,9 @@ import type {
   Audit,
   Client,
   Proposal,
+  ProposalLineItem,
   ProposalTemplate,
+  ProposalTemplateLineItem,
   RevenueOpportunityAddOnItem,
 } from './types';
 
@@ -86,6 +88,10 @@ export async function createProposalFromTemplate(
     include_contracts: template?.default_contracts ? [...template.default_contracts] : [],
     recipient_name: client.name ?? '',
     recipient_email: '',
+    discount_type: template?.discount_type ?? 'none',
+    discount_value: template?.discount_value ?? 0,
+    discount_applies_to: template?.discount_applies_to ?? 'one_time',
+    discount_label: template?.discount_label ?? null,
   });
 
   const defaults = template?.default_line_items ?? [];
@@ -100,4 +106,46 @@ export async function createProposalFromTemplate(
   }
 
   return proposal;
+}
+
+/** Strip a live proposal line item down to the template-embedded shape. */
+function lineItemToTemplateItem(item: ProposalLineItem, index: number): ProposalTemplateLineItem {
+  return {
+    template_slug: item.template_slug,
+    name: item.name,
+    description: item.description,
+    content: item.content,
+    one_time_price: item.one_time_price,
+    one_time_label: item.one_time_label,
+    monthly_price: item.monthly_price,
+    monthly_label: item.monthly_label,
+    image_url: item.image_url,
+    display_order: (index + 1) * 10,
+  };
+}
+
+/**
+ * Build a template payload from an existing proposal, carrying everything except
+ * client-specific info (recipient, client, tokens, status, signatures). Cover is
+ * dropped too, since it is driven by global settings rather than per-template.
+ */
+export function buildTemplateInputFromProposal(
+  name: string,
+  proposal: Proposal,
+  lineItems: ProposalLineItem[],
+  displayOrder: number,
+): Omit<ProposalTemplate, 'id' | 'created_at' | 'updated_at'> {
+  const sorted = [...lineItems].sort((a, b) => a.display_order - b.display_order);
+  return {
+    name: name.trim(),
+    content_blocks: proposal.content_blocks.map(b => ({ ...b })),
+    default_line_items: sorted.map(lineItemToTemplateItem),
+    default_contracts: [...proposal.include_contracts],
+    discount_type: proposal.discount_type,
+    discount_value: proposal.discount_value,
+    discount_applies_to: proposal.discount_applies_to,
+    discount_label: proposal.discount_label,
+    is_active: true,
+    display_order: displayOrder,
+  };
 }

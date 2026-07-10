@@ -22,6 +22,7 @@ const Proposals = lazy(() => import('./pages/Proposals'));
 const NewProposal = lazy(() => import('./pages/NewProposal'));
 const ProposalDetail = lazy(() => import('./pages/ProposalDetail'));
 const ProposalEditor = lazy(() => import('./pages/ProposalEditor'));
+const TemplateEditor = lazy(() => import('./pages/TemplateEditor'));
 
 function ViewerLanding() {
   const { user, signOut } = useAuth();
@@ -128,6 +129,7 @@ function AppRoutes() {
             <Route path="/proposals/new" element={<NewProposal />} />
             <Route path="/proposals/:id" element={<ProposalDetail />} />
             <Route path="/proposals/:id/edit" element={<ProposalEditor />} />
+            <Route path="/proposals/templates/:templateId/edit" element={<TemplateEditor />} />
             <Route path="/admin" element={<AdminArea />} />
             <Route path="*" element={<Navigate to={deepLinkFrom || '/'} replace />} />
           </Route>

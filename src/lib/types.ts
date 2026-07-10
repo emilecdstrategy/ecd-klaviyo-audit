@@ -417,6 +417,11 @@ export interface ProposalTemplate {
   default_line_items: ProposalTemplateLineItem[];
   /** Contract document slugs included by default. */
   default_contracts: string[];
+  /** Default discount carried into proposals created from this template. */
+  discount_type: ProposalDiscountType;
+  discount_value: number;
+  discount_applies_to: ProposalDiscountAppliesTo;
+  discount_label: string | null;
   is_active: boolean;
   display_order: number;
   created_at: string;

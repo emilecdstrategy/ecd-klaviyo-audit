@@ -12,6 +12,7 @@ import {
   PenLine,
   Printer,
   Send,
+  LayoutTemplate,
 } from 'lucide-react';
 import AppPreloader from '../components/ui/AppPreloader';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -30,12 +31,15 @@ import { useProposalData } from '../hooks/useProposalData';
 import { applyEditSet, buildSnapshot, type ProposalEditSet } from '../lib/proposal-agent';
 import {
   countersignProposal,
+  createProposalTemplate,
+  listProposalTemplates,
   markProposalLost,
   markProposalSent,
   markProposalWon,
   reopenProposal,
   updateProposal,
 } from '../lib/proposals-db';
+import { buildTemplateInputFromProposal } from '../lib/proposal-convert';
 import { deriveProposalStatus } from '../lib/proposal-status';
 import { publicProposalOrigin } from '../lib/public-origin';
 
@@ -43,7 +47,7 @@ export default function ProposalDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const toast = useToast();
-  const { user } = useAuth();
+  const { user, hasRole } = useAuth();
   const { data, loading, loadError, reload } = useProposalData(id);
   const [searchParams, setSearchParams] = useSearchParams();
   const printTriggeredRef = useRef(false);
@@ -67,6 +71,10 @@ export default function ProposalDetail() {
   const [recipient2EmailDraft, setRecipient2EmailDraft] = useState('');
   const [secondSignerDraft, setSecondSignerDraft] = useState(false);
   const [recipientSaving, setRecipientSaving] = useState(false);
+  const [saveTemplateOpen, setSaveTemplateOpen] = useState(false);
+  const [templateNameDraft, setTemplateNameDraft] = useState('');
+  const [savingTemplate, setSavingTemplate] = useState(false);
+  const [savedTemplateId, setSavedTemplateId] = useState<string | null>(null);
   const countersignPadRef = useRef<SignaturePadHandle>(null);
 
   useEffect(() => {
@@ -206,6 +214,34 @@ export default function ProposalDetail() {
     }
   };
 
+  const openSaveTemplate = () => {
+    setTemplateNameDraft(`${client.company_name} template`.trim());
+    setSavedTemplateId(null);
+    setSaveTemplateOpen(true);
+  };
+
+  const saveAsTemplate = async () => {
+    const name = templateNameDraft.trim();
+    if (!name) {
+      toast('Please name the template.');
+      return;
+    }
+    setSavingTemplate(true);
+    try {
+      const existing = await listProposalTemplates();
+      const nextOrder = existing.reduce((max, t) => Math.max(max, t.display_order), 0) + 10;
+      const created = await createProposalTemplate(
+        buildTemplateInputFromProposal(name, proposal, lineItems, nextOrder),
+      );
+      setSavedTemplateId(created.id);
+      toast('Template saved');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Failed to save template');
+    } finally {
+      setSavingTemplate(false);
+    }
+  };
+
   const onApplyEdits = isSigned
     ? undefined
     : async (edits: ProposalEditSet) => {
@@ -334,6 +370,79 @@ export default function ProposalDetail() {
               {linkBusy ? 'Working…' : 'Go live & copy link'}
             </button>
           </div>
+        </div>
+      </Modal>
+
+      <Modal
+        open={saveTemplateOpen}
+        title="Save as template"
+        onClose={() => (savingTemplate ? undefined : setSaveTemplateOpen(false))}
+        className="max-w-lg"
+      >
+        <div className="p-5">
+          {savedTemplateId ? (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-700">
+                Saved. The template includes this proposal's text sections, line items, discount, and
+                attached contracts. Client and recipient details were left out.
+              </p>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setSaveTemplateOpen(false)}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                >
+                  Done
+                </button>
+                <button
+                  type="button"
+                  onClick={() => navigate(`/proposals/templates/${savedTemplateId}/edit`)}
+                  className="rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                >
+                  Edit template
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              <p className="text-sm text-gray-700">
+                Create a reusable template from this proposal. Everything is copied except the client and
+                recipient details.
+              </p>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-gray-500">Template name</label>
+                <input
+                  type="text"
+                  autoFocus
+                  value={templateNameDraft}
+                  onChange={e => setTemplateNameDraft(e.target.value)}
+                  onKeyDown={e => {
+                    if (e.key === 'Enter') void saveAsTemplate();
+                  }}
+                  placeholder="e.g. Retainer proposal"
+                  className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                />
+              </div>
+              <div className="flex items-center justify-end gap-2">
+                <button
+                  type="button"
+                  disabled={savingTemplate}
+                  onClick={() => setSaveTemplateOpen(false)}
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={savingTemplate}
+                  onClick={saveAsTemplate}
+                  className="rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
+                >
+                  {savingTemplate ? 'Saving…' : 'Save template'}
+                </button>
+              </div>
+            </div>
+          )}
         </div>
       </Modal>
 
@@ -718,6 +827,16 @@ export default function ProposalDetail() {
                 <Printer className="h-3.5 w-3.5" />
                 Download PDF
               </button>
+              {hasRole('admin') && (
+                <button
+                  type="button"
+                  onClick={openSaveTemplate}
+                  className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"
+                >
+                  <LayoutTemplate className="h-3.5 w-3.5" />
+                  Save as template
+                </button>
+              )}
               {!isClosed && (
                 <button
                   type="button"
