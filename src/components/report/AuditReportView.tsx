@@ -36,6 +36,7 @@ import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
 import ImageLightbox from '../ui/ImageLightbox';
 import ImageUploadZone from '../ui/ImageUploadZone';
 import ResizableReportImage from '../ui/ResizableReportImage';
+import { ATTRIBUTION_DEFAULT_SCALE } from '../../lib/report-image-scale';
 import DemoPopupModal, { type DemoPopupState } from '../ui/DemoPopupModal';
 import { resolveCustomerAgentDemoUrl } from '../../lib/customer-agent-demo';
 import { addOnHasPricing, splitAddOnsByPricing } from '../../lib/addon-pricing';
@@ -1271,7 +1272,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                   onFile={handleAttributionImageUpload}
                   onRemove={() => updateAttributionScreenshot(null)}
                   onPreviewClick={() => setLightboxSrc(attributionModelCfg.screenshot_url ?? '')}
-                  imageScale={attributionModelCfg.screenshot_scale}
+                  imageScale={attributionModelCfg.screenshot_scale ?? ATTRIBUTION_DEFAULT_SCALE}
                   onImageScaleChange={updateAttributionScreenshotScale}
                   resizable
                   className="mt-0"
@@ -1280,7 +1281,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                 <ResizableReportImage
                   src={attributionModelCfg.screenshot_url}
                   alt="Attribution model settings"
-                  scale={attributionModelCfg.screenshot_scale}
+                  scale={attributionModelCfg.screenshot_scale ?? ATTRIBUTION_DEFAULT_SCALE}
                   onClick={() => setLightboxSrc(attributionModelCfg.screenshot_url ?? '')}
                 />
               )

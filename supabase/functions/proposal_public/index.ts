@@ -24,7 +24,7 @@ serve(async (req) => {
 
   const correlationId = crypto.randomUUID();
   try {
-    const { token, preview } = (await req.json().catch(() => ({}))) as { token?: string; preview?: boolean };
+    const { token } = (await req.json().catch(() => ({}))) as { token?: string; preview?: boolean };
     const cleanToken = (token ?? "").trim().toLowerCase();
 
     const sb = assertServiceRoleClient();
@@ -37,20 +37,21 @@ serve(async (req) => {
     const userAgent = req.headers.get("user-agent") ?? "";
     const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
 
-    // Staff previews (valid session JWT + preview flag) are not tracked as client views.
-    let isStaffPreview = false;
-    if (preview) {
-      try {
-        await getUserIdFromAuthorization(req);
-        isStaffPreview = true;
-      } catch {
-        isStaffPreview = false;
-      }
+    // A view from any signed-in ECD session is us checking the proposal, not the
+    // client, so it must never flip the status to "viewed" or log a client view.
+    // Clients have no app login, so a resolvable session means staff. This covers
+    // opening the live client link while logged in, not just the explicit preview.
+    let isStaffView = false;
+    try {
+      await getUserIdFromAuthorization(req);
+      isStaffView = true;
+    } catch {
+      isStaffView = false;
     }
 
     const isScanner = SCANNER_UA_RE.test(userAgent);
 
-    if (!isStaffPreview && !isScanner) {
+    if (!isStaffView && !isScanner) {
       // Race-safe first-view transition: only one concurrent request wins the
       // sent -> viewed update (M4 hangs the team notification off this winner).
       const { data: transitioned } = await sb

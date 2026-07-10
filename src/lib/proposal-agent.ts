@@ -3,6 +3,7 @@ import {
   createProposal,
   createProposalLineItems,
   deleteProposalLineItem,
+  recordProposalEvent,
   updateProposal,
   updateProposalLineItem,
 } from './proposals-db';
@@ -424,6 +425,10 @@ export async function applyEditSet(
     );
     nextItems = [...nextItems, ...created];
   }
+
+  // Record AI involvement so the activity log shows the proposal was built or
+  // changed with the assistant, even when it was created manually first.
+  await recordProposalEvent(proposal.id, 'updated', { via: 'ai_assistant' }).catch(() => {});
 
   return { proposal: nextProposal, lineItems: nextItems };
 }

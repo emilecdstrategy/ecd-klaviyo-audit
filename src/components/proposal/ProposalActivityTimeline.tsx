@@ -49,7 +49,9 @@ export default function ProposalActivityTimeline({ events }: { events: ProposalE
             ? event.metadata.signer_email
             : null;
         const actorName = event.actor === 'admin' ? event.actor_name ?? null : null;
-        const aiAssisted = event.event_type === 'created' && event.metadata?.via === 'ai_assistant';
+        const aiAssisted =
+          (event.event_type === 'created' || event.event_type === 'updated') &&
+          event.metadata?.via === 'ai_assistant';
         return (
           <li key={event.id} className="relative flex gap-3 pb-4 last:pb-0">
             {index < events.length - 1 && (
