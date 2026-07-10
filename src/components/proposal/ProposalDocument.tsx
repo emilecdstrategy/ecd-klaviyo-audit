@@ -25,6 +25,8 @@ type ProposalDocumentProps = {
   settings: ProposalSettings;
   /** Public page: live client signing UI injected into the signature slot. */
   clientSignArea?: ReactNode;
+  /** Which client signer slot the live signing UI belongs to (public page). */
+  liveSignerIndex?: 1 | 2;
   /** Collapse long contracts behind a disclosure (public mobile). */
   collapsibleContracts?: boolean;
 };
@@ -37,12 +39,31 @@ export default function ProposalDocument({
   signatures,
   settings,
   clientSignArea,
+  liveSignerIndex = 1,
   collapsibleContracts = false,
 }: ProposalDocumentProps) {
   const { editMode, addBlock, toggleContract } = useProposalEdit();
 
-  const clientSignature = signatures.find(s => s.role === 'client') ?? null;
+  const clientSignatureAt = (index: number) =>
+    signatures.find(s => s.role === 'client' && (s.signer_index ?? 1) === index) ?? null;
   const agencySignature = signatures.find(s => s.role === 'agency') ?? null;
+
+  // A second slot renders when a second signer is configured (or has already signed).
+  const hasSecondSigner = Boolean(proposal.recipient2_email) || Boolean(clientSignatureAt(2));
+  const clientSlots = [
+    {
+      signature: clientSignatureAt(1),
+      placeholderName: proposal.recipient_name,
+      liveArea: liveSignerIndex === 1 ? clientSignArea : undefined,
+    },
+    ...(hasSecondSigner
+      ? [{
+          signature: clientSignatureAt(2),
+          placeholderName: proposal.recipient2_name,
+          liveArea: liveSignerIndex === 2 ? clientSignArea : undefined,
+        }]
+      : []),
+  ];
 
   // Once sent, contracts render from the frozen snapshot; drafts use the live docs.
   const includedContracts = (proposal.contracts_snapshot ?? contractDocs
@@ -113,10 +134,8 @@ export default function ProposalDocument({
       ))}
 
       <ProposalSignatureSection
-        clientSignature={clientSignature}
+        clientSlots={clientSlots}
         agencySignature={agencySignature}
-        recipientName={proposal.recipient_name}
-        clientLiveArea={clientSignArea}
       />
     </div>
   );

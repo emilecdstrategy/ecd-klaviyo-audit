@@ -58,18 +58,22 @@ function SignatureSlot({
   );
 }
 
+export type ClientSignatureSlot = {
+  signature: ProposalSignature | null;
+  placeholderName?: string;
+  /** Live signing UI attached to this signer's slot (public page). */
+  liveArea?: ReactNode;
+};
+
 type ProposalSignatureSectionProps = {
-  clientSignature: ProposalSignature | null;
+  /** One entry per client signer (1 normally, 2 when a second signer is configured). */
+  clientSlots: ClientSignatureSlot[];
   agencySignature: ProposalSignature | null;
-  recipientName?: string;
-  clientLiveArea?: ReactNode;
 };
 
 export default function ProposalSignatureSection({
-  clientSignature,
+  clientSlots,
   agencySignature,
-  recipientName,
-  clientLiveArea,
 }: ProposalSignatureSectionProps) {
   return (
     <section id="proposal-signatures" className="proposal-section rounded-2xl border border-gray-100 bg-white px-6 py-5 shadow-sm">
@@ -86,12 +90,15 @@ export default function ProposalSignatureSection({
       </div>
 
       <div className="mt-6 flex flex-col gap-8 sm:flex-row sm:gap-12">
-        <SignatureSlot
-          roleLabel="Client"
-          signature={clientSignature}
-          placeholderName={recipientName}
-          liveArea={clientLiveArea}
-        />
+        {clientSlots.map((slot, index) => (
+          <SignatureSlot
+            key={index}
+            roleLabel={clientSlots.length > 1 ? `Client signer ${index + 1}` : 'Client'}
+            signature={slot.signature}
+            placeholderName={slot.placeholderName}
+            liveArea={slot.liveArea}
+          />
+        ))}
         <SignatureSlot
           roleLabel="ECD Digital Strategy"
           signature={agencySignature}

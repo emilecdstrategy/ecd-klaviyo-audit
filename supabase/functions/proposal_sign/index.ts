@@ -1,7 +1,8 @@
 // Client signing endpoint. Deployed with --no-verify-jwt (anonymous clients).
 // Validates the token + proposal state server-side with the service role,
 // inserts the signature, recomputes totals for the event record, and
-// auto-transitions the proposal to won.
+// transitions the proposal to won once all required signers have signed
+// (1 signer normally, 2 when a second signer is configured).
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { assertServiceRoleClient } from "../_shared/auth.ts";
 import {
@@ -12,6 +13,7 @@ import {
   hashSignedPayload,
   isProposalExpired,
   proposalJson,
+  requiredClientSigners,
 } from "../_shared/proposal-public.ts";
 import { proposalEmailHtml, resolveFromAddress, resolveOrigin, sendEmail } from "../_shared/mailer.ts";
 import { escapeHtml, proposalReferenceLink } from "../_shared/proposal-links.ts";
@@ -52,12 +54,18 @@ serve(async (req) => {
       return proposalJson({ ok: false, error: { code: "not_found" }, correlationId }, { status: 404 });
     }
 
-    const { proposal, lineItems } = bundle;
+    const { proposal, signerIndex, lineItems, signatures } = bundle;
     if (proposal.status !== "sent" && proposal.status !== "viewed") {
       return proposalJson({ ok: false, error: { code: "already_signed" }, correlationId }, { status: 409 });
     }
     if (isProposalExpired(proposal)) {
       return proposalJson({ ok: false, error: { code: "expired" }, correlationId }, { status: 410 });
+    }
+    const alreadySignedMine = signatures.some(
+      (s) => s.role === "client" && (s.signer_index ?? 1) === signerIndex,
+    );
+    if (alreadySignedMine) {
+      return proposalJson({ ok: false, error: { code: "already_signed" }, correlationId }, { status: 409 });
     }
 
     const userAgent = (req.headers.get("user-agent") ?? "").slice(0, 400);
@@ -67,6 +75,7 @@ serve(async (req) => {
     const { error: sigError } = await sb.from("proposal_signatures").insert({
       proposal_id: proposal.id,
       role: "client",
+      signer_index: signerIndex,
       signer_name: typedName,
       signer_email: signerEmail,
       signature_image: signatureImage,
@@ -76,28 +85,42 @@ serve(async (req) => {
       signed_at: signedAt,
     });
     if (sigError) {
-      // UNIQUE (proposal_id, role) is the double-sign race guard.
+      // UNIQUE (proposal_id, role, signer_index) is the double-sign race guard.
       if ((sigError as { code?: string }).code === "23505") {
         return proposalJson({ ok: false, error: { code: "already_signed" }, correlationId }, { status: 409 });
       }
       throw sigError;
     }
 
+    // Completion check: recount client signatures fresh (after our own insert has
+    // committed) so two concurrent signers can never both conclude they're waiting.
+    // A benign double-update to won is idempotent.
+    const required = requiredClientSigners(proposal);
+    const { count: clientSigCount, error: countError } = await sb
+      .from("proposal_signatures")
+      .select("id", { count: "exact", head: true })
+      .eq("proposal_id", proposal.id)
+      .eq("role", "client");
+    if (countError) throw countError;
+    const complete = (clientSigCount ?? 0) >= required;
+
     // Server-verified totals frozen into the legal record of the signing.
     const totals = computeProposalTotals(lineItems, proposal);
     const payloadSnapshot = buildSignedPayloadSnapshot(proposal, lineItems, totals);
     const payloadHash = await hashSignedPayload(payloadSnapshot);
 
-    const { error: updateError } = await sb
-      .from("proposals")
-      .update({
-        status: "won",
-        client_signed_at: signedAt,
-        won_at: signedAt,
-        updated_at: signedAt,
-      })
-      .eq("id", proposal.id);
-    if (updateError) throw updateError;
+    if (complete) {
+      const { error: updateError } = await sb
+        .from("proposals")
+        .update({
+          status: "won",
+          client_signed_at: signedAt,
+          won_at: signedAt,
+          updated_at: signedAt,
+        })
+        .eq("id", proposal.id);
+      if (updateError) throw updateError;
+    }
 
     await sb.from("proposal_events").insert([
       {
@@ -107,6 +130,7 @@ serve(async (req) => {
         metadata: {
           ip,
           user_agent: userAgent,
+          signer_index: signerIndex,
           signer_email: signerEmail,
           typed_name: typedName,
           totals,
@@ -114,12 +138,14 @@ serve(async (req) => {
           payload_hash_algo: "sha256",
         },
       },
-      {
-        proposal_id: proposal.id,
-        event_type: "won",
-        actor: "system",
-        metadata: { via: "client_signature" },
-      },
+      ...(complete
+        ? [{
+          proposal_id: proposal.id,
+          event_type: "won",
+          actor: "system",
+          metadata: { via: "client_signature" },
+        }]
+        : []),
     ]);
 
     // Team notification (best effort; signing already succeeded).
@@ -137,25 +163,36 @@ serve(async (req) => {
       const company = proposal.client?.company_name ?? "a client";
       const proposalUrl = origin ? `${origin}/proposals/${proposal.id}` : null;
       const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+      const signerLink = `<a href="mailto:${escapeHtml(signerEmail)}" style="color:#4b3afe;text-decoration:underline;">${escapeHtml(signerEmail)}</a>`;
       await sendEmail({
         to: teamEmails,
         from: resolveFromAddress(settings.email),
-        subject: `🎉 Proposal signed by ${company}`,
+        subject: complete
+          ? `🎉 Proposal signed by ${company}`
+          : `Proposal partially signed by ${company} (${clientSigCount ?? 1} of ${required})`,
         html: proposalEmailHtml({
-          heading: `${escapeHtml(typedName)} signed the ${escapeHtml(company)} proposal`,
-          bodyLines: [
-            `${proposalReferenceLink(origin, proposal)} was just signed by <a href="mailto:${escapeHtml(signerEmail)}" style="color:#4b3afe;text-decoration:underline;">${escapeHtml(signerEmail)}</a> and marked won.`,
-            `Totals: ${money(totals.oneTimeTotal)} one-time plus ${money(totals.monthlyTotal)}/mo.`,
-            ...(proposalUrl ? [] : [`Next step: countersign it from the proposal page.`]),
-          ],
-          ctaLabel: proposalUrl ? "Countersign now" : undefined,
-          ctaUrl: proposalUrl ?? undefined,
+          heading: complete
+            ? `${escapeHtml(typedName)} signed the ${escapeHtml(company)} proposal`
+            : `${escapeHtml(typedName)} signed the ${escapeHtml(company)} proposal (${clientSigCount ?? 1} of ${required} signers)`,
+          bodyLines: complete
+            ? [
+              `${proposalReferenceLink(origin, proposal)} was just signed by ${signerLink} and marked won.`,
+              `Totals: ${money(totals.oneTimeTotal)} one-time plus ${money(totals.monthlyTotal)}/mo.`,
+              ...(proposalUrl ? [] : [`Next step: countersign it from the proposal page.`]),
+            ]
+            : [
+              `${proposalReferenceLink(origin, proposal)} was just signed by ${signerLink}.`,
+              `Waiting on the remaining signer before the proposal is marked won.`,
+              `Totals: ${money(totals.oneTimeTotal)} one-time plus ${money(totals.monthlyTotal)}/mo.`,
+            ],
+          ctaLabel: complete && proposalUrl ? "Countersign now" : undefined,
+          ctaUrl: complete && proposalUrl ? proposalUrl : undefined,
           logoUrl: origin ? `${origin}/cropped-favicon-192x192.webp` : undefined,
         }),
       });
     }
 
-    return proposalJson({ ok: true, signed_at: signedAt, correlationId });
+    return proposalJson({ ok: true, signed_at: signedAt, complete, correlationId });
   } catch (e) {
     return proposalJson(
       { ok: false, error: { code: "request_failed", message: e instanceof Error ? e.message : "Unknown error" }, correlationId },

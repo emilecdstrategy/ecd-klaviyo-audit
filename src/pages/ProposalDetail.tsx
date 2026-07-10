@@ -63,6 +63,9 @@ export default function ProposalDetail() {
   const [editingRecipient, setEditingRecipient] = useState(false);
   const [recipientNameDraft, setRecipientNameDraft] = useState('');
   const [recipientEmailDraft, setRecipientEmailDraft] = useState('');
+  const [recipient2NameDraft, setRecipient2NameDraft] = useState('');
+  const [recipient2EmailDraft, setRecipient2EmailDraft] = useState('');
+  const [secondSignerDraft, setSecondSignerDraft] = useState(false);
   const [recipientSaving, setRecipientSaving] = useState(false);
   const countersignPadRef = useRef<SignaturePadHandle>(null);
 
@@ -97,6 +100,14 @@ export default function ProposalDetail() {
   const isSigned = Boolean(proposal.client_signed_at);
   const isClosed = proposal.status === 'won' || proposal.status === 'lost';
   const needsCountersign = isSigned && !proposal.countersigned_at;
+  const clientSignatures = signatures.filter(s => s.role === 'client');
+  const hasSecondSigner = Boolean(proposal.recipient2_email);
+  const requiredSigners = hasSecondSigner ? 2 : 1;
+  // The signer roster freezes as soon as ANY client signature exists (DB-enforced too).
+  const signersLocked = clientSignatures.length > 0 || isSigned;
+  const partiallySigned = !isSigned && clientSignatures.length > 0 && clientSignatures.length < requiredSigners;
+  const signerSigned = (index: number) =>
+    clientSignatures.some(s => (s.signer_index ?? 1) === index);
   const publicUrl = proposal.public_token
     ? `${publicProposalOrigin()}/proposal/${proposal.public_token}`
     : null;
@@ -104,15 +115,24 @@ export default function ProposalDetail() {
   const openRecipientEdit = () => {
     setRecipientNameDraft(proposal.recipient_name || '');
     setRecipientEmailDraft(proposal.recipient_email || '');
+    setRecipient2NameDraft(proposal.recipient2_name || '');
+    setRecipient2EmailDraft(proposal.recipient2_email || '');
+    setSecondSignerDraft(Boolean(proposal.recipient2_email));
     setEditingRecipient(true);
   };
 
   const saveRecipient = async () => {
+    if (secondSignerDraft && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(recipient2EmailDraft.trim())) {
+      toast('Please enter a valid email for the second signer, or remove them.');
+      return;
+    }
     setRecipientSaving(true);
     try {
       await updateProposal(proposal.id, {
         recipient_name: recipientNameDraft.trim(),
         recipient_email: recipientEmailDraft.trim(),
+        recipient2_name: secondSignerDraft ? recipient2NameDraft.trim() : '',
+        recipient2_email: secondSignerDraft ? recipient2EmailDraft.trim() : '',
       });
       setEditingRecipient(false);
       await reload();
@@ -423,8 +443,10 @@ export default function ProposalDetail() {
 
           <div className="rounded-xl bg-white p-5 card-shadow">
             <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-gray-900">Recipient</h3>
-              {!isSigned && !editingRecipient && (
+              <h3 className="text-sm font-semibold text-gray-900">
+                {hasSecondSigner ? 'Recipients' : 'Recipient'}
+              </h3>
+              {!signersLocked && !editingRecipient && (
                 <button
                   type="button"
                   onClick={openRecipientEdit}
@@ -437,6 +459,7 @@ export default function ProposalDetail() {
             </div>
             <p className="mt-1 text-[11px] text-gray-400">
               Who this proposal is addressed and sent to. Set independently of the client record.
+              {hasSecondSigner ? ' Each signer receives their own signing link.' : ''}
             </p>
             {editingRecipient ? (
               <div className="mt-3 space-y-2.5">
@@ -471,6 +494,50 @@ export default function ProposalDetail() {
                     Copy from client ({client.name || client.email})
                   </button>
                 )}
+                {secondSignerDraft ? (
+                  <div className="space-y-2.5 rounded-lg border border-gray-100 bg-gray-50/60 p-3">
+                    <div className="flex items-center justify-between">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Second signer</p>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSecondSignerDraft(false);
+                          setRecipient2NameDraft('');
+                          setRecipient2EmailDraft('');
+                        }}
+                        className="text-[11px] font-medium text-red-500 hover:underline"
+                      >
+                        Remove
+                      </button>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-gray-500">Name</label>
+                      <input
+                        type="text"
+                        value={recipient2NameDraft}
+                        onChange={e => setRecipient2NameDraft(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-[11px] font-medium text-gray-500">Email</label>
+                      <input
+                        type="email"
+                        value={recipient2EmailDraft}
+                        onChange={e => setRecipient2EmailDraft(e.target.value)}
+                        className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setSecondSignerDraft(true)}
+                    className="text-xs font-medium text-brand-primary hover:underline"
+                  >
+                    + Add second signer
+                  </button>
+                )}
                 <div className="flex items-center gap-2 pt-0.5">
                   <button
                     type="button"
@@ -492,13 +559,35 @@ export default function ProposalDetail() {
               </div>
             ) : (
               <>
-                <p className="mt-2 text-sm font-medium text-gray-900">{proposal.recipient_name || '—'}</p>
-                <p className="text-xs text-gray-500">{proposal.recipient_email || '—'}</p>
+                <div className="mt-2 flex items-start justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-medium text-gray-900">{proposal.recipient_name || '—'}</p>
+                    <p className="text-xs text-gray-500">{proposal.recipient_email || '—'}</p>
+                  </div>
+                  {hasSecondSigner && signerSigned(1) && (
+                    <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                      Signed
+                    </span>
+                  )}
+                </div>
+                {hasSecondSigner && (
+                  <div className="mt-2.5 flex items-start justify-between gap-2 border-t border-gray-100 pt-2.5">
+                    <div>
+                      <p className="text-sm font-medium text-gray-900">{proposal.recipient2_name || '—'}</p>
+                      <p className="text-xs text-gray-500">{proposal.recipient2_email || '—'}</p>
+                    </div>
+                    {signerSigned(2) && (
+                      <span className="shrink-0 rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-semibold text-emerald-700">
+                        Signed
+                      </span>
+                    )}
+                  </div>
+                )}
               </>
             )}
-            {isSigned && (
+            {signersLocked && (
               <p className="mt-2 text-[11px] text-amber-600">
-                Locked: the client has signed, so the recipient on record cannot be changed.
+                Locked: a client signature has been recorded, so the signers on record cannot be changed.
               </p>
             )}
           </div>
@@ -537,6 +626,14 @@ export default function ProposalDetail() {
                 <div className="flex justify-between">
                   <dt className="text-gray-400">Client signed</dt>
                   <dd className="text-gray-700">{new Date(proposal.client_signed_at).toLocaleDateString()}</dd>
+                </div>
+              )}
+              {partiallySigned && (
+                <div className="flex justify-between">
+                  <dt className="text-gray-400">Signatures</dt>
+                  <dd className="font-medium text-amber-600">
+                    {clientSignatures.length} of {requiredSigners}
+                  </dd>
                 </div>
               )}
               {proposal.lost_reason && (

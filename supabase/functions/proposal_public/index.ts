@@ -68,7 +68,7 @@ serve(async (req) => {
         proposal_id: proposal.id,
         event_type: "viewed",
         actor: "client",
-        metadata: { ip, user_agent: userAgent.slice(0, 400), first_view: firstView },
+        metadata: { ip, user_agent: userAgent.slice(0, 400), first_view: firstView, signer_index: bundle.signerIndex },
       });
 
       // Team notification exactly once, hung off the race-winning first view.

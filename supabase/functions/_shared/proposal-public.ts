@@ -154,17 +154,20 @@ export function isProposalExpired(proposal: { status: string; valid_until: strin
 }
 
 /** Fetch a proposal by public token with its public-safe relations. Returns null for
- * unknown tokens AND drafts (indistinguishable to callers; no status oracle). */
+ * unknown tokens AND drafts (indistinguishable to callers; no status oracle).
+ * Matches either signer's token; signerIndex says which signer this link belongs to. */
 export async function fetchPublicProposal(sb: SupabaseClient, token: string) {
   if (!PUBLIC_TOKEN_RE.test(token)) return null;
 
   const { data: proposal, error } = await sb
     .from("proposals")
     .select("*, client:clients(company_name, website_url)")
-    .eq("public_token", token)
+    .or(`public_token.eq.${token},public_token2.eq.${token}`)
     .maybeSingle();
   if (error) throw error;
   if (!proposal || proposal.status === "draft") return null;
+
+  const signerIndex: 1 | 2 = proposal.public_token === token ? 1 : 2;
 
   const [{ data: lineItems, error: liErr }, { data: signatures, error: sigErr }] = await Promise.all([
     sb
@@ -174,13 +177,18 @@ export async function fetchPublicProposal(sb: SupabaseClient, token: string) {
       .order("display_order", { ascending: true }),
     sb
       .from("proposal_signatures")
-      .select("role, signer_name, signature_image, signed_at")
+      .select("role, signer_index, signer_name, signature_image, signed_at")
       .eq("proposal_id", proposal.id),
   ]);
   if (liErr) throw liErr;
   if (sigErr) throw sigErr;
 
-  return { proposal, lineItems: (lineItems ?? []) as LineItemRow[], signatures: signatures ?? [] };
+  return { proposal, signerIndex, lineItems: (lineItems ?? []) as LineItemRow[], signatures: signatures ?? [] };
+}
+
+/** Number of client signatures required before the proposal counts as fully signed. */
+export function requiredClientSigners(proposal: { recipient2_email?: string | null }): number {
+  return proposal.recipient2_email ? 2 : 1;
 }
 
 /** Public payload: only fields the client-facing page needs (including recipient_email,
@@ -190,7 +198,7 @@ export async function serializePublicProposal(
   sb: SupabaseClient,
   bundle: NonNullable<Awaited<ReturnType<typeof fetchPublicProposal>>>,
 ) {
-  const { proposal, lineItems, signatures } = bundle;
+  const { proposal, signerIndex, lineItems, signatures } = bundle;
 
   const { data: settingsRow } = await sb
     .from("platform_settings")
@@ -217,6 +225,8 @@ export async function serializePublicProposal(
       discount_label: proposal.discount_label,
       recipient_name: proposal.recipient_name,
       recipient_email: proposal.recipient_email,
+      recipient2_name: proposal.recipient2_name ?? "",
+      recipient2_email: proposal.recipient2_email ?? "",
       valid_until: proposal.valid_until,
       sent_at: proposal.sent_at,
       created_at: proposal.created_at,
@@ -229,6 +239,7 @@ export async function serializePublicProposal(
     },
     line_items: lineItems,
     signatures,
+    signer_index: signerIndex,
     totals,
     expired,
     settings: { cover: (settings.cover as Record<string, unknown>) ?? {} },

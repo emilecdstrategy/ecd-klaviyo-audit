@@ -23,6 +23,8 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
   const [step, setStep] = useState<'edit' | 'confirm'>('edit');
   const [recipientName, setRecipientName] = useState(proposal.recipient_name);
   const [recipientEmail, setRecipientEmail] = useState(proposal.recipient_email);
+  const [recipient2Name, setRecipient2Name] = useState(proposal.recipient2_name);
+  const [recipient2Email, setRecipient2Email] = useState(proposal.recipient2_email);
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
@@ -38,6 +40,8 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
       setStep('edit');
       setRecipientName(proposal.recipient_name || client?.name || '');
       setRecipientEmail(proposal.recipient_email || client?.email || '');
+      setRecipient2Name(proposal.recipient2_name || '');
+      setRecipient2Email(proposal.recipient2_email || '');
       setError('');
       setReplyToEmails(DEFAULT_REPLY_TO_EMAILS);
       setAddMenuOpen(false);
@@ -45,7 +49,9 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
       setReplyToError('');
       listAdminProfiles().then(setAdmins).catch(() => setAdmins([]));
     }
-  }, [open, proposal.recipient_name, proposal.recipient_email, client?.name, client?.email]);
+  }, [open, proposal.recipient_name, proposal.recipient_email, proposal.recipient2_name, proposal.recipient2_email, client?.name, client?.email]);
+
+  const hasSecondSigner = Boolean(proposal.recipient2_email || recipient2Email.trim());
 
   const nameForReplyTo = (email: string) => admins.find(a => a.email.toLowerCase() === email.toLowerCase())?.name || email;
   const addableAdmins = admins.filter(a => a.email && !replyToEmails.some(e => e.toLowerCase() === a.email.toLowerCase()));
@@ -78,6 +84,10 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
       setError('Please enter a valid email address.');
       return;
     }
+    if (hasSecondSigner && !EMAIL_RE.test(recipient2Email.trim())) {
+      setError('Please enter a valid email address for the second signer.');
+      return;
+    }
     setStep('confirm');
   };
 
@@ -89,6 +99,9 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
         proposal_id: proposal.id,
         recipient_email: recipientEmail.trim(),
         recipient_name: recipientName.trim(),
+        ...(hasSecondSigner
+          ? { recipient2_email: recipient2Email.trim(), recipient2_name: recipient2Name.trim() }
+          : {}),
         message: message.trim(),
         reply_to_emails: replyToEmails,
       });
@@ -149,6 +162,36 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
               />
             </div>
           </div>
+          {hasSecondSigner && (
+            <div className="rounded-lg border border-gray-100 bg-gray-50/60 p-3">
+              <p className="mb-2 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Second signer</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-500">Name</label>
+                  <input
+                    type="text"
+                    value={recipient2Name}
+                    onChange={e => setRecipient2Name(e.target.value)}
+                    placeholder="John Smith"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-gray-500">Email</label>
+                  <input
+                    type="email"
+                    value={recipient2Email}
+                    onChange={e => setRecipient2Email(e.target.value)}
+                    placeholder="john@company.com"
+                    className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                </div>
+              </div>
+              <p className="mt-2 text-[11px] text-gray-400">
+                Both signers receive their own email with a personal signing link. The proposal is won once both have signed.
+              </p>
+            </div>
+          )}
           {noClientEmailOnFile && !proposal.recipient_email && (
             <p className="text-xs text-amber-600">
               No email is on file for this client yet. The address you enter here will also be saved to their client profile.
@@ -196,6 +239,12 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
             <p className="text-sm font-semibold text-gray-900">{recipientName.trim() || 'No name provided'}</p>
             <p className="text-sm text-gray-600">{recipientEmail.trim()}</p>
+            {hasSecondSigner && (
+              <div className="mt-2 border-t border-gray-200 pt-2">
+                <p className="text-sm font-semibold text-gray-900">{recipient2Name.trim() || 'No name provided'}</p>
+                <p className="text-sm text-gray-600">{recipient2Email.trim()}</p>
+              </div>
+            )}
           </div>
 
           <div>
@@ -289,7 +338,12 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
           </div>
 
           <ul className="list-disc space-y-1 pl-5 text-xs leading-relaxed text-gray-500">
-            <li>An email with a personal signing link will be sent to this address.</li>
+            <li>
+              {hasSecondSigner
+                ? 'Each signer receives their own email with a personal signing link.'
+                : 'An email with a personal signing link will be sent to this address.'}
+            </li>
+            {hasSecondSigner && <li>The proposal is marked won once both signers have signed.</li>}
             {!isResend && <li>The contract text is locked in and the validity window starts now.</li>}
             {noClientEmailOnFile && <li>This email will be saved to the client's profile for next time.</li>}
           </ul>

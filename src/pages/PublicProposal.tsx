@@ -47,6 +47,7 @@ function toDocumentModels(payload: PublicProposalPayload): {
     audit_id: null,
     template_id: null,
     public_token: null,
+    public_token2: null,
     first_viewed_at: null,
     won_at: null,
     lost_at: null,
@@ -229,7 +230,20 @@ export default function PublicProposal() {
     ...mergeProposalSettings({ cover: payload.settings.cover }),
   };
   const isSigned = Boolean(payload.proposal.client_signed_at);
-  const canSign = !isSigned && !payload.expired &&
+  // Which signer this link belongs to, and whether they personally signed already.
+  const mySignerIndex = payload.signer_index ?? 1;
+  const myIdentity = mySignerIndex === 2
+    ? { name: payload.proposal.recipient2_name ?? '', email: payload.proposal.recipient2_email ?? '' }
+    : { name: payload.proposal.recipient_name, email: payload.proposal.recipient_email ?? '' };
+  const mySignature = payload.signatures.find(
+    s => s.role === 'client' && (s.signer_index ?? 1) === mySignerIndex,
+  ) ?? null;
+  const otherSignerName = mySignerIndex === 2
+    ? payload.proposal.recipient_name
+    : payload.proposal.recipient2_name ?? '';
+  const hasSecondSigner = Boolean(payload.proposal.recipient2_email);
+  const waitingOnOther = Boolean(mySignature) && !isSigned && hasSecondSigner;
+  const canSign = !isSigned && !mySignature && !payload.expired &&
     (payload.proposal.status === 'sent' || payload.proposal.status === 'viewed');
 
   if (payload.expired && !isSigned) {
@@ -266,15 +280,21 @@ export default function PublicProposal() {
         </button>
       </div>
       <main className="proposal-print-page mx-auto max-w-[880px] px-5 py-8 pb-32 sm:px-8 print:max-w-none print:px-0 print:py-0 print:pb-0">
-        {(isSigned || justSigned) && (
+        {(isSigned || justSigned || waitingOnOther) && (
           <div className="mb-6 flex items-start gap-3 rounded-xl border border-emerald-200 bg-emerald-50 px-4 py-3 print:hidden">
             <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" />
             <div>
               <p className="text-sm font-semibold text-emerald-800">
-                {justSigned ? 'Thank you! This proposal has been signed.' : 'This proposal has been signed.'}
+                {waitingOnOther
+                  ? 'Thank you! Your signature has been recorded.'
+                  : justSigned
+                  ? 'Thank you! This proposal has been signed.'
+                  : 'This proposal has been signed.'}
               </p>
               <p className="mt-0.5 text-xs text-emerald-700">
-                {payload.proposal.countersigned_at
+                {waitingOnOther
+                  ? `Waiting for ${otherSignerName || 'the other signer'} to sign before the agreement is complete.`
+                  : payload.proposal.countersigned_at
                   ? 'Fully executed by both parties.'
                   : 'A countersigned copy will follow from ECD Digital Strategy.'}
               </p>
@@ -291,11 +311,12 @@ export default function PublicProposal() {
             signatures={signatures}
             settings={settings}
             collapsibleContracts
+            liveSignerIndex={mySignerIndex}
             clientSignArea={
               canSign ? (
                 <ClientSignArea
-                  recipientName={payload.proposal.recipient_name}
-                  recipientEmail={payload.proposal.recipient_email ?? ''}
+                  recipientName={myIdentity.name}
+                  recipientEmail={myIdentity.email}
                   onSign={handleSign}
                   signing={signing}
                   error={signError}
@@ -313,8 +334,14 @@ export default function PublicProposal() {
               <div className="flex items-center gap-3">
                 <CheckCircle2 className="h-5 w-5 shrink-0 text-emerald-600" />
                 <div className="min-w-0">
-                  <p className="text-sm font-semibold text-emerald-800">Thank you! This proposal has been signed.</p>
-                  <p className="text-xs text-emerald-700">A countersigned copy will follow from ECD Digital Strategy.</p>
+                  <p className="text-sm font-semibold text-emerald-800">
+                    {waitingOnOther ? 'Thank you! Your signature has been recorded.' : 'Thank you! This proposal has been signed.'}
+                  </p>
+                  <p className="text-xs text-emerald-700">
+                    {waitingOnOther
+                      ? `Waiting for ${otherSignerName || 'the other signer'} to sign.`
+                      : 'A countersigned copy will follow from ECD Digital Strategy.'}
+                  </p>
                 </div>
               </div>
             ) : (

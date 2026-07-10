@@ -370,7 +370,10 @@ export interface Proposal {
   discount_label: string | null;
   recipient_name: string;
   recipient_email: string;
+  recipient2_name: string;
+  recipient2_email: string;
   public_token: string | null;
+  public_token2: string | null;
   valid_until: string | null;
   sent_at: string | null;
   first_viewed_at: string | null;
@@ -503,6 +506,8 @@ export interface ProposalSignature {
   id: string;
   proposal_id: string;
   role: 'client' | 'agency';
+  /** 1 for the primary signer (and agency), 2 for the optional second client signer. */
+  signer_index: number;
   signer_name: string;
   signer_email: string;
   signer_user_id: string | null;

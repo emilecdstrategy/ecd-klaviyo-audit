@@ -170,6 +170,8 @@ export async function updateProposal(
       | 'discount_label'
       | 'recipient_name'
       | 'recipient_email'
+      | 'recipient2_name'
+      | 'recipient2_email'
       | 'valid_until'
       | 'status'
       | 'lost_at'
@@ -286,10 +288,15 @@ function generatePublicToken(): string {
 export async function markProposalSent(proposal: Proposal): Promise<Proposal> {
   if (proposal.client_signed_at) return proposal;
 
-  const [settings, contractDocs] = await Promise.all([
+  const [settings, contractDocs, signatures] = await Promise.all([
     getProposalSettings(),
     listContractDocuments(),
+    listProposalSignatures(proposal.id),
   ]);
+
+  // With two signers the content must freeze at the FIRST client signature,
+  // not at client_signed_at (which now means fully signed).
+  const hasClientSignature = signatures.some(s => s.role === 'client');
 
   const snapshot = contractDocs
     .filter(doc => proposal.include_contracts.includes(doc.slug))
@@ -308,10 +315,12 @@ export async function markProposalSent(proposal: Proposal): Promise<Proposal> {
   const wasDraft = proposal.status === 'draft';
   const updates: Record<string, unknown> = {
     public_token: proposal.public_token ?? generatePublicToken(),
-    contracts_snapshot: snapshot,
     valid_until: validUntil,
     updated_at: new Date().toISOString(),
   };
+  if (!hasClientSignature) {
+    updates.contracts_snapshot = snapshot;
+  }
   if (wasDraft) {
     updates.status = 'sent';
     updates.sent_at = new Date().toISOString();
@@ -355,6 +364,8 @@ export type PublicProposalPayload = {
     | 'discount_label'
     | 'recipient_name'
     | 'recipient_email'
+    | 'recipient2_name'
+    | 'recipient2_email'
     | 'valid_until'
     | 'sent_at'
     | 'created_at'
@@ -363,7 +374,9 @@ export type PublicProposalPayload = {
   >;
   client: { company_name: string; website_url: string | null };
   line_items: ProposalLineItem[];
-  signatures: Pick<ProposalSignature, 'role' | 'signer_name' | 'signature_image' | 'signed_at'>[];
+  signatures: Pick<ProposalSignature, 'role' | 'signer_index' | 'signer_name' | 'signature_image' | 'signed_at'>[];
+  /** Which signer slot the viewer's token belongs to. */
+  signer_index: 1 | 2;
   expired: boolean;
   settings: { cover: Partial<ProposalSettings['cover']> };
 };
@@ -423,9 +436,11 @@ export async function sendProposalEmail(input: {
   proposal_id: string;
   recipient_email: string;
   recipient_name?: string;
+  recipient2_email?: string;
+  recipient2_name?: string;
   message?: string;
   reply_to_emails?: string[];
-}): Promise<{ public_token: string; email_status: 'sent' | 'skipped' }> {
+}): Promise<{ public_token: string; public_token2: string | null; email_status: 'sent' | 'skipped' }> {
   const { data, error } = await supabase.functions.invoke('proposal_send_email', {
     body: { ...input, app_url: publicProposalOrigin() },
   });
@@ -442,7 +457,11 @@ export async function sendProposalEmail(input: {
     throw error;
   }
   if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to send proposal');
-  return { public_token: data.public_token, email_status: data.email_status };
+  return {
+    public_token: data.public_token,
+    public_token2: data.public_token2 ?? null,
+    email_status: data.email_status,
+  };
 }
 
 // ---------------------------------------------------------------------------
