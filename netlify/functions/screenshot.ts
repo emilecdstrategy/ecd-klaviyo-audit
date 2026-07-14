@@ -7,8 +7,15 @@
  * Responds { ok: true, png_base64 } or { ok: false, error }.
  */
 import type { Handler } from '@netlify/functions';
-import chromium from '@sparticuz/chromium';
 import { chromium as playwright } from 'playwright-core';
+
+// @sparticuz/chromium ships as an ES module; the bundled function is CommonJS,
+// so it must be loaded via dynamic import() rather than a static import (which
+// esbuild lowers to require() and throws ERR_REQUIRE_ESM at runtime).
+async function loadChromium() {
+  const mod = await import('@sparticuz/chromium');
+  return (mod as { default?: typeof mod }).default ?? mod;
+}
 
 const VIEWPORTS = {
   desktop: { width: 1440, height: 900 },
@@ -24,6 +31,7 @@ function json(statusCode: number, body: unknown) {
 }
 
 async function capture(url: string, viewport: keyof typeof VIEWPORTS): Promise<string> {
+  const chromium = await loadChromium();
   const executablePath = await chromium.executablePath();
   const browser = await playwright.launch({
     args: chromium.args,
