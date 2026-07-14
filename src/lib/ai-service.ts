@@ -1,4 +1,4 @@
-import type { AuditContext, AuditSection, WizardData } from './types';
+import type { AuditContext, AuditSection, KlaviyoWizardData } from './types';
 import { supabase } from './supabase';
 import { repairSplitFindings } from './findings-normalize';
 import { AI_SCHEMA_VERSION, AUDIT_SECTION_KEYS } from './ai/schema';
@@ -67,7 +67,7 @@ function hasSectionsPayload(data: any): boolean {
 }
 
 export async function runAIAnalysis(
-  wizardData: WizardData,
+  wizardData: KlaviyoWizardData,
   onProgress?: (update: ProgressUpdate) => void,
 ): Promise<AIAnalysisResult> {
   // Production path: Edge function only.

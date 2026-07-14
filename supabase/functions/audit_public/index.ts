@@ -78,6 +78,32 @@ serve(async (req) => {
       return json({ ok: false, error: { code: "not_found" }, correlationId }, { status: 404 });
     }
 
+    // Web audits carry a much lighter payload — skip the Klaviyo child selects.
+    if ((audit as { audit_type?: string }).audit_type === "web") {
+      const [webClient, webSections, pageSnaps, shopifySnaps] = await Promise.all([
+        sb.from("clients").select("*").eq("id", audit.client_id).maybeSingle(),
+        sb.from("audit_sections").select("*").eq("audit_id", audit.id),
+        sb.from("web_page_snapshots").select("*").eq("audit_id", audit.id).order("page_type").order("viewport"),
+        sb.from("shopify_data_snapshots").select("id, audit_id, client_id, snapshot_kind, timeframe_key, computed, fetched_at").eq("audit_id", audit.id),
+      ]);
+      if (webClient.error) throw webClient.error;
+      if (webSections.error) throw webSections.error;
+      if (pageSnaps.error) throw pageSnaps.error;
+      if (shopifySnaps.error) throw shopifySnaps.error;
+      if (!webClient.data) {
+        return json({ ok: false, error: { code: "not_found" }, correlationId }, { status: 404 });
+      }
+      return json({
+        ok: true,
+        audit,
+        client: webClient.data,
+        sections: webSections.data ?? [],
+        webPageSnapshots: pageSnaps.data ?? [],
+        shopifySnapshots: shopifySnaps.data ?? [],
+        correlationId,
+      });
+    }
+
     const [client, sections, assets, flows, flowSnaps, segSnaps, formSnaps, campSnaps, rollups, emailDesignRes, segNamesRow, campNamesRow] =
       await Promise.all([
         sb.from("clients").select("*").eq("id", audit.client_id).maybeSingle(),

@@ -1,0 +1,13 @@
+# Mirrors the build settings previously configured in the Netlify UI.
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[functions]
+  node_bundler = "esbuild"
+
+# Playwright screenshot function: keep the chromium binary out of esbuild and
+# ship it as included files so only this function carries the ~65MB payload.
+[functions.screenshot]
+  external_node_modules = ["@sparticuz/chromium", "playwright-core"]
+  included_files = ["node_modules/@sparticuz/chromium/bin/**"]

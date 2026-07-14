@@ -4,7 +4,9 @@ import {
   ArrowLeft,
   ArrowRight,
   CheckCircle2,
+  Globe,
   Loader2,
+  Mail,
   Sparkles,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
@@ -13,11 +15,13 @@ import { useAuth } from '../contexts/AuthContext';
 import { formatClientListMeta } from '../lib/client-display';
 import { createAudit, createAuditSections, createClient, ensureClientCreator, findClientByCompanyName, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates, uploadReportScreenshot } from '../lib/db';
 import { resolveRevenueOpportunityContent } from '../lib/revenue-opportunity-content';
-import type { Audit, AuditContext, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
+import type { Audit, AuditContext, AuditType, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
+import { KLAVIYO_AUDIT_SECTION_KEYS, WEB_AUDIT_SECTION_KEYS } from '../lib/audit-sections';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import SiteFavicon from '../components/ui/SiteFavicon';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
+import { ShopifyTokenHelpTrigger } from '../components/web/ShopifyTokenHelpModal';
 import ImageUploadZone from '../components/ui/ImageUploadZone';
 import { supabase } from '../lib/supabase';
 import {
@@ -30,12 +34,25 @@ import {
 const CONTEXT_CHAR_SOFT = 15_000;
 const CONTEXT_CHAR_HARD = 30_000;
 
-const STEPS = [
-  { label: 'Prospect Details', description: 'Basic information' },
-  { label: 'API Connection', description: 'Connect Klaviyo data' },
-  { label: 'Attribution Model', description: 'Optional screenshot' },
-  { label: 'Client Context', description: 'Optional notes for the AI' },
-  { label: 'Run Analysis', description: 'AI-powered audit' },
+type StepKey = 'type' | 'prospect' | 'klaviyo_connection' | 'web_setup' | 'attribution' | 'context' | 'run';
+
+type WizardStep = { key: StepKey; label: string; description: string };
+
+const KLAVIYO_STEPS: WizardStep[] = [
+  { key: 'type', label: 'Audit Type', description: 'Klaviyo or Web' },
+  { key: 'prospect', label: 'Prospect Details', description: 'Basic information' },
+  { key: 'klaviyo_connection', label: 'API Connection', description: 'Connect Klaviyo data' },
+  { key: 'attribution', label: 'Attribution Model', description: 'Optional screenshot' },
+  { key: 'context', label: 'Client Context', description: 'Optional notes for the AI' },
+  { key: 'run', label: 'Run Analysis', description: 'AI-powered audit' },
+];
+
+const WEB_STEPS: WizardStep[] = [
+  { key: 'type', label: 'Audit Type', description: 'Klaviyo or Web' },
+  { key: 'prospect', label: 'Prospect Details', description: 'Basic information' },
+  { key: 'web_setup', label: 'Website & Shopify', description: 'Pages and store access' },
+  { key: 'context', label: 'Client Context', description: 'Optional notes' },
+  { key: 'run', label: 'Run Analysis', description: 'Capture and analyze' },
 ];
 
 type NewAuditProps = { asModal?: boolean };
@@ -169,6 +186,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const location = useLocation();
   const { user } = useAuth();
   const [step, setStep] = useState(0);
+  const [auditType, setAuditType] = useState<AuditType | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
   const [analysisProgress, setAnalysisProgress] = useState(0);
   const [analysisStage, setAnalysisStage] = useState<string>('');
@@ -194,7 +212,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     apiKey: '',
     clientSellsSubscriptions: false,
     selectedAddOnSlugs: [] as string[],
+    // Web audit fields
+    websiteUrl: '',
+    productUrl: '',
+    collectionUrl: '',
+    cartUrl: '',
+    shopifyDomain: '',
+    shopifyToken: '',
   });
+  const [shopifyTest, setShopifyTest] = useState<{ status: 'idle' | 'testing' | 'ok' | 'failed'; message?: string }>({ status: 'idle' });
 
   const [auditContextForm, setAuditContextForm] = useState({
     meeting_notes: '',
@@ -209,6 +235,10 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [revenueTemplates, setRevenueTemplates] = useState<RevenueOpportunityTemplate[]>([]);
   const selectedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
   const hasSavedKlaviyoConnection = Boolean((selectedClient as any)?.klaviyo_connected);
+  const hasSavedShopifyConnection = Boolean(selectedClient?.shopify_connected);
+
+  const steps = auditType === 'web' ? WEB_STEPS : KLAVIYO_STEPS;
+  const stepKey: StepKey = steps[Math.min(step, steps.length - 1)].key;
 
   useEffect(() => {
     let cancelled = false;
@@ -298,6 +328,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         companyName: client.company_name,
         industry: client.industry ?? '',
         apiKey: '',
+        websiteUrl: prev.websiteUrl || client.website_url || '',
         clientSellsSubscriptions: prev.clientSellsSubscriptions,
         selectedAddOnSlugs: prev.selectedAddOnSlugs,
       }));
@@ -448,8 +479,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
       // 3) Create default section rows
       setAnalysisStage('Setting up audit sections…');
-      const sectionKeys = ['account_health', 'flows', 'segmentation', 'campaigns', 'email_design', 'signup_forms', 'revenue_summary'];
-      const createdSections = await createAuditSections(audit.id, sectionKeys);
+      await createAuditSections(audit.id, [...KLAVIYO_AUDIT_SECTION_KEYS]);
 
       // 4) Fetch Klaviyo snapshot (stage 1 = config; stages 2+ run on chained edge invocations)
       setAnalysisProgress(20);
@@ -630,11 +660,168 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     }
   };
 
+  const testShopifyConnection = async () => {
+    setShopifyTest({ status: 'testing' });
+    try {
+      const { data, error: fnErr } = await supabase.functions.invoke<any>('shopify_test_connection', {
+        body: { shopDomain: form.shopifyDomain, accessToken: form.shopifyToken },
+      });
+      if (fnErr) throw new Error(fnErr.message);
+      if (!data?.ok) {
+        setShopifyTest({ status: 'failed', message: data?.error?.message || data?.error || 'Connection failed' });
+        return;
+      }
+      const warnings: string[] = Array.isArray(data.warnings) ? data.warnings : [];
+      setShopifyTest({
+        status: 'ok',
+        message: warnings.length > 0
+          ? `Connected to ${data.shop?.name ?? form.shopifyDomain}, but: ${warnings.join(' ')}`
+          : `Connected to ${data.shop?.name ?? form.shopifyDomain}.`,
+      });
+    } catch (e) {
+      setShopifyTest({ status: 'failed', message: e instanceof Error ? e.message : 'Connection failed' });
+    }
+  };
+
+  const runAnalysisWeb = async () => {
+    setError('');
+    setAnalyzing(true);
+    setAnalysisProgress(0);
+    setAnalysisStage('Starting…');
+
+    try {
+      // 1) Ensure client exists
+      setAnalysisStage('Preparing client…');
+      let clientId = form.clientId;
+      if (!clientId) {
+        const existing = await findClientByCompanyName(form.companyName);
+        if (existing) {
+          clientId = existing.id;
+        } else {
+          const created = await createClient(await ensureClientCreator(user, {
+            name: form.clientName || form.companyName,
+            company_name: form.companyName,
+            website_url: form.websiteUrl.trim(),
+            industry: form.industry,
+            esp_platform: 'Shopify',
+            api_key_placeholder: '',
+            notes: '',
+          }) as Partial<Client>);
+          clientId = created.id;
+        }
+      } else {
+        const patch: Record<string, string> = {};
+        if (form.industry) patch.industry = form.industry;
+        if (form.websiteUrl.trim() && !selectedClient?.website_url) patch.website_url = form.websiteUrl.trim();
+        if (Object.keys(patch).length > 0) {
+          const updated = await updateClient(clientId, patch);
+          setClients(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+        }
+      }
+
+      // 2) Create audit row
+      setAnalysisStage('Creating audit…');
+      const contextPayload = buildAuditContextForSave();
+      const audit = await createAudit({
+        client_id: clientId,
+        title: `${form.companyName} - Web Audit`,
+        status: 'draft',
+        audit_type: 'web',
+        audit_method: 'screenshot' as Audit['audit_method'],
+        list_size: 0,
+        aov: 0,
+        monthly_traffic: 0,
+        total_revenue_opportunity: 0,
+        executive_summary: '',
+        created_by: user?.id || '',
+        show_recommendations: true,
+        context: contextPayload,
+      } as any);
+      setCurrentAuditId(audit.id);
+      setAnalysisProgress(10);
+
+      // 3) Seed web section rows
+      setAnalysisStage('Setting up audit sections…');
+      await createAuditSections(audit.id, [...WEB_AUDIT_SECTION_KEYS]);
+
+      // 4) Connect Shopify + fetch backend metrics (optional)
+      if (!hasSavedShopifyConnection && form.shopifyToken.trim()) {
+        setAnalysisProgress(20);
+        setAnalysisStage('Connecting Shopify…');
+        const { data: connData, error: connErr } = await supabase.functions.invoke<any>('shopify_connect_client', {
+          body: { client_id: clientId, shop_domain: form.shopifyDomain, access_token: form.shopifyToken },
+        });
+        if (connErr) throw new Error(`Shopify connection failed: ${connErr.message}`);
+        if (!connData?.ok) throw new Error(connData?.error?.message || 'Shopify connection failed');
+      }
+      if (hasSavedShopifyConnection || form.shopifyToken.trim()) {
+        setAnalysisProgress(30);
+        setAnalysisStage('Fetching Shopify data (orders, products)…');
+        const { data: fetchData, error: fetchErr } = await supabase.functions.invoke<any>('web_fetch_snapshot', {
+          body: { audit_id: audit.id, client_id: clientId },
+        });
+        if (fetchErr || !fetchData?.ok) {
+          // Non-fatal: continue with screenshots only.
+          setAnalysisStage('Shopify data fetch had issues, continuing with screenshots…');
+        }
+      }
+
+      // 5) Capture screenshots
+      setAnalysisProgress(45);
+      setAnalysisStage('Capturing website screenshots (desktop & mobile)…');
+      const pages: Record<string, string> = { homepage: form.websiteUrl.trim() };
+      if (form.productUrl.trim()) pages.product = form.productUrl.trim();
+      if (form.collectionUrl.trim()) pages.collection = form.collectionUrl.trim();
+      if (form.cartUrl.trim()) pages.cart = form.cartUrl.trim();
+      const { data: capData, error: capErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
+        body: { audit_id: audit.id, client_id: clientId, pages },
+      });
+      if (capErr) throw new Error(`Screenshot capture failed to start: ${capErr.message}`);
+      if (!capData?.ok) throw new Error(capData?.error?.message || 'Screenshot capture failed to start');
+
+      // 6) Poll until captures finish (success or error per page)
+      const pollStart = Date.now();
+      const pollMax = 4 * 60 * 1000;
+      let done = false;
+      while (Date.now() - pollStart < pollMax) {
+        const { data: snaps } = await supabase
+          .from('web_page_snapshots')
+          .select('status')
+          .eq('audit_id', audit.id);
+        const total = snaps?.length ?? 0;
+        const pending = (snaps ?? []).filter(s => s.status === 'pending').length;
+        const finished = total - pending;
+        setAnalysisProgress(Math.min(95, 45 + Math.round((finished / Math.max(total, 1)) * 50)));
+        setAnalysisStage(`Capturing screenshots… ${finished}/${total} done`);
+        if (total > 0 && pending === 0) {
+          done = true;
+          break;
+        }
+        await new Promise(r => setTimeout(r, 3000));
+      }
+      if (!done) {
+        setAnalysisStage('Some captures are still running — they will finish in the background.');
+      }
+
+      setAnalysisProgress(100);
+      setAnalysisStage('Done');
+      setAnalyzing(false);
+      if (mountedRef.current) navigate(`/audits/${audit.id}`);
+    } catch (e: unknown) {
+      setAnalyzing(false);
+      setError(e instanceof Error ? e.message : 'Failed to create web audit');
+    }
+  };
+
   const canProceed = () => {
-    if (step === 0) return form.companyName;
-    if (step === 1) return hasSavedKlaviyoConnection || form.apiKey;
-    if (step === 2) return true;
-    if (step === 3) return true;
+    if (stepKey === 'type') return auditType !== null;
+    if (stepKey === 'prospect') return form.companyName;
+    if (stepKey === 'klaviyo_connection') return hasSavedKlaviyoConnection || form.apiKey;
+    if (stepKey === 'web_setup') {
+      const hasWebsite = /^(https?:\/\/)?[^\s.]+\.[^\s]{2,}/i.test(form.websiteUrl.trim());
+      const shopifyPartial = !hasSavedShopifyConnection && (form.shopifyDomain.trim() !== '') !== (form.shopifyToken.trim() !== '');
+      return hasWebsite && !shopifyPartial;
+    }
     return true;
   };
 
@@ -652,10 +839,55 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       )}
 
         <div className="bg-white rounded-xl p-6 card-shadow mb-8">
-          <AuditWizardStepper steps={STEPS} currentStep={step} />
+          <AuditWizardStepper steps={steps} currentStep={step} />
         </div>
 
-        {step === 0 && (
+        {stepKey === 'type' && (
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">What kind of audit is this?</h2>
+              <p className="text-sm text-gray-500 mt-1">The wizard adapts to the audit type you pick.</p>
+            </div>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <button
+                type="button"
+                onClick={() => { setAuditType('klaviyo'); setError(''); }}
+                className={`text-left rounded-xl border-2 p-5 transition-colors ${
+                  auditType === 'klaviyo'
+                    ? 'border-brand-primary bg-brand-primary/5'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${auditType === 'klaviyo' ? 'gradient-bg' : 'bg-gray-100'}`}>
+                  <Mail className={`w-5 h-5 ${auditType === 'klaviyo' ? 'text-white' : 'text-gray-500'}`} />
+                </div>
+                <p className="text-sm font-semibold text-gray-900">Klaviyo Audit</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Email marketing audit from live Klaviyo data: flows, campaigns, segments, forms, and deliverability.
+                </p>
+              </button>
+              <button
+                type="button"
+                onClick={() => { setAuditType('web'); setError(''); }}
+                className={`text-left rounded-xl border-2 p-5 transition-colors ${
+                  auditType === 'web'
+                    ? 'border-brand-primary bg-brand-primary/5'
+                    : 'border-gray-200 bg-white hover:border-gray-300'
+                }`}
+              >
+                <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${auditType === 'web' ? 'gradient-bg' : 'bg-gray-100'}`}>
+                  <Globe className={`w-5 h-5 ${auditType === 'web' ? 'text-white' : 'text-gray-500'}`} />
+                </div>
+                <p className="text-sm font-semibold text-gray-900">Web Audit</p>
+                <p className="text-xs text-gray-500 mt-1">
+                  Website audit with desktop and mobile screenshots of key pages, plus optional Shopify backend metrics.
+                </p>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {stepKey === 'prospect' && (
           <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
             <h2 className="text-lg font-semibold text-gray-900">Prospect Details</h2>
 
@@ -720,6 +952,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               <IndustrySelectWithCustom value={form.industry} onValueChange={v => updateField('industry', v)} />
             </div>
 
+            {auditType !== 'web' && (
             <div className="flex items-start justify-between gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50/60">
               <div className="min-w-0 pr-2">
                 <p className="text-sm font-medium text-gray-800">Client sells subscriptions</p>
@@ -737,10 +970,125 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${form.clientSellsSubscriptions ? 'translate-x-4' : 'translate-x-0'}`} />
               </button>
             </div>
+            )}
           </div>
         )}
 
-        {step === 1 && (
+        {stepKey === 'web_setup' && (
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-6 animate-slide-up">
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Website & Shopify</h2>
+              <p className="text-sm text-gray-500 mt-1 max-w-2xl">
+                We capture desktop and mobile screenshots of the pages below. Product, collection, and cart URLs are optional but recommended.
+              </p>
+            </div>
+
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Website URL (homepage)</label>
+                <input
+                  type="url"
+                  value={form.websiteUrl}
+                  onChange={e => updateField('websiteUrl', e.target.value)}
+                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  placeholder="https://store.com"
+                />
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Product page URL</label>
+                  <input
+                    type="url"
+                    value={form.productUrl}
+                    onChange={e => updateField('productUrl', e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    placeholder="https://store.com/products/…"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Collection page URL</label>
+                  <input
+                    type="url"
+                    value={form.collectionUrl}
+                    onChange={e => updateField('collectionUrl', e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    placeholder="https://store.com/collections/…"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Cart URL</label>
+                  <input
+                    type="url"
+                    value={form.cartUrl}
+                    onChange={e => updateField('cartUrl', e.target.value)}
+                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    placeholder="https://store.com/cart"
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-gray-100 pt-5 space-y-4">
+              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h3 className="text-sm font-semibold text-gray-900">Shopify backend metrics</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    Optional. Connect the store's Admin API to pull orders, AOV, and revenue for the audit.
+                  </p>
+                </div>
+                <ShopifyTokenHelpTrigger className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-brand-primary transition-colors hover:text-brand-primary-dark hover:underline" />
+              </div>
+              {hasSavedShopifyConnection ? (
+                <div className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 px-4 py-3 rounded-lg">
+                  This client is already connected to Shopify. We'll use the saved connection automatically.
+                </div>
+              ) : (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Store domain</label>
+                      <input
+                        type="text"
+                        value={form.shopifyDomain}
+                        onChange={e => { updateField('shopifyDomain', e.target.value); setShopifyTest({ status: 'idle' }); }}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        placeholder="my-store.myshopify.com"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Admin API access token</label>
+                      <input
+                        type="password"
+                        value={form.shopifyToken}
+                        onChange={e => { updateField('shopifyToken', e.target.value); setShopifyTest({ status: 'idle' }); }}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        placeholder="shpat_xxxxxxxxxxxxxxxxxxxx"
+                      />
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <button
+                      type="button"
+                      disabled={!form.shopifyDomain.trim() || !form.shopifyToken.trim() || shopifyTest.status === 'testing'}
+                      onClick={testShopifyConnection}
+                      className="text-sm font-medium text-brand-primary hover:underline disabled:opacity-40 disabled:no-underline"
+                    >
+                      {shopifyTest.status === 'testing' ? 'Testing…' : 'Test connection'}
+                    </button>
+                    {shopifyTest.status === 'ok' && (
+                      <span className="text-xs text-emerald-700">{shopifyTest.message}</span>
+                    )}
+                    {shopifyTest.status === 'failed' && (
+                      <span className="text-xs text-red-600">{shopifyTest.message}</span>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
+        {stepKey === 'klaviyo_connection' && (
           <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
             <h2 className="text-lg font-semibold text-gray-900">API Connection</h2>
             {hasSavedKlaviyoConnection ? (
@@ -775,7 +1123,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {step === 2 && (
+        {stepKey === 'attribution' && (
           <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
               <div>
@@ -786,7 +1134,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               </div>
               <button
                 type="button"
-                onClick={() => { setError(''); setStep(3); }}
+                onClick={() => { setError(''); setStep(step + 1); }}
                 className="text-sm text-brand-primary font-medium hover:underline whitespace-nowrap"
               >
                 Skip this step
@@ -806,7 +1154,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {step === 3 && (
+        {stepKey === 'context' && (
           <div className="bg-white rounded-xl p-6 card-shadow space-y-6 animate-slide-up">
             {error ? (
               <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
@@ -820,7 +1168,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               </div>
               <button
                 type="button"
-                onClick={() => { setError(''); setStep(4); }}
+                onClick={() => { setError(''); setStep(step + 1); }}
                 className="text-sm text-brand-primary font-medium hover:underline whitespace-nowrap"
               >
                 Skip this step
@@ -959,7 +1307,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {step === 4 && (
+        {stepKey === 'run' && (
           <div className="bg-white rounded-xl p-8 card-shadow text-center animate-slide-up">
             {error && (
               <div className="mb-4 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg text-left">
@@ -971,23 +1319,28 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 <div className="w-16 h-16 rounded-2xl gradient-bg flex items-center justify-center mx-auto mb-4">
                   <Sparkles className="w-7 h-7 text-white" />
                 </div>
-                <h2 className="text-xl font-bold text-gray-900 mb-2">Ready to Analyze</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-2">
+                  {auditType === 'web' ? 'Ready to Capture' : 'Ready to Analyze'}
+                </h2>
                 <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
-                  Our AI will review the collected data and generate detailed findings for each audit section.
-                  You'll be able to review and edit everything before publishing.
+                  {auditType === 'web'
+                    ? "We'll capture desktop and mobile screenshots of the selected pages and pull Shopify metrics if connected. You'll be able to review everything before publishing."
+                    : "Our AI will review the collected data and generate detailed findings for each audit section. You'll be able to review and edit everything before publishing."}
                 </p>
                 <button
-                  onClick={runAnalysis}
+                  onClick={auditType === 'web' ? runAnalysisWeb : runAnalysis}
                   className="inline-flex items-center gap-2 px-6 py-3 gradient-bg text-white font-medium rounded-lg hover:opacity-90 transition-opacity"
                 >
                   <Sparkles className="w-4 h-4" />
-                  Run AI Analysis
+                  {auditType === 'web' ? 'Create Web Audit' : 'Run AI Analysis'}
                 </button>
               </>
             ) : (
               <>
                 <Loader2 className="w-12 h-12 text-brand-primary animate-spin mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-gray-900 mb-2">Analyzing Account...</h2>
+                <h2 className="text-xl font-bold text-gray-900 mb-2">
+                  {auditType === 'web' ? 'Building Web Audit...' : 'Analyzing Account...'}
+                </h2>
                 <p className="text-sm text-gray-500 mb-2">
                   {analysisStage || 'Generating findings across all audit sections.'}
                 </p>
@@ -1013,13 +1366,13 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                     },
                     {
                       key: 'input',
-                      label: 'Fetch Klaviyo snapshot',
+                      label: auditType === 'web' ? 'Fetch Shopify data' : 'Fetch Klaviyo snapshot',
                       done: analysisProgress >= 40,
                       active: analysisProgress >= 10 && analysisProgress < 40,
                     },
                     {
                       key: 'ai',
-                      label: 'Run AI analysis',
+                      label: auditType === 'web' ? 'Capture screenshots' : 'Run AI analysis',
                       done: analysisProgress >= 70,
                       active: analysisProgress >= 40 && analysisProgress < 70,
                     },
@@ -1159,11 +1512,11 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {step < 4 && (
+        {stepKey !== 'run' && (
           <div className="flex justify-end mt-6">
             <button
               onClick={() => {
-                if (step === 3) setError('');
+                if (stepKey === 'context') setError('');
                 setStep(step + 1);
               }}
               disabled={!canProceed()}
@@ -1181,7 +1534,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
   return (
     <div>
-      <TopBar title="New Audit" subtitle="Create a new Klaviyo audit" />
+      <TopBar title="New Audit" subtitle="Create a new audit" />
       <div className="animate-fade-in">{body}</div>
     </div>
   );

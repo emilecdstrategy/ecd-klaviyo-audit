@@ -53,6 +53,7 @@ export default function Audits() {
   const tab: TabId = availableTabs.some(t => t.id === tabParam) ? (tabParam as TabId) : 'overview';
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('__all__');
+  const [typeFilter, setTypeFilter] = useState('__all__');
 
   const [audits, setAudits] = useState<Audit[]>([]);
   const [clients, setClients] = useState<Client[]>([]);
@@ -90,7 +91,8 @@ export default function Audits() {
       a.title.toLowerCase().includes(search.toLowerCase()) ||
       (client?.company_name || '').toLowerCase().includes(search.toLowerCase());
     const matchStatus = statusFilter === '__all__' || !statusFilter || a.status === statusFilter;
-    return matchSearch && matchStatus;
+    const matchType = typeFilter === '__all__' || (a.audit_type ?? 'klaviyo') === typeFilter;
+    return matchSearch && matchStatus && matchType;
   });
 
   return (
@@ -223,6 +225,18 @@ export default function Audits() {
               </Select>
             </div>
           </div>
+          <div className="min-w-[140px]">
+            <Select value={typeFilter} onValueChange={v => setTypeFilter(v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="All types" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__all__"><SelectItemText>All types</SelectItemText></SelectItem>
+                <SelectItem value="klaviyo"><SelectItemText>Klaviyo</SelectItemText></SelectItem>
+                <SelectItem value="web"><SelectItemText>Web</SelectItemText></SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
 
         {error && (
@@ -271,7 +285,18 @@ export default function Audits() {
                       className="hover:bg-gray-50/50 cursor-pointer transition-colors"
                     >
                       <td className="px-6 py-4">
-                        <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
+                        <div className="flex items-center gap-2 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
+                          <span
+                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                              audit.audit_type === 'web'
+                                ? 'bg-sky-50 text-sky-700'
+                                : 'bg-violet-50 text-violet-700'
+                            }`}
+                          >
+                            {audit.audit_type === 'web' ? 'Web' : 'Klaviyo'}
+                          </span>
+                        </div>
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2.5 min-w-0">

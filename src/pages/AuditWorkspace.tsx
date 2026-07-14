@@ -21,12 +21,14 @@ import type { Audit, Client } from '../lib/types';
 import {
   fetchAuditReportBundleForAudit,
   fetchAuditWorkspaceShell,
+  fetchWebAuditReportBundle,
   getAuditReportBundleById,
   listAuditEvents,
   listIndustryEmailLibrary,
   publishAudit,
   updateAuditStatus,
   updateAuditSection,
+  type WebAuditReportBundle,
 } from '../lib/db';
 import { createProposalFromAudit } from '../lib/proposal-convert';
 import { canSeeProposalsBeta } from '../lib/feature-flags';
@@ -37,6 +39,7 @@ import { supabase } from '../lib/supabase';
 import { scheduleSavedToast, useToast } from '../components/ui/Toast';
 
 const AuditReportView = lazy(lazyAuditReportView);
+const WebAuditReportView = lazy(() => import('../components/report/WebAuditReportView'));
 const EmailDesignEditor = lazy(() => import('../components/audit/EmailDesignEditor'));
 const RevenueAddOnItemsEditor = lazy(() => import('../components/audit/RevenueAddOnItemsEditor'));
 const RevenueOpportunitiesDrawer = lazy(() =>
@@ -72,6 +75,7 @@ export default function AuditWorkspace() {
   const [publishBlockedReason, setPublishBlockedReason] = useState<string>('');
   const [scopeWarnings, setScopeWarnings] = useState<string[]>([]);
   const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
+  const [webBundle, setWebBundle] = useState<WebAuditReportBundle | null>(null);
   const [analysisInProgress, setAnalysisInProgress] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [activityOpen, setActivityOpen] = useState(false);
@@ -130,6 +134,17 @@ export default function AuditWorkspace() {
         setAudit(shell.audit);
         setClient(shell.client);
         setSections(shell.sections);
+
+        if (shell.audit.audit_type === 'web') {
+          setAnalysisInProgress(false);
+          const bundle = await fetchWebAuditReportBundle(shell.audit);
+          if (cancelled) return;
+          if (!bundle) throw new Error('Audit not found');
+          setWebBundle(bundle);
+          setSections(bundle.sections);
+          return;
+        }
+
         setAnalysisInProgress(pipeline.showPipelineUi);
 
         if (pipeline.showPipelineUi) {
@@ -335,6 +350,15 @@ export default function AuditWorkspace() {
                   setReloadKey(key => key + 1);
                 }}
               />
+            </div>
+          ) : audit.audit_type === 'web' ? (
+            <div className="report-viewport-bleed">
+              {!webBundle && <SkeletonAuditWorkspace />}
+              {webBundle && (
+                <Suspense fallback={<SkeletonAuditWorkspace />}>
+                  <WebAuditReportView data={{ ...webBundle, audit, client: client ?? webBundle.client, sections }} />
+                </Suspense>
+              )}
             </div>
           ) : (
             <div className="report-viewport-bleed">

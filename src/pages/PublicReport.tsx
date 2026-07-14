@@ -8,6 +8,7 @@ import { lazyAuditReportView, preloadAuditReportView } from '../lib/preload-audi
 import type { Audit, AuditSection } from '../lib/types';
 
 const AuditReportView = lazy(lazyAuditReportView);
+const WebAuditReportView = lazy(() => import('../components/report/WebAuditReportView'));
 
 export default function PublicReport() {
   const { token } = useParams();
@@ -54,6 +55,22 @@ export default function PublicReport() {
           <p className="text-gray-500">This report link is invalid or has expired.</p>
         </div>
       </div>
+    );
+  }
+
+  if (data.audit.audit_type === 'web') {
+    return (
+      <Suspense fallback={<SkeletonAuditWorkspace />}>
+        <WebAuditReportView
+          data={{
+            audit: data.audit,
+            client: data.client,
+            sections: data.sections,
+            pageSnapshots: data.webPageSnapshots ?? [],
+            shopifySnapshots: data.shopifySnapshots ?? [],
+          }}
+        />
+      </Suspense>
     );
   }
 

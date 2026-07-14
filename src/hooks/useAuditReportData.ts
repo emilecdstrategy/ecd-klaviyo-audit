@@ -13,6 +13,8 @@ import type {
   KlaviyoFlowSnapshot,
   KlaviyoFormSnapshot,
   KlaviyoSegmentSnapshot,
+  ShopifyDataSnapshot,
+  WebPageSnapshot,
 } from '../lib/types';
 import type { GroupNameMap } from '../lib/segment-definition';
 
@@ -28,6 +30,9 @@ export type AuditReportBundle = {
   formSnapshots: KlaviyoFormSnapshot[];
   campaignSnapshots: KlaviyoCampaignSnapshot[];
   emailDesign: AuditEmailDesign | null;
+  /** Web-audit-only payloads (empty/absent for Klaviyo audits). */
+  webPageSnapshots?: WebPageSnapshot[];
+  shopifySnapshots?: ShopifyDataSnapshot[];
   reportingDiagnostic?: string | null;
   /** Segment/list ID → name map stored once on the Klaviyo rollup (large accounts). */
   klaviyoGroupNameMap?: GroupNameMap;

@@ -18,6 +18,8 @@ import type {
   AuditEmailDesign,
   RevenueOpportunityTemplate,
   AnnotationSize,
+  WebPageSnapshot,
+  ShopifyDataSnapshot,
 } from './types';
 import {
   applyEntityHighlightStyle,
@@ -659,6 +661,9 @@ type AuditReportBundle = {
   formSnapshots: KlaviyoFormSnapshot[];
   campaignSnapshots: KlaviyoCampaignSnapshot[];
   emailDesign: AuditEmailDesign | null;
+  /** Web-audit-only payloads (empty/absent for Klaviyo audits). */
+  webPageSnapshots?: WebPageSnapshot[];
+  shopifySnapshots?: ShopifyDataSnapshot[];
   reportingDiagnostic?: string | null;
   klaviyoGroupNameMap?: GroupNameMap;
   accountSnapshot?: {
@@ -794,6 +799,24 @@ export async function fetchPublicAuditReportBundle(token: string): Promise<Audit
   if (error) return null;
   if (data?.ok !== true) return null;
 
+  if ((data.audit as Audit | undefined)?.audit_type === 'web') {
+    return {
+      audit: data.audit as Audit,
+      client: (data.client ?? null) as Client,
+      sections: (data.sections ?? []) as AuditSection[],
+      assets: [],
+      annotations: [],
+      flowPerformance: [],
+      flowSnapshots: [],
+      segmentSnapshots: [],
+      formSnapshots: [],
+      campaignSnapshots: [],
+      emailDesign: null,
+      webPageSnapshots: (data.webPageSnapshots ?? []) as WebPageSnapshot[],
+      shopifySnapshots: (data.shopifySnapshots ?? []) as ShopifyDataSnapshot[],
+    };
+  }
+
   const sharedNames: SharedGroupAndMetricNameMaps = {
     groupNames: (data.groupNames ?? null) as Record<string, unknown> | null,
     metricNames: (data.metricNames ?? null) as Record<string, unknown> | null,
@@ -838,6 +861,36 @@ export async function fetchAuditWorkspaceShell(auditId: string): Promise<{
   };
 }
 
+export interface WebAuditReportBundle {
+  audit: Audit;
+  client: Client;
+  sections: AuditSection[];
+  pageSnapshots: WebPageSnapshot[];
+  shopifySnapshots: ShopifyDataSnapshot[];
+}
+
+/** Lightweight bundle for web audits — separate from the Klaviyo AuditReportBundle. */
+export async function fetchWebAuditReportBundle(audit: Audit): Promise<WebAuditReportBundle | null> {
+  const [client, sections, pageSnapshots, shopifySnapshots] = await Promise.all([
+    supabase.from('clients').select('*').eq('id', audit.client_id).maybeSingle(),
+    supabase.from('audit_sections').select('*').eq('audit_id', audit.id),
+    supabase.from('web_page_snapshots').select('*').eq('audit_id', audit.id).order('page_type').order('viewport'),
+    supabase.from('shopify_data_snapshots').select('*').eq('audit_id', audit.id).order('fetched_at', { ascending: false }),
+  ]);
+  if (client.error) throw client.error;
+  if (sections.error) throw sections.error;
+  if (pageSnapshots.error) throw pageSnapshots.error;
+  if (shopifySnapshots.error) throw shopifySnapshots.error;
+  if (!client.data) return null;
+  return {
+    audit,
+    client: client.data as Client,
+    sections: (sections.data ?? []) as AuditSection[],
+    pageSnapshots: (pageSnapshots.data ?? []) as WebPageSnapshot[],
+    shopifySnapshots: (shopifySnapshots.data ?? []) as ShopifyDataSnapshot[],
+  };
+}
+
 export async function getAuditReportBundleById(auditId: string): Promise<Awaited<ReturnType<typeof fetchAuditReportBundleForAudit>>> {
   const { data: audit, error } = await supabase.from('audits').select('*').eq('id', auditId).maybeSingle();
   if (error) throw error;
@@ -871,6 +924,26 @@ export async function getPublicReportByToken(token: string): Promise<Awaited<Ret
   const { data: audit, error: auditErr } = await query.maybeSingle();
   if (auditErr) throw auditErr;
   if (!audit) return null;
+
+  if ((audit as Audit).audit_type === 'web') {
+    const webBundle = await fetchWebAuditReportBundle(audit as Audit);
+    if (!webBundle) return null;
+    return {
+      audit: webBundle.audit,
+      client: webBundle.client,
+      sections: webBundle.sections,
+      assets: [],
+      annotations: [],
+      flowPerformance: [],
+      flowSnapshots: [],
+      segmentSnapshots: [],
+      formSnapshots: [],
+      campaignSnapshots: [],
+      emailDesign: null,
+      webPageSnapshots: webBundle.pageSnapshots,
+      shopifySnapshots: webBundle.shopifySnapshots,
+    };
+  }
 
   const bundle = await fetchAuditReportBundleForAudit(audit as Audit);
   return finalizePublicReportSections(bundle);

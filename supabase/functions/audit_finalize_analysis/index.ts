@@ -289,11 +289,14 @@ async function runPipeline(
 
   const { data: audit, error: auditErr } = await sb
     .from("audits")
-    .select("id, client_id, executive_summary, audit_method")
+    .select("id, client_id, executive_summary, audit_method, audit_type")
     .eq("id", auditId)
     .maybeSingle();
   if (auditErr) throw auditErr;
   if (!audit) return json({ ok: false, error: { code: "not_found", message: "Audit not found" }, correlationId }, { status: 404 });
+  if ((audit as { audit_type?: string }).audit_type && (audit as { audit_type?: string }).audit_type !== "klaviyo") {
+    return json({ ok: true, correlationId, status: "skipped", reason: "unsupported_audit_type" });
+  }
   if (audit.audit_method !== "api") {
     return json({ ok: true, correlationId, status: "skipped", reason: "not_api_audit" });
   }

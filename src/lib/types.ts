@@ -16,6 +16,7 @@ export interface Client {
   esp_platform: string;
   api_key_placeholder: string;
   klaviyo_connected?: boolean;
+  shopify_connected?: boolean;
   notes: string;
   /** Set when the client was imported from (or linked to) a HubSpot company. */
   hubspot_company_id?: string | null;
@@ -23,11 +24,15 @@ export interface Client {
   created_at: string;
 }
 
+export type AuditType = 'klaviyo' | 'web';
+
 export interface Audit {
   id: string;
   client_id: string;
   title: string;
   status: 'draft' | 'in_review' | 'viewer_only' | 'published';
+  /** Which kind of audit this is. `audit_method` describes the data-collection mechanism, not the type. */
+  audit_type: AuditType;
   audit_method: 'api' | 'screenshot';
   list_size: number;
   aov: number;
@@ -550,25 +555,85 @@ export interface AuditContext {
   sells_subscriptions?: boolean;
 }
 
-export interface WizardData {
+interface WizardDataBase {
   auditId?: string;
   clientId: string;
   clientName: string;
   companyName: string;
   industry?: string;
-  espPlatform: string;
   websiteUrl: string;
+  notes: string;
+  /** Passed to AI Phase 2 when non-empty */
+  auditContext?: AuditContext;
+}
+
+export interface KlaviyoWizardData extends WizardDataBase {
+  auditType: 'klaviyo';
+  espPlatform: string;
   listSize: number;
   aov: number;
   monthlyTraffic: number;
-  notes: string;
   auditMethod: 'api';
   apiKey?: string;
   screenshots?: Record<string, File[]>;
-  /** Passed to AI Phase 2 when non-empty */
-  auditContext?: AuditContext;
   /** full = exact audience counts from profile scan; skipped = fast audit without per-profile pagination */
   profileAudienceScan?: 'full' | 'skipped';
   /** Client has a subscription business model and should be audited for subscription lifecycle flows. */
   clientSellsSubscriptions?: boolean;
+}
+
+export interface WebWizardData extends WizardDataBase {
+  auditType: 'web';
+  /** URLs to capture. Homepage defaults to the website URL; others optional. */
+  pageUrls: { homepage: string; product?: string; collection?: string; cart?: string };
+  shopifyDomain?: string;
+  shopifyToken?: string;
+}
+
+export type WizardData = KlaviyoWizardData | WebWizardData;
+
+export interface ShopifyConnection {
+  client_id: string;
+  shop_domain: string;
+  shop_id: string | null;
+  shop_name: string | null;
+  currency: string | null;
+  timezone: string | null;
+  plan_name: string | null;
+  auth_method: 'admin_token' | 'oauth';
+  api_version: string;
+  scopes: Record<string, unknown>;
+  last_verified_at: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type WebPageType = 'homepage' | 'product' | 'collection' | 'cart';
+export type WebViewport = 'desktop' | 'mobile';
+
+export interface WebPageSnapshot {
+  id: string;
+  audit_id: string;
+  client_id: string;
+  page_type: WebPageType;
+  viewport: WebViewport;
+  url: string;
+  screenshot_path: string | null;
+  screenshot_url: string | null;
+  status: 'pending' | 'success' | 'error';
+  error_message: string | null;
+  metrics: Record<string, unknown>;
+  raw: Record<string, unknown>;
+  fetched_at: string;
+}
+
+export interface ShopifyDataSnapshot {
+  id: string;
+  audit_id: string;
+  client_id: string;
+  snapshot_kind: 'shop' | 'orders_rollup' | 'products';
+  timeframe_key: string | null;
+  computed: Record<string, unknown>;
+  raw: Record<string, unknown>;
+  fetched_at: string;
 }
