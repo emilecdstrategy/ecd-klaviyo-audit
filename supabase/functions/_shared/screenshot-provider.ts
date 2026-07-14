@@ -4,7 +4,7 @@
  * touching the orchestrator (set SCREENSHOT_PROVIDER + implement a provider).
  */
 
-export type CaptureInput = { url: string; viewport: "desktop" | "mobile" };
+export type CaptureInput = { url: string; viewport: "desktop" | "mobile"; interaction?: "cart_drawer" };
 export type CaptureResult = { ok: true; png: Uint8Array } | { ok: false; error: string };
 
 export interface ScreenshotProvider {
@@ -32,7 +32,7 @@ class NetlifyScreenshotProvider implements ScreenshotProvider {
           "content-type": "application/json",
           "x-screenshot-key": this.secret,
         },
-        body: JSON.stringify({ url: input.url, viewport: input.viewport }),
+        body: JSON.stringify({ url: input.url, viewport: input.viewport, interaction: input.interaction }),
       });
       const body = (await res.json().catch(() => null)) as { ok?: boolean; png_base64?: string; error?: string } | null;
       if (!res.ok || !body?.ok || !body.png_base64) {

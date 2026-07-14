@@ -187,6 +187,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     patchSectionBlock,
   } = useReportEdit();
   const [activeSection, setActiveSection] = useState('summary');
+  const [scrollProgress, setScrollProgress] = useState(0);
   const [lightboxSrc, setLightboxSrc] = useState<string | null>(null);
   const [demoPopup, setDemoPopup] = useState<DemoPopupState | null>(null);
   const [uploadingAddOnKey, setUploadingAddOnKey] = useState<string | null>(null);
@@ -242,6 +243,24 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     }
     return () => { document.title = 'ECD Audit Dashboard'; };
   }, [client?.company_name]);
+
+  useEffect(() => {
+    // Thin reading-progress line under the section nav: tracks how far down the
+    // report the viewport has scrolled.
+    const onScroll = () => {
+      const doc = document.documentElement;
+      const max = doc.scrollHeight - doc.clientHeight;
+      const pct = max > 0 ? (doc.scrollTop / max) * 100 : 0;
+      setScrollProgress(Math.max(0, Math.min(100, pct)));
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, []);
 
   useEffect(() => {
     const observers: IntersectionObserver[] = [];
@@ -618,6 +637,11 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       )}
 
       <div className="sticky top-0 z-40 border-b border-gray-100 bg-white">
+        <div
+          className="absolute bottom-0 left-0 h-0.5 bg-brand-primary transition-[width] duration-150 ease-out"
+          style={{ width: `${scrollProgress}%` }}
+          aria-hidden
+        />
         <div className="max-w-[90rem] mx-auto px-6">
           <nav className="flex overflow-x-auto">
             {visibleNavItems.map(item => (

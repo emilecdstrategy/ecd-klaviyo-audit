@@ -11,14 +11,12 @@ import {
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
+import ClientSearchSelect from '../components/audit/ClientSearchSelect';
 import { useAuth } from '../contexts/AuthContext';
-import { formatClientListMeta } from '../lib/client-display';
 import { createAudit, createAuditSections, createClient, ensureClientCreator, findClientByCompanyName, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates, uploadReportScreenshot } from '../lib/db';
 import { resolveRevenueOpportunityContent } from '../lib/revenue-opportunity-content';
 import type { Audit, AuditContext, AuditType, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { KLAVIYO_AUDIT_SECTION_KEYS, WEB_AUDIT_SECTION_KEYS } from '../lib/audit-sections';
-import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
-import SiteFavicon from '../components/ui/SiteFavicon';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 import { ShopifyTokenHelpTrigger } from '../components/web/ShopifyTokenHelpModal';
@@ -50,7 +48,7 @@ const KLAVIYO_STEPS: WizardStep[] = [
 const WEB_STEPS: WizardStep[] = [
   { key: 'type', label: 'Audit Type', description: 'Klaviyo or Web' },
   { key: 'prospect', label: 'Prospect Details', description: 'Basic information' },
-  { key: 'web_setup', label: 'Website & Shopify', description: 'Pages and store access' },
+  { key: 'web_setup', label: 'Website', description: 'Pages and store access' },
   { key: 'context', label: 'Client Context', description: 'Optional notes' },
   { key: 'run', label: 'Run Analysis', description: 'Capture and analyze' },
 ];
@@ -347,6 +345,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   // shows all stages in real time — each stage gets its own correlation_id.
   const [currentAuditId, setCurrentAuditId] = useState<string | null>(null);
   const mountedRef = useRef(true);
+  // Guards against a double-submit (rapid double-click / re-entrancy) creating two audits.
+  const submittingRef = useRef(false);
 
   useEffect(() => {
     mountedRef.current = true;
@@ -373,6 +373,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   }, [analyzing, currentAuditId]);
 
   const runAnalysis = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setError('');
     setAnalyzing(true);
     setAnalysisProgress(0);
@@ -656,6 +658,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       if (mountedRef.current) navigate(`/audits/${audit.id}`);
     } catch (e: unknown) {
       setAnalyzing(false);
+      submittingRef.current = false;
       setError(e instanceof Error ? e.message : 'Failed to run analysis');
     }
   };
@@ -684,6 +687,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   };
 
   const runAnalysisWeb = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setError('');
     setAnalyzing(true);
     setAnalysisProgress(0);
@@ -766,41 +771,41 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         }
       }
 
-      // 5) Capture screenshots
+      // 5) Seed capture targets. The edge function auto-detects the product,
+      //    collection, and cart pages (from Shopify or the homepage HTML) when
+      //    they aren't supplied manually.
       setAnalysisProgress(45);
-      setAnalysisStage('Capturing website screenshots (desktop & mobile)…');
+      setAnalysisStage('Detecting key pages…');
       const pages: Record<string, string> = { homepage: form.websiteUrl.trim() };
       if (form.productUrl.trim()) pages.product = form.productUrl.trim();
       if (form.collectionUrl.trim()) pages.collection = form.collectionUrl.trim();
       if (form.cartUrl.trim()) pages.cart = form.cartUrl.trim();
-      const { data: capData, error: capErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
-        body: { audit_id: audit.id, client_id: clientId, pages },
+      const { data: seedData, error: seedErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
+        body: { action: 'seed', audit_id: audit.id, client_id: clientId, pages },
       });
-      if (capErr) throw new Error(`Screenshot capture failed to start: ${capErr.message}`);
-      if (!capData?.ok) throw new Error(capData?.error?.message || 'Screenshot capture failed to start');
+      if (seedErr) throw new Error(`Screenshot setup failed: ${seedErr.message}`);
+      if (!seedData?.ok) throw new Error(seedData?.error?.message || 'Screenshot setup failed');
+      const total = Number(seedData.total) || 0;
 
-      // 6) Poll until captures finish (success or error per page)
-      const pollStart = Date.now();
-      const pollMax = 4 * 60 * 1000;
-      let done = false;
-      while (Date.now() - pollStart < pollMax) {
-        const { data: snaps } = await supabase
-          .from('web_page_snapshots')
-          .select('status')
-          .eq('audit_id', audit.id);
-        const total = snaps?.length ?? 0;
-        const pending = (snaps ?? []).filter(s => s.status === 'pending').length;
-        const finished = total - pending;
-        setAnalysisProgress(Math.min(95, 45 + Math.round((finished / Math.max(total, 1)) * 50)));
-        setAnalysisStage(`Capturing screenshots… ${finished}/${total} done`);
-        if (total > 0 && pending === 0) {
-          done = true;
-          break;
+      // 6) Capture one screenshot per call, browser-driven. Keeping each edge
+      //    invocation short (a single Playwright shot) avoids the platform
+      //    rate limiter that a long self-chaining function tripped.
+      setAnalysisStage('Capturing website screenshots (desktop & mobile)…');
+      let remaining = total;
+      let safety = total + 6;
+      while (remaining > 0 && safety-- > 0) {
+        const { data: capData, error: capErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
+          body: { action: 'capture_one', audit_id: audit.id, client_id: clientId },
+        });
+        if (capErr || !capData?.ok) {
+          await new Promise(r => setTimeout(r, 2500));
+          continue;
         }
-        await new Promise(r => setTimeout(r, 3000));
-      }
-      if (!done) {
-        setAnalysisStage('Some captures are still running — they will finish in the background.');
+        remaining = Number.isFinite(capData.remaining) ? Number(capData.remaining) : remaining;
+        const done = Math.max(0, total - remaining);
+        setAnalysisProgress(Math.min(95, 45 + Math.round((done / Math.max(total, 1)) * 50)));
+        setAnalysisStage(`Capturing screenshots… ${done}/${total} done`);
+        if (capData.done) break;
       }
 
       setAnalysisProgress(100);
@@ -809,6 +814,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       if (mountedRef.current) navigate(`/audits/${audit.id}`);
     } catch (e: unknown) {
       setAnalyzing(false);
+      submittingRef.current = false;
       setError(e instanceof Error ? e.message : 'Failed to create web audit');
     }
   };
@@ -843,7 +849,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         </div>
 
         {stepKey === 'type' && (
-          <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up mx-auto w-full max-w-2xl">
             <div>
               <h2 className="text-lg font-semibold text-gray-900">What kind of audit is this?</h2>
               <p className="text-sm text-gray-500 mt-1">The wizard adapts to the audit type you pick.</p>
@@ -888,40 +894,17 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {stepKey === 'prospect' && (
-          <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up mx-auto w-full max-w-2xl">
             <h2 className="text-lg font-semibold text-gray-900">Prospect Details</h2>
 
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">Select Existing Client</label>
-              <Select value={form.clientId || undefined} onValueChange={v => handleClientSelect(v)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue placeholder="Create new client or select existing" />
-                </SelectTrigger>
-                <SelectContent
-                  position="popper"
-                  className="max-h-[min(360px,70vh)] min-w-[var(--radix-select-trigger-width)] max-w-md"
-                  sideOffset={4}
-                >
-                  {clients.map(c => (
-                    <SelectItem
-                      key={c.id}
-                      value={c.id}
-                      textValue={c.company_name}
-                      className="items-start py-2.5 pl-8 pr-3"
-                    >
-                      <div className="flex items-start gap-2.5 pr-1">
-                        <SiteFavicon url={c.website_url} className="mt-0.5" />
-                        <div className="flex flex-col gap-0.5 min-w-0">
-                          <SelectItemText className="font-medium leading-snug text-gray-900">
-                            {c.company_name}
-                          </SelectItemText>
-                          <span className="text-[11px] leading-snug text-gray-500">{formatClientListMeta(c)}</span>
-                        </div>
-                      </div>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+              <ClientSearchSelect
+                clients={clients}
+                value={form.clientId}
+                onSelect={handleClientSelect}
+                onClear={() => setForm(prev => ({ ...prev, clientId: '' }))}
+              />
             </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -975,15 +958,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {stepKey === 'web_setup' && (
-          <div className="bg-white rounded-xl p-6 card-shadow space-y-6 animate-slide-up">
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-6 animate-slide-up mx-auto w-full max-w-2xl">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Website & Shopify</h2>
+              <h2 className="text-lg font-semibold text-gray-900">Website</h2>
               <p className="text-sm text-gray-500 mt-1 max-w-2xl">
                 We capture desktop and mobile screenshots of the pages below. Product, collection, and cart URLs are optional but recommended.
               </p>
             </div>
 
-            <div className="space-y-4">
+            <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Website URL (homepage)</label>
                 <input
@@ -993,39 +976,49 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                   placeholder="https://store.com"
                 />
+                <p className="mt-1.5 text-xs text-gray-500">
+                  We'll automatically detect and screenshot the product, collection, and cart pages. Override them below if needed.
+                </p>
               </div>
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Product page URL</label>
-                  <input
-                    type="url"
-                    value={form.productUrl}
-                    onChange={e => updateField('productUrl', e.target.value)}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                    placeholder="https://store.com/products/…"
-                  />
+
+              <details className="group border border-gray-200 rounded-lg">
+                <summary className="cursor-pointer list-none flex items-center justify-between px-3.5 py-2.5 text-sm font-medium text-gray-800 [&::-webkit-details-marker]:hidden">
+                  <span>Override detected pages</span>
+                  <span className="text-xs text-gray-400 font-normal">Optional</span>
+                </summary>
+                <div className="px-3.5 pb-3.5 pt-1 space-y-3 border-t border-gray-100">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Product page URL</label>
+                    <input
+                      type="url"
+                      value={form.productUrl}
+                      onChange={e => updateField('productUrl', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                      placeholder="https://store.com/products/…"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Collection page URL</label>
+                    <input
+                      type="url"
+                      value={form.collectionUrl}
+                      onChange={e => updateField('collectionUrl', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                      placeholder="https://store.com/collections/…"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-600 mb-1">Cart URL</label>
+                    <input
+                      type="url"
+                      value={form.cartUrl}
+                      onChange={e => updateField('cartUrl', e.target.value)}
+                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                      placeholder="Leave blank to capture the slide-cart drawer"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Collection page URL</label>
-                  <input
-                    type="url"
-                    value={form.collectionUrl}
-                    onChange={e => updateField('collectionUrl', e.target.value)}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                    placeholder="https://store.com/collections/…"
-                  />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Cart URL</label>
-                  <input
-                    type="url"
-                    value={form.cartUrl}
-                    onChange={e => updateField('cartUrl', e.target.value)}
-                    className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                    placeholder="https://store.com/cart"
-                  />
-                </div>
-              </div>
+              </details>
             </div>
 
             <div className="border-t border-gray-100 pt-5 space-y-4">
@@ -1089,7 +1082,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {stepKey === 'klaviyo_connection' && (
-          <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up mx-auto w-full max-w-2xl">
             <h2 className="text-lg font-semibold text-gray-900">API Connection</h2>
             {hasSavedKlaviyoConnection ? (
               <div className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 px-4 py-3 rounded-lg">
@@ -1155,7 +1148,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {stepKey === 'context' && (
-          <div className="bg-white rounded-xl p-6 card-shadow space-y-6 animate-slide-up">
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-6 animate-slide-up mx-auto w-full max-w-2xl">
             {error ? (
               <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
             ) : null}
@@ -1513,7 +1506,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {stepKey !== 'run' && (
-          <div className="flex justify-end mt-6">
+          <div className="flex justify-end mt-6 mx-auto w-full max-w-2xl">
             <button
               onClick={() => {
                 if (stepKey === 'context') setError('');
