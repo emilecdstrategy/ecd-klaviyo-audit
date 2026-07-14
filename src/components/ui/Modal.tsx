@@ -39,12 +39,12 @@ export default function Modal({ open, title, children, onClose, className }: Mod
       role="presentation"
     >
       <div
-        className={cn('w-full max-w-3xl bg-white rounded-xl shadow-xl border border-gray-100', className)}
+        className={cn('flex max-h-[90vh] w-full max-w-3xl flex-col bg-white rounded-xl shadow-xl border border-gray-100', className)}
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
       >
-          <div className="flex items-start justify-between gap-3 px-5 py-4 border-b border-gray-100">
+          <div className="flex shrink-0 items-start justify-between gap-3 px-5 py-4 border-b border-gray-100">
             <div className="min-w-0">
               {title && <h2 className="text-base font-semibold text-gray-900 truncate">{title}</h2>}
             </div>
@@ -56,7 +56,7 @@ export default function Modal({ open, title, children, onClose, className }: Mod
               <X className="w-4 h-4" />
             </button>
           </div>
-          <div className="max-h-[calc(100vh-8rem)] overflow-y-auto">
+          <div className="min-h-0 flex-1 overflow-y-auto">
             {children}
           </div>
       </div>

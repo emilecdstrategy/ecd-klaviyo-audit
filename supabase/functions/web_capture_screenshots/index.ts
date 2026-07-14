@@ -198,11 +198,17 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   if (!row) return { processed: 0, remaining: await countRemaining() };
 
   const provider = getScreenshotProvider();
-  const result = await provider.capture({
+  const captureInput = {
     url: row.url,
     viewport: row.viewport as "desktop" | "mobile",
-    interaction: row.page_type === "cart" ? "cart_drawer" : undefined,
-  });
+    interaction: (row.page_type === "cart" ? "cart_drawer" : undefined) as "cart_drawer" | undefined,
+  };
+  let result = await provider.capture(captureInput);
+  // A cold Lambda + heavy storefront can miss the timeout on the first shot;
+  // the retry runs against a now-warm container and usually succeeds.
+  if (!result.ok && result.error === "capture_timeout") {
+    result = await provider.capture(captureInput);
+  }
   const now = new Date().toISOString();
 
   if (result.ok) {

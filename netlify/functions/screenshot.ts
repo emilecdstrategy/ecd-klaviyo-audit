@@ -7,10 +7,14 @@
  *  - interaction: 'cart_drawer' loads the page, clicks a cart trigger, and
  *    captures the slide-out drawer (falling back to /cart if none opens).
  * Responds { ok: true, png_base64 } or { ok: false, error }.
+ *
+ * Real storefronts are heavy, and Netlify's free sync limit is 10s. To fit,
+ * we block non-visual/slow resources (fonts, media, analytics, chat widgets)
+ * and don't wait for full page load — we settle briefly after the DOM is ready.
  */
 import type { Handler } from '@netlify/functions';
 import { chromium as playwright } from 'playwright-core';
-import type { Page } from 'playwright-core';
+import type { Page, Route } from 'playwright-core';
 
 // @sparticuz/chromium ships as an ES module; the bundled function is CommonJS,
 // so it must be loaded via dynamic import() rather than a static import (which
@@ -25,9 +29,20 @@ const VIEWPORTS = {
   mobile: { width: 390, height: 844 },
 } as const;
 
-const NAV_TIMEOUT_MS = 6_000;
-const SETTLE_MS = 1_000;
-const HARD_BUDGET_MS = 9_200;
+const NAV_TIMEOUT_MS = 4_000;
+const SETTLE_MS = 1_500;
+const HARD_BUDGET_MS = 9_400;
+
+// Third-party hosts that don't affect the visual result but slow the page down
+// (analytics, tag managers, chat/support widgets, ad/pixel trackers).
+const BLOCKED_HOST_FRAGMENTS = [
+  'google-analytics.com', 'googletagmanager.com', 'analytics.google.com', 'doubleclick.net',
+  'connect.facebook.net', 'facebook.com/tr', 'static.hotjar.com', 'clarity.ms',
+  'tiktok.com', 'snapchat.com', 'pinterest.com', 'bat.bing.com',
+  'intercom.io', 'intercomcdn.com', 'widget.intercom', 'drift.com', 'js.driftt.com',
+  'zdassets.com', 'zendesk.com', 'tawk.to', 'gorgias.chat', 'klaviyo.com',
+  'fullstory.com', 'segment.com', 'cdn.segment', 'mouseflow.com',
+];
 
 // Common selectors for the header cart trigger that opens a slide-out drawer.
 const CART_TRIGGER_SELECTORS = [
@@ -46,15 +61,23 @@ function json(statusCode: number, body: unknown) {
   return { statusCode, headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) };
 }
 
+function routeHandler(route: Route) {
+  const req = route.request();
+  const type = req.resourceType();
+  if (type === 'font' || type === 'media') return route.abort();
+  const url = req.url();
+  if (BLOCKED_HOST_FRAGMENTS.some(frag => url.includes(frag))) return route.abort();
+  return route.continue();
+}
+
 async function openCartDrawer(page: Page): Promise<void> {
   for (const selector of CART_TRIGGER_SELECTORS) {
     const el = page.locator(selector).first();
     try {
       if ((await el.count()) === 0) continue;
       if (!(await el.isVisible())) continue;
-      await el.click({ timeout: 1_500 });
-      // Give the drawer animation time to slide in.
-      await page.waitForTimeout(1_400);
+      await el.click({ timeout: 1_200 });
+      await page.waitForTimeout(1_200);
       return;
     } catch {
       // try the next selector
@@ -84,9 +107,10 @@ async function capture(
   });
   try {
     const page = await browser.newPage({ viewport: VIEWPORTS[viewport] });
-    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS }).catch(() => {
-      // domcontentloaded timeout on heavy sites: capture whatever rendered.
-    });
+    await page.route('**/*', routeHandler);
+    // 'domcontentloaded' with a short timeout: proceed with whatever rendered
+    // rather than waiting for every third-party script to finish.
+    await page.goto(url, { waitUntil: 'domcontentloaded', timeout: NAV_TIMEOUT_MS }).catch(() => {});
     await page.waitForTimeout(SETTLE_MS);
     if (interaction === 'cart_drawer') {
       await openCartDrawer(page);

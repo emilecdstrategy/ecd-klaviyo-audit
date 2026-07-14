@@ -636,38 +636,42 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
         </div>
       )}
 
-      <div className="sticky top-0 z-40 border-b border-gray-100 bg-white">
+      <div className="sticky top-0 z-40 bg-white">
+        <div className="border-b border-gray-100">
+          <div className="max-w-[90rem] mx-auto px-6">
+            <nav className="flex overflow-x-auto">
+              {visibleNavItems.map(item => (
+                <a
+                  key={item.id}
+                  href={`#${item.id}`}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setActiveSection(item.id);
+                    const el = sectionRefs.current[item.id] ?? document.getElementById(item.id);
+                    if (!el) return;
+                    const headerOffset = editMode && isPreview ? 128 : isPreview || editMode ? 90 : 52;
+                    const top = el.getBoundingClientRect().top + window.scrollY - headerOffset;
+                    window.scrollTo({ top, behavior: 'smooth' });
+                  }}
+                  className={`px-4 py-3.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
+                    activeSection === item.id
+                      ? 'border-brand-primary text-brand-primary'
+                      : 'border-transparent text-gray-500 hover:text-gray-800'
+                  } ${item.isHidden ? 'opacity-50' : ''}`}
+                >
+                  {item.label}{item.isHidden ? ' (hidden)' : ''}
+                </a>
+              ))}
+            </nav>
+          </div>
+        </div>
+        {/* Reading-progress line, rendered below the nav's own divider/borders so it never
+            overlaps the active tab's underline. */}
         <div
-          className="absolute bottom-0 left-0 h-0.5 bg-brand-primary transition-[width] duration-150 ease-out"
+          className="h-0.5 bg-brand-primary transition-[width] duration-150 ease-out"
           style={{ width: `${scrollProgress}%` }}
           aria-hidden
         />
-        <div className="max-w-[90rem] mx-auto px-6">
-          <nav className="flex overflow-x-auto">
-            {visibleNavItems.map(item => (
-              <a
-                key={item.id}
-                href={`#${item.id}`}
-                onClick={(e) => {
-                  e.preventDefault();
-                  setActiveSection(item.id);
-                  const el = sectionRefs.current[item.id] ?? document.getElementById(item.id);
-                  if (!el) return;
-                  const headerOffset = editMode && isPreview ? 128 : isPreview || editMode ? 90 : 52;
-                  const top = el.getBoundingClientRect().top + window.scrollY - headerOffset;
-                  window.scrollTo({ top, behavior: 'smooth' });
-                }}
-                className={`px-4 py-3.5 text-xs font-semibold whitespace-nowrap border-b-2 transition-colors ${
-                  activeSection === item.id
-                    ? 'border-brand-primary text-brand-primary'
-                    : 'border-transparent text-gray-500 hover:text-gray-800'
-                } ${item.isHidden ? 'opacity-50' : ''}`}
-              >
-                {item.label}{item.isHidden ? ' (hidden)' : ''}
-              </a>
-            ))}
-          </nav>
-        </div>
       </div>
 
       <main className="max-w-[90rem] mx-auto px-6 py-10 space-y-16">
