@@ -204,9 +204,9 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
     interaction: (row.page_type === "cart" ? "cart_drawer" : undefined) as "cart_drawer" | undefined,
   };
   let result = await provider.capture(captureInput);
-  // A cold Lambda + heavy storefront can miss the timeout on the first shot;
-  // the retry runs against a now-warm container and usually succeeds.
-  if (!result.ok && result.error === "capture_timeout") {
+  // Retry any failure once: a cold-Lambda timeout retries warm, and a /tmp
+  // ENOSPC retries after the next invocation sweeps stale artifact dirs.
+  if (!result.ok) {
     result = await provider.capture(captureInput);
   }
   const now = new Date().toISOString();
