@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, Check, ChevronDown, ChevronUp, History, MessageSquare, Mic, Send, Sparkles, SquarePen, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronUp, History, Loader2, MessageSquare, Mic, Send, Sparkles, Square, SquarePen, Trash2, X } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import { useSpeechRecognition } from '../../../hooks/useSpeechRecognition';
+import { useAudioTranscription } from '../../../hooks/useAudioTranscription';
 import { useToast } from '../../ui/Toast';
 import { formatCurrency } from '../../../lib/revenue-calculator';
 import { RichAuditContent } from '../../ui/RichAuditText';
@@ -582,42 +582,43 @@ export default function ProposalAgentPanel({
     setInput('');
   };
 
-  // Voice dictation: speech is transcribed live and appended to whatever was
-  // already in the composer, so the user can review/edit before sending.
+  // Voice input: record mic audio, transcribe server-side (OpenAI Whisper), and
+  // append the result to whatever is already in the composer for review/edit.
   const showToast = useToast();
-  const dictationBaseRef = useRef('');
-  const { supported: voiceSupported, listening, start: startDictation, stop: stopDictation } =
-    useSpeechRecognition({
-      onResult: (transcript) => {
-        const base = dictationBaseRef.current;
-        setInput(base ? `${base} ${transcript}`.trimEnd() : transcript);
-      },
-      onError: (kind) => {
-        if (kind === 'not-allowed') {
-          showToast('Microphone access was blocked. Allow it in your browser settings to use voice input.');
-        } else if (kind === 'audio') {
-          showToast('No microphone was found.');
-        } else if (kind !== 'no-speech') {
-          showToast("Voice input didn't work. Please try again.");
-        }
-      },
-    });
+  const {
+    supported: voiceSupported,
+    status: voiceStatus,
+    start: startRecording,
+    stop: stopRecording,
+  } = useAudioTranscription({
+    onText: (text) => {
+      setInput((prev) => (prev.trim() ? `${prev.trim()} ${text}` : text));
+      inputRef.current?.focus();
+    },
+    onError: (kind) => {
+      if (kind === 'not-allowed') {
+        showToast('Microphone access was blocked. Allow it in your browser settings to use voice input.');
+      } else if (kind === 'no-device') {
+        showToast('No microphone was found.');
+      } else if (kind === 'unsupported') {
+        showToast("This browser doesn't support voice input.");
+      } else if (kind === 'empty') {
+        showToast("Didn't catch any audio. Please try again.");
+      } else {
+        showToast("Voice input didn't work. Please try again.");
+      }
+    },
+  });
 
-  const toggleDictation = () => {
-    if (listening) {
-      stopDictation();
-      return;
-    }
-    // Remember existing text so dictation appends rather than overwrites.
-    dictationBaseRef.current = input.trim();
-    inputRef.current?.focus();
-    startDictation();
+  const toggleRecording = () => {
+    if (voiceStatus === 'recording') stopRecording();
+    else if (voiceStatus === 'idle') void startRecording();
   };
 
-  // Stop listening if the composer gets disabled (assistant asked a question).
+  // Stop recording if the composer gets disabled (assistant asked a question).
   useEffect(() => {
-    if (awaitingChoice && listening) stopDictation();
-  }, [awaitingChoice, listening, stopDictation]);
+    if (awaitingChoice && voiceStatus === 'recording') stopRecording();
+  }, [awaitingChoice, voiceStatus, stopRecording]);
 
   const body = historyView ? (
     <ChatHistoryList
@@ -715,25 +716,45 @@ export default function ProposalAgentPanel({
             }}
             rows={2}
             placeholder={
-              awaitingChoice ? 'Pick an option above…' : listening ? 'Listening… speak now' : 'Message the assistant…'
+              awaitingChoice
+                ? 'Pick an option above…'
+                : voiceStatus === 'recording'
+                  ? 'Recording… click the square to stop'
+                  : voiceStatus === 'transcribing'
+                    ? 'Transcribing…'
+                    : 'Message the assistant…'
             }
             className="max-h-[200px] min-h-[3rem] flex-1 resize-none bg-transparent text-sm leading-relaxed text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
           />
           {voiceSupported && (
             <button
               type="button"
-              onClick={toggleDictation}
-              disabled={sending || awaitingChoice}
+              onClick={toggleRecording}
+              disabled={sending || awaitingChoice || voiceStatus === 'transcribing'}
               className={cn(
                 'rounded-lg p-1.5 transition-colors disabled:opacity-40',
-                listening
+                voiceStatus === 'recording'
                   ? 'animate-pulse bg-red-500 text-white hover:bg-red-600'
                   : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600',
               )}
-              aria-label={listening ? 'Stop voice input' : 'Start voice input'}
-              title={listening ? 'Stop voice input' : 'Speak your message'}
+              aria-label={
+                voiceStatus === 'recording' ? 'Stop recording' : voiceStatus === 'transcribing' ? 'Transcribing' : 'Start voice input'
+              }
+              title={
+                voiceStatus === 'recording'
+                  ? 'Stop recording'
+                  : voiceStatus === 'transcribing'
+                    ? 'Transcribing…'
+                    : 'Speak your message'
+              }
             >
-              <Mic className="h-3.5 w-3.5" />
+              {voiceStatus === 'recording' ? (
+                <Square className="h-3.5 w-3.5" />
+              ) : voiceStatus === 'transcribing' ? (
+                <Loader2 className="h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <Mic className="h-3.5 w-3.5" />
+              )}
             </button>
           )}
           <button
