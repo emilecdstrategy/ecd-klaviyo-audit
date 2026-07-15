@@ -223,9 +223,11 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
     interaction,
   };
   let result = await provider.capture(captureInput);
-  // Retry any failure once: a cold-Lambda timeout retries warm, and a /tmp
-  // ENOSPC retries after the next invocation sweeps stale artifact dirs.
-  if (!result.ok) {
+  // Storefronts rate-limit the screenshot service under rapid hits (serving a
+  // blank error page). Retry with a growing backoff so the store's rate-limit
+  // window has time to reset between attempts.
+  for (let attempt = 1; attempt <= 2 && !result.ok; attempt++) {
+    await new Promise((r) => setTimeout(r, attempt * 5000));
     result = await provider.capture(captureInput);
   }
   const now = new Date().toISOString();

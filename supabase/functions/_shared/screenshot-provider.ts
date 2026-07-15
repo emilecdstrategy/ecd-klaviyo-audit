@@ -56,9 +56,6 @@ class ScreenshotOneProvider implements ScreenshotProvider {
       wait_until: "networkidle2",
       timeout: "40",
       delay: "2",
-      // Storefronts intermittently return 5xx/403 to bots under rapid hits;
-      // capture the page anyway instead of failing the whole screenshot.
-      ignore_host_errors: "true",
     });
     if (fullPage) {
       params.set("full_page_scroll", "true");
@@ -79,6 +76,10 @@ class ScreenshotOneProvider implements ScreenshotProvider {
       }
       const bytes = new Uint8Array(await res.arrayBuffer());
       if (bytes.byteLength === 0) return { ok: false, error: "screenshotone_empty_response" };
+      // A tiny PNG is almost always a store rate-limit / bot-block error page
+      // captured as an image (a real storefront screenshot is >100KB). Reject
+      // it so the caller retries instead of storing a blank "success".
+      if (bytes.byteLength < 15000) return { ok: false, error: "screenshotone_blank_page_rate_limited" };
       return { ok: true, png: bytes };
     } catch (e) {
       return { ok: false, error: e instanceof Error ? e.message : "screenshotone_request_failed" };
