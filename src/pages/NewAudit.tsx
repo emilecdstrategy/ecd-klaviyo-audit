@@ -806,6 +806,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         setAnalysisProgress(Math.min(95, 45 + Math.round((done / Math.max(total, 1)) * 50)));
         setAnalysisStage(`Capturing screenshots… ${done}/${total} done`);
         if (capData.done) break;
+        // Brief pause between captures so the Supabase edge-function gateway
+        // doesn't throttle the rapid back-to-back invocations (local_rate_limited).
+        await new Promise(r => setTimeout(r, 1000));
       }
 
       setAnalysisProgress(100);
