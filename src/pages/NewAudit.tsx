@@ -1323,13 +1323,22 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                     ? "We'll capture desktop and mobile screenshots of the selected pages and pull Shopify metrics if connected. You'll be able to review everything before publishing."
                     : "Our AI will review the collected data and generate detailed findings for each audit section. You'll be able to review and edit everything before publishing."}
                 </p>
-                <button
-                  onClick={auditType === 'web' ? runAnalysisWeb : runAnalysis}
-                  className="inline-flex items-center gap-2 px-6 py-3 gradient-bg text-white font-medium rounded-lg hover:opacity-90 transition-opacity"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  {auditType === 'web' ? 'Create Web Audit' : 'Run AI Analysis'}
-                </button>
+                <div className="flex items-center justify-center gap-2">
+                  <button
+                    onClick={() => { setError(''); setStep(step - 1); }}
+                    className="inline-flex items-center gap-2 px-4 py-3 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+                  >
+                    <ArrowLeft className="w-4 h-4" />
+                    Back
+                  </button>
+                  <button
+                    onClick={auditType === 'web' ? runAnalysisWeb : runAnalysis}
+                    className="inline-flex items-center gap-2 px-6 py-3 gradient-bg text-white font-medium rounded-lg hover:opacity-90 transition-opacity"
+                  >
+                    <Sparkles className="w-4 h-4" />
+                    {auditType === 'web' ? 'Create Web Audit' : 'Run AI Analysis'}
+                  </button>
+                </div>
               </>
             ) : (
               <>
@@ -1509,14 +1518,23 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {stepKey !== 'run' && (
-          <div className="flex justify-end mt-6 mx-auto w-full max-w-2xl">
+          <div className="flex items-center mt-6 mx-auto w-full max-w-2xl">
+            {step > 0 ? (
+              <button
+                onClick={() => { setError(''); setStep(step - 1); }}
+                className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                Back
+              </button>
+            ) : <span />}
             <button
               onClick={() => {
                 if (stepKey === 'context') setError('');
                 setStep(step + 1);
               }}
               disabled={!canProceed()}
-              className="flex items-center gap-2 px-6 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+              className="ml-auto flex items-center gap-2 px-6 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
             >
               Continue
               <ArrowRight className="w-4 h-4" />
