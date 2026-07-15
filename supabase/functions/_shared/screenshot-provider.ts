@@ -56,6 +56,9 @@ class ScreenshotOneProvider implements ScreenshotProvider {
       wait_until: "networkidle2",
       timeout: "40",
       delay: "2",
+      // Storefronts intermittently return 5xx/403 to bots under rapid hits;
+      // capture the page anyway instead of failing the whole screenshot.
+      ignore_host_errors: "true",
     });
     if (fullPage) {
       params.set("full_page_scroll", "true");
