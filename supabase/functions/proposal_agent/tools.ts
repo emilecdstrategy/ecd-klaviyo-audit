@@ -64,6 +64,30 @@ export const AGENT_TOOLS: LlmTool[] = [
     input_schema: { type: "object", properties: {} },
   },
   {
+    name: "search_proposals",
+    description:
+      "Search the agency's PAST proposals by keyword (matches the proposal title and the client's company name). Use this whenever the user references an existing or previous proposal by name, e.g. 'structure it like the Celtic Sea Salt proposal' or 'the one we sent Rusty Surfboards'. Returns matching proposals with id, title, client, status, and date. Then call get_proposal on the best match to read its full structure.",
+    input_schema: {
+      type: "object",
+      properties: {
+        query: { type: "string", description: "Keywords to match against proposal titles and client company names, e.g. 'Celtic Sea Salt'" },
+      },
+      required: ["query"],
+    },
+  },
+  {
+    name: "get_proposal",
+    description:
+      "Read the full content of one past proposal by its id (from search_proposals): its sections (titles and body), line items with pricing, discount, and attached contracts. Use it to model a new draft's structure and depth on a proposal the user referenced. Always adapt the content to the current client and project; never copy another client's private facts verbatim.",
+    input_schema: {
+      type: "object",
+      properties: {
+        id: { type: "string", description: "The proposal id returned by search_proposals" },
+      },
+      required: ["id"],
+    },
+  },
+  {
     name: "ask_user",
     description:
       "Ask the user one clarifying question with 2-4 concrete options rendered as clickable chips (plus an automatic free-text 'Other'). Use when a decision materially shapes the proposal and the answer is not available. This ends your turn.",

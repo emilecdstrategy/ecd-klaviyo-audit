@@ -232,6 +232,74 @@ serve(async (req) => {
                 }))
               : [],
           }));
+        } else if (turn.name === "search_proposals") {
+          const q = String((turn.input as { query?: string })?.query ?? "").trim();
+          const { data } = await sb
+            .from("proposals")
+            .select("id, title, status, created_at, proposal_number, client:clients(company_name)")
+            .order("created_at", { ascending: false })
+            .limit(200);
+          const full = q.toLowerCase();
+          const tokens = full.split(/\s+/).filter((t) => t.length > 1);
+          const matches = (data ?? [])
+            .map((p: any) => {
+              const hay = `${p.title ?? ""} ${p.client?.company_name ?? ""}`.toLowerCase();
+              let score = full && hay.includes(full) ? 100 : 0;
+              for (const t of tokens) if (hay.includes(t)) score += 1;
+              return { p, score };
+            })
+            .filter((x) => x.score > 0)
+            .sort((a, b) => b.score - a.score)
+            .slice(0, 8)
+            .map((x) => ({
+              id: x.p.id,
+              title: x.p.title,
+              client_company: x.p.client?.company_name ?? null,
+              status: x.p.status,
+              created_at: x.p.created_at,
+            }));
+          result = { matches };
+        } else if (turn.name === "get_proposal") {
+          const id = String((turn.input as { id?: string })?.id ?? "").trim();
+          const { data: p } = await sb
+            .from("proposals")
+            .select(
+              "id, title, status, content_blocks, include_contracts, discount_type, discount_value, discount_applies_to, discount_label, client:clients(company_name), line_items:proposal_line_items(name, description, content, one_time_price, one_time_label, monthly_price, monthly_label, display_order)",
+            )
+            .eq("id", id)
+            .maybeSingle();
+          if (!p) {
+            result = { error: "proposal_not_found" };
+          } else {
+            const blocks = Array.isArray((p as any).content_blocks) ? (p as any).content_blocks : [];
+            const items = Array.isArray((p as any).line_items) ? [...(p as any).line_items] : [];
+            items.sort((a: any, b: any) => (a?.display_order ?? 0) - (b?.display_order ?? 0));
+            result = {
+              title: (p as any).title,
+              client_company: (p as any).client?.company_name ?? null,
+              status: (p as any).status,
+              content_blocks: blocks.map((b: any) => ({
+                title: b?.title ?? "",
+                content: typeof b?.content === "string" ? b.content.slice(0, 2500) : "",
+              })),
+              line_items: items.map((li: any) => ({
+                name: li?.name,
+                description: li?.description,
+                content: typeof li?.content === "string" ? li.content.slice(0, 1500) : "",
+                one_time_price: li?.one_time_price ?? null,
+                one_time_label: li?.one_time_label ?? null,
+                monthly_price: li?.monthly_price ?? null,
+                monthly_label: li?.monthly_label ?? null,
+              })),
+              discount: {
+                type: (p as any).discount_type,
+                value: (p as any).discount_value,
+                applies_to: (p as any).discount_applies_to,
+                label: (p as any).discount_label ?? null,
+              },
+              include_contracts: Array.isArray((p as any).include_contracts) ? (p as any).include_contracts : [],
+            };
+          }
         } else if (turn.name === "get_contracts") {
           result = contracts;
         } else if (turn.name === "get_clients") {
