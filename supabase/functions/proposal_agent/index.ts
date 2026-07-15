@@ -5,7 +5,7 @@ import { fetchGoogleDoc } from "../_shared/fetch-google-doc.ts";
 import { fetchFirefliesTranscript } from "../_shared/fetch-fireflies-transcript.ts";
 import { buildSystemPrompt, type AgentSnapshot } from "./prompt.ts";
 import { AGENT_TOOLS, TERMINAL_TOOLS } from "./tools.ts";
-import { deepSanitize, sanitizeCopy, validateDraft, validateEditSet, validateQuestion } from "./validate.ts";
+import { deepSanitize, sanitizeCopy, stripInternalNotes, validateDraft, validateEditSet, validateQuestion } from "./validate.ts";
 
 const MAX_TOOL_ITERATIONS = 6;
 const HISTORY_LIMIT = 30;
@@ -50,14 +50,11 @@ function historyToLlmMessages(rows: MessageRow[]): LlmMessage[] {
     if (row.role === "user") {
       out.push({ role: "user", text: row.content });
     } else if (row.role === "assistant") {
-      let text = row.content || "";
-      if (row.payload_kind === "question" && row.payload?.question) {
-        text = `${text}\n[Asked the user: ${row.payload.question}]`.trim();
-      } else if (row.payload_kind === "draft" && row.payload?.summary) {
-        text = `${text}\n[Proposed a draft: ${row.payload.summary}]`.trim();
-      } else if (row.payload_kind === "edits" && row.payload?.summary) {
-        text = `${text}\n[Proposed edits: ${row.payload.summary}]`.trim();
-      }
+      // Use only the stored assistant text. Do NOT append bracketed recaps of
+      // the question/draft/edits payload: the model was echoing those notes
+      // verbatim into its replies and imitating them by asking questions in
+      // prose instead of calling the ask_user tool (which renders the chips).
+      const text = (row.content || "").trim();
       if (text) out.push({ role: "assistant", text });
     } else if (row.role === "tool") {
       // Keep fetched document / transcript content available across turns; keep catalog results compact.
@@ -185,7 +182,7 @@ serve(async (req) => {
       const turn = await llm.runTurn({ system, messages, tools });
 
       if (turn.kind === "text") {
-        assistantText = sanitizeCopy(turn.text);
+        assistantText = stripInternalNotes(sanitizeCopy(turn.text));
         break;
       }
 
@@ -366,7 +363,7 @@ serve(async (req) => {
         continue;
       }
 
-      assistantText = sanitizeCopy(turn.text ?? "");
+      assistantText = stripInternalNotes(sanitizeCopy(turn.text ?? ""));
       const clean = deepSanitize(validation.value);
       if (turn.name === "ask_user") question = clean;
       else if (turn.name === "propose_draft") draft = clean;

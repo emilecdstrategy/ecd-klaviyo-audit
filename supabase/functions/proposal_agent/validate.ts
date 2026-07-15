@@ -11,6 +11,22 @@ export function sanitizeCopy(input: string): string {
     .replace(/[–—]/g, ", ");
 }
 
+/**
+ * Strip internal history annotations the model sometimes echoes into its visible
+ * reply (e.g. "[Asked the user: ...]"). Only applied to the chat text, never to
+ * proposal payload content (which may legitimately contain [markdown](links)).
+ */
+export function stripInternalNotes(input: string): string {
+  if (!input) return input;
+  return input
+    .replace(
+      /^[ \t]*\[(?:Asked the user|Proposed a draft|Proposed edits|Proposed a set of edits|Source content fetched)[^\]]*\][ \t]*$/gim,
+      "",
+    )
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
 /** Recursively sanitize every string in an object. */
 export function deepSanitize<T>(value: T): T {
   if (typeof value === "string") return sanitizeCopy(value) as unknown as T;
