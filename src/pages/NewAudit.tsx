@@ -857,7 +857,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <button
                 type="button"
-                onClick={() => { setAuditType('klaviyo'); setError(''); }}
+                onClick={() => { setAuditType('klaviyo'); setError(''); setStep(1); }}
                 className={`text-left rounded-xl border-2 p-5 transition-colors ${
                   auditType === 'klaviyo'
                     ? 'border-brand-primary bg-brand-primary/5'
@@ -874,7 +874,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               </button>
               <button
                 type="button"
-                onClick={() => { setAuditType('web'); setError(''); }}
+                onClick={() => { setAuditType('web'); setError(''); setStep(1); }}
                 className={`text-left rounded-xl border-2 p-5 transition-colors ${
                   auditType === 'web'
                     ? 'border-brand-primary bg-brand-primary/5'
