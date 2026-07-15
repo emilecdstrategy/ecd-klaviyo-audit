@@ -74,14 +74,18 @@ async function detectFromShopify(
   sb: ReturnType<typeof assertServiceClient>,
   clientId: string,
   origin: string,
-): Promise<{ product?: string; collection?: string }> {
+): Promise<{ product?: string; collection?: string; variantId?: string }> {
   const creds = await decryptShopifyToken(sb, clientId);
   if (!creds) return {};
-  const out: { product?: string; collection?: string } = {};
+  const out: { product?: string; collection?: string; variantId?: string } = {};
   try {
-    const res = await shopifyRest(creds.shopDomain, creds.token, "/products.json?limit=5&status=active&fields=handle");
-    const handle = res.ok ? res.body?.products?.find((p: { handle?: string }) => p?.handle)?.handle : null;
-    if (handle) out.product = `${origin}/products/${handle}`;
+    // Full product objects (not just handle) so we can also grab a variant id
+    // for the add-to-cart permalink used by the cart capture.
+    const res = await shopifyRest(creds.shopDomain, creds.token, "/products.json?limit=5&status=active");
+    const prod = res.ok ? res.body?.products?.find((p: { handle?: string }) => p?.handle) : null;
+    if (prod?.handle) out.product = `${origin}/products/${prod.handle}`;
+    const variantId = prod?.variants?.find((v: { id?: number | string }) => v?.id)?.id;
+    if (variantId) out.variantId = String(variantId);
   } catch { /* ignore */ }
   try {
     const [custom, smart] = await Promise.all([
@@ -130,20 +134,25 @@ async function seed(
   let product = normalizeUrl(input.product);
   let collection = normalizeUrl(input.collection);
 
-  if (!product || !collection) {
-    const viaShopify = await detectFromShopify(sb, clientId, origin);
-    product = product ?? (viaShopify.product ? normalizeUrl(viaShopify.product) : null);
-    collection = collection ?? (viaShopify.collection ? normalizeUrl(viaShopify.collection) : null);
-  }
+  // Always query Shopify (when connected) so we can also get a variant id for
+  // the cart permalink, even if product/collection URLs were supplied manually.
+  const viaShopify = await detectFromShopify(sb, clientId, origin);
+  if (!product && viaShopify.product) product = normalizeUrl(viaShopify.product);
+  if (!collection && viaShopify.collection) collection = normalizeUrl(viaShopify.collection);
+
   if (!product || !collection) {
     const viaHtml = await detectFromHtml(homepage, origin);
     product = product ?? (viaHtml.product ? normalizeUrl(viaHtml.product) : null);
     collection = collection ?? (viaHtml.collection ? normalizeUrl(viaHtml.collection) : null);
   }
 
-  // Cart: always attempt the slide-drawer on the homepage (falls back to /cart
-  // inside the screenshot function if no drawer trigger is found).
-  const cart = normalizeUrl(input.cart) ?? homepage;
+  // Cart: prefer a POPULATED cart via Shopify's add-to-cart permalink
+  // (/cart/{variant}:1 adds the item and lands on the cart page). Without a
+  // variant, fall back to the homepage and best-effort open the slide drawer.
+  let cart = normalizeUrl(input.cart);
+  if (!cart) {
+    cart = viaShopify.variantId ? `${origin}/cart/${viaShopify.variantId}:1` : homepage;
+  }
 
   const targets: Array<{ page_type: string; url: string }> = [{ page_type: "homepage", url: homepage }];
   if (product) targets.push({ page_type: "product", url: product });
@@ -197,11 +206,21 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
 
   if (!row) return { processed: 0, remaining: await countRemaining() };
 
+  // Only click the slide-drawer when the cart capture targets a non-/cart page
+  // (the homepage fallback). A /cart permalink already lands on a populated
+  // cart page, so we screenshot it directly.
+  let interaction: "cart_drawer" | undefined;
+  if (row.page_type === "cart") {
+    let path = "";
+    try { path = new URL(row.url).pathname; } catch { /* ignore */ }
+    if (!/^\/cart(\/|$)/.test(path)) interaction = "cart_drawer";
+  }
+
   const provider = getScreenshotProvider();
   const captureInput = {
     url: row.url,
     viewport: row.viewport as "desktop" | "mobile",
-    interaction: (row.page_type === "cart" ? "cart_drawer" : undefined) as "cart_drawer" | undefined,
+    interaction,
   };
   let result = await provider.capture(captureInput);
   // Retry any failure once: a cold-Lambda timeout retries warm, and a /tmp

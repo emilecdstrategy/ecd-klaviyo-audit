@@ -35,6 +35,9 @@ class ScreenshotOneProvider implements ScreenshotProvider {
 
   async capture(input: CaptureInput): Promise<CaptureResult> {
     const dim = DIMENSIONS[input.viewport];
+    // Drawer captures stay viewport-height (the drawer is a fixed overlay);
+    // every other page is full-page top to bottom.
+    const fullPage = input.interaction !== "cart_drawer";
     const params = new URLSearchParams({
       access_key: this.accessKey,
       url: input.url,
@@ -43,16 +46,21 @@ class ScreenshotOneProvider implements ScreenshotProvider {
       viewport_width: String(dim.width),
       viewport_height: String(dim.height),
       device_scale_factor: "1",
-      full_page: "false",
+      full_page: fullPage ? "true" : "false",
       block_ads: "true",
       block_cookie_banners: "true",
+      block_banners_by_heuristics: "true",
       block_trackers: "true",
       block_chats: "true",
       cache: "false",
       wait_until: "networkidle2",
-      timeout: "30",
+      timeout: "40",
       delay: "2",
     });
+    if (fullPage) {
+      params.set("full_page_scroll", "true");
+      params.set("full_page_max_height", "12000");
+    }
     if (input.interaction === "cart_drawer") {
       // Open the slide-cart drawer, but don't fail the capture if no cart
       // trigger matches — just screenshot the page as-is.
