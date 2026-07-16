@@ -124,6 +124,7 @@ export default function ProposalEditor() {
                 contractDocs={contractDocs}
                 signatures={signatures}
                 settings={settings}
+                collapsibleContracts
               />
             </main>
           </div>
