@@ -9,6 +9,7 @@ import {
 } from './proposals-db';
 import type {
   Proposal,
+  ProposalAgentAttachment,
   ProposalBlock,
   ProposalDiscountAppliesTo,
   ProposalDiscountType,
@@ -178,11 +179,39 @@ export function buildSnapshot(proposal: Proposal, lineItems: ProposalLineItem[])
   };
 }
 
+/**
+ * Upload a file (PDF) for the AI assistant to read. Stored in the public
+ * audit-assets bucket so the model can fetch it by URL; returns the attachment
+ * descriptor to send with the chat message.
+ */
+export const MAX_AGENT_ATTACHMENT_BYTES = 20 * 1024 * 1024; // 20 MB
+
+export async function uploadProposalAgentFile(
+  file: File,
+  conversationId: string | null,
+): Promise<ProposalAgentAttachment> {
+  if (file.type !== 'application/pdf') {
+    throw new Error('Only PDF files are supported right now.');
+  }
+  if (file.size > MAX_AGENT_ATTACHMENT_BYTES) {
+    throw new Error('That PDF is too large. Please keep it under 20 MB.');
+  }
+  const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'document.pdf';
+  const path = `proposal-agent/${conversationId ?? 'new'}/${crypto.randomUUID()}-${safeName}`;
+  const { error } = await supabase.storage
+    .from('audit-assets')
+    .upload(path, file, { upsert: false, contentType: 'application/pdf' });
+  if (error) throw error;
+  const { data } = supabase.storage.from('audit-assets').getPublicUrl(path);
+  return { url: data.publicUrl, name: file.name, media_type: 'application/pdf', size: file.size };
+}
+
 export async function sendAgentMessage(input: {
   conversation_id?: string | null;
   proposal_id?: string | null;
   client_id?: string | null;
   message: string;
+  attachments?: ProposalAgentAttachment[];
   snapshot?: AgentSnapshot | null;
 }): Promise<AgentResponse> {
   const maxAttempts = 2;
@@ -196,6 +225,7 @@ export async function sendAgentMessage(input: {
           proposal_id: input.proposal_id ?? undefined,
           client_id: input.client_id ?? undefined,
           message: input.message,
+          attachments: input.attachments?.length ? input.attachments : undefined,
           snapshot: input.snapshot ?? undefined,
         },
       },

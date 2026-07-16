@@ -486,6 +486,14 @@ export interface ProposalAgentConversation {
 
 export type ProposalAgentPayloadKind = 'question' | 'draft' | 'edits' | 'doc_fetch' | 'catalog';
 
+/** A file attached to a chat message (currently PDFs uploaded to storage). */
+export interface ProposalAgentAttachment {
+  url: string;
+  name: string;
+  media_type: string;
+  size?: number;
+}
+
 export interface ProposalAgentMessage {
   id: string;
   conversation_id: string;
@@ -496,6 +504,8 @@ export interface ProposalAgentMessage {
   applied_at: string | null;
   /** Staff member who sent this message (role='user' only). */
   actor_user_id: string | null;
+  /** Files attached to this message (role='user' only). */
+  attachments?: ProposalAgentAttachment[];
   created_at: string;
 }
 

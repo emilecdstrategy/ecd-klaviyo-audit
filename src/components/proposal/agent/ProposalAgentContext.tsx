@@ -25,14 +25,18 @@ import {
   type ProposalAgentMessageWithAuthor,
 } from '../../../lib/proposal-agent-db';
 import { useAuth } from '../../../contexts/AuthContext';
-import type { ProposalAgentConversation, ProposalAgentMessage } from '../../../lib/types';
+import type {
+  ProposalAgentAttachment,
+  ProposalAgentConversation,
+  ProposalAgentMessage,
+} from '../../../lib/types';
 
 export type ConversationSummary = ProposalAgentConversation & { messageCount: number };
 
 export type AgentChatMessage = Pick<
   ProposalAgentMessage,
   'id' | 'role' | 'content' | 'payload' | 'payload_kind' | 'applied_at'
-> & { pending?: boolean; actorName?: string | null };
+> & { pending?: boolean; actorName?: string | null; attachments?: ProposalAgentAttachment[] };
 
 export type ProposalAgentHostConfig = {
   /** Proposal the chat is attached to; null on the proposals list (draft-from-scratch chats). */
@@ -58,7 +62,7 @@ type ProposalAgentContextValue = {
   error: string | null;
   applyingMessageId: string | null;
   canApply: boolean;
-  sendMessage: (text: string) => Promise<void>;
+  sendMessage: (text: string, attachments?: ProposalAgentAttachment[]) => Promise<void>;
   applyMessage: (message: AgentChatMessage) => Promise<void>;
   resetChat: () => void;
   // History
@@ -117,6 +121,7 @@ export function ProposalAgentProvider({
         payload_kind: r.payload_kind,
         applied_at: r.applied_at,
         actorName: r.actor_name,
+        attachments: Array.isArray(r.attachments) ? r.attachments : [],
       }));
 
   // Load persisted history the first time the panel opens (per proposal).
@@ -149,9 +154,10 @@ export function ProposalAgentProvider({
   }, [isOpen, config.proposalId]);
 
   const sendMessage = useCallback(
-    async (text: string) => {
+    async (text: string, attachments?: ProposalAgentAttachment[]) => {
       const trimmed = text.trim();
-      if (!trimmed || sending) return;
+      const atts = attachments ?? [];
+      if ((!trimmed && atts.length === 0) || sending) return;
       setError(null);
       const userMsg: AgentChatMessage = {
         id: tempId(),
@@ -162,6 +168,7 @@ export function ProposalAgentProvider({
         applied_at: null,
         pending: true,
         actorName: currentUser?.name ?? null,
+        attachments: atts,
       };
       setMessages(prev => [...prev, userMsg]);
       setSending(true);
@@ -172,6 +179,7 @@ export function ProposalAgentProvider({
           proposal_id: cfg.proposalId,
           client_id: cfg.clientId ?? null,
           message: trimmed,
+          attachments: atts,
           snapshot: cfg.getSnapshot?.() ?? null,
         });
         setConversationId(res.conversation_id);

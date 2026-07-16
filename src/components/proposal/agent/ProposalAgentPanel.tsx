@@ -1,17 +1,19 @@
 import { useEffect, useRef, useState, type FormEvent } from 'react';
-import { ArrowLeft, Check, ChevronDown, ChevronUp, History, Loader2, MessageSquare, Mic, Send, Sparkles, Square, SquarePen, Trash2, X } from 'lucide-react';
+import { ArrowLeft, Check, ChevronDown, ChevronUp, FileText, History, Loader2, MessageSquare, Mic, Paperclip, Send, Sparkles, Square, SquarePen, Trash2, X } from 'lucide-react';
 import { cn } from '../../../lib/utils';
 import { useAudioTranscription } from '../../../hooks/useAudioTranscription';
 import { useToast } from '../../ui/Toast';
 import { formatCurrency } from '../../../lib/revenue-calculator';
 import { RichAuditContent } from '../../ui/RichAuditText';
 import { useProposalAgent, type AgentChatMessage, type ConversationSummary } from './ProposalAgentContext';
+import { uploadProposalAgentFile } from '../../../lib/proposal-agent';
 import type {
   AgentQuestion,
   ProposalDraftPayload,
   ProposalEditOp,
   ProposalEditSet,
 } from '../../../lib/proposal-agent';
+import type { ProposalAgentAttachment } from '../../../lib/types';
 
 const TYPING_LABELS = [
   'Thinking',
@@ -372,13 +374,31 @@ function MessageBubble({
   const [discarded, setDiscarded] = useState(false);
 
   if (message.role === 'user') {
+    const attachments = message.attachments ?? [];
     return (
       <div className="flex flex-col items-end px-4 py-1.5">
         {message.actorName && (
           <p className="mb-0.5 pr-1 text-[11px] font-medium text-gray-400">{message.actorName}</p>
         )}
-        <div className={cn('max-w-[85%] rounded-2xl rounded-br-md bg-brand-primary px-3.5 py-2 text-sm text-white', message.pending && 'opacity-70')}>
-          <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
+        <div className={cn('flex max-w-[85%] flex-col items-end gap-1.5', message.pending && 'opacity-70')}>
+          {attachments.map((att, i) => (
+            <a
+              key={i}
+              href={att.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex max-w-full items-center gap-2 rounded-xl border border-brand-primary/30 bg-brand-primary/5 px-3 py-2 text-xs font-medium text-brand-primary hover:bg-brand-primary/10"
+              title={att.name}
+            >
+              <FileText className="h-4 w-4 shrink-0" />
+              <span className="truncate">{att.name}</span>
+            </a>
+          ))}
+          {message.content && (
+            <div className="rounded-2xl rounded-br-md bg-brand-primary px-3.5 py-2 text-sm text-white">
+              <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -544,6 +564,18 @@ export default function ProposalAgentPanel({
   const [input, setInput] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Files the user has attached to the next message (PDFs). Each starts
+  // "uploading" then flips to "ready" (with the stored attachment) or drops out
+  // on error (surfaced via toast).
+  type PendingAttachment = {
+    id: string;
+    name: string;
+    status: 'uploading' | 'ready';
+    attachment?: ProposalAgentAttachment;
+  };
+  const [pending, setPending] = useState<PendingAttachment[]>([]);
 
   useEffect(() => {
     const el = scrollRef.current;
@@ -575,16 +607,42 @@ export default function ProposalAgentPanel({
   const awaitingChoice =
     !sending && !loadingHistory && lastMessage?.role === 'assistant' && lastMessage.payload_kind === 'question';
 
+  const readyAttachments = pending
+    .filter(p => p.status === 'ready' && p.attachment)
+    .map(p => p.attachment as ProposalAgentAttachment);
+  const uploadingAttachment = pending.some(p => p.status === 'uploading');
+
   const submit = (e?: FormEvent) => {
     e?.preventDefault();
-    if (!input.trim() || sending || awaitingChoice) return;
-    void sendMessage(input);
+    if (sending || awaitingChoice || uploadingAttachment) return;
+    if (!input.trim() && readyAttachments.length === 0) return;
+    void sendMessage(input, readyAttachments);
     setInput('');
+    setPending([]);
   };
 
   // Voice input: record mic audio, transcribe server-side (OpenAI Whisper), and
   // append the result to whatever is already in the composer for review/edit.
   const showToast = useToast();
+
+  // File attachments (PDFs): upload as soon as they're picked so they're ready
+  // to send; each becomes a chip above the composer.
+  const onFilesSelected = async (fileList: FileList | null) => {
+    const files = fileList ? Array.from(fileList) : [];
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    for (const file of files) {
+      const id = `att_${Math.random().toString(36).slice(2, 9)}`;
+      setPending(prev => [...prev, { id, name: file.name, status: 'uploading' }]);
+      try {
+        const attachment = await uploadProposalAgentFile(file, conversationId);
+        setPending(prev => prev.map(p => (p.id === id ? { ...p, status: 'ready', attachment } : p)));
+      } catch (e) {
+        setPending(prev => prev.filter(p => p.id !== id));
+        showToast(e instanceof Error ? e.message : 'The file could not be uploaded.');
+      }
+    }
+  };
+  const removePending = (id: string) => setPending(prev => prev.filter(p => p.id !== id));
   const {
     supported: voiceSupported,
     status: voiceStatus,
@@ -671,8 +729,9 @@ export default function ProposalAgentPanel({
             <p className="text-sm font-medium text-gray-900">Let's build a proposal.</p>
             <p className="mt-1.5 text-xs leading-relaxed text-gray-500">
               Drop a Google Docs link (set to "Anyone with the link can view") or a Fireflies meeting
-              link, paste the text directly, or just describe what you need. I'll ask a few questions
-              and draft the full proposal for you to review and apply.
+              link, upload a PDF (a pitch deck or brief) with the paperclip, paste the text directly,
+              or just describe what you need. I'll ask a few questions and draft the full proposal for
+              you to review and apply.
             </p>
           </div>
         ) : (
@@ -697,6 +756,39 @@ export default function ProposalAgentPanel({
         {awaitingChoice && (
           <p className="mb-2 px-1 text-xs text-gray-400">Choose an option above to continue.</p>
         )}
+        {pending.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {pending.map(p => (
+              <span
+                key={p.id}
+                className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600"
+              >
+                {p.status === 'uploading' ? (
+                  <Loader2 className="h-3 w-3 shrink-0 animate-spin text-gray-400" />
+                ) : (
+                  <FileText className="h-3 w-3 shrink-0 text-brand-primary" />
+                )}
+                <span className="max-w-[160px] truncate" title={p.name}>{p.name}</span>
+                <button
+                  type="button"
+                  onClick={() => removePending(p.id)}
+                  className="text-gray-300 hover:text-red-500"
+                  aria-label={`Remove ${p.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="application/pdf"
+          multiple
+          className="hidden"
+          onChange={e => void onFilesSelected(e.target.files)}
+        />
         <div
           className={cn(
             'flex items-end gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 focus-within:border-brand-primary/50',
@@ -726,6 +818,16 @@ export default function ProposalAgentPanel({
             }
             className="max-h-[200px] min-h-[3rem] flex-1 resize-none bg-transparent text-sm leading-relaxed text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
           />
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={sending || awaitingChoice}
+            className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
+            aria-label="Attach a PDF"
+            title="Attach a PDF (pitch deck, brief)"
+          >
+            <Paperclip className="h-3.5 w-3.5" />
+          </button>
           {voiceSupported && (
             <button
               type="button"
@@ -759,7 +861,7 @@ export default function ProposalAgentPanel({
           )}
           <button
             type="submit"
-            disabled={!input.trim() || sending || awaitingChoice}
+            disabled={(!input.trim() && readyAttachments.length === 0) || sending || awaitingChoice || uploadingAttachment}
             className="rounded-lg bg-brand-primary p-1.5 text-white hover:bg-brand-primary-dark disabled:opacity-40"
             aria-label="Send message"
           >

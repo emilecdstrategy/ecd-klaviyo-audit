@@ -25,11 +25,14 @@ function json(data: unknown, init: ResponseInit = {}) {
   });
 }
 
+type AgentAttachment = { url: string; name: string; media_type: string; size?: number };
+
 type RequestBody = {
   conversation_id?: string;
   proposal_id?: string;
   client_id?: string;
   message?: string;
+  attachments?: AgentAttachment[];
   snapshot?: AgentSnapshot;
   provider?: string;
 };
@@ -41,14 +44,32 @@ type MessageRow = {
   payload: any;
   payload_kind: string | null;
   actor_user_id: string | null;
+  attachments: AgentAttachment[] | null;
   created_at: string;
 };
+
+const ATTACH_FALLBACK_TEXT = "Please review the attached file(s) and use them as source material.";
+
+function attachmentsToDocuments(atts: AgentAttachment[]) {
+  return atts
+    .filter((a) => a?.url)
+    .map((a) => ({ url: a.url, media_type: a.media_type || "application/pdf", name: a.name }));
+}
 
 function historyToLlmMessages(rows: MessageRow[]): LlmMessage[] {
   const out: LlmMessage[] = [];
   for (const row of rows) {
     if (row.role === "user") {
-      out.push({ role: "user", text: row.content });
+      const atts = Array.isArray(row.attachments) ? row.attachments : [];
+      if (atts.length > 0) {
+        out.push({
+          role: "user_docs",
+          text: row.content || ATTACH_FALLBACK_TEXT,
+          documents: attachmentsToDocuments(atts),
+        });
+      } else {
+        out.push({ role: "user", text: row.content });
+      }
     } else if (row.role === "assistant") {
       // Use only the stored assistant text. Do NOT append bracketed recaps of
       // the question/draft/edits payload: the model was echoing those notes
@@ -86,7 +107,12 @@ serve(async (req) => {
   try {
     const body = (await req.json()) as RequestBody;
     const message = (body.message ?? "").trim();
-    if (!message) return json({ ok: false, error: { code: "bad_request", message: "Missing message" } }, { status: 200 });
+    const attachments = (Array.isArray(body.attachments) ? body.attachments : []).filter(
+      (a) => a && typeof a.url === "string" && a.url,
+    );
+    if (!message && attachments.length === 0) {
+      return json({ ok: false, error: { code: "bad_request", message: "Missing message" } }, { status: 200 });
+    }
 
     const sb = assertServiceRoleClient();
 
@@ -110,7 +136,7 @@ serve(async (req) => {
         .insert({
           proposal_id: body.proposal_id ?? null,
           client_id: body.client_id ?? null,
-          title: message.slice(0, 80),
+          title: (message || attachments[0]?.name || "New proposal chat").slice(0, 80),
           created_by: uid,
         })
         .select("id")
@@ -126,12 +152,13 @@ serve(async (req) => {
       role: "user",
       content: message,
       actor_user_id: uid,
+      attachments,
     });
     if (userInsertErr) throw userInsertErr;
 
     const { data: historyRows, error: historyErr } = await sb
       .from("proposal_agent_messages")
-      .select("id, role, content, payload, payload_kind, actor_user_id, created_at")
+      .select("id, role, content, payload, payload_kind, actor_user_id, attachments, created_at")
       .eq("conversation_id", conversationId)
       .order("created_at", { ascending: false })
       .limit(HISTORY_LIMIT);
@@ -163,11 +190,20 @@ serve(async (req) => {
     });
 
     const llm = createLlmClient(body.provider);
-    const messages: LlmMessage[] = historyToLlmMessages(rows);
-    // The freshly inserted user message is included in `rows` already; if the
-    // history got truncated to exclude it (very long chats), append it.
-    if (messages.length === 0 || messages[messages.length - 1].role !== "user" ||
-        (messages[messages.length - 1] as { text: string }).text !== message) {
+    // Build history from every prior row, then append the fresh user turn
+    // explicitly so its attachments always reach the model (independent of the
+    // select ordering / truncation). The last row is the message we just
+    // inserted, so drop it before rendering history to avoid a duplicate.
+    const priorRows =
+      rows.length > 0 && rows[rows.length - 1].role === "user" ? rows.slice(0, -1) : rows;
+    const messages: LlmMessage[] = historyToLlmMessages(priorRows);
+    if (attachments.length > 0) {
+      messages.push({
+        role: "user_docs",
+        text: message || ATTACH_FALLBACK_TEXT,
+        documents: attachmentsToDocuments(attachments),
+      });
+    } else {
       messages.push({ role: "user", text: message });
     }
 

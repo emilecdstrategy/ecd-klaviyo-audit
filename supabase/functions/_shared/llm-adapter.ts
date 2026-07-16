@@ -7,10 +7,13 @@ export type LlmTool = {
 };
 
 export type LlmImage = { url: string; label?: string };
+/** A document (e.g. PDF) attached to a user turn. Prefer `url`; base64 is a fallback. */
+export type LlmDocument = { url?: string; base64?: string; media_type?: string; name?: string };
 
 export type LlmMessage =
   | { role: "user"; text: string }
   | { role: "user_images"; text: string; images: LlmImage[] }
+  | { role: "user_docs"; text: string; documents: LlmDocument[] }
   | { role: "assistant"; text: string }
   | { role: "assistant_tool_call"; id: string; name: string; input: unknown; text?: string }
   | { role: "tool_result"; id: string; name: string; result: string };
@@ -102,6 +105,19 @@ function toAnthropicMessages(messages: LlmMessage[]) {
       }
       if (m.text) content.push({ type: "text", text: m.text });
       out.push({ role: "user", content });
+    } else if (m.role === "user_docs") {
+      const content: unknown[] = [];
+      for (const doc of m.documents) {
+        if (doc.name) content.push({ type: "text", text: `Attached file: ${doc.name}` });
+        content.push({
+          type: "document",
+          source: doc.url
+            ? { type: "url", url: doc.url }
+            : { type: "base64", media_type: doc.media_type ?? "application/pdf", data: doc.base64 },
+        });
+      }
+      if (m.text) content.push({ type: "text", text: m.text });
+      out.push({ role: "user", content });
     } else if (m.role === "assistant") {
       out.push({ role: "assistant", content: [{ type: "text", text: m.text }] });
     } else if (m.role === "assistant_tool_call") {
@@ -175,6 +191,21 @@ function toOpenAiInput(messages: LlmMessage[]) {
       for (const img of m.images) {
         if (img.label) content.push({ type: "input_text", text: img.label });
         content.push({ type: "input_image", image_url: img.url });
+      }
+      if (m.text) content.push({ type: "input_text", text: m.text });
+      out.push({ role: "user", content });
+    } else if (m.role === "user_docs") {
+      const content: unknown[] = [];
+      for (const doc of m.documents) {
+        if (doc.url) {
+          content.push({ type: "input_file", file_url: doc.url });
+        } else if (doc.base64) {
+          content.push({
+            type: "input_file",
+            filename: doc.name ?? "file.pdf",
+            file_data: `data:${doc.media_type ?? "application/pdf"};base64,${doc.base64}`,
+          });
+        }
       }
       if (m.text) content.push({ type: "input_text", text: m.text });
       out.push({ role: "user", content });
