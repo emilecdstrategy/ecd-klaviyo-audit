@@ -343,7 +343,7 @@ export async function markProposalSent(proposal: Proposal): Promise<Proposal> {
   if (error) throw error;
 
   if (wasDraft) {
-    await recordProposalEvent(proposal.id, 'sent', { via: 'link' });
+    await recordProposalEvent(proposal.id, 'sent', { via: 'link', send_method: 'link' });
   }
   return mapProposalRow(data);
 }

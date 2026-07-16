@@ -148,6 +148,16 @@ serve(async (req) => {
       ...(signer2Email && token2 ? [{ email: signer2Email, name: signer2Name, token: token2 }] : []),
     ];
 
+    const subject = `Proposal for ${companyName} from ECD Digital Strategy`;
+    // Raw (unescaped) body lines, minus the per-recipient greeting/link, stored on
+    // the event so the activity log can render a faithful preview of what was sent.
+    const previewBodyLines = [
+      ...(message ? [message] : []),
+      `Please review the proposal we prepared for ${companyName}. You can read and sign it directly from the link below.`,
+      ...(recipients.length > 1 ? [`This link is personal to you; each signer receives their own signing link.`] : []),
+      ...(validUntil ? [`This proposal is valid until ${validUntil}.`] : []),
+    ];
+
     const emailResults: Array<{ email: string; status: string; id?: string; reason?: string }> = [];
     for (const recipient of recipients) {
       const result = await sendEmail({
@@ -155,7 +165,7 @@ serve(async (req) => {
         from: resolveFromAddress(settings.email),
         replyTo: primaryReplyTo,
         cc: ccReplyTos,
-        subject: `Proposal for ${companyName} from ECD Digital Strategy`,
+        subject,
         html: proposalEmailHtml({
           heading: `Your proposal is ready`,
           bodyLines: [
@@ -183,6 +193,7 @@ serve(async (req) => {
       actor: "admin",
       actor_user_id: userId,
       metadata: {
+        send_method: "email",
         email_to: recipients.map((r) => r.email).join(", "),
         email_results: emailResults,
         email_status: emailResults.every((r) => r.status === "sent")
@@ -190,7 +201,14 @@ serve(async (req) => {
           : emailResults.some((r) => r.status === "failed")
           ? "failed"
           : emailResults[0].status,
-        ...(replyToEmails.length ? { reply_to: replyToEmails } : {}),
+        // Rich preview payload so the activity log can show exactly what went out.
+        subject,
+        message: message || null,
+        recipients: recipients.map((r) => ({ name: r.name || null, email: r.email })),
+        reply_to: primaryReplyTo || null,
+        cc: ccReplyTos,
+        body_lines: previewBodyLines,
+        cta_label: "View & sign proposal",
       },
     });
 
