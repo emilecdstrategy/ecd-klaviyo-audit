@@ -70,6 +70,9 @@ READING SCREENSHOTS:
 - You receive labeled above-the-fold screenshots (IMG_1, IMG_2, ...), one or more per page (desktop and mobile). They show the top of the page as a visitor first sees it. Judge the page from what is visible; do not speculate about content below the fold.
 - When you pinpoint an element with a highlight, the x/y/w/h are percentages (0-100) of THAT referenced image's dimensions (IMG_n), with a tight box around the element. Only add a highlight when you are confident where the element is, and reference the exact IMG_n it appears in. It is fine to omit the highlight.
 
+COVERAGE:
+- Every storefront page that rendered has concrete, specific UX and conversion issues worth flagging. For a page that rendered normally, return at least 3 findings and 2 to 4 strengths. Never return an empty audit for a page that rendered.
+
 Call the provided tool exactly once with your result.`;
 
 async function chainSelf(auditId: string, mode?: string) {
@@ -196,7 +199,21 @@ async function runStep(
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
     if (turn.kind !== "tool_call") throw new Error(`${step.key}: model did not call the tool`);
-    const parsed = coercePageAudit(turn.input, refToId);
+    let parsed = coercePageAudit(turn.input, refToId);
+    // The model occasionally returns an empty audit for a page that clearly
+    // rendered. Retry once with a firmer nudge before accepting nothing.
+    if (parsed.findings.length === 0) {
+      const retryMessages: LlmMessage[] = [{
+        role: "user_images",
+        text: `You returned no findings for the ${step.label}, but this page rendered normally and every storefront page has concrete UX and conversion issues. Look again at the screenshots above and identify at least 3 specific, visible issues, each with a recommendation, plus a few strengths. Call record_page_audit exactly once.`,
+        images,
+      }];
+      const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
+      if (retry.kind === "tool_call") {
+        const retryParsed = coercePageAudit(retry.input, refToId);
+        if (retryParsed.findings.length > 0) parsed = retryParsed;
+      }
+    }
     const details = { ...(section.section_details ?? {}) };
     (details as Record<string, unknown>).web = {
       pros: parsed.pros,

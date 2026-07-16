@@ -1,6 +1,6 @@
-import { Globe, Plus, Trash2 } from 'lucide-react';
+import { Globe } from 'lucide-react';
 import type { Audit, AuditSection, Client, ShopifyDataSnapshot, WebPageSnapshot, WebPageType } from '../../lib/types';
-import { parseWebSectionDetail, type OrdersRollup } from '../../lib/web-report-details';
+import { type OrdersRollup } from '../../lib/web-report-details';
 import { useReportEdit } from './edit/ReportEditContext';
 import EditablePlainText from './edit/EditablePlainText';
 import WebPageSection from './web/WebPageSection';
@@ -29,12 +29,10 @@ function isHidden(section: AuditSection | undefined): boolean {
   return inner?.hidden === true;
 }
 
-/** Inline "Overall Pros" block for the web_overview section. */
+/** Intro block for the web_overview section (executive summary only; page-level
+ * strengths live on each page's "What works"). */
 function OverviewBlock({ section, companyName }: { section: AuditSection; companyName: string }) {
-  const { editMode, updateSectionField, updateSectionDetailValue } = useReportEdit();
-  const detail = parseWebSectionDetail(section.section_details);
-  const pros = detail.pros;
-  const setPros = (next: string[]) => updateSectionDetailValue(section.section_key, ['web', 'pros'], next);
+  const { editMode, updateSectionField } = useReportEdit();
 
   return (
     <section className="rounded-xl bg-white p-6 card-shadow">
@@ -46,31 +44,6 @@ function OverviewBlock({ section, companyName }: { section: AuditSection; compan
             onSave={(v) => updateSectionField(section.section_key, 'summary_text', v)}
             placeholder={`A short summary of ${companyName}'s storefront…`}
           />
-        </div>
-      )}
-      {(editMode || pros.length > 0) && (
-        <div className="mt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">Overall Pros</p>
-          <ul className="mt-2 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
-            {pros.map((pro, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                <span className="flex-1">
-                  <EditablePlainText value={pro} onSave={(v) => setPros(pros.map((p, idx) => (idx === i ? v : p)))} />
-                </span>
-                {editMode && (
-                  <button type="button" onClick={() => setPros(pros.filter((_, idx) => idx !== i))} className="text-gray-300 hover:text-red-500" aria-label="Remove">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-          {editMode && (
-            <button type="button" onClick={() => setPros([...pros, 'New strength'])} className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-brand-primary hover:underline">
-              <Plus className="h-3 w-3" /> Add strength
-            </button>
-          )}
         </div>
       )}
     </section>

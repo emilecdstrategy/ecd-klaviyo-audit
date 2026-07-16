@@ -99,6 +99,59 @@ async function detectFromShopify(
   return out;
 }
 
+// Public storefront JSON, available on virtually every Shopify store without an
+// Admin connection. This is what unlocks a real product + a variant id (for the
+// populated-cart permalink) and a real collection for un-connected clients.
+async function detectFromStorefront(
+  origin: string,
+): Promise<{ product?: string; collection?: string; variantId?: string }> {
+  const out: { product?: string; collection?: string; variantId?: string } = {};
+  const headers = { "user-agent": "Mozilla/5.0 (compatible; ECDAuditBot/1.0)", accept: "application/json" };
+
+  try {
+    const res = await fetch(`${origin}/products.json?limit=50`, { headers, redirect: "follow" });
+    if (res.ok) {
+      const body = (await res.json().catch(() => null)) as {
+        products?: Array<{
+          handle?: string;
+          images?: Array<unknown>;
+          variants?: Array<{ id?: number | string; price?: string; available?: boolean }>;
+        }>;
+      } | null;
+      const products = (body?.products ?? []).filter((p) => p?.handle && (p.variants ?? []).length > 0);
+      // Prefer a flagship-looking product: has an image, an available variant, and
+      // the highest price (avoids picking a cheap accessory like "adapter-pins").
+      const priceOf = (p: { variants?: Array<{ price?: string }> }) =>
+        Math.max(0, ...(p.variants ?? []).map((v) => parseFloat(v.price ?? "0") || 0));
+      const withImage = products.filter((p) => (p.images ?? []).length > 0);
+      const pool = withImage.length ? withImage : products;
+      const chosen = pool.slice().sort((a, b) => priceOf(b) - priceOf(a))[0];
+      if (chosen?.handle) {
+        out.product = `${origin}/products/${chosen.handle}`;
+        const variant = (chosen.variants ?? []).find((v) => v?.available !== false && v?.id) ??
+          (chosen.variants ?? []).find((v) => v?.id);
+        if (variant?.id) out.variantId = String(variant.id);
+      }
+    }
+  } catch { /* ignore */ }
+
+  try {
+    const res = await fetch(`${origin}/collections.json?limit=50`, { headers, redirect: "follow" });
+    if (res.ok) {
+      const body = (await res.json().catch(() => null)) as {
+        collections?: Array<{ handle?: string; products_count?: number }>;
+      } | null;
+      const cols = (body?.collections ?? []).filter((c) => c?.handle);
+      // Skip generic catch-all collections when a more specific one exists.
+      const specific = cols.filter((c) => !["frontpage", "all"].includes((c.handle ?? "").toLowerCase()));
+      const chosen = (specific.length ? specific : cols)[0];
+      if (chosen?.handle) out.collection = `${origin}/collections/${chosen.handle}`;
+    }
+  } catch { /* ignore */ }
+
+  return out;
+}
+
 async function detectFromHtml(homepage: string, origin: string): Promise<{ product?: string; collection?: string }> {
   try {
     const res = await fetch(homepage, {
@@ -133,12 +186,23 @@ async function seed(
 
   let product = normalizeUrl(input.product);
   let collection = normalizeUrl(input.collection);
+  let variantId: string | undefined;
 
-  // Always query Shopify (when connected) so we can also get a variant id for
-  // the cart permalink, even if product/collection URLs were supplied manually.
+  // Detection precedence: manual input > Shopify Admin > public storefront JSON >
+  // homepage HTML regex. Each source fills whatever the previous left unresolved.
   const viaShopify = await detectFromShopify(sb, clientId, origin);
   if (!product && viaShopify.product) product = normalizeUrl(viaShopify.product);
   if (!collection && viaShopify.collection) collection = normalizeUrl(viaShopify.collection);
+  if (viaShopify.variantId) variantId = viaShopify.variantId;
+
+  // Public storefront JSON works without a Shopify connection and, crucially,
+  // yields a variant id to populate the cart.
+  if (!product || !collection || !variantId) {
+    const viaStore = await detectFromStorefront(origin);
+    if (!product && viaStore.product) product = normalizeUrl(viaStore.product);
+    if (!collection && viaStore.collection) collection = normalizeUrl(viaStore.collection);
+    if (!variantId && viaStore.variantId) variantId = viaStore.variantId;
+  }
 
   if (!product || !collection) {
     const viaHtml = await detectFromHtml(homepage, origin);
@@ -151,7 +215,7 @@ async function seed(
   // variant, fall back to the homepage and best-effort open the slide drawer.
   let cart = normalizeUrl(input.cart);
   if (!cart) {
-    cart = viaShopify.variantId ? `${origin}/cart/${viaShopify.variantId}:1` : homepage;
+    cart = variantId ? `${origin}/cart/${variantId}:1` : homepage;
   }
 
   const targets: Array<{ page_type: string; url: string }> = [{ page_type: "homepage", url: homepage }];
@@ -160,12 +224,12 @@ async function seed(
   targets.push({ page_type: "cart", url: cart });
 
   // Two variants per page/viewport: 'full' (report display) and 'viewport'
-  // (above-the-fold, legible for AI vision). Cart captures are already
-  // viewport-scale (drawer overlay or short /cart page), so skip its extra
-  // viewport variant. 14 rows total when all pages resolve.
+  // (above-the-fold, legible for AI vision). The cart is now a real /cart page
+  // (populated via the add-to-cart permalink), so it gets both variants like the
+  // others. 16 rows total when all pages resolve.
   const rows = targets.flatMap((t) =>
     VIEWPORTS.flatMap((viewport) => {
-      const variants = t.page_type === "cart" ? ["full"] : ["full", "viewport"];
+      const variants = ["full", "viewport"];
       return variants.map((variant) => ({
         audit_id: auditId,
         client_id: clientId,
