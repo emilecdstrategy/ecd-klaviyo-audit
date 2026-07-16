@@ -38,12 +38,13 @@ serve(async (req) => {
     const ip = (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim();
 
     // A view from any signed-in ECD session is us checking the proposal, not the
-    // client, so it must never flip the status to "viewed" or log a client view.
-    // Clients have no app login, so a resolvable session means staff. This covers
-    // opening the live client link while logged in, not just the explicit preview.
+    // client, so it must never flip the status to "viewed". Clients have no app
+    // login, so a resolvable session means staff. This covers opening the live
+    // client link while logged in, not just the explicit preview.
     let isStaffView = false;
+    let staffUserId: string | null = null;
     try {
-      await getUserIdFromAuthorization(req);
+      staffUserId = await getUserIdFromAuthorization(req);
       isStaffView = true;
     } catch {
       isStaffView = false;
@@ -51,7 +52,41 @@ serve(async (req) => {
 
     const isScanner = SCANNER_UA_RE.test(userAgent);
 
-    if (!isStaffView && !isScanner) {
+    if (isStaffView && !isScanner && staffUserId) {
+      // Internal ECD view: never flips status to "viewed" (that is reserved for
+      // the client) and never notifies the team. We still log it so the activity
+      // timeline can show "Viewed by <team member>". Deduped per user so repeated
+      // opens just refresh the timestamp of the single entry instead of spamming.
+      const nowIso = new Date().toISOString();
+      const meta = {
+        internal: true,
+        ip,
+        user_agent: userAgent.slice(0, 400),
+        signer_index: bundle.signerIndex,
+      };
+      const { data: existingView } = await sb
+        .from("proposal_events")
+        .select("id")
+        .eq("proposal_id", proposal.id)
+        .eq("event_type", "viewed")
+        .eq("actor", "admin")
+        .eq("actor_user_id", staffUserId)
+        .maybeSingle();
+      if (existingView?.id) {
+        await sb
+          .from("proposal_events")
+          .update({ created_at: nowIso, metadata: meta })
+          .eq("id", existingView.id);
+      } else {
+        await sb.from("proposal_events").insert({
+          proposal_id: proposal.id,
+          event_type: "viewed",
+          actor: "admin",
+          actor_user_id: staffUserId,
+          metadata: meta,
+        });
+      }
+    } else if (!isStaffView && !isScanner) {
       // Race-safe first-view transition: only one concurrent request wins the
       // sent -> viewed update (M4 hangs the team notification off this winner).
       const { data: transitioned } = await sb

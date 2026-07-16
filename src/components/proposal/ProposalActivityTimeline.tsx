@@ -267,16 +267,23 @@ export default function ProposalActivityTimeline({ events }: { events: ProposalE
         {events.map((event, index) => {
           const baseMeta = EVENT_META[event.event_type] ?? EVENT_META.updated;
           const sendMethod = detectSendMethod(event);
+          // A "viewed" event by a staff actor is an internal ECD open, logged
+          // without flipping the proposal to "viewed".
+          const internalView = event.event_type === 'viewed' && event.actor === 'admin';
 
-          // Resolve label + icon, overriding for the two send methods.
+          // Resolve label + icon + tone, overriding for send methods / internal views.
           let label = baseMeta.label;
           let Icon = baseMeta.icon;
+          let tone = baseMeta.tone;
           if (sendMethod === 'email') {
             label = event.event_type === 'resent' ? 'Resent by email' : 'Emailed to client';
             Icon = Mail;
           } else if (sendMethod === 'link') {
             label = event.event_type === 'resent' ? 'Link shared again' : 'Link shared';
             Icon = Link2;
+          } else if (internalView) {
+            label = `Viewed by ${event.actor_name ?? 'ECD team'}`;
+            tone = 'text-gray-500 bg-gray-100';
           }
 
           const clickable = sendMethod === 'email';
@@ -286,7 +293,8 @@ export default function ProposalActivityTimeline({ events }: { events: ProposalE
             typeof event.metadata?.signer_email === 'string' && event.metadata.signer_email
               ? event.metadata.signer_email
               : null;
-          const actorName = event.actor === 'admin' ? event.actor_name ?? null : null;
+          // Name already appears in the internal-view label, so skip the "· by" suffix there.
+          const actorName = event.actor === 'admin' && !internalView ? event.actor_name ?? null : null;
           const aiAssisted =
             (event.event_type === 'created' || event.event_type === 'updated') &&
             event.metadata?.via === 'ai_assistant';
@@ -303,7 +311,7 @@ export default function ProposalActivityTimeline({ events }: { events: ProposalE
               {index < events.length - 1 && (
                 <span className="absolute left-[13px] top-7 h-[calc(100%-1.25rem)] w-px bg-gray-100" aria-hidden />
               )}
-              <span className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${baseMeta.tone}`}>
+              <span className={`relative z-10 flex h-7 w-7 shrink-0 items-center justify-center rounded-full ${tone}`}>
                 <Icon className="h-3.5 w-3.5" />
               </span>
               <div className="min-w-0 pt-1">
@@ -323,6 +331,11 @@ export default function ProposalActivityTimeline({ events }: { events: ProposalE
                     <span className="inline-flex items-center gap-1 rounded-full bg-brand-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-primary">
                       <Sparkles className="h-2.5 w-2.5" />
                       AI assisted
+                    </span>
+                  )}
+                  {internalView && (
+                    <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">
+                      Internal
                     </span>
                   )}
                   {actorName ? <span className="font-normal text-gray-400"> · by {actorName}</span> : null}
