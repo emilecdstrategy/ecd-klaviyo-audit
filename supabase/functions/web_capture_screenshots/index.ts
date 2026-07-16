@@ -159,15 +159,23 @@ async function seed(
   if (collection) targets.push({ page_type: "collection", url: collection });
   targets.push({ page_type: "cart", url: cart });
 
+  // Two variants per page/viewport: 'full' (report display) and 'viewport'
+  // (above-the-fold, legible for AI vision). Cart captures are already
+  // viewport-scale (drawer overlay or short /cart page), so skip its extra
+  // viewport variant. 14 rows total when all pages resolve.
   const rows = targets.flatMap((t) =>
-    VIEWPORTS.map((viewport) => ({
-      audit_id: auditId,
-      client_id: clientId,
-      page_type: t.page_type,
-      viewport,
-      url: t.url,
-      status: "pending",
-    })),
+    VIEWPORTS.flatMap((viewport) => {
+      const variants = t.page_type === "cart" ? ["full"] : ["full", "viewport"];
+      return variants.map((variant) => ({
+        audit_id: auditId,
+        client_id: clientId,
+        page_type: t.page_type,
+        viewport,
+        variant,
+        url: t.url,
+        status: "pending",
+      }));
+    }),
   );
 
   await sb.from("web_page_snapshots").delete().eq("audit_id", auditId);
@@ -187,7 +195,7 @@ async function seed(
 async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
   const { data: row, error: rowErr } = await sb
     .from("web_page_snapshots")
-    .select("id, page_type, viewport, url")
+    .select("id, page_type, viewport, variant, url")
     .eq("audit_id", auditId)
     .eq("status", "pending")
     .order("page_type", { ascending: true })
@@ -221,6 +229,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
     url: row.url,
     viewport: row.viewport as "desktop" | "mobile",
     interaction,
+    fullPage: (row as { variant?: string }).variant !== "viewport",
   };
   let result = await provider.capture(captureInput);
   // Storefronts rate-limit the screenshot service under rapid hits (serving a
@@ -233,7 +242,8 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   const now = new Date().toISOString();
 
   if (result.ok) {
-    const path = `${clientId}/${auditId}/web/${row.page_type}_${row.viewport}.png`;
+    const variantSuffix = (row as { variant?: string }).variant === "viewport" ? "_viewport" : "";
+    const path = `${clientId}/${auditId}/web/${row.page_type}_${row.viewport}${variantSuffix}.png`;
     const { error: uploadErr } = await sb.storage
       .from(STORAGE_BUCKET)
       .upload(path, result.png, { contentType: "image/png", upsert: true });

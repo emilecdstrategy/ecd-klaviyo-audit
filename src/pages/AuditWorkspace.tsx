@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
-import { ExternalLink, FileSignature, History } from 'lucide-react';
+import { ExternalLink, FileSignature, History, Sparkles } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import SiteFavicon from '../components/ui/SiteFavicon';
 import Modal from '../components/ui/Modal';
@@ -16,6 +16,7 @@ import {
   fetchAuditPipelineStatus,
   markAuditGenerationActive,
 } from '../lib/audit-pipeline-status';
+import { fetchWebAuditPipelineStatus, startWebAnalysis } from '../lib/web-pipeline-status';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary, AuditEvent } from '../lib/types';
 import type { Audit, Client } from '../lib/types';
 import {
@@ -40,6 +41,7 @@ import { scheduleSavedToast, useToast } from '../components/ui/Toast';
 
 const AuditReportView = lazy(lazyAuditReportView);
 const WebAuditReportView = lazy(() => import('../components/report/WebAuditReportView'));
+const WebAuditGenerationStatus = lazy(() => import('../components/audit/WebAuditGenerationStatus'));
 const EmailDesignEditor = lazy(() => import('../components/audit/EmailDesignEditor'));
 const RevenueAddOnItemsEditor = lazy(() => import('../components/audit/RevenueAddOnItemsEditor'));
 const RevenueOpportunitiesDrawer = lazy(() =>
@@ -76,6 +78,8 @@ export default function AuditWorkspace() {
   const [scopeWarnings, setScopeWarnings] = useState<string[]>([]);
   const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
   const [webBundle, setWebBundle] = useState<WebAuditReportBundle | null>(null);
+  const [webGenerating, setWebGenerating] = useState(false);
+  const [regenerating, setRegenerating] = useState(false);
   const [analysisInProgress, setAnalysisInProgress] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   const [activityOpen, setActivityOpen] = useState(false);
@@ -137,6 +141,13 @@ export default function AuditWorkspace() {
 
         if (shell.audit.audit_type === 'web') {
           setAnalysisInProgress(false);
+          const webStatus = await fetchWebAuditPipelineStatus(id);
+          if (cancelled) return;
+          if (webStatus.exists && !webStatus.complete) {
+            setWebGenerating(true);
+            return;
+          }
+          setWebGenerating(false);
           const bundle = await fetchWebAuditReportBundle(shell.audit);
           if (cancelled) return;
           if (!bundle) throw new Error('Audit not found');
@@ -298,6 +309,28 @@ export default function AuditWorkspace() {
                 <History className="w-4 h-4" />
                 Activity
               </button>
+              {audit.audit_type === 'web' && !webGenerating && (
+                <button
+                  type="button"
+                  disabled={regenerating}
+                  onClick={async () => {
+                    if (!window.confirm('Regenerate the AI analysis? This replaces the current findings, recommendations, and roadmap (your manual edits to them will be lost).')) return;
+                    setRegenerating(true);
+                    try {
+                      await startWebAnalysis(audit.id, 'regenerate');
+                      setWebGenerating(true);
+                    } catch (e) {
+                      toast(e instanceof Error ? e.message : 'Failed to start analysis');
+                    } finally {
+                      setRegenerating(false);
+                    }
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  {regenerating ? 'Starting…' : 'Regenerate analysis'}
+                </button>
+              )}
               {client && canSeeProposalsBeta(user?.email) ? (
                 <button
                   type="button"
@@ -352,14 +385,22 @@ export default function AuditWorkspace() {
               />
             </div>
           ) : audit.audit_type === 'web' ? (
-            <div className="report-viewport-bleed">
-              {!webBundle && <SkeletonAuditWorkspace />}
-              {webBundle && (
+            webGenerating ? (
+              <div className="px-6 py-4">
                 <Suspense fallback={<SkeletonAuditWorkspace />}>
-                  <WebAuditReportView data={{ ...webBundle, audit, client: client ?? webBundle.client, sections }} />
+                  <WebAuditGenerationStatus auditId={audit.id} onComplete={() => setReloadKey(key => key + 1)} />
                 </Suspense>
-              )}
-            </div>
+              </div>
+            ) : (
+              <div className="report-viewport-bleed">
+                {!webBundle && <SkeletonAuditWorkspace />}
+                {webBundle && (
+                  <Suspense fallback={<SkeletonAuditWorkspace />}>
+                    <WebAuditReportView data={{ ...webBundle, audit, client: client ?? webBundle.client, sections }} />
+                  </Suspense>
+                )}
+              </div>
+            )
           ) : (
             <div className="report-viewport-bleed">
               {!mergedReportData && <SkeletonAuditWorkspace />}

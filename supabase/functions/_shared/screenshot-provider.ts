@@ -9,7 +9,13 @@
  *    SCREENSHOT_FN_URL + SCREENSHOT_FN_SECRET.
  */
 
-export type CaptureInput = { url: string; viewport: "desktop" | "mobile"; interaction?: "cart_drawer" };
+export type CaptureInput = {
+  url: string;
+  viewport: "desktop" | "mobile";
+  interaction?: "cart_drawer";
+  /** false = above-the-fold viewport shot; default true = full-page. Drawer captures are always viewport-height. */
+  fullPage?: boolean;
+};
 export type CaptureResult = { ok: true; png: Uint8Array } | { ok: false; error: string };
 
 export interface ScreenshotProvider {
@@ -36,8 +42,8 @@ class ScreenshotOneProvider implements ScreenshotProvider {
   async capture(input: CaptureInput): Promise<CaptureResult> {
     const dim = DIMENSIONS[input.viewport];
     // Drawer captures stay viewport-height (the drawer is a fixed overlay);
-    // every other page is full-page top to bottom.
-    const fullPage = input.interaction !== "cart_drawer";
+    // otherwise the caller decides (full-page by default).
+    const fullPage = input.interaction !== "cart_drawer" && input.fullPage !== false;
     const params = new URLSearchParams({
       access_key: this.accessKey,
       url: input.url,
@@ -103,7 +109,7 @@ class NetlifyScreenshotProvider implements ScreenshotProvider {
           "content-type": "application/json",
           "x-screenshot-key": this.secret,
         },
-        body: JSON.stringify({ url: input.url, viewport: input.viewport, interaction: input.interaction }),
+        body: JSON.stringify({ url: input.url, viewport: input.viewport, interaction: input.interaction, fullPage: input.fullPage }),
       });
       const body = (await res.json().catch(() => null)) as { ok?: boolean; png_base64?: string; error?: string } | null;
       if (!res.ok || !body?.ok || !body.png_base64) {

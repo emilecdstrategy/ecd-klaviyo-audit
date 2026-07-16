@@ -617,6 +617,8 @@ export interface WebPageSnapshot {
   client_id: string;
   page_type: WebPageType;
   viewport: WebViewport;
+  /** 'full' = full-page scroll capture; 'viewport' = above-the-fold hero shot. */
+  variant: 'full' | 'viewport';
   url: string;
   screenshot_path: string | null;
   screenshot_url: string | null;

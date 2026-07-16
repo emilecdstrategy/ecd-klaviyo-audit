@@ -31,8 +31,8 @@ export const WEB_SECTION_TITLES: Record<string, string> = {
   web_product_page: 'Product Page',
   web_collection_page: 'Collection Page',
   web_cart: 'Cart',
-  web_performance: 'Performance',
-  web_revenue_summary: 'Revenue Opportunities',
+  web_performance: 'Data & Analytics',
+  web_revenue_summary: 'Prioritized Roadmap',
 };
 
 export function sectionKeysForAuditType(auditType: AuditType): readonly string[] {

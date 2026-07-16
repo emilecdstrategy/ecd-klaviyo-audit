@@ -28,6 +28,7 @@ import {
   nudgeProfileScan,
   waitForServerAuditAnalysis,
 } from '../lib/audit-pipeline-status';
+import { startWebAnalysis } from '../lib/web-pipeline-status';
 
 const CONTEXT_CHAR_SOFT = 15_000;
 const CONTEXT_CHAR_HARD = 30_000;
@@ -809,6 +810,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         // Pause between captures so neither the Supabase gateway nor the target
         // store throttles the back-to-back requests.
         await new Promise(r => setTimeout(r, 2500));
+      }
+
+      // 7) Kick off AI analysis (runs on the server); the workspace shows progress.
+      setAnalysisProgress(97);
+      setAnalysisStage('Starting AI analysis…');
+      try {
+        await startWebAnalysis(audit.id);
+      } catch {
+        // Non-fatal: the workspace can resume/retry the analysis.
       }
 
       setAnalysisProgress(100);

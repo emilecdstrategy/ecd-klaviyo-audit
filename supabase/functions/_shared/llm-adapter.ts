@@ -6,8 +6,11 @@ export type LlmTool = {
   input_schema: Record<string, unknown>;
 };
 
+export type LlmImage = { url: string; label?: string };
+
 export type LlmMessage =
   | { role: "user"; text: string }
+  | { role: "user_images"; text: string; images: LlmImage[] }
   | { role: "assistant"; text: string }
   | { role: "assistant_tool_call"; id: string; name: string; input: unknown; text?: string }
   | { role: "tool_result"; id: string; name: string; result: string };
@@ -16,8 +19,16 @@ export type LlmTurnResult =
   | { kind: "text"; text: string }
   | { kind: "tool_call"; id: string; name: string; input: unknown; text: string };
 
+/** Force the model to call a specific tool this turn (structured output). */
+export type LlmToolChoice = { type: "tool"; name: string };
+
 export interface LlmClient {
-  runTurn(args: { system: string; messages: LlmMessage[]; tools: LlmTool[] }): Promise<LlmTurnResult>;
+  runTurn(args: {
+    system: string;
+    messages: LlmMessage[];
+    tools: LlmTool[];
+    toolChoice?: LlmToolChoice;
+  }): Promise<LlmTurnResult>;
 }
 
 const REQUEST_TIMEOUT_MS = 110_000;
@@ -83,6 +94,14 @@ function toAnthropicMessages(messages: LlmMessage[]) {
   for (const m of messages) {
     if (m.role === "user") {
       out.push({ role: "user", content: [{ type: "text", text: m.text }] });
+    } else if (m.role === "user_images") {
+      const content: unknown[] = [];
+      for (const img of m.images) {
+        if (img.label) content.push({ type: "text", text: img.label });
+        content.push({ type: "image", source: { type: "url", url: img.url } });
+      }
+      if (m.text) content.push({ type: "text", text: m.text });
+      out.push({ role: "user", content });
     } else if (m.role === "assistant") {
       out.push({ role: "assistant", content: [{ type: "text", text: m.text }] });
     } else if (m.role === "assistant_tool_call") {
@@ -101,10 +120,17 @@ function toAnthropicMessages(messages: LlmMessage[]) {
 }
 
 class AnthropicClient implements LlmClient {
-  async runTurn(args: { system: string; messages: LlmMessage[]; tools: LlmTool[] }): Promise<LlmTurnResult> {
+  constructor(private readonly model: string = ANTHROPIC_MODEL) {}
+
+  async runTurn(args: {
+    system: string;
+    messages: LlmMessage[];
+    tools: LlmTool[];
+    toolChoice?: LlmToolChoice;
+  }): Promise<LlmTurnResult> {
     const apiKey = await getSecret("anthropic_api_key");
-    const body = {
-      model: ANTHROPIC_MODEL,
+    const body: Record<string, unknown> = {
+      model: this.model,
       max_tokens: 16000,
       system: args.system,
       messages: toAnthropicMessages(args.messages),
@@ -114,6 +140,7 @@ class AnthropicClient implements LlmClient {
         input_schema: t.input_schema,
       })),
     };
+    if (args.toolChoice) body.tool_choice = { type: "tool", name: args.toolChoice.name };
     const res = await postJson(
       ANTHROPIC_URL,
       { "x-api-key": apiKey, "anthropic-version": "2023-06-01" },
@@ -143,6 +170,14 @@ function toOpenAiInput(messages: LlmMessage[]) {
   for (const m of messages) {
     if (m.role === "user") {
       out.push({ role: "user", content: [{ type: "input_text", text: m.text }] });
+    } else if (m.role === "user_images") {
+      const content: unknown[] = [];
+      for (const img of m.images) {
+        if (img.label) content.push({ type: "input_text", text: img.label });
+        content.push({ type: "input_image", image_url: img.url });
+      }
+      if (m.text) content.push({ type: "input_text", text: m.text });
+      out.push({ role: "user", content });
     } else if (m.role === "assistant") {
       out.push({ role: "assistant", content: [{ type: "output_text", text: m.text }] });
     } else if (m.role === "assistant_tool_call") {
@@ -156,10 +191,17 @@ function toOpenAiInput(messages: LlmMessage[]) {
 }
 
 class OpenAiClient implements LlmClient {
-  async runTurn(args: { system: string; messages: LlmMessage[]; tools: LlmTool[] }): Promise<LlmTurnResult> {
+  constructor(private readonly model: string = OPENAI_MODEL) {}
+
+  async runTurn(args: {
+    system: string;
+    messages: LlmMessage[];
+    tools: LlmTool[];
+    toolChoice?: LlmToolChoice;
+  }): Promise<LlmTurnResult> {
     const apiKey = await getSecret("openai_api_key");
-    const body = {
-      model: OPENAI_MODEL,
+    const body: Record<string, unknown> = {
+      model: this.model,
       reasoning: { effort: "medium" },
       instructions: args.system,
       input: toOpenAiInput(args.messages),
@@ -170,6 +212,7 @@ class OpenAiClient implements LlmClient {
         parameters: t.input_schema,
       })),
     };
+    if (args.toolChoice) body.tool_choice = { type: "function", name: args.toolChoice.name };
     const res = await postJson(OPENAI_URL, { authorization: `Bearer ${apiKey}` }, body);
     const items: any[] = Array.isArray(res?.output) ? res.output : [];
     const text = items
@@ -195,8 +238,8 @@ class OpenAiClient implements LlmClient {
 
 // ---------------------------------------------------------------------------
 
-export function createLlmClient(provider?: string | null): LlmClient {
+export function createLlmClient(provider?: string | null, opts?: { model?: string }): LlmClient {
   const chosen = (provider || Deno.env.get("PROPOSAL_AGENT_PROVIDER") || "anthropic").toLowerCase();
-  if (chosen === "openai") return new OpenAiClient();
-  return new AnthropicClient();
+  if (chosen === "openai") return new OpenAiClient(opts?.model);
+  return new AnthropicClient(opts?.model);
 }

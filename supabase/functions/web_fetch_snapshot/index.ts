@@ -7,9 +7,35 @@ import { normalizeShopDomain, shopifyRest, shopifyGraphql, mapShopifyErrorCode }
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
-const ORDERS_TIMEFRAME_DAYS = 60;
+const PERIOD_DAYS = 30;
 const ORDERS_PAGE_SIZE = 250;
-const ORDERS_MAX_PAGES = 8; // cap at 2000 orders for the rollup
+const ORDERS_MAX_PAGES = 8; // cap at 2000 orders across the 60-day window
+const TOP_PRODUCTS_SAMPLE = 100; // recent current-period orders sampled for top-products ranking
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+function round2(n: number): number {
+  return Math.round(n * 100) / 100;
+}
+
+function pctDelta(current: number, previous: number): number | null {
+  if (!Number.isFinite(previous) || previous === 0) return null;
+  return round2(((current - previous) / previous) * 100);
+}
+
+type PeriodAgg = { order_count: number; gross_revenue: number; returning_orders: number };
+
+function emptyPeriod(): PeriodAgg {
+  return { order_count: 0, gross_revenue: 0, returning_orders: 0 };
+}
+
+function summarizePeriod(p: PeriodAgg) {
+  return {
+    order_count: p.order_count,
+    gross_revenue: round2(p.gross_revenue),
+    aov: p.order_count > 0 ? round2(p.gross_revenue / p.order_count) : 0,
+    returning_customer_rate: p.order_count > 0 ? round2((p.returning_orders / p.order_count) * 100) : 0,
+  };
+}
 
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -42,12 +68,55 @@ async function authorize(req: Request) {
   await getUserIdFromAuthorization(req);
 }
 
+/** Sample recent current-period orders' line items to rank top products by revenue. */
+async function fetchTopProducts(shopDomain: string, token: string, currentSince: string) {
+  try {
+    const res = await shopifyGraphql(
+      shopDomain,
+      token,
+      `query TopProducts($first: Int!, $query: String!) {
+        orders(first: $first, sortKey: CREATED_AT, reverse: true, query: $query) {
+          nodes {
+            lineItems(first: 5) {
+              nodes { title discountedTotalSet { shopMoney { amount } } }
+            }
+          }
+        }
+      }`,
+      { first: TOP_PRODUCTS_SAMPLE, query: `created_at:>='${currentSince}'` },
+    );
+    if (!res.ok) return { items: [], sampled: 0, note: "unavailable" };
+    const nodes: any[] = res.body?.data?.orders?.nodes ?? [];
+    const byTitle = new Map<string, number>();
+    for (const order of nodes) {
+      for (const li of order?.lineItems?.nodes ?? []) {
+        const title = String(li?.title ?? "").trim();
+        if (!title) continue;
+        const amount = Number.parseFloat(li?.discountedTotalSet?.shopMoney?.amount ?? "0");
+        if (Number.isFinite(amount)) byTitle.set(title, (byTitle.get(title) ?? 0) + amount);
+      }
+    }
+    const items = [...byTitle.entries()]
+      .map(([title, revenue]) => ({ title, revenue: round2(revenue) }))
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 5);
+    return { items, sampled: nodes.length, note: nodes.length >= TOP_PRODUCTS_SAMPLE ? "sample" : "full" };
+  } catch {
+    return { items: [], sampled: 0, note: "error" };
+  }
+}
+
 async function fetchOrdersRollup(shopDomain: string, token: string) {
-  const since = new Date(Date.now() - ORDERS_TIMEFRAME_DAYS * 24 * 60 * 60 * 1000).toISOString();
-  let cursor: string | null = null;
-  let orderCount = 0;
-  let grossRevenue = 0;
+  const nowMs = Date.now();
+  const currentSince = new Date(nowMs - PERIOD_DAYS * DAY_MS).toISOString();
+  const priorSince = new Date(nowMs - 2 * PERIOD_DAYS * DAY_MS).toISOString();
+  const currentSinceMs = nowMs - PERIOD_DAYS * DAY_MS;
+
+  const current = emptyPeriod();
+  const previous = emptyPeriod();
+  const channels = new Map<string, { revenue: number; orders: number }>();
   let currency: string | null = null;
+  let cursor: string | null = null;
   let pages = 0;
   let truncated = false;
 
@@ -56,14 +125,17 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
       shopDomain,
       token,
       `query Orders($first: Int!, $after: String, $query: String!) {
-        orders(first: $first, after: $after, query: $query) {
+        orders(first: $first, after: $after, sortKey: CREATED_AT, reverse: true, query: $query) {
           pageInfo { hasNextPage endCursor }
           nodes {
+            createdAt
+            sourceName
             currentTotalPriceSet { shopMoney { amount currencyCode } }
+            customer { numberOfOrders }
           }
         }
       }`,
-      { first: ORDERS_PAGE_SIZE, after: cursor, query: `created_at:>='${since}'` },
+      { first: ORDERS_PAGE_SIZE, after: cursor, query: `created_at:>='${priorSince}'` },
     );
     if (!res.ok) {
       const message = res.body?.errors?.[0]?.message ?? `Orders query failed (${res.status})`;
@@ -74,9 +146,21 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
     for (const node of nodes) {
       const money = node?.currentTotalPriceSet?.shopMoney;
       const amount = Number.parseFloat(money?.amount ?? "0");
-      if (Number.isFinite(amount)) grossRevenue += amount;
+      const rev = Number.isFinite(amount) ? amount : 0;
       if (!currency && money?.currencyCode) currency = money.currencyCode;
-      orderCount += 1;
+      const isCurrent = new Date(node?.createdAt ?? 0).getTime() >= currentSinceMs;
+      const bucket = isCurrent ? current : previous;
+      bucket.order_count += 1;
+      bucket.gross_revenue += rev;
+      const lifetimeOrders = Number.parseInt(String(node?.customer?.numberOfOrders ?? "0"), 10);
+      if (Number.isFinite(lifetimeOrders) && lifetimeOrders > 1) bucket.returning_orders += 1;
+      if (isCurrent) {
+        const channel = String(node?.sourceName ?? "").trim() || "unknown";
+        const c = channels.get(channel) ?? { revenue: 0, orders: 0 };
+        c.revenue += rev;
+        c.orders += 1;
+        channels.set(channel, c);
+      }
     }
     pages += 1;
     if (conn?.pageInfo?.hasNextPage && conn?.pageInfo?.endCursor) {
@@ -87,15 +171,34 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
     }
   }
 
-  const aov = orderCount > 0 ? grossRevenue / orderCount : 0;
+  const cur = summarizePeriod(current);
+  const prev = summarizePeriod(previous);
+  const topProducts = await fetchTopProducts(shopDomain, token, currentSince);
+
   return {
-    timeframe_days: ORDERS_TIMEFRAME_DAYS,
-    since,
-    order_count: orderCount,
-    gross_revenue: Math.round(grossRevenue * 100) / 100,
-    aov: Math.round(aov * 100) / 100,
+    // Two-period comparison for the Data & Analytics section.
+    timeframe_key: "30d_vs_prior_30d",
+    period_days: PERIOD_DAYS,
+    current: cur,
+    previous: prev,
+    deltas: {
+      gross_revenue: pctDelta(cur.gross_revenue, prev.gross_revenue),
+      order_count: pctDelta(cur.order_count, prev.order_count),
+      aov: pctDelta(cur.aov, prev.aov),
+      returning_customer_rate: pctDelta(cur.returning_customer_rate, prev.returning_customer_rate),
+    },
+    top_products: topProducts.items,
+    top_products_note: topProducts.note,
+    channels: [...channels.entries()]
+      .map(([name, v]) => ({ name, revenue: round2(v.revenue), orders: v.orders }))
+      .sort((a, b) => b.revenue - a.revenue),
     currency,
     truncated,
+    // Legacy fields (combined 60-day window) so the existing Store Metrics card keeps working.
+    timeframe_days: 2 * PERIOD_DAYS,
+    order_count: current.order_count + previous.order_count,
+    gross_revenue: round2(current.gross_revenue + previous.gross_revenue),
+    aov: cur.aov,
   };
 }
 
@@ -169,7 +272,7 @@ serve(async (req) => {
         audit_id: auditId,
         client_id: clientId,
         snapshot_kind: "orders_rollup",
-        timeframe_key: `last_${ORDERS_TIMEFRAME_DAYS}_days`,
+        timeframe_key: rollup.timeframe_key,
         computed: rollup,
         raw: {},
         fetched_at: now,

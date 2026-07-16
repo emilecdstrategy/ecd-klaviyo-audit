@@ -168,6 +168,7 @@ type ReportEditContextValue = {
     value: string,
   ) => void;
   updateSectionDetailField: (sectionKey: string, path: string[], value: string) => void;
+  updateSectionDetailValue: (sectionKey: string, path: string[], value: unknown) => void;
   updateCoreFlowMatrixNote: (
     sectionKey: string,
     rowIndex: number,
@@ -219,6 +220,7 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateLayoutBlockTitle: () => {},
   updateSectionBlockField: () => {},
   updateSectionDetailField: () => {},
+  updateSectionDetailValue: () => {},
   updateCoreFlowMatrixNote: () => {},
   patchSectionBlock: () => {},
 });
@@ -1074,6 +1076,36 @@ export function ReportEditProvider({
     [sections, onSectionsChange, schedule],
   );
 
+  // Same deep-patch as updateSectionDetailField but for arbitrary values
+  // (arrays/objects/booleans) - used by the web report for findings, highlight
+  // boxes, roadmap rows, and hidden flags stored in section_details.
+  const updateSectionDetailValue = useCallback(
+    (sectionKey: string, path: string[], value: unknown) => {
+      const section = sections.find(s => s.section_key === sectionKey);
+      if (!section || path.length === 0) return;
+      const raw = section.section_details;
+      const details: Record<string, unknown> =
+        raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
+      let cursor: Record<string, unknown> = details;
+      for (let i = 0; i < path.length - 1; i++) {
+        const key = path[i];
+        const next =
+          cursor[key] && typeof cursor[key] === 'object' && !Array.isArray(cursor[key])
+            ? { ...(cursor[key] as Record<string, unknown>) }
+            : {};
+        cursor[key] = next;
+        cursor = next;
+      }
+      cursor[path[path.length - 1]] = value;
+      const nextSections = sections.map(s => (s.id === section.id ? { ...s, section_details: details } : s));
+      onSectionsChange(nextSections);
+      schedule(`section-detail-${section.id}-${path.join('.')}`, async () => {
+        await updateAuditSection(section.id, { section_details: details });
+      });
+    },
+    [sections, onSectionsChange, schedule],
+  );
+
   const updateCoreFlowMatrixNote = useCallback(
     (
       sectionKey: string,
@@ -1170,6 +1202,7 @@ export function ReportEditProvider({
       updateLayoutBlockTitle,
       updateSectionBlockField,
       updateSectionDetailField,
+      updateSectionDetailValue,
       updateCoreFlowMatrixNote,
       patchSectionBlock,
     }),
@@ -1217,6 +1250,7 @@ export function ReportEditProvider({
       updateLayoutBlockTitle,
       updateSectionBlockField,
       updateSectionDetailField,
+      updateSectionDetailValue,
       updateCoreFlowMatrixNote,
       patchSectionBlock,
     ],
