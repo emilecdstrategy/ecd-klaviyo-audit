@@ -518,6 +518,7 @@ export default function ProposalDetail() {
               contractDocs={contractDocs}
               signatures={signatures}
               settings={settings}
+              collapsibleContracts
             />
           </ProposalEditProvider>
         </div>

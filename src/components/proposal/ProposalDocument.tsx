@@ -1,4 +1,4 @@
-import { Plus } from 'lucide-react';
+import { Plus, Check } from 'lucide-react';
 import ProposalCover from './ProposalCover';
 import ProposalRichBlock from './ProposalRichBlock';
 import ProposalPricingTable from './ProposalPricingTable';
@@ -122,12 +122,20 @@ export default function ProposalDocument({
                 key={doc.slug}
                 type="button"
                 onClick={() => toggleContract(doc.slug, !included)}
+                aria-pressed={included}
                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                   included
                     ? 'border-brand-primary/30 bg-brand-primary/10 text-brand-primary'
                     : 'border-gray-200 text-gray-500 hover:bg-gray-50'
                 }`}
               >
+                <span
+                  className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-[4px] border transition-colors ${
+                    included ? 'border-brand-primary bg-brand-primary' : 'border-gray-300 bg-white'
+                  }`}
+                >
+                  {included && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+                </span>
                 {doc.name}
               </button>
             );
