@@ -67,8 +67,8 @@ STYLE:
 - Ground every finding in what is actually visible in the screenshots or present in the data. Do not invent features, prices, or facts.
 
 READING SCREENSHOTS:
-- You receive labeled images (IMG_1, IMG_2, ...). Viewport images are cropped to the top of the page and are legible; full-page images show the whole page layout but text may be small, so read details from viewport images and use full-page images for structure and placement.
-- When you pinpoint an element with a highlight, the x/y/w/h are percentages (0-100) of THAT referenced image's dimensions, with a tight box around the element. Only add a highlight when you are confident where the element is. It is fine to omit the highlight.
+- You receive labeled above-the-fold screenshots (IMG_1, IMG_2, ...), one or more per page (desktop and mobile). They show the top of the page as a visitor first sees it. Judge the page from what is visible; do not speculate about content below the fold.
+- When you pinpoint an element with a highlight, the x/y/w/h are percentages (0-100) of THAT referenced image's dimensions (IMG_n), with a tight box around the element. Only add a highlight when you are confident where the element is, and reference the exact IMG_n it appears in. It is fine to omit the highlight.
 
 Call the provided tool exactly once with your result.`;
 
@@ -104,26 +104,24 @@ function buildPageImages(
   snaps: Array<{ id: string; viewport: string; variant: string; screenshot_url: string | null }>,
   pageLabel: string,
 ): { images: LlmImage[]; refToId: Map<string, string>; primaryId: string | null } {
-  // Order: desktop full (structure) -> desktop viewport (legible) -> mobile viewport -> mobile full.
-  const rank = (s: { viewport: string; variant: string }) => {
-    if (s.viewport === "desktop" && s.variant === "full") return 0;
-    if (s.viewport === "desktop" && s.variant === "viewport") return 1;
-    if (s.viewport === "mobile" && s.variant === "viewport") return 2;
-    return 3;
-  };
-  const ordered = snaps
-    .filter((s) => s.screenshot_url)
-    .sort((a, b) => rank(a) - rank(b))
-    .slice(0, 4);
+  // Only send viewport (above-the-fold) shots to the model: they are legible and
+  // safely under Anthropic's 8000px image-dimension limit. Full-page shots (up to
+  // 1440x12000) both exceed that limit and downscale to an illegible sliver, so
+  // they are kept only for the report display, never sent to the model. Cart shots
+  // are captured at viewport height under the 'full' variant, so fall back to them.
+  const usable = snaps.filter((s) => s.screenshot_url);
+  let chosen = usable.filter((s) => s.variant === "viewport");
+  if (chosen.length === 0) chosen = usable;
+  const rank = (s: { viewport: string }) => (s.viewport === "desktop" ? 0 : 1);
+  const ordered = chosen.sort((a, b) => rank(a) - rank(b)).slice(0, 3);
   const images: LlmImage[] = [];
   const refToId = new Map<string, string>();
   ordered.forEach((s, i) => {
     const ref = `IMG_${i + 1}`;
     refToId.set(ref, s.id);
-    const where = s.variant === "viewport" ? "above-the-fold" : "full page";
-    images.push({ url: s.screenshot_url as string, label: `${ref}: ${pageLabel}, ${s.viewport}, ${where}` });
+    images.push({ url: s.screenshot_url as string, label: `${ref}: ${pageLabel}, ${s.viewport}, above-the-fold` });
   });
-  const primaryId = ordered.find((s) => s.viewport === "desktop" && s.variant === "full")?.id ?? ordered[0]?.id ?? null;
+  const primaryId = ordered.find((s) => s.viewport === "desktop")?.id ?? ordered[0]?.id ?? null;
   return { images, refToId, primaryId };
 }
 

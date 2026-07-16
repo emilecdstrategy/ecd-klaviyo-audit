@@ -26,13 +26,17 @@ export default function WebPageSection({
   const successful = snapshots.filter((s) => s.status === 'success' && s.screenshot_url);
   const byId = new Map(successful.map((s) => [s.id, s]));
 
-  // The big screenshot shown for the selected viewport (prefer full-page).
+  // Show the viewport (above-the-fold) shot: it is what the AI annotated, so the
+  // marker %-coordinates line up with it. Full-page shots use different heights,
+  // so their coords would not map; those open in the lightbox for full context.
   const shown =
+    successful.find((s) => s.viewport === viewport && s.variant === 'viewport') ??
     successful.find((s) => s.viewport === viewport && s.variant === 'full') ??
-    successful.find((s) => s.viewport === viewport) ??
     byId.get(detail.primary_snapshot_id ?? '') ??
     successful[0] ??
     null;
+  const fullForLightbox =
+    successful.find((s) => s.viewport === viewport && s.variant === 'full') ?? shown;
 
   const hasDesktop = successful.some((s) => s.viewport === 'desktop');
   const hasMobile = successful.some((s) => s.viewport === 'mobile');
@@ -104,10 +108,11 @@ export default function WebPageSection({
                 )}
               </div>
               <div className="max-h-[560px] overflow-y-auto rounded-lg">
-                <div className="cursor-zoom-in" onClick={() => setLightbox(shown.screenshot_url)}>
+                <div className="cursor-zoom-in" onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}>
                   <WebHighlightLayer imageUrl={shown.screenshot_url as string} alt={`${title} (${viewport})`} markers={markers} />
                 </div>
               </div>
+              <p className="mt-1 text-center text-[11px] text-gray-400">Click to view the full page</p>
             </>
           ) : (
             <div className="flex aspect-[16/10] items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-xs text-gray-400">
