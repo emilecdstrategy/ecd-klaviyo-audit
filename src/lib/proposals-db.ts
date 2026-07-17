@@ -16,7 +16,7 @@ export const DEFAULT_PROPOSAL_SETTINGS: ProposalSettings = {
   cover: {
     background_url: null,
     logo_url: null,
-    tagline: 'Lifecycle marketing that compounds.',
+    tagline: 'ROI-Driven E-Commerce Marketing Agency',
   },
   email: {
     from_name: 'ECD Digital Strategy',
