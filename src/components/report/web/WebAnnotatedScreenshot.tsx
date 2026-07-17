@@ -118,7 +118,7 @@ export default function WebAnnotatedScreenshot({
         }}
         onMouseEnter={() => setActiveIndex(it.number)}
         onMouseLeave={() => setActiveIndex(null)}
-        className={`w-full max-w-[360px] rounded-xl border bg-white p-3.5 shadow-sm transition-shadow ${
+        className={`relative z-20 w-full max-w-[360px] rounded-xl border bg-white p-3.5 shadow-sm transition-shadow ${
           active ? 'border-brand-primary/50 ring-1 ring-brand-primary/20' : 'border-gray-200'
         } ${it.finding.hidden ? 'opacity-50' : ''}`}
       >
@@ -208,7 +208,7 @@ export default function WebAnnotatedScreenshot({
         className="pointer-events-none absolute inset-0"
         width={size.w}
         height={size.h}
-        style={{ overflow: 'visible' }}
+        style={{ overflow: 'visible', zIndex: 10 }}
       >
         {lines.map((l) => {
           const active = activeIndex === l.number;

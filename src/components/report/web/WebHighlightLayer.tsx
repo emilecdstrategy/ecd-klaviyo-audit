@@ -17,8 +17,10 @@ export default function WebHighlightLayer({
   onMarkerClick?: (index: number) => void;
 }) {
   return (
-    <div className="relative w-full overflow-hidden rounded-lg border border-gray-200 bg-white">
-      <img src={imageUrl} alt={alt} className="block w-full" loading="lazy" />
+    // No overflow-hidden: pins sit centered on their point and would otherwise be
+    // clipped at the screenshot edges. The image keeps its own rounded corners.
+    <div className="relative w-full rounded-lg border border-gray-200 bg-white">
+      <img src={imageUrl} alt={alt} className="block w-full rounded-lg" loading="lazy" />
       {markers.map(({ index, highlight }) => {
         const active = activeIndex === index;
         return (
@@ -37,7 +39,7 @@ export default function WebHighlightLayer({
             <button
               type="button"
               onClick={() => onMarkerClick?.(index)}
-              className="pointer-events-auto absolute flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-brand-primary text-xs font-bold text-white shadow ring-2 ring-white"
+              className="pointer-events-auto absolute z-20 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-brand-primary text-xs font-bold text-white shadow ring-2 ring-white"
               style={{ left: `${highlight.x}%`, top: `${highlight.y}%` }}
               aria-label={highlight.label || `Finding ${index}`}
               title={highlight.label}
