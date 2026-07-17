@@ -39,7 +39,7 @@ function b64ToBytes(b64: string): Uint8Array {
 // optional cart-drawer click, and (for the viewport shot) element-box collection.
 const FUNCTION_CODE = `
 export default async ({ page, context }) => {
-  const { url, width, height, fullPage, withElements, clickSelector } = context;
+  const { url, width, height, fullPage, withElements, cartAdd } = context;
   await page.setViewport({ width, height, deviceScaleFactor: 1 });
   await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 });
 
@@ -64,14 +64,43 @@ export default async ({ page, context }) => {
   };
   await page.evaluate(sweep).catch(() => {});
 
-  if (clickSelector) {
+  // Cart: add the product via Shopify's AJAX API (stays on the page), then click
+  // a cart trigger. On drawer themes this opens the slide-cart drawer; on
+  // page-based themes it navigates to the populated /cart page (we force /cart as
+  // a last resort). Either way we get a POPULATED cart, never the checkout the
+  // /cart/{variant}:1 permalink would land on.
+  if (cartAdd) {
     try {
-      await page.click(clickSelector);
-      await new Promise((r) => setTimeout(r, 2500));
+      if (cartAdd.variantId) {
+        await page.evaluate(async (vid) => {
+          try {
+            await fetch("/cart/add.js", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ id: Number(vid), quantity: 1 }),
+            });
+          } catch (e) {}
+        }, cartAdd.variantId);
+      }
+      const triggers = [
+        '[aria-label*="cart" i]','a[href$="/cart"]','a[href*="/cart"]',
+        '[class*="cart-toggle" i]','[data-cart-toggle]','.js-drawer-open-cart',
+        '[class*="cart-icon" i]','button[class*="cart" i]',
+      ];
+      let opened = false;
+      for (const t of triggers) {
+        try {
+          const el = await page.$(t);
+          if (el) { await el.click(); opened = true; await new Promise((r) => setTimeout(r, 2800)); break; }
+        } catch (e) {}
+      }
+      if (!opened) {
+        try { await page.goto(new URL("/cart", url).href, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
+      }
     } catch (e) {}
   }
 
-  await new Promise((r) => setTimeout(r, 1500));
+  await new Promise((r) => setTimeout(r, 1200));
   await page.evaluate(sweep).catch(() => {});
 
   let elements = [];
@@ -124,7 +153,8 @@ export async function captureWithBrowserless(input: {
   viewport: "desktop" | "mobile";
   fullPage: boolean;
   withElements: boolean;
-  clickSelector?: string;
+  /** When set, add the variant to the cart and open the slide-cart drawer. */
+  cartAdd?: { variantId?: string | null };
 }): Promise<BrowserlessResult> {
   const token = (Deno.env.get("BROWSERLESS_TOKEN") ?? "").trim();
   if (!token) return { ok: false, error: "browserless_token_missing" };
@@ -149,7 +179,7 @@ export async function captureWithBrowserless(input: {
           height: dim.height,
           fullPage: input.fullPage,
           withElements: input.withElements,
-          clickSelector: input.clickSelector ?? null,
+          cartAdd: input.cartAdd ?? null,
         },
       }),
       signal: ctrl.signal,

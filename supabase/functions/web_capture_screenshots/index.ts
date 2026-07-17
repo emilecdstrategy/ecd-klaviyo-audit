@@ -211,13 +211,12 @@ async function seed(
     collection = collection ?? (viaHtml.collection ? normalizeUrl(viaHtml.collection) : null);
   }
 
-  // Cart: prefer a POPULATED cart via Shopify's add-to-cart permalink
-  // (/cart/{variant}:1 adds the item and lands on the cart page). Without a
-  // variant, fall back to the homepage and best-effort open the slide drawer.
-  let cart = normalizeUrl(input.cart);
-  if (!cart) {
-    cart = variantId ? `${origin}/cart/${variantId}:1` : homepage;
-  }
+  // Cart: captured as a POPULATED cart. At capture time we load the homepage, add
+  // the flagship variant via Shopify's AJAX cart API, then click the cart trigger
+  // (opens the slide drawer on drawer themes, or the /cart page otherwise). This
+  // avoids the /cart/{variant}:1 permalink, which redirects to checkout on many
+  // themes. The variant id is stashed on the cart rows below.
+  const cart = normalizeUrl(input.cart) ?? homepage;
 
   const targets: Array<{ page_type: string; url: string }> = [{ page_type: "homepage", url: homepage }];
   if (product) targets.push({ page_type: "product", url: product });
@@ -239,6 +238,7 @@ async function seed(
         variant,
         url: t.url,
         status: "pending",
+        raw: t.page_type === "cart" && variantId ? { variant_id: variantId } : {},
       }));
     }),
   );
@@ -260,7 +260,7 @@ async function seed(
 async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
   const { data: row, error: rowErr } = await sb
     .from("web_page_snapshots")
-    .select("id, page_type, viewport, variant, url")
+    .select("id, page_type, viewport, variant, url, raw")
     .eq("audit_id", auditId)
     .eq("status", "pending")
     .order("page_type", { ascending: true })
@@ -299,14 +299,18 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   // scripted click, and the viewport shot also returns real element boxes so
   // findings pin an actual element instead of a guessed coordinate. ScreenshotOne
   // remains the fallback below if Browserless is unset or a call fails.
+  const isCart = row.page_type === "cart";
   if (browserlessEnabled()) {
-    const clickSelector = interaction === "cart_drawer" ? 'a[href*="/cart"]' : undefined;
+    const cartAdd = isCart
+      ? { variantId: (row as { raw?: { variant_id?: string } }).raw?.variant_id ?? null }
+      : undefined;
     const blInput = {
       url: row.url,
       viewport: row.viewport as "desktop" | "mobile",
-      fullPage: !isViewport,
+      // The cart drawer is a viewport overlay, so never full-page for cart.
+      fullPage: !isViewport && !isCart,
       withElements: isViewport,
-      clickSelector,
+      cartAdd,
     };
     let bl = await captureWithBrowserless(blInput);
     for (let attempt = 1; attempt <= 2 && !bl.ok; attempt++) {
