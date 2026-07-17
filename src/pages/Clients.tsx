@@ -37,8 +37,8 @@ function syncRelativeTime(iso: string | null): string {
   return `${day}d ago`;
 }
 
-/** Small, subtle bar noting HubSpot auto-sync cadence with a manual "Sync now". */
-function HubSpotSyncBar() {
+/** Compact HubSpot "Sync now" control; cadence + last-sync detail live in a tooltip. */
+function HubSpotSyncButton() {
   const [lastSynced, setLastSynced] = useState<string | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState('');
@@ -71,31 +71,31 @@ function HubSpotSyncBar() {
     }
   };
 
+  const tooltip = error
+    ? `HubSpot sync failed: ${error}`
+    : `Auto-syncs from HubSpot every 15 minutes · last synced ${syncRelativeTime(lastSynced)}`;
+
   return (
-    <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-lg border border-gray-100 bg-gray-50/70 px-3.5 py-2">
-      <div className="flex items-center gap-2 text-xs text-gray-500">
-        <img
-          src="https://www.hubspot.com/favicon.ico"
-          alt=""
-          className="h-3.5 w-3.5 shrink-0"
-          onError={e => { e.currentTarget.style.display = 'none'; }}
-        />
-        <span>
-          Auto-syncs from HubSpot every 15 minutes
-          <span className="text-gray-400"> · last synced {syncRelativeTime(lastSynced)}</span>
-        </span>
-        {error && <span className="text-red-500">· {error}</span>}
-      </div>
+    <HoverTooltip label={tooltip} align="end">
       <button
         type="button"
         onClick={syncNow}
         disabled={syncing}
-        className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+        className="inline-flex h-[42px] items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
       >
-        <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} />
+        {syncing ? (
+          <RefreshCw className="h-3.5 w-3.5 animate-spin text-gray-400" />
+        ) : (
+          <img
+            src="https://www.hubspot.com/favicon.ico"
+            alt=""
+            className="h-3.5 w-3.5 shrink-0"
+            onError={e => { e.currentTarget.style.display = 'none'; }}
+          />
+        )}
         {syncing ? 'Syncing…' : 'Sync now'}
       </button>
-    </div>
+    </HoverTooltip>
   );
 }
 
@@ -268,9 +268,8 @@ export default function Clients() {
               ))}
             </SelectContent>
           </Select>
+          <HubSpotSyncButton />
         </div>
-
-        <HubSpotSyncBar />
 
         {error && (
           <div className="mb-6 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">
