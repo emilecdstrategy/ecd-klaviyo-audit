@@ -7,6 +7,7 @@ import EditablePlainText from '../edit/EditablePlainText';
 import ImageLightbox from '../../ui/ImageLightbox';
 import WebHighlightLayer from './WebHighlightLayer';
 import WebFindingCard from './WebFindingCard';
+import WebAnnotatedScreenshot, { type AnnotatedItem } from './WebAnnotatedScreenshot';
 
 export default function WebPageSection({
   section,
@@ -80,6 +81,31 @@ export default function WebPageSection({
     }
   };
 
+  // Findings whose pin sits on the shown screenshot become flanking callouts
+  // (desktop); the rest render as stacked cards below. Falls back to a stacked
+  // list on mobile.
+  const pinnedItems: AnnotatedItem[] = visibleFindings
+    .filter(({ f }) => f.highlight && shown && f.highlight.snapshot_id === shown.id && !f.hidden)
+    .map(({ f, number }) => {
+      const i = number - 1;
+      return {
+        number,
+        finding: f,
+        side: (f.highlight!.x < 50 ? 'left' : 'right') as 'left' | 'right',
+        onChangeText: (v: string) => setFinding(i, 'text', v),
+        onChangeRecommendation: (v: string) => setFinding(i, 'recommendation', v),
+        onRemove: () => removeFinding(i),
+        onRemoveHighlight: () => removeFindingHighlight(i),
+        onToggleHidden: () => setFinding(i, 'hidden', !f.hidden),
+      };
+    });
+  const pinnedNumbers = new Set(pinnedItems.map((it) => it.number));
+  const unpinnedFindings = visibleFindings.filter(({ number }) => !pinnedNumbers.has(number));
+  const useAnnotated = Boolean(shown) && pinnedItems.length > 0;
+  // Keep the screenshot narrow enough that the flanking callout columns fit
+  // inside the report's content width (~928px) without overflowing.
+  const midWidth = viewport === 'mobile' ? 300 : 440;
+
   return (
     <section className="rounded-xl bg-white p-6 card-shadow">
       <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
@@ -93,7 +119,7 @@ export default function WebPageSection({
         </div>
       )}
 
-      {/* Screenshot hero */}
+      {/* Screenshot */}
       <div className="mt-5">
         {shown ? (
           <>
@@ -117,20 +143,51 @@ export default function WebPageSection({
                 </button>
               )}
             </div>
-            <div className="max-h-[600px] overflow-y-auto rounded-lg">
-              <div
-                className="cursor-zoom-in"
-                onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
-              >
-                <WebHighlightLayer
+
+            {useAnnotated ? (
+              <>
+                {/* Desktop: annotated screenshot with flanking callouts + lines */}
+                <WebAnnotatedScreenshot
                   imageUrl={shown.screenshot_url as string}
                   alt={`${title} (${viewport})`}
-                  markers={markers}
+                  midWidth={midWidth}
+                  items={pinnedItems}
                   activeIndex={activeIndex}
-                  onMarkerClick={focusFinding}
+                  setActiveIndex={setActiveIndex}
+                  onLightbox={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
                 />
+                {/* Mobile: plain annotated shot; findings stack below */}
+                <div className="max-h-[600px] overflow-y-auto rounded-lg lg:hidden">
+                  <div
+                    className="cursor-zoom-in"
+                    onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
+                  >
+                    <WebHighlightLayer
+                      imageUrl={shown.screenshot_url as string}
+                      alt={`${title} (${viewport})`}
+                      markers={markers}
+                      activeIndex={activeIndex}
+                      onMarkerClick={focusFinding}
+                    />
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className="max-h-[600px] overflow-y-auto rounded-lg">
+                <div
+                  className="cursor-zoom-in"
+                  onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
+                >
+                  <WebHighlightLayer
+                    imageUrl={shown.screenshot_url as string}
+                    alt={`${title} (${viewport})`}
+                    markers={markers}
+                    activeIndex={activeIndex}
+                    onMarkerClick={focusFinding}
+                  />
+                </div>
               </div>
-            </div>
+            )}
             <p className="mt-1 text-center text-[11px] text-gray-400">Click to view the full page</p>
           </>
         ) : (
@@ -174,15 +231,37 @@ export default function WebPageSection({
           {visibleFindings.length === 0 && !editMode && (
             <p className="text-sm text-gray-400">No issues flagged on this page.</p>
           )}
-          {visibleFindings.map(({ f, number }) => {
+
+          {/* Pinned findings show as callouts on desktop; stack them here on mobile only. */}
+          {useAnnotated && (
+            <div className="space-y-4 lg:hidden">
+              {pinnedItems.map((it) => (
+                <WebFindingCard
+                  key={`m-${it.number}`}
+                  number={it.number}
+                  finding={it.finding}
+                  cropShot={null}
+                  active={activeIndex === it.number}
+                  onActivate={(a) => setActiveIndex(a ? it.number : null)}
+                  onChangeText={it.onChangeText}
+                  onChangeRecommendation={it.onChangeRecommendation}
+                  onRemove={it.onRemove}
+                  onRemoveHighlight={it.onRemoveHighlight}
+                  onToggleHidden={it.onToggleHidden}
+                />
+              ))}
+            </div>
+          )}
+
+          {/* Findings without a pin (all screen sizes). */}
+          {unpinnedFindings.map(({ f, number }) => {
             const i = number - 1;
-            const cropShot = f.highlight ? byId.get(f.highlight.snapshot_id) : null;
             return (
               <WebFindingCard
                 key={i}
                 number={number}
                 finding={f}
-                cropShot={cropShot}
+                cropShot={null}
                 active={activeIndex === number}
                 onActivate={(a) => setActiveIndex(a ? number : null)}
                 onChangeText={(v) => setFinding(i, 'text', v)}
