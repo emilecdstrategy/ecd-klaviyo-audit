@@ -1,6 +1,6 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Users, Plus, Search, ArrowRight, Globe, Calendar, ChevronLeft, ChevronRight, ArrowUpDown } from 'lucide-react';
+import { Users, Plus, Search, ArrowRight, Globe, Calendar, ChevronLeft, ChevronRight, ArrowUpDown, RefreshCw } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import EmptyState from '../components/ui/EmptyState';
 import SiteFavicon from '../components/ui/SiteFavicon';
@@ -23,6 +23,81 @@ const SORT_LABELS: Record<SortOption, string> = {
   name_asc: 'Name (A to Z)',
   name_desc: 'Name (Z to A)',
 };
+
+function syncRelativeTime(iso: string | null): string {
+  if (!iso) return 'never';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return 'never';
+  const min = Math.round((Date.now() - then) / 60000);
+  if (min < 1) return 'just now';
+  if (min < 60) return `${min}m ago`;
+  const hr = Math.round(min / 60);
+  if (hr < 24) return `${hr}h ago`;
+  const day = Math.round(hr / 24);
+  return `${day}d ago`;
+}
+
+/** Small, subtle bar noting HubSpot auto-sync cadence with a manual "Sync now". */
+function HubSpotSyncBar() {
+  const [lastSynced, setLastSynced] = useState<string | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [error, setError] = useState('');
+
+  const load = useCallback(async () => {
+    const { data } = await supabase
+      .from('hubspot_sync_state')
+      .select('last_synced_at')
+      .eq('id', 'default')
+      .maybeSingle();
+    setLastSynced((data as { last_synced_at: string | null } | null)?.last_synced_at ?? null);
+  }, []);
+
+  useEffect(() => {
+    void load();
+  }, [load]);
+
+  const syncNow = async () => {
+    setSyncing(true);
+    setError('');
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('hubspot_sync', { body: {} });
+      if (fnError) throw fnError;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Sync failed');
+      await load();
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Sync failed');
+    } finally {
+      setSyncing(false);
+    }
+  };
+
+  return (
+    <div className="mb-4 flex flex-wrap items-center justify-between gap-x-3 gap-y-1.5 rounded-lg border border-gray-100 bg-gray-50/70 px-3.5 py-2">
+      <div className="flex items-center gap-2 text-xs text-gray-500">
+        <img
+          src="https://www.hubspot.com/favicon.ico"
+          alt=""
+          className="h-3.5 w-3.5 shrink-0"
+          onError={e => { e.currentTarget.style.display = 'none'; }}
+        />
+        <span>
+          Auto-syncs from HubSpot every 15 minutes
+          <span className="text-gray-400"> · last synced {syncRelativeTime(lastSynced)}</span>
+        </span>
+        {error && <span className="text-red-500">· {error}</span>}
+      </div>
+      <button
+        type="button"
+        onClick={syncNow}
+        disabled={syncing}
+        className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 bg-white px-2.5 py-1 text-xs font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
+      >
+        <RefreshCw className={`h-3 w-3 ${syncing ? 'animate-spin' : ''}`} />
+        {syncing ? 'Syncing…' : 'Sync now'}
+      </button>
+    </div>
+  );
+}
 
 export default function Clients() {
   const navigate = useNavigate();
@@ -194,6 +269,8 @@ export default function Clients() {
             </SelectContent>
           </Select>
         </div>
+
+        <HubSpotSyncBar />
 
         {error && (
           <div className="mb-6 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">

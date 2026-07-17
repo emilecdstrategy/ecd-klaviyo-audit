@@ -1,10 +1,13 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { createPortal } from 'react-dom';
-import { Mic, Sparkles, X } from 'lucide-react';
+import { FileText, Mic, Sparkles, X } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
 
-// Bump the version suffix to re-announce a future set of changes.
-const STORAGE_KEY = 'ecd_proposals_whatsnew_v1';
+// One localStorage key per announcement "wave". A user who never saw v1 gets a
+// combined popup (v1 + v2 features); a user who already dismissed v1 gets only
+// the v2 (PDF) announcement. Bump with a new key to announce a future set.
+const V1_KEY = 'ecd_proposals_whatsnew_v1';
+const V2_KEY = 'ecd_proposals_whatsnew_v2';
 
 function Feature({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
@@ -24,25 +27,35 @@ function Feature({ icon, title, children }: { icon: ReactNode; title: string; ch
 export default function ProposalsWhatsNewModal() {
   const { user } = useAuth();
   const [open, setOpen] = useState(false);
+  // 'combined' = user hasn't seen v1 yet, show everything. 'pdf' = they saw v1,
+  // show only the new PDF feature.
+  const [variant, setVariant] = useState<'combined' | 'pdf'>('combined');
 
-  const storageKey = user?.id ? `${STORAGE_KEY}:${user.id}` : null;
+  const v1Key = user?.id ? `${V1_KEY}:${user.id}` : null;
+  const v2Key = user?.id ? `${V2_KEY}:${user.id}` : null;
 
   useEffect(() => {
-    if (!storageKey) return;
+    if (!v1Key || !v2Key) return;
     try {
-      if (!localStorage.getItem(storageKey)) setOpen(true);
+      const seenV1 = Boolean(localStorage.getItem(v1Key));
+      const seenV2 = Boolean(localStorage.getItem(v2Key));
+      if (seenV2) return; // caught up on everything
+      setVariant(seenV1 ? 'pdf' : 'combined');
+      setOpen(true);
     } catch {
       /* localStorage unavailable; skip the announcement */
     }
-  }, [storageKey]);
+  }, [v1Key, v2Key]);
 
   const dismiss = () => {
-    if (storageKey) {
-      try {
-        localStorage.setItem(storageKey, new Date().toISOString());
-      } catch {
-        /* ignore */
-      }
+    try {
+      const now = new Date().toISOString();
+      // Always mark the latest wave seen; when it was the combined popup, also
+      // mark v1 so it never reappears.
+      if (v2Key) localStorage.setItem(v2Key, now);
+      if (variant === 'combined' && v1Key) localStorage.setItem(v1Key, now);
+    } catch {
+      /* ignore */
     }
     setOpen(false);
   };
@@ -63,6 +76,8 @@ export default function ProposalsWhatsNewModal() {
   }, [open]);
 
   if (!open) return null;
+
+  const combined = variant === 'combined';
 
   return createPortal(
     <div
@@ -90,17 +105,33 @@ export default function ProposalsWhatsNewModal() {
             New in Proposals
           </span>
           <h2 id="proposals-whatsnew-title" className="mt-3 text-xl font-bold leading-snug">
-            Two <span className="italic">upgrades</span> to the AI Assistant
+            {combined ? (
+              <>
+                Three <span className="italic">upgrades</span> to the AI Assistant
+              </>
+            ) : (
+              <>
+                Upload <span className="italic">PDFs</span> to the AI Assistant
+              </>
+            )}
           </h2>
         </div>
 
         <div className="space-y-4 px-6 py-5">
-          <Feature icon={<Mic className="h-4 w-4" />} title="Talk, don't type">
-            Click the mic in the assistant and just speak. Your words become text you can review and send.
-          </Feature>
-          <Feature icon={<Sparkles className="h-4 w-4" />} title="Reference past proposals">
-            Say something like "Build a proposal similar to Celtic Sea Salt" and the assistant follows that
-            proposal's structure.
+          {combined && (
+            <>
+              <Feature icon={<Mic className="h-4 w-4" />} title="Talk, don't type">
+                Click the mic in the assistant and just speak. Your words become text you can review and send.
+              </Feature>
+              <Feature icon={<Sparkles className="h-4 w-4" />} title="Reference past proposals">
+                Say something like "Build a proposal similar to Celtic Sea Salt" and the assistant follows that
+                proposal's structure.
+              </Feature>
+            </>
+          )}
+          <Feature icon={<FileText className="h-4 w-4" />} title="Upload a PDF">
+            Attach a pitch deck or brief with the paperclip and the assistant reads it, then drafts or edits
+            your proposal from what's inside.
           </Feature>
 
           <button
