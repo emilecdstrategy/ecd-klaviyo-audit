@@ -104,8 +104,11 @@ export default function WebAnnotatedScreenshot({
     return () => img.removeEventListener('load', onLoad);
   }, [imageUrl, recompute]);
 
-  const left = items.filter((it) => it.side === 'left');
-  const right = items.filter((it) => it.side === 'right');
+  // Order each column top-to-bottom by pin height so connector lines within a
+  // column don't cross each other.
+  const byPinY = (a: AnnotatedItem, b: AnnotatedItem) => (a.finding.highlight?.y ?? 0) - (b.finding.highlight?.y ?? 0);
+  const left = items.filter((it) => it.side === 'left').sort(byPinY);
+  const right = items.filter((it) => it.side === 'right').sort(byPinY);
 
   const renderCallout = (it: AnnotatedItem) => {
     const active = activeIndex === it.number;

@@ -84,14 +84,13 @@ export default function WebPageSection({
   // Findings whose pin sits on the shown screenshot become flanking callouts
   // (desktop); the rest render as stacked cards below. Falls back to a stacked
   // list on mobile.
-  const pinnedItems: AnnotatedItem[] = visibleFindings
+  const pinnedRaw = visibleFindings
     .filter(({ f }) => f.highlight && shown && f.highlight.snapshot_id === shown.id && !f.hidden)
     .map(({ f, number }) => {
       const i = number - 1;
       return {
         number,
         finding: f,
-        side: (f.highlight!.x < 50 ? 'left' : 'right') as 'left' | 'right',
         onChangeText: (v: string) => setFinding(i, 'text', v),
         onChangeRecommendation: (v: string) => setFinding(i, 'recommendation', v),
         onRemove: () => removeFinding(i),
@@ -99,6 +98,22 @@ export default function WebPageSection({
         onToggleHidden: () => setFinding(i, 'hidden', !f.hidden),
       };
     });
+  // Balance the two callout columns by count (roughly half each) rather than a
+  // strict x<50 split, which piled everything on one side when the flagged
+  // elements clustered there. The leftmost-by-x half goes left, the rest right,
+  // so each card still sits on the side nearest its pin.
+  const desiredLeft = Math.ceil(pinnedRaw.length / 2);
+  const leftIdx = new Set(
+    pinnedRaw
+      .map((it, idx) => ({ idx, x: it.finding.highlight?.x ?? 50 }))
+      .sort((a, b) => a.x - b.x)
+      .slice(0, desiredLeft)
+      .map((o) => o.idx),
+  );
+  const pinnedItems: AnnotatedItem[] = pinnedRaw.map((it, idx) => ({
+    ...it,
+    side: (leftIdx.has(idx) ? 'left' : 'right') as 'left' | 'right',
+  }));
   const pinnedNumbers = new Set(pinnedItems.map((it) => it.number));
   const unpinnedFindings = visibleFindings.filter(({ number }) => !pinnedNumbers.has(number));
   const useAnnotated = Boolean(shown) && pinnedItems.length > 0;
