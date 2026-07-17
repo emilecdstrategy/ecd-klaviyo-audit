@@ -186,14 +186,14 @@ export default function WebAnnotatedScreenshot({
     // never causes horizontal scroll.
     <div
       ref={containerRef}
-      className="relative left-1/2 hidden w-[min(1500px,96vw)] -translate-x-1/2 items-start gap-6 lg:grid"
+      className="relative left-1/2 hidden w-[min(1500px,96vw)] -translate-x-1/2 items-stretch gap-6 lg:grid"
       style={{ gridTemplateColumns: `minmax(0,1fr) ${midWidth}px minmax(0,1fr)` }}
     >
-      {/* Left callouts */}
-      <div className="flex flex-col items-end gap-3 pt-2">{left.map(renderCallout)}</div>
+      {/* Left callouts: spread toward the top and bottom corners */}
+      <div className="flex flex-col items-end justify-between gap-3">{left.map(renderCallout)}</div>
 
-      {/* Screenshot */}
-      <div ref={imageWrapRef} className="cursor-zoom-in" style={{ width: midWidth }} onClick={onLightbox}>
+      {/* Screenshot, centered vertically so callouts surround it */}
+      <div ref={imageWrapRef} className="cursor-zoom-in self-center" style={{ width: midWidth }} onClick={onLightbox}>
         <WebHighlightLayer
           imageUrl={imageUrl}
           alt={alt}
@@ -203,8 +203,8 @@ export default function WebAnnotatedScreenshot({
         />
       </div>
 
-      {/* Right callouts */}
-      <div className="flex flex-col items-start gap-3 pt-2">{right.map(renderCallout)}</div>
+      {/* Right callouts: spread toward the top and bottom corners */}
+      <div className="flex flex-col items-start justify-between gap-3">{right.map(renderCallout)}</div>
 
       {/* Connector lines */}
       <svg
