@@ -268,7 +268,9 @@ export default function Clients() {
               ))}
             </SelectContent>
           </Select>
-          <HubSpotSyncButton />
+          <div className="ml-auto">
+            <HubSpotSyncButton />
+          </div>
         </div>
 
         {error && (
