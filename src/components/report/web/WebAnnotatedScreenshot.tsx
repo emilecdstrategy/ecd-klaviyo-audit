@@ -8,7 +8,7 @@ import WebHighlightLayer from './WebHighlightLayer';
 export type AnnotatedItem = {
   number: number;
   finding: WebFinding;
-  side: 'left' | 'right';
+  zone: 'top' | 'bottom' | 'left' | 'right';
   onChangeText: (v: string) => void;
   onChangeRecommendation: (v: string) => void;
   onRemove: () => void;
@@ -70,9 +70,15 @@ export default function WebAnnotatedScreenshot({
       // Pin anchor: the numbered badge sits at the box center.
       const px = img.left - c.left + ((h.x + h.w / 2) / 100) * img.width;
       const py = img.top - c.top + ((h.y + h.h / 2) / 100) * img.height;
-      // Card anchor: the inner edge (toward the image), vertically centered.
-      const cardX = it.side === 'left' ? b.right - c.left : b.left - c.left;
-      const cardY = b.top - c.top + b.height / 2;
+      // Card anchor: the edge facing the image, centered on that edge.
+      const cx = b.left - c.left + b.width / 2;
+      const cy = b.top - c.top + b.height / 2;
+      let cardX: number;
+      let cardY: number;
+      if (it.zone === 'left') { cardX = b.right - c.left; cardY = cy; }
+      else if (it.zone === 'right') { cardX = b.left - c.left; cardY = cy; }
+      else if (it.zone === 'top') { cardX = cx; cardY = b.bottom - c.top; }
+      else { cardX = cx; cardY = b.top - c.top; } // bottom
       next.push({ number: it.number, x1: cardX, y1: cardY, x2: px, y2: py });
     }
     setLines(next);
@@ -104,14 +110,20 @@ export default function WebAnnotatedScreenshot({
     return () => img.removeEventListener('load', onLoad);
   }, [imageUrl, recompute]);
 
-  // Order each column top-to-bottom by pin height so connector lines within a
-  // column don't cross each other.
+  // Side columns ordered by pin height, top/bottom rows by pin x, so connector
+  // lines within a zone don't cross.
   const byPinY = (a: AnnotatedItem, b: AnnotatedItem) => (a.finding.highlight?.y ?? 0) - (b.finding.highlight?.y ?? 0);
-  const left = items.filter((it) => it.side === 'left').sort(byPinY);
-  const right = items.filter((it) => it.side === 'right').sort(byPinY);
+  const byPinX = (a: AnnotatedItem, b: AnnotatedItem) => (a.finding.highlight?.x ?? 0) - (b.finding.highlight?.x ?? 0);
+  const top = items.filter((it) => it.zone === 'top').sort(byPinX);
+  const bottom = items.filter((it) => it.zone === 'bottom').sort(byPinX);
+  const left = items.filter((it) => it.zone === 'left').sort(byPinY);
+  const right = items.filter((it) => it.zone === 'right').sort(byPinY);
 
   const renderCallout = (it: AnnotatedItem) => {
     const active = activeIndex === it.number;
+    // Top/bottom cards sit in a horizontal row, so keep them narrower; side cards
+    // fill their column up to a wider cap.
+    const widthClass = it.zone === 'top' || it.zone === 'bottom' ? 'w-[280px] max-w-full' : 'w-full max-w-[360px]';
     return (
       <div
         key={it.number}
@@ -121,7 +133,7 @@ export default function WebAnnotatedScreenshot({
         }}
         onMouseEnter={() => setActiveIndex(it.number)}
         onMouseLeave={() => setActiveIndex(null)}
-        className={`relative z-20 w-full max-w-[360px] rounded-xl border bg-white p-3.5 shadow-sm transition-shadow ${
+        className={`relative z-20 ${widthClass} rounded-xl border bg-white p-3.5 shadow-sm transition-shadow ${
           active ? 'border-brand-primary/50 ring-1 ring-brand-primary/20' : 'border-gray-200'
         } ${it.finding.hidden ? 'opacity-50' : ''}`}
       >
@@ -189,6 +201,13 @@ export default function WebAnnotatedScreenshot({
       className="relative left-1/2 hidden w-[min(1500px,96vw)] -translate-x-1/2 items-stretch gap-6 lg:grid"
       style={{ gridTemplateColumns: `minmax(0,1fr) ${midWidth}px minmax(0,1fr)` }}
     >
+      {/* Top callouts: a centered row above the screenshot */}
+      {top.length > 0 && (
+        <div style={{ gridColumn: '1 / -1' }} className="flex flex-wrap items-end justify-center gap-3">
+          {top.map(renderCallout)}
+        </div>
+      )}
+
       {/* Left callouts: spread toward the top and bottom corners */}
       <div className="flex flex-col items-end justify-between gap-3">{left.map(renderCallout)}</div>
 
@@ -205,6 +224,13 @@ export default function WebAnnotatedScreenshot({
 
       {/* Right callouts: spread toward the top and bottom corners */}
       <div className="flex flex-col items-start justify-between gap-3">{right.map(renderCallout)}</div>
+
+      {/* Bottom callouts: a centered row below the screenshot */}
+      {bottom.length > 0 && (
+        <div style={{ gridColumn: '1 / -1' }} className="flex flex-wrap items-start justify-center gap-3">
+          {bottom.map(renderCallout)}
+        </div>
+      )}
 
       {/* Connector lines */}
       <svg

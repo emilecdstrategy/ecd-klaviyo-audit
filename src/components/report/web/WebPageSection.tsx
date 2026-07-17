@@ -98,22 +98,24 @@ export default function WebPageSection({
         onToggleHidden: () => setFinding(i, 'hidden', !f.hidden),
       };
     });
-  // Balance the two callout columns by count (roughly half each) rather than a
-  // strict x<50 split, which piled everything on one side when the flagged
-  // elements clustered there. The leftmost-by-x half goes left, the rest right,
-  // so each card still sits on the side nearest its pin.
-  const desiredLeft = Math.ceil(pinnedRaw.length / 2);
-  const leftIdx = new Set(
-    pinnedRaw
-      .map((it, idx) => ({ idx, x: it.finding.highlight?.x ?? 50 }))
-      .sort((a, b) => a.x - b.x)
-      .slice(0, desiredLeft)
-      .map((o) => o.idx),
-  );
-  const pinnedItems: AnnotatedItem[] = pinnedRaw.map((it, idx) => ({
-    ...it,
-    side: (leftIdx.has(idx) ? 'left' : 'right') as 'left' | 'right',
-  }));
+  // Place each callout on the screenshot edge nearest its pin (top/bottom/left/
+  // right), so cards surround the centered image and connector lines stay short.
+  const pinnedItems: AnnotatedItem[] = pinnedRaw.map((it) => {
+    const h = it.finding.highlight;
+    const cx = (h?.x ?? 50) + (h?.w ?? 0) / 2;
+    const cy = (h?.y ?? 50) + (h?.h ?? 0) / 2;
+    const dist: Record<'top' | 'bottom' | 'left' | 'right', number> = {
+      top: cy,
+      bottom: 100 - cy,
+      left: cx,
+      right: 100 - cx,
+    };
+    const zone = (Object.keys(dist) as Array<'top' | 'bottom' | 'left' | 'right'>).reduce(
+      (best, edge) => (dist[edge] < dist[best] ? edge : best),
+      'top' as 'top' | 'bottom' | 'left' | 'right',
+    );
+    return { ...it, zone };
+  });
   const pinnedNumbers = new Set(pinnedItems.map((it) => it.number));
   const unpinnedFindings = visibleFindings.filter(({ number }) => !pinnedNumbers.has(number));
   const useAnnotated = Boolean(shown) && pinnedItems.length > 0;
