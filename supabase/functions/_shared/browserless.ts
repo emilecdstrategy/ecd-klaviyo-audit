@@ -95,7 +95,11 @@ export default async ({ page, context }) => {
         if (seen.indexOf(key) !== -1) continue;
         seen.push(key);
         const tag = el.tagName.toLowerCase();
-        let text = (el.getAttribute("aria-label") || el.textContent || el.getAttribute("alt") || "").replace(/\\s+/g, " ").trim().slice(0, 60);
+        // innerText = visible text only (skips <style>/<script> content that
+        // textContent would leak into labels).
+        let text = (el.getAttribute("aria-label") || el.innerText || el.getAttribute("alt") || "").replace(/\\s+/g, " ").trim();
+        if (text.indexOf("{") !== -1 && text.indexOf("}") !== -1) text = ""; // leaked CSS
+        text = text.slice(0, 60);
         if (!text && tag === "img") text = "image";
         out.push({
           tag, text,
@@ -126,7 +130,10 @@ export async function captureWithBrowserless(input: {
   if (!token) return { ok: false, error: "browserless_token_missing" };
   const base = (Deno.env.get("BROWSERLESS_BASE_URL") ?? "https://production-sfo.browserless.io").replace(/\/$/, "");
   const dim = DIMENSIONS[input.viewport];
-  const qs = new URLSearchParams({ token, blockAds: "true", blockConsentModals: "true" });
+  // The /function endpoint only accepts `token` as a query param (launch flags
+  // like blockAds/blockConsentModals are for /screenshot and 400 here). Cookie
+  // banners + chat widgets are removed in-code by the sweep() in FUNCTION_CODE.
+  const qs = new URLSearchParams({ token });
 
   const ctrl = new AbortController();
   const timer = setTimeout(() => ctrl.abort(), 75_000);
@@ -147,17 +154,26 @@ export async function captureWithBrowserless(input: {
       }),
       signal: ctrl.signal,
     });
+    const rawText = await res.text().catch(() => "");
     if (!res.ok) {
-      const txt = await res.text().catch(() => "");
-      return { ok: false, error: `browserless_http_${res.status}${txt ? `: ${txt.slice(0, 140)}` : ""}` };
+      return { ok: false, error: `browserless_http_${res.status}${rawText ? `: ${rawText.slice(0, 140)}` : ""}` };
     }
-    const body = (await res.json().catch(() => null)) as
+    let parsed: unknown = null;
+    try {
+      parsed = JSON.parse(rawText);
+    } catch {
+      parsed = null;
+    }
+    // /function returns the whole { data, type } wrapper as the JSON body, so the
+    // real payload is under .data (fall back to the root if that ever changes).
+    const wrapper = parsed as { data?: unknown } | null;
+    const payload = (wrapper && typeof wrapper.data === "object" ? wrapper.data : wrapper) as
       | { screenshot?: string; elements?: CapturedElement[] }
       | null;
-    if (!body?.screenshot) return { ok: false, error: "browserless_no_screenshot" };
-    const png = b64ToBytes(body.screenshot);
+    if (!payload?.screenshot) return { ok: false, error: "browserless_no_screenshot" };
+    const png = b64ToBytes(payload.screenshot);
     if (png.byteLength < 5000) return { ok: false, error: "browserless_blank_page" };
-    const elements = Array.isArray(body.elements) ? body.elements.slice(0, 60) : [];
+    const elements = Array.isArray(payload.elements) ? payload.elements.slice(0, 60) : [];
     return { ok: true, png, elements };
   } catch (e) {
     const msg = e instanceof Error && (e.name === "AbortError" || /abort/i.test(e.message))
