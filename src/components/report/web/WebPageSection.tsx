@@ -102,9 +102,9 @@ export default function WebPageSection({
   const pinnedNumbers = new Set(pinnedItems.map((it) => it.number));
   const unpinnedFindings = visibleFindings.filter(({ number }) => !pinnedNumbers.has(number));
   const useAnnotated = Boolean(shown) && pinnedItems.length > 0;
-  // Keep the screenshot narrow enough that the flanking callout columns fit
-  // inside the report's content width (~928px) without overflowing.
-  const midWidth = viewport === 'mobile' ? 300 : 440;
+  // The annotated band breaks out to a wider, viewport-centered width, so the
+  // screenshot can be larger and the flanking callouts get real room.
+  const midWidth = viewport === 'mobile' ? 320 : 520;
 
   return (
     <section className="rounded-xl bg-white p-6 card-shadow">

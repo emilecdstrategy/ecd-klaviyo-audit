@@ -118,7 +118,7 @@ export default function WebAnnotatedScreenshot({
         }}
         onMouseEnter={() => setActiveIndex(it.number)}
         onMouseLeave={() => setActiveIndex(null)}
-        className={`w-[210px] max-w-full rounded-xl border bg-white p-3 shadow-sm transition-shadow ${
+        className={`w-full max-w-[360px] rounded-xl border bg-white p-3.5 shadow-sm transition-shadow ${
           active ? 'border-brand-primary/50 ring-1 ring-brand-primary/20' : 'border-gray-200'
         } ${it.finding.hidden ? 'opacity-50' : ''}`}
       >
@@ -178,9 +178,12 @@ export default function WebAnnotatedScreenshot({
   };
 
   return (
+    // Break out of the report's max-w-5xl container so the callout columns can
+    // use the empty space on the sides. Centered on the viewport; capped so it
+    // never causes horizontal scroll.
     <div
       ref={containerRef}
-      className="relative hidden items-start gap-4 lg:grid"
+      className="relative left-1/2 hidden w-[min(1500px,96vw)] -translate-x-1/2 items-start gap-6 lg:grid"
       style={{ gridTemplateColumns: `minmax(0,1fr) ${midWidth}px minmax(0,1fr)` }}
     >
       {/* Left callouts */}
