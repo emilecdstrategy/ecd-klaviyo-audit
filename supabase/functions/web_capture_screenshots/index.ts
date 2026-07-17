@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getScreenshotProvider } from "../_shared/screenshot-provider.ts";
-import { browserlessEnabled, captureViewportWithElements, type CapturedElement } from "../_shared/browserless.ts";
+import { browserlessEnabled, captureWithBrowserless, type CapturedElement } from "../_shared/browserless.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest } from "../_shared/shopify-api.ts";
 
@@ -294,15 +294,24 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   let elements: CapturedElement[] = [];
   let captureError = "";
 
-  // For the AI-annotated viewport shot, prefer Browserless when configured: one
-  // pass returns the screenshot AND the real element boxes at the same render, so
-  // findings can pin an actual element instead of a guessed coordinate. The
-  // drawer-click cart fallback isn't scriptable here, so it uses ScreenshotOne.
-  if (isViewport && !interaction && browserlessEnabled()) {
-    let bl = await captureViewportWithElements({ url: row.url, viewport: row.viewport as "desktop" | "mobile" });
+  // When Browserless is configured it handles every capture (full-page and
+  // viewport): ad + cookie-banner blocking are built in, the cart drawer is a
+  // scripted click, and the viewport shot also returns real element boxes so
+  // findings pin an actual element instead of a guessed coordinate. ScreenshotOne
+  // remains the fallback below if Browserless is unset or a call fails.
+  if (browserlessEnabled()) {
+    const clickSelector = interaction === "cart_drawer" ? 'a[href*="/cart"]' : undefined;
+    const blInput = {
+      url: row.url,
+      viewport: row.viewport as "desktop" | "mobile",
+      fullPage: !isViewport,
+      withElements: isViewport,
+      clickSelector,
+    };
+    let bl = await captureWithBrowserless(blInput);
     for (let attempt = 1; attempt <= 2 && !bl.ok; attempt++) {
       await new Promise((r) => setTimeout(r, attempt * 5000));
-      bl = await captureViewportWithElements({ url: row.url, viewport: row.viewport as "desktop" | "mobile" });
+      bl = await captureWithBrowserless(blInput);
     }
     if (bl.ok) {
       png = bl.png;
