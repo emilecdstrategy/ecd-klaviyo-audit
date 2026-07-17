@@ -67,9 +67,9 @@ export default function WebAnnotatedScreenshot({
       const card = cardRefs.current.get(it.number);
       if (!h || !card) continue;
       const b = card.getBoundingClientRect();
-      // Pin anchor: the numbered badge sits at (x%, y%) of the image.
-      const px = img.left - c.left + (h.x / 100) * img.width;
-      const py = img.top - c.top + (h.y / 100) * img.height;
+      // Pin anchor: the numbered badge sits at the box center.
+      const px = img.left - c.left + ((h.x + h.w / 2) / 100) * img.width;
+      const py = img.top - c.top + ((h.y + h.h / 2) / 100) * img.height;
       // Card anchor: the inner edge (toward the image), vertically centered.
       const cardX = it.side === 'left' ? b.right - c.left : b.left - c.left;
       const cardY = b.top - c.top + b.height / 2;

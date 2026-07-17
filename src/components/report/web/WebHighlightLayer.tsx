@@ -40,7 +40,7 @@ export default function WebHighlightLayer({
               type="button"
               onClick={() => onMarkerClick?.(index)}
               className="pointer-events-auto absolute z-20 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-brand-primary text-xs font-bold text-white shadow ring-2 ring-white"
-              style={{ left: `${highlight.x}%`, top: `${highlight.y}%` }}
+              style={{ left: `${highlight.x + highlight.w / 2}%`, top: `${highlight.y + highlight.h / 2}%` }}
               aria-label={highlight.label || `Finding ${index}`}
               title={highlight.label}
             >

@@ -43,15 +43,16 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
             recommendation: { type: "string", description: "What to change" },
             highlight: {
               type: "object",
-              description: "Optional: pinpoint the element on a screenshot. Only include when confident of the location.",
+              description:
+                "Optional: a TIGHT bounding box around the exact element this finding is about, so a reader can see what you mean. Coordinates are percentages of the referenced image where (0,0) is the top-left corner and (100,100) is the bottom-right. The box must enclose the specific element (a button, a widget, a headline) as tightly as possible, not the whole region around it. Double-check that x,y,w,h actually land on that element before returning them. Omit the highlight entirely if you cannot confidently place the box; a missing pin is better than a wrong one.",
               required: ["image_ref", "x", "y", "w", "h", "label"],
               properties: {
-                image_ref: { type: "string", description: "The IMG_n label of the screenshot this refers to" },
-                x: { type: "number", description: "Left edge, % of image width (0-100)" },
-                y: { type: "number", description: "Top edge, % of image height (0-100)" },
-                w: { type: "number", description: "Width, % of image width" },
-                h: { type: "number", description: "Height, % of image height" },
-                label: { type: "string", description: "Short label, max 6 words" },
+                image_ref: { type: "string", description: "The IMG_n label of the screenshot this box refers to" },
+                x: { type: "number", description: "Left edge of the box, % of image width (0-100)" },
+                y: { type: "number", description: "Top edge of the box, % of image height (0-100)" },
+                w: { type: "number", description: "Box width, % of image width (keep it tight to the element)" },
+                h: { type: "number", description: "Box height, % of image height (keep it tight to the element)" },
+                label: { type: "string", description: "Short label naming the element, max 6 words" },
               },
             },
           },
