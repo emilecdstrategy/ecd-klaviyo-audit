@@ -103,10 +103,18 @@ type SectionRow = {
   section_config: Record<string, unknown> | null;
 };
 
+type ElementBox = { id: string; x: number; y: number; w: number; h: number; label?: string };
+
 function buildPageImages(
-  snaps: Array<{ id: string; viewport: string; variant: string; screenshot_url: string | null }>,
+  snaps: Array<{ id: string; viewport: string; variant: string; screenshot_url: string | null; elements?: ElementBox[] }>,
   pageLabel: string,
-): { images: LlmImage[]; refToId: Map<string, string>; primaryId: string | null } {
+): {
+  images: LlmImage[];
+  refToId: Map<string, string>;
+  refToElements: Map<string, ElementBox[]>;
+  primaryId: string | null;
+  elementsText: string;
+} {
   // Only send viewport (above-the-fold) shots to the model: they are legible and
   // safely under Anthropic's 8000px image-dimension limit. Full-page shots (up to
   // 1440x12000) both exceed that limit and downscale to an illegible sliver, so
@@ -119,13 +127,24 @@ function buildPageImages(
   const ordered = chosen.sort((a, b) => rank(a) - rank(b)).slice(0, 3);
   const images: LlmImage[] = [];
   const refToId = new Map<string, string>();
+  const refToElements = new Map<string, ElementBox[]>();
+  const elementLines: string[] = [];
   ordered.forEach((s, i) => {
     const ref = `IMG_${i + 1}`;
     refToId.set(ref, s.id);
     images.push({ url: s.screenshot_url as string, label: `${ref}: ${pageLabel}, ${s.viewport}, above-the-fold` });
+    const els = Array.isArray(s.elements) ? s.elements : [];
+    if (els.length > 0) {
+      refToElements.set(ref, els);
+      const listed = els.slice(0, 60).map((e) => `${e.id} ${e.label ?? ""}`.trim()).join(" | ");
+      elementLines.push(`${ref} elements: ${listed}`);
+    }
   });
   const primaryId = ordered.find((s) => s.viewport === "desktop")?.id ?? ordered[0]?.id ?? null;
-  return { images, refToId, primaryId };
+  const elementsText = elementLines.length
+    ? `\n\nReal page elements detected on these screenshots (use element_id in a finding's highlight to pin exactly, it maps to the element's true on-page box):\n${elementLines.join("\n")}`
+    : "";
+  return { images, refToId, refToElements, primaryId, elementsText };
 }
 
 async function ensureJob(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
@@ -182,35 +201,35 @@ async function runStep(
   if (step.kind === "page") {
     const { data: snaps } = await sb
       .from("web_page_snapshots")
-      .select("id, viewport, variant, screenshot_url")
+      .select("id, viewport, variant, screenshot_url, elements")
       .eq("audit_id", auditId)
       .eq("page_type", step.page_type)
       .eq("status", "success");
-    const rows = (snaps ?? []) as Array<{ id: string; viewport: string; variant: string; screenshot_url: string | null }>;
+    const rows = (snaps ?? []) as Array<{ id: string; viewport: string; variant: string; screenshot_url: string | null; elements?: ElementBox[] }>;
     if (rows.length === 0) {
       await sb.from("audit_sections").update({ section_config: hideConfig(section) }).eq("id", section.id);
       return;
     }
-    const { images, refToId, primaryId } = buildPageImages(rows, step.label);
+    const { images, refToId, refToElements, primaryId, elementsText } = buildPageImages(rows, step.label);
     const messages: LlmMessage[] = [{
       role: "user_images",
-      text: `Audit the ${step.label} of this Shopify store using the screenshots above. Identify strengths, the most important issues (with a pinpoint highlight when you are confident of the element's location, referencing the correct IMG_n), and prioritized recommendations. Call record_page_audit exactly once.`,
+      text: `Audit the ${step.label} of this Shopify store using the screenshots above. Identify strengths, the most important issues (with a pinpoint highlight when you are confident of the element's location, referencing the correct IMG_n), and prioritized recommendations. Call record_page_audit exactly once.${elementsText}`,
       images,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
     if (turn.kind !== "tool_call") throw new Error(`${step.key}: model did not call the tool`);
-    let parsed = coercePageAudit(turn.input, refToId);
+    let parsed = coercePageAudit(turn.input, refToId, refToElements);
     // The model occasionally returns an empty audit for a page that clearly
     // rendered. Retry once with a firmer nudge before accepting nothing.
     if (parsed.findings.length === 0) {
       const retryMessages: LlmMessage[] = [{
         role: "user_images",
-        text: `You returned no findings for the ${step.label}, but this page rendered normally and every storefront page has concrete UX and conversion issues. Look again at the screenshots above and identify at least 3 specific, visible issues, each with a recommendation, plus a few strengths. Call record_page_audit exactly once.`,
+        text: `You returned no findings for the ${step.label}, but this page rendered normally and every storefront page has concrete UX and conversion issues. Look again at the screenshots above and identify at least 3 specific, visible issues, each with a recommendation, plus a few strengths. Call record_page_audit exactly once.${elementsText}`,
         images,
       }];
       const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
       if (retry.kind === "tool_call") {
-        const retryParsed = coercePageAudit(retry.input, refToId);
+        const retryParsed = coercePageAudit(retry.input, refToId, refToElements);
         if (retryParsed.findings.length > 0) parsed = retryParsed;
       }
     }

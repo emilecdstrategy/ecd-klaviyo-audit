@@ -44,14 +44,15 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
             highlight: {
               type: "object",
               description:
-                "Optional: a TIGHT bounding box around the exact element this finding is about, so a reader can see what you mean. Coordinates are percentages of the referenced image where (0,0) is the top-left corner and (100,100) is the bottom-right. The box must enclose the specific element (a button, a widget, a headline) as tightly as possible, not the whole region around it. Double-check that x,y,w,h actually land on that element before returning them. Omit the highlight entirely if you cannot confidently place the box; a missing pin is better than a wrong one.",
-              required: ["image_ref", "x", "y", "w", "h", "label"],
+                "Optional: pinpoint the exact element this finding is about so a reader can see what you mean. STRONGLY PREFERRED: when the message lists real page elements for the referenced image (each with an id like el_12), set element_id to the one that matches, its real on-page box is used automatically (this is the accurate path, use it whenever an element fits). Only if NO listed element matches, fall back to x/y/w/h as a tight box in percentages of the image (0,0 = top-left, 100,100 = bottom-right). Omit the highlight entirely if you cannot confidently locate it; a missing pin beats a wrong one.",
+              required: ["image_ref", "label"],
               properties: {
-                image_ref: { type: "string", description: "The IMG_n label of the screenshot this box refers to" },
-                x: { type: "number", description: "Left edge of the box, % of image width (0-100)" },
-                y: { type: "number", description: "Top edge of the box, % of image height (0-100)" },
-                w: { type: "number", description: "Box width, % of image width (keep it tight to the element)" },
-                h: { type: "number", description: "Box height, % of image height (keep it tight to the element)" },
+                image_ref: { type: "string", description: "The IMG_n label of the screenshot this refers to" },
+                element_id: { type: "string", description: "PREFERRED: the id (e.g. el_12) of the matching element from the listed page elements for this image" },
+                x: { type: "number", description: "Fallback only: left edge of a tight box, % of image width (0-100)" },
+                y: { type: "number", description: "Fallback only: top edge of a tight box, % of image height (0-100)" },
+                w: { type: "number", description: "Fallback only: box width, % of image width" },
+                h: { type: "number", description: "Fallback only: box height, % of image height" },
                 label: { type: "string", description: "Short label naming the element, max 6 words" },
               },
             },
@@ -130,7 +131,13 @@ export const ROADMAP_TOOL: LlmTool = {
 export type WebHighlight = { snapshot_id: string; x: number; y: number; w: number; h: number; label: string };
 export type WebFinding = { text: string; recommendation: string; highlight?: WebHighlight; hidden: boolean };
 
-export function coercePageAudit(input: unknown, imageRefToSnapshotId: Map<string, string>) {
+export type ElementBox = { id: string; x: number; y: number; w: number; h: number; label?: string };
+
+export function coercePageAudit(
+  input: unknown,
+  imageRefToSnapshotId: Map<string, string>,
+  refToElements?: Map<string, ElementBox[]>,
+) {
   const o = (input ?? {}) as Record<string, unknown>;
   const findingsRaw = Array.isArray(o.findings) ? o.findings : [];
   const findings: WebFinding[] = findingsRaw.slice(0, 8).map((f) => {
@@ -142,18 +149,31 @@ export function coercePageAudit(input: unknown, imageRefToSnapshotId: Map<string
     };
     const hl = rec.highlight as Record<string, unknown> | undefined;
     if (hl && typeof hl === "object") {
-      const snapshotId = imageRefToSnapshotId.get(String(hl.image_ref ?? ""));
-      const w = clampPct(hl.w);
-      const h = clampPct(hl.h);
-      if (snapshotId && w > 0 && h > 0) {
-        finding.highlight = {
-          snapshot_id: snapshotId,
-          x: clampPct(hl.x),
-          y: clampPct(hl.y),
-          w,
-          h,
-          label: sanitizeDash(hl.label).slice(0, 80),
-        };
+      const ref = String(hl.image_ref ?? "");
+      const snapshotId = imageRefToSnapshotId.get(ref);
+      if (snapshotId) {
+        // Preferred: a real element box resolved from the captured page. Falls
+        // back to the model's own x/y/w/h box when no element id matches.
+        const elId = typeof hl.element_id === "string" ? hl.element_id.trim() : "";
+        const el = elId ? (refToElements?.get(ref) ?? []).find((e) => e.id === elId) : undefined;
+        let box: { x: number; y: number; w: number; h: number; label?: string } | null = null;
+        if (el) {
+          box = { x: clampPct(el.x), y: clampPct(el.y), w: clampPct(el.w), h: clampPct(el.h), label: el.label };
+        } else {
+          const w = clampPct(hl.w);
+          const h = clampPct(hl.h);
+          if (w > 0 && h > 0) box = { x: clampPct(hl.x), y: clampPct(hl.y), w, h };
+        }
+        if (box && box.w > 0 && box.h > 0) {
+          finding.highlight = {
+            snapshot_id: snapshotId,
+            x: box.x,
+            y: box.y,
+            w: box.w,
+            h: box.h,
+            label: (sanitizeDash(hl.label) || sanitizeDash(box.label)).slice(0, 80),
+          };
+        }
       }
     }
     return finding;

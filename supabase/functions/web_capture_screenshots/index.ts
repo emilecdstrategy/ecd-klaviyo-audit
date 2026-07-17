@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getScreenshotProvider } from "../_shared/screenshot-provider.ts";
+import { browserlessEnabled, captureViewportWithElements, type CapturedElement } from "../_shared/browserless.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest } from "../_shared/shopify-api.ts";
 
@@ -288,29 +289,62 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
     if (!/^\/cart(\/|$)/.test(path)) interaction = "cart_drawer";
   }
 
-  const provider = getScreenshotProvider();
-  const captureInput = {
-    url: row.url,
-    viewport: row.viewport as "desktop" | "mobile",
-    interaction,
-    fullPage: (row as { variant?: string }).variant !== "viewport",
-  };
-  let result = await provider.capture(captureInput);
-  // Storefronts rate-limit the screenshot service under rapid hits (serving a
-  // blank error page). Retry with a growing backoff so the store's rate-limit
-  // window has time to reset between attempts.
-  for (let attempt = 1; attempt <= 2 && !result.ok; attempt++) {
-    await new Promise((r) => setTimeout(r, attempt * 5000));
-    result = await provider.capture(captureInput);
+  const isViewport = (row as { variant?: string }).variant === "viewport";
+  let png: Uint8Array | null = null;
+  let elements: CapturedElement[] = [];
+  let captureError = "";
+
+  // For the AI-annotated viewport shot, prefer Browserless when configured: one
+  // pass returns the screenshot AND the real element boxes at the same render, so
+  // findings can pin an actual element instead of a guessed coordinate. The
+  // drawer-click cart fallback isn't scriptable here, so it uses ScreenshotOne.
+  if (isViewport && !interaction && browserlessEnabled()) {
+    let bl = await captureViewportWithElements({ url: row.url, viewport: row.viewport as "desktop" | "mobile" });
+    for (let attempt = 1; attempt <= 2 && !bl.ok; attempt++) {
+      await new Promise((r) => setTimeout(r, attempt * 5000));
+      bl = await captureViewportWithElements({ url: row.url, viewport: row.viewport as "desktop" | "mobile" });
+    }
+    if (bl.ok) {
+      png = bl.png;
+      elements = bl.elements;
+    } else {
+      captureError = bl.error; // fall through to ScreenshotOne below
+    }
   }
+
+  // ScreenshotOne (also the fallback if Browserless failed above).
+  if (!png) {
+    const provider = getScreenshotProvider();
+    const captureInput = {
+      url: row.url,
+      viewport: row.viewport as "desktop" | "mobile",
+      interaction,
+      fullPage: !isViewport,
+    };
+    let result = await provider.capture(captureInput);
+    // Storefronts rate-limit the screenshot service under rapid hits (serving a
+    // blank error page). Retry with a growing backoff so the store's rate-limit
+    // window has time to reset between attempts.
+    for (let attempt = 1; attempt <= 2 && !result.ok; attempt++) {
+      await new Promise((r) => setTimeout(r, attempt * 5000));
+      result = await provider.capture(captureInput);
+    }
+    if (result.ok) {
+      png = result.png;
+      elements = [];
+    } else {
+      captureError = result.error;
+    }
+  }
+
   const now = new Date().toISOString();
 
-  if (result.ok) {
-    const variantSuffix = (row as { variant?: string }).variant === "viewport" ? "_viewport" : "";
+  if (png) {
+    const variantSuffix = isViewport ? "_viewport" : "";
     const path = `${clientId}/${auditId}/web/${row.page_type}_${row.viewport}${variantSuffix}.png`;
     const { error: uploadErr } = await sb.storage
       .from(STORAGE_BUCKET)
-      .upload(path, result.png, { contentType: "image/png", upsert: true });
+      .upload(path, png, { contentType: "image/png", upsert: true });
     if (uploadErr) {
       await sb.from("web_page_snapshots").update({
         status: "error",
@@ -323,6 +357,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
         status: "success",
         screenshot_path: path,
         screenshot_url: pub?.publicUrl ?? null,
+        elements,
         error_message: null,
         fetched_at: now,
       }).eq("id", row.id);
@@ -330,7 +365,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   } else {
     await sb.from("web_page_snapshots").update({
       status: "error",
-      error_message: result.error.slice(0, 500),
+      error_message: (captureError || "capture_failed").slice(0, 500),
       fetched_at: now,
     }).eq("id", row.id);
   }
