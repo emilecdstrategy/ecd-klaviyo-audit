@@ -22,10 +22,10 @@ function Shell({ children }: { children: React.ReactNode }) {
   );
 }
 
-function SignForm({ recipientName, onSign }: { recipientName: string; onSign: (typedName: string, email: string, image: string) => Promise<void> }) {
+function SignForm({ recipientName, recipientEmail, onSign }: { recipientName: string; recipientEmail: string; onSign: (typedName: string, email: string, image: string) => Promise<void> }) {
   const padRef = useRef<SignaturePadHandle>(null);
   const [name, setName] = useState(recipientName);
-  const [email, setEmail] = useState('');
+  const [email, setEmail] = useState(recipientEmail);
   const [empty, setEmpty] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState('');
@@ -92,6 +92,7 @@ export default function PublicDocument() {
   const recipientPending = canSign ? (
     <SignForm
       recipientName={document.recipient_name}
+      recipientEmail={document.recipient_email}
       onSign={async (typedName, email, image) => {
         const res = await signDocumentPublic({ token: token!, typed_name: typedName, signer_email: email, signature_image: image });
         if (!res.ok) throw new Error(res.message ?? 'Could not sign the document.');
