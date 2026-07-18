@@ -119,45 +119,39 @@ export function RichAuditContent({
     <div className={className}>
       {blocks.map((block, blockIndex) => {
         if (block.type === 'list') {
-          return (
-            <ul
-              key={`list-${blockIndex}`}
-              className={[listClassName, blockIndex > 0 ? 'mt-3' : ''].filter(Boolean).join(' ')}
-            >
-              {block.items.map((item, itemIndex) => (
-                <li key={`${blockIndex}-${itemIndex}`} className={itemClassName}>
-                  {renderInlineMarkdown(item, entityLookup, autoTagEntities, highlightsEnabled)}
-                </li>
-              ))}
-            </ul>
+          const spacing = blockIndex > 0 ? 'mt-3' : '';
+          const cls = [block.ordered ? listClassName.replace('list-disc', 'list-decimal') : listClassName, spacing]
+            .filter(Boolean)
+            .join(' ');
+          const items = block.items.map((item, itemIndex) => (
+            <li key={`${blockIndex}-${itemIndex}`} className={itemClassName}>
+              {renderInlineMarkdown(item, entityLookup, autoTagEntities, highlightsEnabled)}
+            </li>
+          ));
+          return block.ordered ? (
+            <ol key={`list-${blockIndex}`} className={cls}>{items}</ol>
+          ) : (
+            <ul key={`list-${blockIndex}`} className={cls}>{items}</ul>
           );
         }
-        // Render markdown ATX headings (#, ##, ...) as bold lines instead of
-        // leaving the literal hashes visible.
-        const lines = block.text.split('\n');
-        const hasHeading = lines.some(line => /^\s*#{1,6}\s+/.test(line));
+        if (block.type === 'heading') {
+          const level = Math.min(block.level, 3);
+          const spacing = blockIndex > 0 ? 'mt-4' : '';
+          const inner = renderInlineMarkdown(block.text, entityLookup, autoTagEntities, highlightsEnabled);
+          if (level === 1) {
+            return <h2 key={`h-${blockIndex}`} className={['text-xl font-bold text-gray-900', spacing].filter(Boolean).join(' ')}>{inner}</h2>;
+          }
+          if (level === 2) {
+            return <h3 key={`h-${blockIndex}`} className={['text-lg font-semibold text-gray-900', spacing].filter(Boolean).join(' ')}>{inner}</h3>;
+          }
+          return <h4 key={`h-${blockIndex}`} className={['text-base font-semibold text-gray-900', spacing].filter(Boolean).join(' ')}>{inner}</h4>;
+        }
         return (
           <p
             key={`p-${blockIndex}`}
             className={[paragraphClassName ?? itemClassName, blockIndex > 0 ? 'mt-3' : ''].filter(Boolean).join(' ')}
           >
-            {hasHeading
-              ? lines.map((line, li) => {
-                  const heading = /^\s*#{1,6}\s+(.*)$/.exec(line);
-                  return (
-                    <span key={li}>
-                      {li > 0 && <br />}
-                      {heading ? (
-                        <strong className="text-gray-900">
-                          {renderInlineMarkdown(heading[1].trim(), entityLookup, autoTagEntities, highlightsEnabled)}
-                        </strong>
-                      ) : (
-                        renderInlineMarkdown(line, entityLookup, autoTagEntities, highlightsEnabled)
-                      )}
-                    </span>
-                  );
-                })
-              : renderInlineMarkdown(block.text, entityLookup, autoTagEntities, highlightsEnabled)}
+            {renderInlineMarkdown(block.text, entityLookup, autoTagEntities, highlightsEnabled)}
           </p>
         );
       })}

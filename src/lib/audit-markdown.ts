@@ -123,19 +123,11 @@ export function markdownToEditorHtml(md: string): string {
     .map(block => {
       if (block.type === 'list') {
         const items = block.items.map(item => `<li>${inlineMdToHtml(item)}</li>`).join('');
-        return `<ul>${items}</ul>`;
+        return block.ordered ? `<ol>${items}</ol>` : `<ul>${items}</ul>`;
       }
-      // Render markdown ATX headings (#, ##, ...) as bold lines rather than
-      // leaving the literal hashes in the output.
-      if (/^#{1,6}\s+/m.test(block.text)) {
-        const html = block.text
-          .split('\n')
-          .map(line => {
-            const heading = /^\s*#{1,6}\s+(.*)$/.exec(line);
-            return heading ? `<strong>${inlineMdToHtml(heading[1].trim())}</strong>` : inlineMdToHtml(line);
-          })
-          .join('<br>');
-        return `<div>${html}</div>`;
+      if (block.type === 'heading') {
+        const tag = `h${Math.min(block.level, 3)}`;
+        return `<${tag}>${inlineMdToHtml(block.text)}</${tag}>`;
       }
       return `<div>${inlineMdToHtml(block.text)}</div>`;
     })
@@ -227,12 +219,31 @@ export function htmlToMd(html: string): string {
   md = md.replace(
     /<ul[^>]*>([\s\S]*?)<\/ul>/gi,
     (_, inner: string) =>
+      '\n' +
       [...inner.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]
         .map(match => `- ${inlineHtmlToMd(match[1]).trim()}`)
-        .join('\n'),
+        .join('\n') +
+      '\n',
   );
 
+  md = md.replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_, inner: string) => {
+    let n = 0;
+    return (
+      '\n' +
+      [...inner.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)]
+        .map(match => `${(n += 1)}. ${inlineHtmlToMd(match[1]).trim()}`)
+        .join('\n') +
+      '\n'
+    );
+  });
+
   md = md.replace(/<li[^>]*>([\s\S]*?)<\/li>/gi, (_, inner: string) => `- ${inlineHtmlToMd(inner).trim()}\n`);
+
+  // ATX headings from contentEditable formatBlock (<h1>-<h3>) back to Markdown.
+  md = md.replace(/<h([1-6])[^>]*>([\s\S]*?)<\/h\1>/gi, (_, lvl: string, inner: string) => {
+    const hashes = '#'.repeat(Math.min(Number(lvl), 3));
+    return `\n\n${hashes} ${inlineHtmlToMd(inner).trim()}\n\n`;
+  });
 
   md = md
     .replace(/<\/(div|p|h[1-6]|blockquote|section|article|header|footer|tr)>/gi, '\n')
@@ -256,16 +267,18 @@ export function htmlToMd(html: string): string {
 
 export type RichAuditBlock =
   | { type: 'paragraph'; text: string }
-  | { type: 'list'; items: string[] };
+  | { type: 'heading'; level: number; text: string }
+  | { type: 'list'; ordered: boolean; items: string[] };
 
-/** Split markdown into paragraphs and bullet lists (lines starting with `- `). */
+/** Split markdown into headings (`#`), bullet lists (`- `), numbered lists (`1. `), and paragraphs. */
 export function parseRichAuditBlocks(text: string): RichAuditBlock[] {
   const blocks: RichAuditBlock[] = [];
   let listItems: string[] | null = null;
+  let listOrdered = false;
 
   const flushList = () => {
     if (listItems?.length) {
-      blocks.push({ type: 'list', items: listItems });
+      blocks.push({ type: 'list', ordered: listOrdered, items: listItems });
       listItems = null;
     }
   };
@@ -276,11 +289,26 @@ export function parseRichAuditBlocks(text: string): RichAuditBlock[] {
       flushList();
       continue;
     }
-    if (/^[-*•]\s+/.test(line)) {
-      if (!listItems) listItems = [];
-      listItems.push(line.replace(/^[-*•]\s+/, '').trim());
+
+    const heading = /^(#{1,6})\s+(.*)$/.exec(line);
+    if (heading) {
+      flushList();
+      blocks.push({ type: 'heading', level: heading[1].length, text: heading[2].trim() });
       continue;
     }
+
+    const ordered = /^\d+\.\s+/.test(line);
+    const unordered = /^[-*•]\s+/.test(line);
+    if (ordered || unordered) {
+      if (listItems && listOrdered !== ordered) flushList();
+      if (!listItems) {
+        listItems = [];
+        listOrdered = ordered;
+      }
+      listItems.push(line.replace(ordered ? /^\d+\.\s+/ : /^[-*•]\s+/, '').trim());
+      continue;
+    }
+
     flushList();
     blocks.push({ type: 'paragraph', text: line });
   }

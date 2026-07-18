@@ -76,8 +76,8 @@ function tempId(): string {
   return `tmp_${Math.random().toString(36).slice(2, 10)}`;
 }
 
-export function DocumentAgentProvider({ config, children }: { config: DocumentAgentHostConfig; children: ReactNode }) {
-  const [isOpen, setIsOpen] = useState(false);
+export function DocumentAgentProvider({ config, defaultOpen = false, children }: { config: DocumentAgentHostConfig; defaultOpen?: boolean; children: ReactNode }) {
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DocAgentChatMessage[]>([]);
   const [sending, setSending] = useState(false);
@@ -249,6 +249,7 @@ export function DocumentAgentProvider({ config, children }: { config: DocumentAg
         } else if (message.payload_kind === 'edits' && cfg.onApplyEdits) {
           await cfg.onApplyEdits(message.payload as DocEditPayload);
         } else {
+          setError('This suggestion could not be applied here. Try opening the document editor.');
           return;
         }
         await markDocAgentMessageApplied(message.id).catch(() => {});

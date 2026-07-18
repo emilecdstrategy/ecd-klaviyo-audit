@@ -60,6 +60,7 @@ function EditorInner({ initial }: { initial: DocumentTemplate }) {
           rows={24}
           entityTags={false}
           autoTagEntities={false}
+          richBlocks
           placeholder="Write the template body here…"
         />
       </div>

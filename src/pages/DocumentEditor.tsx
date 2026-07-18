@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import { ArrowLeft, Check, Loader2 } from 'lucide-react';
 import { getDocument, updateDocument } from '../lib/documents-db';
-import { buildDocumentSnapshot, type DocEditPayload } from '../lib/document-agent';
+import { buildDocumentSnapshot, sanitizeCopy, type DocDraftPayload, type DocEditPayload } from '../lib/document-agent';
 import { DocumentAgentProvider } from '../components/document/agent/DocumentAgentContext';
 import { DocumentAgentLayout, DocAgentToggleButton } from '../components/document/agent/DocumentAgentLayout';
 import SimpleRichEditor from '../components/ui/SimpleRichEditor';
@@ -36,12 +36,23 @@ function EditorInner({ initial }: { initial: Document }) {
 
   return (
     <DocumentAgentProvider
+      defaultOpen={typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches}
       config={{
         documentId: initial.id,
         getSnapshot: () => buildDocumentSnapshot({ ...initial, title: latest.current.title, content: latest.current.content }),
         onApplyEdits: async (edits: DocEditPayload) => {
-          setContent(edits.content);
-          scheduleSave({ content: edits.content });
+          const clean = sanitizeCopy(edits.content);
+          setContent(clean);
+          scheduleSave({ content: clean });
+        },
+        // In edit mode the assistant may return a full draft (e.g. for an empty
+        // document); apply it as the document's title + body.
+        onApplyDraft: async (draft: DocDraftPayload) => {
+          const cleanTitle = sanitizeCopy(draft.title);
+          const cleanContent = sanitizeCopy(draft.content);
+          setTitle(cleanTitle);
+          setContent(cleanContent);
+          scheduleSave({ title: cleanTitle, content: cleanContent });
         },
       }}
     >
@@ -70,6 +81,7 @@ function EditorInner({ initial }: { initial: Document }) {
               rows={24}
               entityTags={false}
               autoTagEntities={false}
+              richBlocks
               placeholder="Write your document here, or use the AI assistant to draft it…"
             />
           </div>

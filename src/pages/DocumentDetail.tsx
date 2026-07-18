@@ -6,7 +6,7 @@ import { RichAuditContent } from '../components/ui/RichAuditText';
 import { useToast } from '../components/ui/Toast';
 import { useDocumentData } from '../hooks/useDocumentData';
 import { markDocumentSent, updateDocument, voidDocument, reopenDocument } from '../lib/documents-db';
-import { buildDocumentSnapshot, applyDocumentEdits, type DocEditPayload } from '../lib/document-agent';
+import { buildDocumentSnapshot, applyDocumentEdits, sanitizeCopy, type DocDraftPayload, type DocEditPayload } from '../lib/document-agent';
 import { publicProposalOrigin } from '../lib/public-origin';
 import { DocumentAgentProvider } from '../components/document/agent/DocumentAgentContext';
 import { DocumentAgentLayout, DocAgentToggleButton } from '../components/document/agent/DocumentAgentLayout';
@@ -82,6 +82,11 @@ function DetailInner({ doc, events, reload, onDocChange }: { doc: Document; even
         documentId: doc.id,
         getSnapshot: () => buildDocumentSnapshot(doc),
         onApplyEdits: async (edits: DocEditPayload) => { await applyDocumentEdits(doc, edits); await reload(); },
+        onApplyDraft: async (draft: DocDraftPayload) => {
+          const updated = await updateDocument(doc.id, { title: sanitizeCopy(draft.title), content: sanitizeCopy(draft.content) });
+          onDocChange(updated);
+          await reload();
+        },
       }}
     >
       <DocumentAgentLayout>
