@@ -5,7 +5,10 @@ import type { Document, DocumentEvent, DocumentSignature } from '../lib/types';
 export interface DocumentBundle {
   document: Document;
   events: DocumentEvent[];
+  /** Recipient signature (the one that drives "signed" status). */
   signature: DocumentSignature | null;
+  /** Sender (staff) counter-signature. */
+  senderSignature: DocumentSignature | null;
 }
 
 export function useDocumentData(id: string | undefined) {
@@ -24,7 +27,9 @@ export function useDocumentData(id: string | undefined) {
         return;
       }
       const [events, signatures] = await Promise.all([listDocumentEvents(id), listDocumentSignatures(id)]);
-      setData({ document, events, signature: signatures[0] ?? null });
+      const signature = signatures.find(s => s.signer_role === 'recipient') ?? signatures.find(s => s.signer_role !== 'sender') ?? null;
+      const senderSignature = signatures.find(s => s.signer_role === 'sender') ?? null;
+      setData({ document, events, signature, senderSignature });
     } catch (e) {
       setLoadError(e instanceof Error ? e.message : 'Failed to load document');
     } finally {

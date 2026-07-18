@@ -24,19 +24,32 @@ export async function fetchPublicDocument(sb: SupabaseClient, token: string) {
 
   const { data: signatures, error: sigErr } = await sb
     .from("document_signatures")
-    .select("id, document_id, signer_name, signer_email, signature_image, typed_name, ip_address, user_agent, signed_at")
-    .eq("document_id", document.id)
-    .limit(1);
+    .select("id, document_id, signer_name, signer_email, signature_image, typed_name, ip_address, user_agent, signed_at, signer_role")
+    .eq("document_id", document.id);
   if (sigErr) throw sigErr;
 
-  return { document, signature: (signatures ?? [])[0] ?? null };
+  const rows = signatures ?? [];
+  const signature = rows.find((s) => (s.signer_role ?? "recipient") === "recipient") ?? null;
+  const senderSignature = rows.find((s) => s.signer_role === "sender") ?? null;
+
+  return { document, signature, senderSignature };
 }
 
 /** Public-safe payload: only the fields the recipient-facing page needs. */
 export function serializePublicDocument(
   bundle: NonNullable<Awaited<ReturnType<typeof fetchPublicDocument>>>,
 ) {
-  const { document, signature } = bundle;
+  const { document, signature, senderSignature } = bundle;
+  // The sender signature is shown to the recipient, but only the display-safe
+  // fields (no email / IP / user agent).
+  const publicSender = senderSignature
+    ? {
+      signer_name: senderSignature.signer_name,
+      typed_name: senderSignature.typed_name,
+      signature_image: senderSignature.signature_image,
+      signed_at: senderSignature.signed_at,
+    }
+    : null;
   return {
     document: {
       id: document.id,
@@ -46,8 +59,10 @@ export function serializePublicDocument(
       status: document.status,
       recipient_name: document.recipient_name,
       recipient_email: document.recipient_email,
+      sender_signature_enabled: Boolean(document.sender_signature_enabled),
     },
     signature,
+    sender_signature: publicSender,
     signed: Boolean(signature),
     expired: isDocumentExpired(document),
   };

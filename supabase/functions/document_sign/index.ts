@@ -52,6 +52,7 @@ serve(async (req) => {
 
     const { error: sigErr } = await sb.from("document_signatures").insert({
       document_id: document.id,
+      signer_role: "recipient",
       signer_name: typedName,
       signer_email: signerEmail,
       signature_image: signatureImage,

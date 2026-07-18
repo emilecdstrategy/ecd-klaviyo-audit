@@ -1,19 +1,22 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Ban, Copy, ExternalLink, Pencil, Printer, RotateCcw, Send } from 'lucide-react';
+import { ArrowLeft, Ban, Copy, ExternalLink, Pencil, PenLine, Printer, RotateCcw, Send, Trash2 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import { RichAuditContent } from '../components/ui/RichAuditText';
 import { useToast } from '../components/ui/Toast';
+import { useAuth } from '../contexts/AuthContext';
 import { useDocumentData } from '../hooks/useDocumentData';
-import { markDocumentSent, updateDocument, voidDocument, reopenDocument } from '../lib/documents-db';
+import { markDocumentSent, updateDocument, voidDocument, reopenDocument, upsertSenderSignature, removeSenderSignature } from '../lib/documents-db';
 import { buildDocumentSnapshot, applyDocumentEdits, sanitizeCopy, type DocDraftPayload, type DocEditPayload } from '../lib/document-agent';
 import { publicProposalOrigin } from '../lib/public-origin';
 import { DocumentAgentProvider } from '../components/document/agent/DocumentAgentContext';
 import { DocumentAgentLayout, DocAgentToggleButton } from '../components/document/agent/DocumentAgentLayout';
 import DocumentActivityTimeline from '../components/document/DocumentActivityTimeline';
+import DocumentSignatures from '../components/document/DocumentSignatures';
 import SendDocumentModal from '../components/document/SendDocumentModal';
+import SignaturePad, { type SignaturePadHandle } from '../components/proposal/SignaturePad';
 import Modal from '../components/ui/Modal';
-import type { Document, DocumentDisplayStatus, DocumentEvent } from '../lib/types';
+import type { Document, DocumentDisplayStatus, DocumentEvent, DocumentSignature } from '../lib/types';
 
 const STATUS_LABELS: Record<DocumentDisplayStatus, { label: string; tone: string }> = {
   draft: { label: 'Draft', tone: 'bg-gray-100 text-gray-600' },
@@ -32,17 +35,91 @@ function displayStatus(doc: Document): DocumentDisplayStatus {
   return doc.status;
 }
 
-function DetailInner({ doc, events, reload, onDocChange }: { doc: Document; events: DocumentEvent[]; reload: () => Promise<void>; onDocChange: (d: Document) => void }) {
+function SenderSignatureModal({ open, defaultName, onClose, onSave }: { open: boolean; defaultName: string; onClose: () => void; onSave: (name: string, image: string) => Promise<void> }) {
+  const padRef = useRef<SignaturePadHandle>(null);
+  const [name, setName] = useState(defaultName);
+  const [empty, setEmpty] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+
+  const save = async () => {
+    setError('');
+    if (!name.trim()) return setError('Please enter your name.');
+    const image = padRef.current?.toDataURL();
+    if (!image) return setError('Please add your signature.');
+    setSaving(true);
+    try {
+      await onSave(name.trim(), image);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save your signature.');
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal open={open} title="Add your signature" onClose={() => !saving && onClose()} className="max-w-md">
+      <div className="space-y-3 p-5">
+        <div>
+          <label className="block text-xs font-medium text-gray-600">Your name</label>
+          <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name" className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none" />
+        </div>
+        <div>
+          <label className="mb-1 block text-xs font-medium text-gray-600">Signature</label>
+          <SignaturePad ref={padRef} onChange={setEmpty} />
+        </div>
+        {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>}
+        <div className="flex justify-end gap-2 pt-1">
+          <button onClick={onClose} disabled={saving} className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50">Cancel</button>
+          <button onClick={save} disabled={saving || empty} className="rounded-lg bg-brand-primary px-4 py-2 text-sm font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-50">{saving ? 'Saving…' : 'Save signature'}</button>
+        </div>
+      </div>
+    </Modal>
+  );
+}
+
+function DetailInner({ doc, events, signature, senderSignature, reload, onDocChange }: { doc: Document; events: DocumentEvent[]; signature: DocumentSignature | null; senderSignature: DocumentSignature | null; reload: () => Promise<void>; onDocChange: (d: Document) => void }) {
   const navigate = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
   const [sendOpen, setSendOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
+  const [signOpen, setSignOpen] = useState(false);
   const [name, setName] = useState(doc.recipient_name);
   const [email, setEmail] = useState(doc.recipient_email);
   const [savingRecipient, setSavingRecipient] = useState(false);
+  const [togglingSender, setTogglingSender] = useState(false);
 
   const status = displayStatus(doc);
   const locked = doc.status === 'signed' || doc.status === 'void';
+
+  const toggleSenderSignature = async (enabled: boolean) => {
+    setTogglingSender(true);
+    try {
+      const updated = await updateDocument(doc.id, { sender_signature_enabled: enabled });
+      onDocChange(updated);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not update setting');
+    } finally {
+      setTogglingSender(false);
+    }
+  };
+
+  const saveSenderSignature = async (signerName: string, image: string) => {
+    await upsertSenderSignature({ document_id: doc.id, signer_name: signerName, signature_image: image });
+    setSignOpen(false);
+    await reload();
+    toast('Your signature was added');
+  };
+
+  const clearSenderSignature = async () => {
+    try {
+      await removeSenderSignature(doc.id);
+      await reload();
+      toast('Your signature was removed');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not remove signature');
+    }
+  };
 
   const copyLink = async () => {
     try {
@@ -115,6 +192,18 @@ function DetailInner({ doc, events, reload, onDocChange }: { doc: Document; even
                   )}
                 </div>
               </div>
+
+              {(doc.sender_signature_enabled || signature) && (
+                <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm print:border-0 print:shadow-none">
+                  <DocumentSignatures
+                    senderEnabled={doc.sender_signature_enabled}
+                    sender={senderSignature}
+                    recipient={signature}
+                    senderName={senderSignature?.signer_name || user?.name || 'ECD Digital Strategy'}
+                    recipientName={doc.recipient_name}
+                  />
+                </div>
+              )}
             </div>
 
             {/* Sidebar */}
@@ -157,6 +246,40 @@ function DetailInner({ doc, events, reload, onDocChange }: { doc: Document; even
               </div>
 
               <div className="rounded-xl bg-white p-5 card-shadow">
+                <h3 className="text-sm font-semibold text-gray-900">Your signature</h3>
+                <label className="mt-2 flex items-start gap-2 text-sm text-gray-700">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={doc.sender_signature_enabled}
+                    disabled={togglingSender || locked}
+                    onChange={e => toggleSenderSignature(e.target.checked)}
+                  />
+                  <span>Include my signature on this document</span>
+                </label>
+                {doc.sender_signature_enabled && (
+                  senderSignature ? (
+                    <div className="mt-3">
+                      <div className="rounded-lg border border-gray-200 bg-white p-2">
+                        <img src={senderSignature.signature_image} alt="Your signature" className="h-14 w-full object-contain" />
+                      </div>
+                      <p className="mt-1.5 text-xs text-gray-500">{senderSignature.signer_name}</p>
+                      {!locked && (
+                        <div className="mt-2 flex gap-2">
+                          <button onClick={() => setSignOpen(true)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Replace</button>
+                          <button onClick={clearSenderSignature} className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Remove</button>
+                        </div>
+                      )}
+                    </div>
+                  ) : !locked ? (
+                    <button onClick={() => setSignOpen(true)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-brand-primary/30 bg-brand-primary/5 px-3 py-2 text-sm font-semibold text-brand-primary hover:bg-brand-primary/10"><PenLine className="h-4 w-4" /> Add your signature</button>
+                  ) : (
+                    <p className="mt-2 text-xs text-gray-400">Not signed.</p>
+                  )
+                )}
+              </div>
+
+              <div className="rounded-xl bg-white p-5 card-shadow">
                 <h3 className="mb-3 text-sm font-semibold text-gray-900">Activity</h3>
                 <DocumentActivityTimeline events={events} />
               </div>
@@ -171,6 +294,12 @@ function DetailInner({ doc, events, reload, onDocChange }: { doc: Document; even
               onSent={result => { setSendOpen(false); toast(result.email_status === 'sent' ? 'Document emailed to the recipient' : 'Document is live. Email is not configured, copy the link and send it yourself.'); void reload(); }}
             />
           )}
+          <SenderSignatureModal
+            open={signOpen}
+            defaultName={senderSignature?.signer_name || user?.name || ''}
+            onClose={() => setSignOpen(false)}
+            onSave={saveSenderSignature}
+          />
           <Modal open={voidOpen} title="Void this document?" onClose={() => setVoidOpen(false)} className="max-w-md">
             <div className="p-5">
               <p className="text-sm text-gray-700">Voiding stops the recipient from signing. You can reopen it later.</p>
@@ -198,6 +327,8 @@ export default function DocumentDetail() {
       key={data.document.id}
       doc={data.document}
       events={data.events}
+      signature={data.signature}
+      senderSignature={data.senderSignature}
       reload={reload}
       onDocChange={d => setData(prev => (prev ? { ...prev, document: d } : prev))}
     />

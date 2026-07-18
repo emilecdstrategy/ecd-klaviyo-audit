@@ -110,7 +110,7 @@ export async function createDocument(
 
 export async function updateDocument(
   id: string,
-  updates: Partial<Pick<Document, 'title' | 'content' | 'recipient_name' | 'recipient_email' | 'valid_until'>>,
+  updates: Partial<Pick<Document, 'title' | 'content' | 'recipient_name' | 'recipient_email' | 'valid_until' | 'sender_signature_enabled'>>,
 ): Promise<Document> {
   const { data, error } = await supabase
     .from('documents')
@@ -188,6 +188,13 @@ export async function markDocumentSent(document: Document): Promise<Document> {
 // ---------------------------------------------------------------------------
 // Public + signing (edge functions)
 
+export type PublicSenderSignature = {
+  signer_name: string;
+  typed_name: string;
+  signature_image: string;
+  signed_at: string;
+};
+
 export type PublicDocumentPayload = {
   ok: true;
   document: {
@@ -198,8 +205,10 @@ export type PublicDocumentPayload = {
     status: Document['status'];
     recipient_name: string;
     recipient_email: string;
+    sender_signature_enabled: boolean;
   };
   signature: DocumentSignature | null;
+  sender_signature: PublicSenderSignature | null;
   signed: boolean;
   expired: boolean;
 };
@@ -304,6 +313,46 @@ export async function listDocumentSignatures(documentId: string): Promise<Docume
     .order('signed_at', { ascending: true });
   if (error) throw error;
   return (data ?? []) as DocumentSignature[];
+}
+
+/** Sender (staff) counter-signature, applied from the app. Upserts the single
+ * sender-role row for the document. */
+export async function upsertSenderSignature(input: {
+  document_id: string;
+  signer_name: string;
+  signature_image: string;
+  typed_name?: string;
+}): Promise<DocumentSignature> {
+  const { data: userData } = await supabase.auth.getUser();
+  const email = userData?.user?.email ?? '';
+  const { data, error } = await supabase
+    .from('document_signatures')
+    .upsert(
+      {
+        document_id: input.document_id,
+        signer_role: 'sender',
+        signer_name: input.signer_name,
+        signer_email: email,
+        signature_image: input.signature_image,
+        typed_name: input.typed_name ?? input.signer_name,
+        signed_at: new Date().toISOString(),
+      },
+      { onConflict: 'document_id,signer_role' },
+    )
+    .select('*')
+    .single();
+  if (error) throw error;
+  await recordDocumentEvent(input.document_id, 'signed', { role: 'sender' }).catch(() => {});
+  return data as DocumentSignature;
+}
+
+export async function removeSenderSignature(documentId: string): Promise<void> {
+  const { error } = await supabase
+    .from('document_signatures')
+    .delete()
+    .eq('document_id', documentId)
+    .eq('signer_role', 'sender');
+  if (error) throw error;
 }
 
 // ---------------------------------------------------------------------------

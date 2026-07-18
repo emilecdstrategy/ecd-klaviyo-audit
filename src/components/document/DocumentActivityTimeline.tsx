@@ -93,9 +93,11 @@ export default function DocumentActivityTimeline({ events }: { events: DocumentE
           let label = base.label;
           let Icon = base.icon;
           let tone = base.tone;
+          const senderSigned = event.event_type === 'signed' && (event.metadata as { role?: string })?.role === 'sender';
           if (emailSend) { label = event.event_type === 'resent' ? 'Resent by email' : 'Emailed to recipient'; Icon = Mail; }
           else if (linkSend) { label = event.event_type === 'resent' ? 'Link shared again' : 'Link shared'; Icon = Link2; }
           else if (internalView) { label = `Viewed by ${event.actor_name ?? 'ECD team'}`; tone = 'text-gray-500 bg-gray-100'; }
+          else if (senderSigned) { label = 'Countersigned'; }
 
           const clickable = emailSend;
           const actorName = event.actor === 'admin' && !internalView ? event.actor_name ?? null : null;

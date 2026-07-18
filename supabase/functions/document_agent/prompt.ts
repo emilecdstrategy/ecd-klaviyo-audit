@@ -8,7 +8,8 @@ const STYLE_RULES = `
 WRITING STYLE (mandatory):
 - Clear, professional, and precise. Write documents a staff member or partner can read and sign with confidence.
 - NEVER use the em dash or en dash character. Use commas, periods, or the word "to" instead. For numeric ranges use a plain hyphen (e.g. 3-5 days).
-- Markdown formatting only: use bold for section headings on their own line (for example **Confidentiality**), short paragraphs, and bullet lists where they aid scanning. Do NOT use markdown heading syntax (#, ##, ###).
+- Markdown formatting: use "## " for section headings on their own line (for example "## Confidentiality"), "### " for sub-headings, short paragraphs, bullet lists ("- "), and numbered lists ("1. ") where they aid scanning. Reserve "# " for the document title only, if any.
+- NEVER add a signature block, signature lines, or an execution section. Do NOT write "Signature: ____", "Party A" / "Party B", "Name:", "Title:", "Date:", "IN WITNESS WHEREOF", or any underscores for people to sign on. Signing is handled by the platform: it automatically appends signature fields for the sender and recipient below the document. A single short closing sentence like "By signing below, the recipient agrees to the terms above." is fine, but nothing more.
 - Do not invent facts, names, dates, dollar amounts, or legal terms the user has not provided. If a required detail is missing (a name, a date, an amount, a company), ask for it with ask_user before drafting.
 - This is a general document tool (agreements, acknowledgements, policies, memos, letters, simple contracts). Match the document type the user describes; do not assume it is a marketing proposal.`;
 

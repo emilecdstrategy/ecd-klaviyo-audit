@@ -3,6 +3,7 @@ import { useParams } from 'react-router-dom';
 import { Check, Loader2 } from 'lucide-react';
 import { RichAuditContent } from '../components/ui/RichAuditText';
 import SignaturePad, { type SignaturePadHandle } from '../components/proposal/SignaturePad';
+import DocumentSignatures from '../components/document/DocumentSignatures';
 import { fetchPublicDocument, signDocumentPublic, type PublicDocumentPayload } from '../lib/documents-db';
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -45,18 +46,16 @@ function SignForm({ recipientName, onSign }: { recipientName: string; onSign: (t
   };
 
   return (
-    <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
-      <h2 className="text-lg font-bold text-gray-900">Sign this document</h2>
-      <div className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-2">
+    <div className="mt-1.5">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <input value={name} onChange={e => setName(e.target.value)} placeholder="Full name" className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none" />
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none" />
       </div>
-      <div className="mt-3">
-        <label className="mb-1 block text-xs font-medium text-gray-500">Signature</label>
+      <div className="mt-2">
         <SignaturePad ref={padRef} onChange={setEmpty} />
       </div>
-      {error && <div className="mt-3 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>}
-      <button onClick={submit} disabled={submitting || empty} className="mt-4 w-full rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-50">
+      {error && <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>}
+      <button onClick={submit} disabled={submitting || empty} className="mt-3 w-full rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-50">
         {submitting ? 'Submitting…' : 'Accept & sign'}
       </button>
     </div>
@@ -86,7 +85,24 @@ export default function PublicDocument() {
     return <Shell><div className="rounded-2xl border border-gray-100 bg-white p-8 text-center text-sm text-gray-500">This document link is invalid or is no longer available.</div></Shell>;
   }
 
-  const { document, signed, expired } = payload;
+  const { document, signature, sender_signature, signed, expired } = payload;
+  const voided = document.status === 'void';
+  const canSign = !signed && !expired && !voided;
+
+  const recipientPending = canSign ? (
+    <SignForm
+      recipientName={document.recipient_name}
+      onSign={async (typedName, email, image) => {
+        const res = await signDocumentPublic({ token: token!, typed_name: typedName, signer_email: email, signature_image: image });
+        if (!res.ok) throw new Error(res.message ?? 'Could not sign the document.');
+        await load();
+      }}
+    />
+  ) : expired ? (
+    <p className="mt-1.5 text-xs text-amber-700">This document has expired and can no longer be signed.</p>
+  ) : voided ? (
+    <p className="mt-1.5 text-xs text-gray-400">This document is no longer available for signing.</p>
+  ) : undefined;
 
   return (
     <Shell>
@@ -97,22 +113,21 @@ export default function PublicDocument() {
         </div>
       </div>
 
-      {signed ? (
-        <div className="mt-6 flex items-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 p-6 text-sm font-medium text-emerald-700">
+      {signed && (
+        <div className="mt-6 flex items-center gap-2 rounded-2xl border border-emerald-100 bg-emerald-50 px-5 py-3 text-sm font-medium text-emerald-700">
           <Check className="h-5 w-5" /> This document has been signed. Thank you.
         </div>
-      ) : expired ? (
-        <div className="mt-6 rounded-2xl border border-amber-100 bg-amber-50 p-6 text-sm text-amber-700">This document has expired and can no longer be signed.</div>
-      ) : (
-        <SignForm
-          recipientName={document.recipient_name}
-          onSign={async (typedName, email, image) => {
-            const res = await signDocumentPublic({ token: token!, typed_name: typedName, signer_email: email, signature_image: image });
-            if (!res.ok) throw new Error(res.message ?? 'Could not sign the document.');
-            await load();
-          }}
-        />
       )}
+
+      <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+        <DocumentSignatures
+          senderEnabled={document.sender_signature_enabled}
+          sender={sender_signature}
+          recipient={signature}
+          recipientName={document.recipient_name}
+          recipientPending={recipientPending}
+        />
+      </div>
     </Shell>
   );
 }

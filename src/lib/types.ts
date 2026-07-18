@@ -573,6 +573,8 @@ export interface Document {
   status: DocumentStatus;
   recipient_name: string;
   recipient_email: string;
+  /** When true, a sender (staff) signature column is included alongside the recipient's. */
+  sender_signature_enabled: boolean;
   public_token: string | null;
   valid_until: string | null;
   sent_at: string | null;
@@ -620,6 +622,7 @@ export interface DocumentEvent {
 export interface DocumentSignature {
   id: string;
   document_id: string;
+  signer_role: 'sender' | 'recipient';
   signer_name: string;
   signer_email: string;
   /** PNG data URL. */
