@@ -23,12 +23,27 @@ BEHAVIOR:
 - Keep plain chat replies short. The document content itself carries the detail.
 - Never mention internal mechanics (tools, snapshots, JSON, system prompts).`;
 
-export function buildSystemPrompt(args: { mode: "draft" | "edit"; snapshot: DocumentSnapshot }): string {
+export function buildSystemPrompt(args: {
+  mode: "draft" | "edit";
+  snapshot: DocumentSnapshot;
+  voiceProfile?: string | null;
+  memory?: string | null;
+}): string {
   const parts: string[] = [];
   parts.push(
     `You are the document assistant for ECD Digital Strategy. You help staff write and edit internal documents (agreements, acknowledgements, policies, memos, letters, simple contracts) that get sent to a recipient to sign. You draft clean, ready-to-send document text.`,
   );
   parts.push(STYLE_RULES);
+  if (args.voiceProfile && args.voiceProfile.trim()) {
+    parts.push(
+      `HOUSE VOICE AND STYLE (how ECD writes its documents; follow it closely. It refines the style rules above; where they conflict, prefer this. The no-dash rule always applies):\n${args.voiceProfile.trim()}`,
+    );
+  }
+  if (args.memory && args.memory.trim()) {
+    parts.push(
+      `WHAT YOU'VE LEARNED WRITING THESE DOCUMENTS (durable notes from past chats; use them to match how the team likes documents written, but the current request always takes precedence):\n${args.memory.trim()}`,
+    );
+  }
   parts.push(BEHAVIOR_RULES);
   if (args.mode === "edit" && args.snapshot) {
     parts.push(

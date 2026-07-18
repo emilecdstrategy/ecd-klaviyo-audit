@@ -554,6 +554,8 @@ export interface ProposalSettings {
   defaults: {
     valid_days: number;
   };
+  /** House voice/style guide the proposal AI applies to every draft. */
+  voice_profile?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -644,6 +646,8 @@ export interface DocumentSettings {
     /** 0 = never expires. */
     valid_days: number;
   };
+  /** House voice/style guide the document AI applies to every draft. */
+  voice_profile?: string;
 }
 
 export interface DocumentAgentConversation {

@@ -6,6 +6,9 @@ import { fetchFirefliesTranscript } from "../_shared/fetch-fireflies-transcript.
 import { buildSystemPrompt, type DocumentSnapshot } from "./prompt.ts";
 import { AGENT_TOOLS, TERMINAL_TOOLS } from "./tools.ts";
 import { deepSanitize, sanitizeCopy, stripInternalNotes, validateDraft, validateEdits, validateQuestion } from "./validate.ts";
+import { readMemory, readVoiceProfile, scheduleMemoryUpdate } from "../_shared/agent-memory.ts";
+
+const DOCUMENT_MEMORY_SCOPE = "document:global";
 
 const MAX_TOOL_ITERATIONS = 6;
 const HISTORY_LIMIT = 30;
@@ -141,7 +144,11 @@ serve(async (req) => {
 
     const snapshot = body.snapshot ?? null;
     const mode: "draft" | "edit" = snapshot ? "edit" : "draft";
-    const system = buildSystemPrompt({ mode, snapshot });
+    const [voiceProfile, docMemory] = await Promise.all([
+      readVoiceProfile(sb, "document_settings").catch(() => ""),
+      readMemory(sb, DOCUMENT_MEMORY_SCOPE).catch(() => ""),
+    ]);
+    const system = buildSystemPrompt({ mode, snapshot, voiceProfile, memory: docMemory });
     const tools = AGENT_TOOLS.filter((t) => (t.name === "propose_edits" ? mode === "edit" : true));
 
     const llm = createLlmClient(body.provider);
@@ -270,6 +277,23 @@ serve(async (req) => {
       const runtime = globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } };
       if (runtime.EdgeRuntime?.waitUntil) runtime.EdgeRuntime.waitUntil(titleTask);
       else await titleTask;
+    }
+
+    // Update the global document memory in the background when a draft/edits was produced.
+    if (draft || edits) {
+      const producedSummary =
+        (draft as { summary?: string })?.summary ??
+        (edits as { summary?: string })?.summary ??
+        assistantText;
+      scheduleMemoryUpdate({
+        sb,
+        llm,
+        scopeKey: DOCUMENT_MEMORY_SCOPE,
+        subject: "the documents this team writes",
+        priorMemory: docMemory,
+        userMessage: message,
+        producedSummary,
+      });
     }
 
     return json({

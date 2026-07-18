@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { Mail } from 'lucide-react';
 import { useToast } from '../ui/Toast';
 import { getDocumentSettings, updateDocumentSettings } from '../../lib/documents-db';
+import VoiceProfileSection from '../ui/VoiceProfileSection';
 import type { DocumentSettings } from '../../lib/types';
 
 export default function DocumentSettingsPanel() {
@@ -143,6 +144,12 @@ export default function DocumentSettingsPanel() {
           </div>
         </div>
       </section>
+
+      <VoiceProfileSection
+        domain="document"
+        value={settings.voice_profile ?? ''}
+        onChange={v => patch({ voice_profile: v })}
+      />
     </div>
   );
 }

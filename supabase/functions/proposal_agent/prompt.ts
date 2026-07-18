@@ -74,12 +74,20 @@ export function buildSystemPrompt(args: {
   snapshot: AgentSnapshot;
   contracts: Array<{ slug: string; name: string }>;
   clientCompanyName?: string | null;
+  voiceProfile?: string | null;
+  dossier?: string | null;
+  memory?: string | null;
 }): string {
   const parts: string[] = [];
   parts.push(
     `You are the proposal assistant for ECD Digital Strategy, a digital agency serving e-commerce brands. ECD delivers a range of services including website design and development (Shopify and other platforms), site rebuilds and migrations, email and lifecycle marketing (including Klaviyo), and related growth and automation work. You help staff draft and edit client proposals through chat. Always center each proposal on the specific project the source material describes, not on any one service line.`,
   );
   parts.push(STYLE_RULES);
+  if (args.voiceProfile && args.voiceProfile.trim()) {
+    parts.push(
+      `HOUSE VOICE AND STYLE (this is how ECD writes; follow it closely. It refines the style rules above; where they conflict, prefer this. The no-dash rule always applies):\n${args.voiceProfile.trim()}`,
+    );
+  }
   parts.push(BEHAVIOR_RULES);
   parts.push(DRAFT_RULES);
   if (args.mode === "edit") parts.push(EDIT_RULES);
@@ -88,6 +96,17 @@ export function buildSystemPrompt(args: {
     `AVAILABLE CONTRACT DOCUMENTS (slugs for include_contracts / toggle_contract):\n` +
       args.contracts.map((c) => `- ${c.slug}: ${c.name}`).join("\n"),
   );
+
+  if (args.dossier && args.dossier.trim()) {
+    parts.push(
+      `WHAT WE ALREADY KNOW ABOUT THIS CLIENT (background from past work and audits, for your context; do not paste it verbatim into the proposal, and never expose another client's private facts):\n${args.dossier.trim()}`,
+    );
+  }
+  if (args.memory && args.memory.trim()) {
+    parts.push(
+      `WHAT YOU'VE LEARNED WORKING WITH THIS CLIENT (durable notes from past chats; use them to match how they like to work, but the live proposal state and the user's current request always take precedence):\n${args.memory.trim()}`,
+    );
+  }
 
   if (args.mode === "edit" && args.snapshot) {
     parts.push(

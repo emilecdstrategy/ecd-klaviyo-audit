@@ -2,9 +2,10 @@ import { useEffect, useState } from 'react';
 import { Image as ImageIcon, Mail } from 'lucide-react';
 import ImageUploadZone from '../ui/ImageUploadZone';
 import { useToast } from '../ui/Toast';
-import { getProposalSettings, updateProposalSettings } from '../../lib/proposals-db';
+import { getProposalSettings, updateProposalSettings, generateVoiceProfile } from '../../lib/proposals-db';
 import { uploadReportScreenshot } from '../../lib/db';
 import type { ProposalSettings } from '../../lib/types';
+import VoiceProfileSection from '../ui/VoiceProfileSection';
 
 export default function ProposalSettingsPanel() {
   const toast = useToast();
@@ -226,6 +227,12 @@ export default function ProposalSettingsPanel() {
           </div>
         </div>
       </section>
+
+      <VoiceProfileSection
+        domain="proposal"
+        value={settings.voice_profile ?? ''}
+        onChange={v => patch({ voice_profile: v })}
+      />
     </div>
   );
 }

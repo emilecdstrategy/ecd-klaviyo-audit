@@ -6,6 +6,8 @@ import { fetchFirefliesTranscript } from "../_shared/fetch-fireflies-transcript.
 import { buildSystemPrompt, type AgentSnapshot } from "./prompt.ts";
 import { AGENT_TOOLS, TERMINAL_TOOLS } from "./tools.ts";
 import { deepSanitize, sanitizeCopy, stripInternalNotes, validateDraft, validateEditSet, validateQuestion } from "./validate.ts";
+import { buildClientDossier, fetchClientHistory } from "./dossier.ts";
+import { readMemory, readVoiceProfile, scheduleMemoryUpdate } from "../_shared/agent-memory.ts";
 
 const MAX_TOOL_ITERATIONS = 6;
 const HISTORY_LIMIT = 30;
@@ -175,16 +177,35 @@ serve(async (req) => {
 
     const snapshot = body.snapshot ?? null;
     const mode: "draft" | "edit" = snapshot ? "edit" : "draft";
+    const clientId = body.client_id ?? null;
 
     let clientCompanyName: string | null = null;
-    if (!snapshot && body.client_id) {
-      const { data: c } = await sb.from("clients").select("company_name").eq("id", body.client_id).maybeSingle();
+    if (!snapshot && clientId) {
+      const { data: c } = await sb.from("clients").select("company_name").eq("id", clientId).maybeSingle();
       clientCompanyName = c?.company_name ?? null;
     }
 
-    const system = buildSystemPrompt({ mode, snapshot, contracts, clientCompanyName });
+    // Memory: live client dossier (structured data), the durable learned memory
+    // for this client, and the house voice profile. All best-effort.
+    const memoryScopeKey = clientId ? `proposal:client:${clientId}` : null;
+    const [voiceProfile, dossier, clientMemory] = await Promise.all([
+      readVoiceProfile(sb, "proposal_settings").catch(() => ""),
+      clientId ? buildClientDossier(sb, clientId).catch(() => null) : Promise.resolve(null),
+      readMemory(sb, memoryScopeKey).catch(() => ""),
+    ]);
+
+    const system = buildSystemPrompt({
+      mode,
+      snapshot,
+      contracts,
+      clientCompanyName,
+      voiceProfile,
+      dossier,
+      memory: clientMemory,
+    });
     const tools = AGENT_TOOLS.filter((t) => {
-      if (t.name === "get_clients") return mode === "draft" && !body.client_id;
+      if (t.name === "get_clients") return mode === "draft" && !clientId;
+      if (t.name === "get_client_history") return Boolean(clientId);
       if (t.name === "propose_edits") return mode === "edit";
       return true;
     });
@@ -333,6 +354,8 @@ serve(async (req) => {
               include_contracts: Array.isArray((p as any).include_contracts) ? (p as any).include_contracts : [],
             };
           }
+        } else if (turn.name === "get_client_history") {
+          result = clientId ? await fetchClientHistory(sb, clientId) : { error: "no_client" };
         } else if (turn.name === "get_contracts") {
           result = contracts;
         } else if (turn.name === "get_clients") {
@@ -471,6 +494,24 @@ serve(async (req) => {
       const runtime = globalThis as { EdgeRuntime?: { waitUntil?: (p: Promise<unknown>) => void } };
       if (runtime.EdgeRuntime?.waitUntil) runtime.EdgeRuntime.waitUntil(titleTask);
       else await titleTask;
+    }
+
+    // Update the durable per-client memory in the background when the turn
+    // produced a draft or edits (a real decision worth remembering).
+    if (memoryScopeKey && (draft || edits)) {
+      const producedSummary =
+        (draft as { summary?: string })?.summary ??
+        (edits as { summary?: string })?.summary ??
+        assistantText;
+      scheduleMemoryUpdate({
+        sb,
+        llm,
+        scopeKey: memoryScopeKey,
+        subject: clientCompanyName ? `the client ${clientCompanyName}` : "this client",
+        priorMemory: clientMemory,
+        userMessage: message,
+        producedSummary,
+      });
     }
 
     return json({

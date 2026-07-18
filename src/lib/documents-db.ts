@@ -23,6 +23,7 @@ export const DEFAULT_DOCUMENT_SETTINGS: DocumentSettings = {
   defaults: {
     valid_days: 0, // 0 = never expires
   },
+  voice_profile: '',
 };
 
 export function mergeDocumentSettings(raw: unknown): DocumentSettings {
@@ -30,6 +31,7 @@ export function mergeDocumentSettings(raw: unknown): DocumentSettings {
   return {
     email: { ...DEFAULT_DOCUMENT_SETTINGS.email, ...(value.email ?? {}) },
     defaults: { ...DEFAULT_DOCUMENT_SETTINGS.defaults, ...(value.defaults ?? {}) },
+    voice_profile: typeof value.voice_profile === 'string' ? value.voice_profile : '',
   };
 }
 

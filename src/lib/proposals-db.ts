@@ -27,6 +27,7 @@ export const DEFAULT_PROPOSAL_SETTINGS: ProposalSettings = {
   defaults: {
     valid_days: 30,
   },
+  voice_profile: '',
 };
 
 export function mergeProposalSettings(raw: unknown): ProposalSettings {
@@ -35,7 +36,27 @@ export function mergeProposalSettings(raw: unknown): ProposalSettings {
     cover: { ...DEFAULT_PROPOSAL_SETTINGS.cover, ...(value.cover ?? {}) },
     email: { ...DEFAULT_PROPOSAL_SETTINGS.email, ...(value.email ?? {}) },
     defaults: { ...DEFAULT_PROPOSAL_SETTINGS.defaults, ...(value.defaults ?? {}) },
+    voice_profile: typeof value.voice_profile === 'string' ? value.voice_profile : '',
   };
+}
+
+/** Ask the AI to draft a house voice/style profile from recent work. */
+export async function generateVoiceProfile(domain: 'proposal' | 'document'): Promise<string> {
+  const { data, error } = await supabase.functions.invoke('agent_voice_profile', { body: { domain } });
+  if (error) {
+    const context = (error as { context?: Response }).context;
+    if (context) {
+      try {
+        const body = await context.json();
+        throw new Error(body?.error?.message ?? error.message);
+      } catch (e) {
+        if (e instanceof Error && e.message !== error.message) throw e;
+      }
+    }
+    throw error;
+  }
+  if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Could not generate a voice profile');
+  return String(data.voice_profile ?? '');
 }
 
 export async function getProposalSettings(): Promise<ProposalSettings> {

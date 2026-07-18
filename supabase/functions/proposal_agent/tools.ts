@@ -88,6 +88,12 @@ export const AGENT_TOOLS: LlmTool[] = [
     },
   },
   {
+    name: "get_client_history",
+    description:
+      "Get a fuller history for the CURRENT client (the one this proposal is for): more of their past proposals (titles, sections, line items, pricing, status) and their most recent audit (background, meeting notes, revenue opportunity, chosen add-ons). A short summary is already provided in WHAT WE ALREADY KNOW ABOUT THIS CLIENT; call this only when you need more depth than that summary. No arguments needed.",
+    input_schema: { type: "object", properties: {} },
+  },
+  {
     name: "ask_user",
     description:
       "Ask the user one clarifying question with 2-4 concrete options rendered as clickable chips (plus an automatic free-text 'Other'). ALWAYS use this tool to ask a question, including simple yes/no questions (give Yes and No as the two options). This is the only way the user gets clickable answers. Never ask a question as plain chat text. Use it when a decision materially shapes the proposal and the answer is not available. This ends your turn.",
