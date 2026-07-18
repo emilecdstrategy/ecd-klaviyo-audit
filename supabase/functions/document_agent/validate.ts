@@ -64,12 +64,20 @@ export function validateQuestion(input: any): ValidationResult<{
   };
 }
 
-export function validateDraft(input: any): ValidationResult<{ title: string; content: string; summary: string }> {
+export function validateDraft(input: any): ValidationResult<{ title: string; content: string; summary: string; include_sender_signature: boolean }> {
   if (!input || typeof input !== "object") return { ok: false, error: "propose_draft input must be an object" };
   if (!isStr(input.title) || !input.title.trim()) return { ok: false, error: "title is required" };
   if (!isStr(input.content) || !input.content.trim()) return { ok: false, error: "content is required" };
   if (!isStr(input.summary) || !input.summary.trim()) return { ok: false, error: "summary is required" };
-  return { ok: true, value: { title: input.title, content: input.content, summary: input.summary } };
+  return {
+    ok: true,
+    value: {
+      title: input.title,
+      content: input.content,
+      summary: input.summary,
+      include_sender_signature: Boolean(input.include_sender_signature),
+    },
+  };
 }
 
 export function validateEdits(input: any): ValidationResult<{ content: string; summary: string }> {

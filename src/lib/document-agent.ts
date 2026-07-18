@@ -13,7 +13,7 @@ export type DocAgentQuestion = {
   multi_select?: boolean;
 };
 
-export type DocDraftPayload = { title: string; content: string; summary: string };
+export type DocDraftPayload = { title: string; content: string; summary: string; include_sender_signature?: boolean };
 export type DocEditPayload = { content: string; summary: string };
 
 export type DocAgentResponse = {
@@ -124,7 +124,11 @@ export const docPublicOrigin = publicProposalOrigin;
 
 export async function applyDraftAsNewDocument(draft: DocDraftPayload): Promise<Document> {
   return createDocument(
-    { title: sanitizeCopy(draft.title), content: sanitizeCopy(draft.content) },
+    {
+      title: sanitizeCopy(draft.title),
+      content: sanitizeCopy(draft.content),
+      sender_signature_enabled: Boolean(draft.include_sender_signature),
+    },
     { aiAssisted: true },
   );
 }

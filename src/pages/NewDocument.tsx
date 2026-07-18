@@ -28,7 +28,7 @@ export default function NewDocument() {
         content: template?.content ?? '',
         template_id: template?.id ?? null,
       });
-      navigate(`/documents/${doc.id}/edit`);
+      navigate(`/documents/${doc.id}`);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Failed to create document');
       setCreating(false);

@@ -26,7 +26,6 @@ const TemplateEditor = lazy(() => import('./pages/TemplateEditor'));
 const Documents = lazy(() => import('./pages/Documents'));
 const NewDocument = lazy(() => import('./pages/NewDocument'));
 const DocumentDetail = lazy(() => import('./pages/DocumentDetail'));
-const DocumentEditor = lazy(() => import('./pages/DocumentEditor'));
 const DocumentTemplateEditor = lazy(() => import('./pages/DocumentTemplateEditor'));
 const PublicDocument = lazy(() => import('./pages/PublicDocument'));
 
@@ -140,7 +139,8 @@ function AppRoutes() {
             <Route path="/documents" element={<Documents />} />
             <Route path="/documents/new" element={<NewDocument />} />
             <Route path="/documents/:id" element={<DocumentDetail />} />
-            <Route path="/documents/:id/edit" element={<DocumentEditor />} />
+            {/* Legacy edit URL now resolves to the unified workspace. */}
+            <Route path="/documents/:id/edit" element={<DocumentDetail />} />
             <Route path="/documents/templates/:templateId/edit" element={<DocumentTemplateEditor />} />
             <Route path="/admin" element={<AdminArea />} />
             <Route path="*" element={<Navigate to={deepLinkFrom || '/'} replace />} />

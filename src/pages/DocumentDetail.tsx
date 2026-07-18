@@ -1,14 +1,16 @@
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { ArrowLeft, Ban, Copy, ExternalLink, Pencil, PenLine, Printer, RotateCcw, Send, Trash2 } from 'lucide-react';
+import { ArrowLeft, Ban, Check, Copy, ExternalLink, Eye, Loader2, Pencil, PenLine, Printer, RotateCcw, Send, Trash2 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import { RichAuditContent } from '../components/ui/RichAuditText';
+import SimpleRichEditor from '../components/ui/SimpleRichEditor';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useDocumentData } from '../hooks/useDocumentData';
 import { markDocumentSent, updateDocument, voidDocument, reopenDocument, upsertSenderSignature, removeSenderSignature } from '../lib/documents-db';
-import { buildDocumentSnapshot, applyDocumentEdits, sanitizeCopy, type DocDraftPayload, type DocEditPayload } from '../lib/document-agent';
+import { buildDocumentSnapshot, sanitizeCopy, type DocDraftPayload, type DocEditPayload } from '../lib/document-agent';
 import { publicProposalOrigin } from '../lib/public-origin';
+import { cn } from '../lib/utils';
 import { DocumentAgentProvider } from '../components/document/agent/DocumentAgentContext';
 import { DocumentAgentLayout, DocAgentToggleButton } from '../components/document/agent/DocumentAgentLayout';
 import DocumentActivityTimeline from '../components/document/DocumentActivityTimeline';
@@ -78,10 +80,25 @@ function SenderSignatureModal({ open, defaultName, onClose, onSave }: { open: bo
   );
 }
 
-function DetailInner({ doc, events, signature, senderSignature, reload, onDocChange }: { doc: Document; events: DocumentEvent[]; signature: DocumentSignature | null; senderSignature: DocumentSignature | null; reload: () => Promise<void>; onDocChange: (d: Document) => void }) {
+type SaveStatus = 'idle' | 'saving' | 'saved';
+
+function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDocChange }: { doc: Document; events: DocumentEvent[]; signature: DocumentSignature | null; senderSignature: DocumentSignature | null; reload: () => Promise<void>; onDocChange: (d: Document) => void }) {
   const navigate = useNavigate();
   const toast = useToast();
   const { user } = useAuth();
+
+  const status = displayStatus(doc);
+  const locked = doc.status === 'signed' || doc.status === 'void';
+  const editable = !locked;
+
+  // Inline editing (title + body) with debounced autosave.
+  const [title, setTitle] = useState(doc.title);
+  const [content, setContent] = useState(doc.content);
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
+  const [viewMode, setViewMode] = useState<'edit' | 'preview'>(editable ? 'edit' : 'preview');
+  const latest = useRef({ title: doc.title, content: doc.content });
+  const timer = useRef<number | null>(null);
+
   const [sendOpen, setSendOpen] = useState(false);
   const [voidOpen, setVoidOpen] = useState(false);
   const [signOpen, setSignOpen] = useState(false);
@@ -90,8 +107,22 @@ function DetailInner({ doc, events, signature, senderSignature, reload, onDocCha
   const [savingRecipient, setSavingRecipient] = useState(false);
   const [togglingSender, setTogglingSender] = useState(false);
 
-  const status = displayStatus(doc);
-  const locked = doc.status === 'signed' || doc.status === 'void';
+  useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+
+  const scheduleSave = (next: { title?: string; content?: string }) => {
+    latest.current = { ...latest.current, ...next };
+    setSaveStatus('saving');
+    if (timer.current) window.clearTimeout(timer.current);
+    timer.current = window.setTimeout(async () => {
+      try {
+        const updated = await updateDocument(doc.id, { title: latest.current.title, content: latest.current.content });
+        onDocChange(updated);
+        setSaveStatus('saved');
+      } catch {
+        setSaveStatus('idle');
+      }
+    }, 800);
+  };
 
   const toggleSenderSignature = async (enabled: boolean) => {
     setTogglingSender(true);
@@ -141,6 +172,11 @@ function DetailInner({ doc, events, signature, senderSignature, reload, onDocCha
     }
   };
 
+  const downloadPdf = () => {
+    setViewMode('preview');
+    window.setTimeout(() => window.print(), 120);
+  };
+
   const saveRecipient = async () => {
     setSavingRecipient(true);
     try {
@@ -156,43 +192,96 @@ function DetailInner({ doc, events, signature, senderSignature, reload, onDocCha
 
   return (
     <DocumentAgentProvider
+      defaultOpen={typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches}
       config={{
         documentId: doc.id,
-        getSnapshot: () => buildDocumentSnapshot(doc),
-        onApplyEdits: async (edits: DocEditPayload) => { await applyDocumentEdits(doc, edits); await reload(); },
+        getSnapshot: () => buildDocumentSnapshot({ ...doc, title: latest.current.title, content: latest.current.content }),
+        onApplyEdits: async (edits: DocEditPayload) => {
+          const clean = sanitizeCopy(edits.content);
+          setContent(clean);
+          setViewMode('edit');
+          scheduleSave({ content: clean });
+        },
         onApplyDraft: async (draft: DocDraftPayload) => {
-          const updated = await updateDocument(doc.id, { title: sanitizeCopy(draft.title), content: sanitizeCopy(draft.content) });
-          onDocChange(updated);
-          await reload();
+          const cleanTitle = sanitizeCopy(draft.title);
+          const cleanContent = sanitizeCopy(draft.content);
+          setTitle(cleanTitle);
+          setContent(cleanContent);
+          setViewMode('edit');
+          scheduleSave({ title: cleanTitle, content: cleanContent });
+          if (draft.include_sender_signature && !doc.sender_signature_enabled) {
+            const updated = await updateDocument(doc.id, { sender_signature_enabled: true }).catch(() => null);
+            if (updated) onDocChange(updated);
+          }
         },
       }}
     >
       <DocumentAgentLayout>
         <div>
           <TopBar
-            title={doc.title || 'Untitled document'}
+            title={title || 'Untitled document'}
             subtitle={`DOC-${String(doc.document_number).padStart(4, '0')}`}
             actions={
               <div className="flex items-center gap-2">
                 <button onClick={() => navigate('/documents')} className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"><ArrowLeft className="h-4 w-4" /> Back</button>
+                {!locked && (
+                  <button onClick={() => setSendOpen(true)} className="flex items-center gap-1.5 rounded-lg gradient-bg px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90"><Send className="h-4 w-4" /> {doc.status === 'draft' ? 'Send to sign' : 'Resend'}</button>
+                )}
                 <DocAgentToggleButton />
               </div>
             }
           />
 
           <div className="mx-auto flex max-w-[1200px] flex-col gap-6 p-6 lg:flex-row print:block">
-            {/* Document preview */}
+            {/* Document body: edit or preview */}
             <div className="min-w-0 flex-1 print:w-full">
-              <div className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">
-                <h1 className="text-2xl font-bold text-gray-900">{doc.title || 'Untitled document'}</h1>
-                <div className="mt-4 text-sm leading-relaxed text-gray-700 [&_ul]:list-disc [&_ul]:pl-5">
-                  {doc.content.trim() ? (
-                    <RichAuditContent text={doc.content} autoTagEntities={false} />
-                  ) : (
-                    <p className="italic text-gray-400">This document has no content yet. Edit it or use the AI assistant.</p>
-                  )}
-                </div>
+              {/* Edit / Preview toolbar */}
+              <div className="mb-3 flex items-center justify-between print:hidden">
+                {editable ? (
+                  <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5 text-xs font-medium">
+                    <button onClick={() => setViewMode('edit')} className={cn('flex items-center gap-1.5 rounded-md px-3 py-1.5', viewMode === 'edit' ? 'bg-brand-primary text-white' : 'text-gray-600 hover:text-gray-900')}><Pencil className="h-3.5 w-3.5" /> Edit</button>
+                    <button onClick={() => setViewMode('preview')} className={cn('flex items-center gap-1.5 rounded-md px-3 py-1.5', viewMode === 'preview' ? 'bg-brand-primary text-white' : 'text-gray-600 hover:text-gray-900')}><Eye className="h-3.5 w-3.5" /> Preview</button>
+                  </div>
+                ) : (
+                  <span className="text-xs font-medium text-gray-400">{doc.status === 'signed' ? 'Signed and locked, read only' : 'Read only'}</span>
+                )}
+                {editable && (
+                  <span className="flex items-center gap-1.5 text-xs text-gray-400">
+                    {saveStatus === 'saving' ? <><Loader2 className="h-3.5 w-3.5 animate-spin" /> Saving…</> : saveStatus === 'saved' ? <><Check className="h-3.5 w-3.5 text-emerald-500" /> Saved</> : null}
+                  </span>
+                )}
               </div>
+
+              {viewMode === 'edit' && editable ? (
+                <div className="rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
+                  <input
+                    value={title}
+                    onChange={e => { setTitle(e.target.value); scheduleSave({ title: e.target.value }); }}
+                    placeholder="Untitled document"
+                    className="mb-3 w-full border-0 bg-transparent text-2xl font-bold text-gray-900 outline-none placeholder:text-gray-300"
+                  />
+                  <SimpleRichEditor
+                    value={content}
+                    onChange={v => { setContent(v); scheduleSave({ content: v }); }}
+                    rows={22}
+                    entityTags={false}
+                    autoTagEntities={false}
+                    richBlocks
+                    placeholder="Write your document here, or use the AI assistant to draft it…"
+                  />
+                </div>
+              ) : (
+                <div className="rounded-2xl border border-gray-100 bg-white p-8 shadow-sm">
+                  <h1 className="text-2xl font-bold text-gray-900">{title || 'Untitled document'}</h1>
+                  <div className="mt-4 text-sm leading-relaxed text-gray-700 [&_ul]:list-disc [&_ul]:pl-5">
+                    {content.trim() ? (
+                      <RichAuditContent text={content} autoTagEntities={false} />
+                    ) : (
+                      <p className="italic text-gray-400">This document has no content yet. Switch to Edit or use the AI assistant.</p>
+                    )}
+                  </div>
+                </div>
+              )}
 
               {(doc.sender_signature_enabled || signature) && (
                 <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm print:border-0 print:shadow-none">
@@ -228,16 +317,13 @@ function DetailInner({ doc, events, signature, senderSignature, reload, onDocCha
               <div className="rounded-xl bg-white p-5 card-shadow space-y-2">
                 <h3 className="mb-1 text-sm font-semibold text-gray-900">Actions</h3>
                 {!locked && (
-                  <button onClick={() => navigate(`/documents/${doc.id}/edit`)} className="flex w-full items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><Pencil className="h-4 w-4" /> Edit</button>
-                )}
-                {!locked && (
                   <button onClick={() => setSendOpen(true)} className="flex w-full items-center gap-2 rounded-lg gradient-bg px-3 py-2 text-sm font-semibold text-white hover:opacity-90"><Send className="h-4 w-4" /> {doc.status === 'draft' ? 'Send to sign' : 'Resend'}</button>
                 )}
                 {!locked && (
                   <button onClick={copyLink} className="flex w-full items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><Copy className="h-4 w-4" /> Copy signing link</button>
                 )}
                 <button onClick={openRecipientView} className="flex w-full items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><ExternalLink className="h-4 w-4" /> Open recipient view</button>
-                <button onClick={() => window.print()} className="flex w-full items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><Printer className="h-4 w-4" /> Download PDF</button>
+                <button onClick={downloadPdf} className="flex w-full items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><Printer className="h-4 w-4" /> Download PDF</button>
                 {doc.status !== 'signed' && doc.status !== 'void' && (
                   <button onClick={() => setVoidOpen(true)} className="flex w-full items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-50"><Ban className="h-4 w-4" /> Void</button>
                 )}
@@ -324,7 +410,7 @@ export default function DocumentDetail() {
   if (loadError || !data) return <div className="p-8 text-sm text-red-600">{loadError ?? 'Document not found'}</div>;
 
   return (
-    <DetailInner
+    <WorkspaceInner
       key={data.document.id}
       doc={data.document}
       events={data.events}

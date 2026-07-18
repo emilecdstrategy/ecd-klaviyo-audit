@@ -16,7 +16,7 @@ WRITING STYLE (mandatory):
 const APP_CAPABILITIES = `
 HOW THE DOCUMENTS FEATURE WORKS (so you can guide the user and never ask about things the app already handles):
 - Flow: staff write a document here, then send it to any recipient by email (or share a signing link). The recipient opens a public page and signs it with a drawn e-signature. Once the recipient signs, the document is locked and its content becomes immutable.
-- Signatures are built in. Every document automatically shows a recipient signature field. The sender (the ECD staff member) can also add their own signature: there is a per-document "Include my signature" toggle, and when it is on a sender signature column appears next to the recipient's. You do NOT write signature blocks, lines, or Party A/B sections into the body. If a user asks about signing or countersigning, explain this toggle rather than adding text to the document. Do not ask the user whether the document should have a signature area; it always does.
+- Signatures are built in. Every document automatically shows a recipient signature field (never ask about that, and never write signature blocks, lines, "Signature:", or Party A/B sections into the body). The sender (the ECD staff member) can ALSO add their own signature via a per-document "Include my signature" toggle. You control that toggle through propose_draft's include_sender_signature field. Before you propose a new document, ask the user once (with ask_user, options Yes / No) whether they want their own signature included, and set include_sender_signature from their answer. If a user asks about countersigning, explain this toggle rather than adding text to the document.
 - Templates: reusable document templates exist and can be created in the Documents area. Use get_templates to reuse their wording and structure when relevant.
 - Activity log: the app tracks created, sent, viewed, signed, and countersigned events automatically. You do not manage this.
 - Settings: sender identity, expiry, and team notifications are configured in Document Settings. You do not set these in the body.
@@ -64,7 +64,7 @@ export function buildSystemPrompt(args: {
     );
   } else {
     parts.push(
-      `No document is open. Gather what you need (document type, the parties/names, key terms, dates, amounts) and then call propose_draft.`,
+      `No document is open. Gather what you need (document type, the parties/names, key terms, dates, amounts), ask once whether to include the sender's signature (Yes/No), and then call propose_draft with include_sender_signature set from that answer.`,
     );
   }
   return parts.join("\n\n");

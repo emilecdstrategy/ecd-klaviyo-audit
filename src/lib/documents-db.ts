@@ -84,6 +84,7 @@ export type CreateDocumentInput = {
   template_id?: string | null;
   recipient_name?: string;
   recipient_email?: string;
+  sender_signature_enabled?: boolean;
 };
 
 export async function createDocument(
@@ -100,6 +101,7 @@ export async function createDocument(
       template_id: input.template_id ?? null,
       recipient_name: input.recipient_name ?? '',
       recipient_email: input.recipient_email ?? '',
+      sender_signature_enabled: input.sender_signature_enabled ?? false,
       created_by: userId,
     })
     .select('*')

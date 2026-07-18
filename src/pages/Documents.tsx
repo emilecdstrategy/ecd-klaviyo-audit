@@ -179,7 +179,7 @@ export default function Documents() {
   const onApplyDraft = async (draft: DocDraftPayload, conversationId: string) => {
     const doc = await applyDraftAsNewDocument(draft);
     if (conversationId) await linkDocConversationToDocument(conversationId, doc.id).catch(() => {});
-    navigate(`/documents/${doc.id}/edit`);
+    navigate(`/documents/${doc.id}`);
   };
 
   return (

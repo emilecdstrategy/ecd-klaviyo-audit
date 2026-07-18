@@ -5,15 +5,23 @@ import { useEffect, useMemo, useState } from 'react';
 import AppPreloader from '../ui/AppPreloader';
 
 const AUDIT_WORKSPACE_PATH = /^\/audits\/[^/]+$/;
+// The document workspace (a single doc, its editor, or a template editor) wants
+// the extra width; the list and "new" pages do not.
+function isDocumentWorkspace(pathname: string): boolean {
+  return pathname.startsWith('/documents/') && pathname !== '/documents/new';
+}
 
 export default function AppShell() {
   const location = useLocation();
-  const isAuditWorkspace = useMemo(() => AUDIT_WORKSPACE_PATH.test(location.pathname), [location.pathname]);
-  const [collapsed, setCollapsed] = useState(() => AUDIT_WORKSPACE_PATH.test(location.pathname));
+  const wantsCollapse = useMemo(
+    () => AUDIT_WORKSPACE_PATH.test(location.pathname) || isDocumentWorkspace(location.pathname),
+    [location.pathname],
+  );
+  const [collapsed, setCollapsed] = useState(() => wantsCollapse);
 
   useEffect(() => {
-    setCollapsed(isAuditWorkspace);
-  }, [isAuditWorkspace]);
+    setCollapsed(wantsCollapse);
+  }, [wantsCollapse]);
 
   return (
     <div className="min-h-screen bg-[#f8f8f8]">

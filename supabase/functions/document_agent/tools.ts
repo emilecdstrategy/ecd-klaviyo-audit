@@ -63,6 +63,10 @@ export const AGENT_TOOLS: LlmTool[] = [
         title: { type: "string", description: "Document title" },
         content: { type: "string", description: "The full document body as Markdown (headings, paragraphs, lists, bold)" },
         summary: { type: "string", description: "1-2 sentences describing the document, shown on the preview card" },
+        include_sender_signature: {
+          type: "boolean",
+          description: "Whether the sender's (ECD staff) signature should be included alongside the recipient's. Set from the user's answer to your sender-signature question. Defaults to false if not asked.",
+        },
       },
       required: ["title", "content", "summary"],
     },
