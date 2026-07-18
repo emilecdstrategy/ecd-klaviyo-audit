@@ -15,6 +15,7 @@ import DocumentActivityTimeline from '../components/document/DocumentActivityTim
 import DocumentSignatures from '../components/document/DocumentSignatures';
 import SendDocumentModal from '../components/document/SendDocumentModal';
 import SignaturePad, { type SignaturePadHandle } from '../components/proposal/SignaturePad';
+import BrandedCheckbox from '../components/ui/BrandedCheckbox';
 import Modal from '../components/ui/Modal';
 import type { Document, DocumentDisplayStatus, DocumentEvent, DocumentSignature } from '../lib/types';
 
@@ -247,13 +248,13 @@ function DetailInner({ doc, events, signature, senderSignature, reload, onDocCha
 
               <div className="rounded-xl bg-white p-5 card-shadow">
                 <h3 className="text-sm font-semibold text-gray-900">Your signature</h3>
-                <label className="mt-2 flex items-start gap-2 text-sm text-gray-700">
-                  <input
-                    type="checkbox"
+                <label className="mt-2 flex cursor-pointer items-start gap-2 text-sm text-gray-700">
+                  <BrandedCheckbox
                     className="mt-0.5"
                     checked={doc.sender_signature_enabled}
                     disabled={togglingSender || locked}
-                    onChange={e => toggleSenderSignature(e.target.checked)}
+                    onChange={checked => toggleSenderSignature(checked)}
+                    aria-label="Include my signature on this document"
                   />
                   <span>Include my signature on this document</span>
                 </label>
