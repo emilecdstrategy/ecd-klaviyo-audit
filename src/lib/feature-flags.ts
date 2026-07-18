@@ -10,3 +10,8 @@ const PROPOSALS_BETA_EMAILS = new Set([
 export function canSeeProposalsBeta(email: string | null | undefined): boolean {
   return PROPOSALS_BETA_EMAILS.has((email ?? '').trim().toLowerCase());
 }
+
+// TEMPORARY: Documents is also in beta; same allowlist as Proposals for now.
+export function canSeeDocumentsBeta(email: string | null | undefined): boolean {
+  return PROPOSALS_BETA_EMAILS.has((email ?? '').trim().toLowerCase());
+}

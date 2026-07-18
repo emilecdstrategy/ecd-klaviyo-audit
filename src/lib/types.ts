@@ -556,6 +556,119 @@ export interface ProposalSettings {
   };
 }
 
+// ---------------------------------------------------------------------------
+// Documents (internal WYSIWYG docs sent to a recipient to sign)
+
+export type DocumentStatus = 'draft' | 'sent' | 'viewed' | 'signed' | 'void';
+/** Stored statuses plus the derived 'expired' display status. */
+export type DocumentDisplayStatus = DocumentStatus | 'expired';
+
+export interface Document {
+  id: string;
+  document_number: number;
+  template_id: string | null;
+  title: string;
+  /** Markdown rich text (single WYSIWYG body). */
+  content: string;
+  status: DocumentStatus;
+  recipient_name: string;
+  recipient_email: string;
+  public_token: string | null;
+  valid_until: string | null;
+  sent_at: string | null;
+  first_viewed_at: string | null;
+  signed_at: string | null;
+  void_at: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface DocumentTemplate {
+  id: string;
+  name: string;
+  /** Markdown rich text. */
+  content: string;
+  is_active: boolean;
+  display_order: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DocumentEventType =
+  | 'created'
+  | 'updated'
+  | 'sent'
+  | 'resent'
+  | 'viewed'
+  | 'signed'
+  | 'void'
+  | 'reopened';
+
+export interface DocumentEvent {
+  id: string;
+  document_id: string;
+  event_type: DocumentEventType;
+  actor: 'admin' | 'recipient' | 'system';
+  actor_user_id: string | null;
+  /** Display name of actor_user_id, resolved client-side; null for recipient/system actors. */
+  actor_name?: string | null;
+  metadata: Record<string, unknown>;
+  created_at: string;
+}
+
+export interface DocumentSignature {
+  id: string;
+  document_id: string;
+  signer_name: string;
+  signer_email: string;
+  /** PNG data URL. */
+  signature_image: string;
+  typed_name: string;
+  ip_address: string;
+  user_agent: string;
+  signed_at: string;
+}
+
+export interface DocumentSettings {
+  email: {
+    from_name: string | null;
+    from_email: string | null;
+    reply_to: string | null;
+    team_notification_emails: string[];
+  };
+  defaults: {
+    /** 0 = never expires. */
+    valid_days: number;
+  };
+}
+
+export interface DocumentAgentConversation {
+  id: string;
+  document_id: string | null;
+  title: string;
+  status: 'active' | 'archived';
+  context_summary: string | null;
+  created_by: string | null;
+  created_at: string;
+  updated_at: string;
+}
+
+export type DocumentAgentPayloadKind = 'question' | 'draft' | 'edits' | 'doc_fetch';
+
+export interface DocumentAgentMessage {
+  id: string;
+  conversation_id: string;
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  payload: unknown;
+  payload_kind: DocumentAgentPayloadKind | null;
+  applied_at: string | null;
+  actor_user_id: string | null;
+  attachments?: ProposalAgentAttachment[];
+  created_at: string;
+}
+
 /** Optional inputs for Phase 2 AI refinement (stored on audit row). */
 export interface AuditContext {
   meeting_notes?: string;

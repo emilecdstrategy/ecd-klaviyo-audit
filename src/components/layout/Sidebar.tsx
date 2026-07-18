@@ -4,6 +4,7 @@ import {
   Users,
   ClipboardCheck,
   FileSignature,
+  FileText,
   Settings,
   LogOut,
   ChevronLeft,
@@ -11,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { canSeeProposalsBeta } from '../../lib/feature-flags';
+import { canSeeDocumentsBeta, canSeeProposalsBeta } from '../../lib/feature-flags';
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { to: '/', icon: LayoutDashboard, label: 'Dashboard' },
   { to: '/audits', icon: ClipboardCheck, label: 'Audits' },
   { to: '/proposals', icon: FileSignature, label: 'Proposals' },
+  { to: '/documents', icon: FileText, label: 'Documents' },
   { to: '/clients', icon: Users, label: 'Clients' },
 ];
 
@@ -34,6 +36,7 @@ const NAV_PREFETCH: Record<string, () => Promise<unknown>> = {
   '/clients': () => import('../../pages/Clients'),
   '/audits': () => import('../../pages/Audits'),
   '/proposals': () => import('../../pages/Proposals'),
+  '/documents': () => import('../../pages/Documents'),
 };
 
 export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }: SidebarProps) {
@@ -44,7 +47,11 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
     if (collapsedProp === undefined) setCollapsedState(next);
   };
   const { user, hasRole, signOut } = useAuth();
-  const navItems = NAV_ITEMS.filter(item => item.to !== '/proposals' || canSeeProposalsBeta(user?.email));
+  const navItems = NAV_ITEMS.filter(item => {
+    if (item.to === '/proposals') return canSeeProposalsBeta(user?.email);
+    if (item.to === '/documents') return canSeeDocumentsBeta(user?.email);
+    return true;
+  });
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
   const profileAreaRef = useRef<HTMLDivElement>(null);
   const initials = (user?.name || user?.email || 'U')

@@ -19,6 +19,7 @@ function isZonedPath(pathname: string): boolean {
   return (
     !pathname.startsWith('/report/') &&
     !pathname.startsWith('/proposal/') &&
+    !pathname.startsWith('/document/') &&
     pathname !== '/login'
   );
 }
