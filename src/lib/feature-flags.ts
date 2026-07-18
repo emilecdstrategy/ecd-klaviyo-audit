@@ -11,7 +11,8 @@ export function canSeeProposalsBeta(email: string | null | undefined): boolean {
   return PROPOSALS_BETA_EMAILS.has((email ?? '').trim().toLowerCase());
 }
 
-// TEMPORARY: Documents is also in beta; same allowlist as Proposals for now.
-export function canSeeDocumentsBeta(email: string | null | undefined): boolean {
-  return PROPOSALS_BETA_EMAILS.has((email ?? '').trim().toLowerCase());
+// Documents is available to all staff (no beta gate). Kept as a function so the
+// call sites don't need to change if we ever want to re-gate it.
+export function canSeeDocumentsBeta(_email: string | null | undefined): boolean {
+  return true;
 }
