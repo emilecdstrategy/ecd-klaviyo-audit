@@ -9,7 +9,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { useDocumentData } from '../hooks/useDocumentData';
 import { markDocumentSent, updateDocument, voidDocument, reopenDocument, upsertSenderSignature, removeSenderSignature, getMySignature, type SavedSignature } from '../lib/documents-db';
 import { buildDocumentSnapshot, sanitizeCopy, type DocDraftPayload, type DocEditPayload } from '../lib/document-agent';
-import { publicProposalOrigin } from '../lib/public-origin';
+import { publicDocumentOrigin } from '../lib/public-origin';
 import { cn } from '../lib/utils';
 import { DocumentAgentProvider } from '../components/document/agent/DocumentAgentContext';
 import { DocumentAgentLayout, DocAgentToggleButton } from '../components/document/agent/DocumentAgentLayout';
@@ -186,7 +186,7 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
     try {
       const updated = doc.public_token ? doc : await markDocumentSent(doc);
       if (!doc.public_token) { onDocChange(updated); void reload(); }
-      await navigator.clipboard.writeText(`${publicProposalOrigin()}/document/${updated.public_token}`);
+      await navigator.clipboard.writeText(`${publicDocumentOrigin()}/document/${updated.public_token}`);
       toast('Signing link copied to clipboard');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not copy link');
@@ -197,7 +197,7 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
     const updated = doc.public_token ? doc : await markDocumentSent(doc).catch(() => null);
     if (updated?.public_token) {
       if (!doc.public_token) { onDocChange(updated); void reload(); }
-      window.open(`${publicProposalOrigin()}/document/${updated.public_token}`, '_blank', 'noopener');
+      window.open(`${publicDocumentOrigin()}/document/${updated.public_token}`, '_blank', 'noopener');
     }
   };
 

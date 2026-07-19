@@ -75,6 +75,7 @@ export default function ProposalSignatureSection({
   clientSlots,
   agencySignature,
 }: ProposalSignatureSectionProps) {
+  const liveArea = clientSlots.find((slot) => slot.liveArea)?.liveArea ?? null;
   return (
     <section id="proposal-signatures" className="proposal-section rounded-2xl border border-gray-100 bg-white px-6 py-5 shadow-sm">
       <div className="flex items-center gap-3">
@@ -96,7 +97,7 @@ export default function ProposalSignatureSection({
             roleLabel={clientSlots.length > 1 ? `Client signer ${index + 1}` : 'Client'}
             signature={slot.signature}
             placeholderName={slot.placeholderName}
-            liveArea={slot.liveArea}
+            // The live signing UI renders full width below, not inside this column.
           />
         ))}
         <SignatureSlot
@@ -104,6 +105,10 @@ export default function ProposalSignatureSection({
           signature={agencySignature}
         />
       </div>
+
+      {/* Active signing UI spans the full card width so the signature pad and the
+          agreement box aren't squeezed into a narrow column. */}
+      {liveArea && <div className="mt-8 border-t border-gray-100 pt-6">{liveArea}</div>}
     </section>
   );
 }

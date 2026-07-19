@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { attachActorNames } from './actor-names';
-import { publicProposalOrigin } from './public-origin';
+import { publicDocumentOrigin } from './public-origin';
 import type {
   Document,
   DocumentEvent,
@@ -260,7 +260,7 @@ export async function sendDocumentEmail(input: {
   reply_to_emails?: string[];
 }): Promise<{ public_token: string; email_status: 'sent' | 'skipped' }> {
   const { data, error } = await supabase.functions.invoke('document_send_email', {
-    body: { ...input, app_url: publicProposalOrigin() },
+    body: { ...input, app_url: publicDocumentOrigin() },
   });
   if (error) {
     const context = (error as { context?: Response }).context;

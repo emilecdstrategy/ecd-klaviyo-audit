@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { createDocument, updateDocument, recordDocumentEvent } from './documents-db';
-import { publicProposalOrigin } from './public-origin';
+import { publicDocumentOrigin } from './public-origin';
 import type { Document, ProposalAgentAttachment } from './types';
 
 // ---------------------------------------------------------------------------
@@ -120,7 +120,7 @@ export async function sendDocAgentMessage(input: {
 // Apply helpers
 
 /** origin for the (unused here) public link parity; kept for symmetry. */
-export const docPublicOrigin = publicProposalOrigin;
+export const docPublicOrigin = publicDocumentOrigin;
 
 export async function applyDraftAsNewDocument(draft: DocDraftPayload): Promise<Document> {
   return createDocument(

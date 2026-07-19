@@ -189,14 +189,11 @@ function ClientSignArea({
           document, unchecked and required. */}
       <div className="rounded-xl border border-brand-primary/20 bg-brand-primary/[0.04] p-4">
         <p className="text-[11px] font-bold uppercase tracking-wide text-brand-primary">Agreement to contract terms</p>
-        <p className="mt-1.5 text-sm leading-relaxed text-gray-600">
-          By signing, I confirm that I have reviewed and agree to <AgreedItems contracts={contracts} />
-          {contracts.length > 0 ? ', and any documents expressly incorporated into them.' : '.'}
-        </p>
-        <label className="mt-3 flex cursor-pointer items-start gap-2.5">
+        <label className="mt-2 flex cursor-pointer items-start gap-2.5">
           <BrandedCheckbox checked={agreed} onChange={setAgreed} aria-label="I have reviewed and agree to the terms" className="mt-0.5" />
-          <span className="text-sm font-medium text-gray-800">
-            I have reviewed and agree to <AgreedItems contracts={contracts} />.
+          <span className="text-sm leading-relaxed text-gray-700">
+            I have reviewed and agree to <AgreedItems contracts={contracts} />
+            {contracts.length > 0 ? ', and any documents expressly incorporated into them.' : '.'}
           </span>
         </label>
       </div>

@@ -1,15 +1,23 @@
-// Enforces two "zones" in production: everything under /proposals lives on
-// proposal.ecdigitalstrategy.com, everything else (dashboard, audits, clients,
-// admin) lives on audit.ecdigitalstrategy.com. The app is the same SPA on both
+// Enforces "zones" in production: everything under /proposals lives on
+// proposal.ecdigitalstrategy.com, everything under /documents lives on
+// docs.ecdigitalstrategy.com, and everything else (dashboard, audits, clients,
+// admin) lives on audit.ecdigitalstrategy.com. The app is the same SPA on all
 // domains, so ordinary client-side routing can't move between origins on its
 // own -- this does an actual cross-origin redirect when the current path
 // doesn't belong on the current domain.
 const PROPOSAL_ORIGIN = 'https://proposal.ecdigitalstrategy.com';
+const DOCS_ORIGIN = 'https://docs.ecdigitalstrategy.com';
 const AUDIT_ORIGIN = 'https://audit.ecdigitalstrategy.com';
 const PROD_ROOT_DOMAIN = 'ecdigitalstrategy.com';
 
 function isProposalZonePath(pathname: string): boolean {
   return pathname === '/proposals' || pathname.startsWith('/proposals/');
+}
+
+// Note: the public signing page is "/document/<token>" (singular) and is neutral
+// (excluded below); the staff Documents area is "/documents" (plural).
+function isDocumentsZonePath(pathname: string): boolean {
+  return pathname === '/documents' || pathname.startsWith('/documents/');
 }
 
 // Public share links (/report/:token, /proposal/:token) and /login are neutral:
@@ -33,6 +41,10 @@ export function getZoneRedirectOrigin(pathname: string): string | null {
   if (!hostname.endsWith(PROD_ROOT_DOMAIN)) return null;
   if (!isZonedPath(pathname)) return null;
 
-  const targetOrigin = isProposalZonePath(pathname) ? PROPOSAL_ORIGIN : AUDIT_ORIGIN;
+  const targetOrigin = isProposalZonePath(pathname)
+    ? PROPOSAL_ORIGIN
+    : isDocumentsZonePath(pathname)
+      ? DOCS_ORIGIN
+      : AUDIT_ORIGIN;
   return targetOrigin === origin ? null : targetOrigin;
 }
