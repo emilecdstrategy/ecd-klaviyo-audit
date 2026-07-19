@@ -45,9 +45,9 @@ export default function WebFindingCard({
         active ? 'border-brand-primary/40 ring-1 ring-brand-primary/20' : 'border-gray-100'
       } ${finding.hidden ? 'opacity-50' : ''}`}
     >
-      <div className={`grid grid-cols-1 gap-4 ${hasCrop ? 'sm:grid-cols-[220px_minmax(0,1fr)]' : ''}`}>
+      <div>
         {hasCrop && (
-          <div className="relative">
+          <div className="relative mb-3">
             <WebCropCard index={number} imageUrl={cropShot!.screenshot_url as string} highlight={finding.highlight!} />
             {editMode && (
               <button

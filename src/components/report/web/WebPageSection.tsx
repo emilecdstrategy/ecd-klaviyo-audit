@@ -144,32 +144,26 @@ export default function WebPageSection({
         </div>
       )}
 
-      {/* Two panes: a sticky reference screenshot on the left keeps the page in
-          view while you read the findings on the right. Each finding carries its
-          own zoomed crop of the exact region, so the visual sits with the
-          critique and there is no scrolling back up to the screenshot. */}
-      <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
-        {/* Left: reference screenshot (sticky on desktop) */}
+      {/* Full-width reference screenshot for whole-page context. */}
+      <div className="mt-5">
         {shown ? (
-          <div className="lg:sticky lg:top-6">
-            <div className={viewport === 'mobile' ? 'mx-auto w-full max-w-[320px]' : 'w-full'}>
-              <div className="max-h-[calc(100vh-5rem)] overflow-y-auto rounded-lg">
-                <div
-                  className="cursor-zoom-in"
-                  onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
-                >
-                  <WebHighlightLayer
-                    imageUrl={shown.screenshot_url as string}
-                    alt={`${title} (${viewport})`}
-                    markers={markers}
-                    activeIndex={activeIndex}
-                    onMarkerClick={focusFinding}
-                  />
-                </div>
+          <div className={viewport === 'mobile' ? 'mx-auto w-full max-w-[380px]' : 'w-full'}>
+            <div className="max-h-[80vh] overflow-y-auto rounded-lg">
+              <div
+                className="cursor-zoom-in"
+                onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
+              >
+                <WebHighlightLayer
+                  imageUrl={shown.screenshot_url as string}
+                  alt={`${title} (${viewport})`}
+                  markers={markers}
+                  activeIndex={activeIndex}
+                  onMarkerClick={focusFinding}
+                />
               </div>
             </div>
             <p className="mt-1.5 text-center text-[11px] text-gray-400">
-              Click to enlarge{markers.length > 0 ? '. Numbers match the findings.' : ''}
+              Click to enlarge{markers.length > 0 ? '. Numbers match the findings below.' : ''}
             </p>
           </div>
         ) : (
@@ -177,45 +171,46 @@ export default function WebPageSection({
             No screenshot captured
           </div>
         )}
+      </div>
 
-        {/* Right: findings, each with its own inline crop */}
-        <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Findings</p>
-          {visibleFindings.length === 0 && !editMode ? (
-            <p className="mt-2 text-sm text-gray-400">No issues flagged on this page.</p>
-          ) : (
-            <div className="mt-2 space-y-4">
-              {visibleFindings.map(({ f, number }) => {
-                const i = number - 1;
-                const cropShot = f.highlight && shown && f.highlight.snapshot_id === shown.id ? shown : null;
-                return (
-                  <WebFindingCard
-                    key={i}
-                    number={number}
-                    finding={f}
-                    cropShot={cropShot}
-                    active={activeIndex === number}
-                    onActivate={(a) => setActiveIndex(a ? number : null)}
-                    onChangeText={(v) => setFinding(i, 'text', v)}
-                    onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}
-                    onRemove={() => removeFinding(i)}
-                    onRemoveHighlight={() => removeFindingHighlight(i)}
-                    onToggleHidden={() => setFinding(i, 'hidden', !f.hidden)}
-                  />
-                );
-              })}
-            </div>
-          )}
-          {editMode && (
-            <button
-              type="button"
-              onClick={addFinding}
-              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-500 hover:border-brand-primary/40 hover:text-brand-primary"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add finding
-            </button>
-          )}
-        </div>
+      {/* Findings below, in columns. Each shows a zoomed crop of its flagged
+          region, so the visual sits with the critique (no scrolling back up). */}
+      <div className="mt-6">
+        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Findings</p>
+        {visibleFindings.length === 0 && !editMode ? (
+          <p className="mt-2 text-sm text-gray-400">No issues flagged on this page.</p>
+        ) : (
+          <div className="mt-2 grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+            {visibleFindings.map(({ f, number }) => {
+              const i = number - 1;
+              const cropShot = f.highlight && shown && f.highlight.snapshot_id === shown.id ? shown : null;
+              return (
+                <WebFindingCard
+                  key={i}
+                  number={number}
+                  finding={f}
+                  cropShot={cropShot}
+                  active={activeIndex === number}
+                  onActivate={(a) => setActiveIndex(a ? number : null)}
+                  onChangeText={(v) => setFinding(i, 'text', v)}
+                  onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}
+                  onRemove={() => removeFinding(i)}
+                  onRemoveHighlight={() => removeFindingHighlight(i)}
+                  onToggleHidden={() => setFinding(i, 'hidden', !f.hidden)}
+                />
+              );
+            })}
+          </div>
+        )}
+        {editMode && (
+          <button
+            type="button"
+            onClick={addFinding}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-500 hover:border-brand-primary/40 hover:text-brand-primary"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add finding
+          </button>
+        )}
       </div>
 
       {lightbox && <ImageLightbox src={lightbox} alt={title} onClose={() => setLightbox(null)} />}
