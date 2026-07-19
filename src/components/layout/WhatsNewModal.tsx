@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState, type ComponentType } from 'react';
 import { createPortal } from 'react-dom';
 import { FileText, Mic, PenLine, Sparkles, Wand2, X, type LucideProps } from 'lucide-react';
 import { useAuth } from '../../contexts/AuthContext';
+import { getSeenAnnouncements, markAnnouncementsSeen } from '../../lib/announcements';
 
 type Feature = { icon: ComponentType<LucideProps>; title: string; desc: string };
 type Entry = { id: string; title: string; features: Feature[] };
@@ -52,23 +53,6 @@ const ENTRIES: Entry[] = [
   },
 ];
 
-const SEEN_KEY = 'ecd_whatsnew_seen';
-// Legacy per-user keys from the old Proposals-only modal. If a user dismissed the
-// latest proposals wave, treat the proposals entry as already seen.
-const LEGACY_PROPOSALS_V2 = 'ecd_proposals_whatsnew_v2';
-
-function readSeen(userId: string): Set<string> {
-  const seen = new Set<string>();
-  try {
-    const raw = localStorage.getItem(`${SEEN_KEY}:${userId}`);
-    if (raw) for (const id of JSON.parse(raw) as string[]) seen.add(id);
-    if (localStorage.getItem(`${LEGACY_PROPOSALS_V2}:${userId}`)) seen.add('proposals-ai-2026-06');
-  } catch {
-    /* localStorage unavailable */
-  }
-  return seen;
-}
-
 function Feature({ icon: Icon, title, desc }: Feature) {
   return (
     <div className="flex gap-3">
@@ -92,24 +76,27 @@ export default function WhatsNewModal() {
 
   useEffect(() => {
     if (!user?.id) return;
-    const seen = readSeen(user.id);
-    const pending = ENTRIES.filter(e => !seen.has(e.id));
-    if (pending.length > 0) {
-      setUnseen(pending);
-      setOpen(true);
-    }
+    let cancelled = false;
+    (async () => {
+      try {
+        const seen = new Set(await getSeenAnnouncements());
+        if (cancelled) return;
+        const pending = ENTRIES.filter(e => !seen.has(e.id));
+        if (pending.length > 0) {
+          setUnseen(pending);
+          setOpen(true);
+        }
+      } catch {
+        /* if we can't read state, stay quiet rather than nag */
+      }
+    })();
+    return () => { cancelled = true; };
   }, [user?.id]);
 
   const dismiss = () => {
-    if (user?.id) {
-      try {
-        const seen = readSeen(user.id);
-        for (const e of ENTRIES) seen.add(e.id);
-        localStorage.setItem(`${SEEN_KEY}:${user.id}`, JSON.stringify([...seen]));
-      } catch {
-        /* ignore */
-      }
-    }
+    // Optimistically close; persist the full set so it never reappears (on any
+    // subdomain or device).
+    void markAnnouncementsSeen(ENTRIES.map(e => e.id)).catch(() => {});
     setOpen(false);
   };
 
