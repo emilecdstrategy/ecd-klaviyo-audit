@@ -6,12 +6,15 @@ type ProposalContractSectionProps = {
   /** Markdown rich text (live doc in draft, frozen snapshot once sent). */
   content: string;
   collapsible?: boolean;
+  /** Anchor id so the acceptance checkbox can link to this document. */
+  id?: string;
 };
 
 export default function ProposalContractSection({
   name,
   content,
   collapsible = false,
+  id,
 }: ProposalContractSectionProps) {
   const body = (
     <div className="mt-4 text-sm leading-relaxed text-gray-700 [&_ul]:list-disc [&_ul]:pl-5 space-y-3">
@@ -36,7 +39,7 @@ export default function ProposalContractSection({
 
   if (collapsible) {
     return (
-      <section className="proposal-section proposal-page-break rounded-2xl border border-gray-100 bg-white px-6 py-5 shadow-sm">
+      <section id={id} className="proposal-section proposal-page-break scroll-mt-6 rounded-2xl border border-gray-100 bg-white px-6 py-5 shadow-sm">
         <details className="print:hidden [&[open]_span.disclosure]:hidden">
           <summary className="cursor-pointer list-none">
             {header}
@@ -56,7 +59,7 @@ export default function ProposalContractSection({
   }
 
   return (
-    <section className="proposal-section proposal-page-break rounded-2xl border border-gray-100 bg-white px-6 py-5 shadow-sm">
+    <section id={id} className="proposal-section proposal-page-break scroll-mt-6 rounded-2xl border border-gray-100 bg-white px-6 py-5 shadow-sm">
       {header}
       {body}
     </section>

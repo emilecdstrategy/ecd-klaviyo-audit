@@ -146,6 +146,7 @@ export default function ProposalDocument({
       {includedContracts.map(doc => (
         <ProposalContractSection
           key={doc.slug}
+          id={`contract-${doc.slug}`}
           name={doc.name}
           content={doc.content}
           collapsible={collapsibleContracts}

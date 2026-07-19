@@ -1,9 +1,10 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState, type ReactNode } from 'react';
 import { useLocation, useParams } from 'react-router-dom';
 import { CheckCircle2, Clock, Download, FileX2, PenLine } from 'lucide-react';
 import AppPreloader from '../components/ui/AppPreloader';
 import ProposalDocument from '../components/proposal/ProposalDocument';
 import SignaturePad, { type SignaturePadHandle } from '../components/proposal/SignaturePad';
+import BrandedCheckbox from '../components/ui/BrandedCheckbox';
 import { ProposalEditProvider } from '../components/proposal/edit/ProposalEditContext';
 import {
   DEFAULT_PROPOSAL_SETTINGS,
@@ -79,15 +80,52 @@ function toDocumentModels(payload: PublicProposalPayload): {
   return { proposal, client, signatures };
 }
 
+function openContractDoc(slug: string) {
+  const el = document.getElementById(`contract-${slug}`);
+  if (!el) return;
+  const details = el.querySelector('details');
+  if (details) (details as HTMLDetailsElement).open = true;
+  el.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+/** Renders "the Proposal, the MSA and the SOW" with each contract as a link. */
+function AgreedItems({ contracts }: { contracts: Array<{ slug: string; name: string }> }) {
+  const parts: ReactNode[] = [
+    <span key="proposal">the Proposal</span>,
+    ...contracts.map(c => (
+      <button
+        key={c.slug}
+        type="button"
+        onClick={() => openContractDoc(c.slug)}
+        className="font-semibold text-brand-primary underline decoration-brand-primary/40 underline-offset-2 hover:decoration-brand-primary"
+      >
+        {c.name}
+      </button>
+    )),
+  ];
+  return (
+    <>
+      {parts.map((node, i) => (
+        <span key={i}>
+          {i > 0 && (i === parts.length - 1 ? ' and ' : ', ')}
+          {node}
+        </span>
+      ))}
+    </>
+  );
+}
+
 function ClientSignArea({
   recipientName,
   recipientEmail,
+  contracts,
   onSign,
   signing,
   error,
 }: {
   recipientName: string;
   recipientEmail: string;
+  contracts: Array<{ slug: string; name: string }>;
   onSign: (typedName: string, email: string, signatureImage: string) => void;
   signing: boolean;
   error: string;
@@ -96,6 +134,7 @@ function ClientSignArea({
   const [typedName, setTypedName] = useState(recipientName);
   const [email, setEmail] = useState(recipientEmail);
   const [padEmpty, setPadEmpty] = useState(true);
+  const [agreed, setAgreed] = useState(false);
   const [localError, setLocalError] = useState('');
 
   const submit = () => {
@@ -111,6 +150,10 @@ function ClientSignArea({
     const image = padRef.current?.toDataURL();
     if (!image) {
       setLocalError('Please draw your signature.');
+      return;
+    }
+    if (!agreed) {
+      setLocalError('Please confirm you agree to the terms by checking the box above.');
       return;
     }
     onSign(typedName.trim(), email.trim(), image);
@@ -141,12 +184,29 @@ function ClientSignArea({
         </div>
       </div>
       <SignaturePad ref={padRef} onChange={setPadEmpty} />
+
+      {/* Agreement to terms (clickwrap): conspicuous, links to every attached
+          document, unchecked and required. */}
+      <div className="rounded-xl border border-brand-primary/20 bg-brand-primary/[0.04] p-4">
+        <p className="text-[11px] font-bold uppercase tracking-wide text-brand-primary">Agreement to contract terms</p>
+        <p className="mt-1.5 text-sm leading-relaxed text-gray-600">
+          By signing, I confirm that I have reviewed and agree to <AgreedItems contracts={contracts} />
+          {contracts.length > 0 ? ', and any documents expressly incorporated into them.' : '.'}
+        </p>
+        <label className="mt-3 flex cursor-pointer items-start gap-2.5">
+          <BrandedCheckbox checked={agreed} onChange={setAgreed} aria-label="I have reviewed and agree to the terms" className="mt-0.5" />
+          <span className="text-sm font-medium text-gray-800">
+            I have reviewed and agree to <AgreedItems contracts={contracts} />.
+          </span>
+        </label>
+      </div>
+
       {(localError || error) && (
         <p className="text-sm text-red-600">{localError || error}</p>
       )}
       <button
         type="button"
-        disabled={signing || padEmpty}
+        disabled={signing || padEmpty || !agreed}
         onClick={submit}
         className="inline-flex w-full items-center justify-center gap-2 rounded-lg gradient-bg px-5 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 sm:w-auto"
       >
@@ -154,8 +214,7 @@ function ClientSignArea({
         {signing ? 'Signing…' : 'Accept & sign'}
       </button>
       <p className="text-[11px] leading-relaxed text-gray-400">
-        By signing you agree to the services, pricing, and terms in this proposal
-        {` and the attached agreements. Your name, email, IP address, and timestamp are recorded.`}
+        Your name, email, IP address, and timestamp are recorded with your signature.
       </p>
     </div>
   );
@@ -225,6 +284,10 @@ export default function PublicProposal() {
   }
 
   const { proposal, client, signatures } = toDocumentModels(payload);
+  // The contracts attached to this proposal, for the acceptance checkbox links.
+  const includedContracts = (Array.isArray(proposal.contracts_snapshot) ? proposal.contracts_snapshot : [])
+    .filter(c => proposal.include_contracts.includes(c.slug))
+    .map(c => ({ slug: c.slug, name: c.name }));
   const settings = {
     ...DEFAULT_PROPOSAL_SETTINGS,
     ...mergeProposalSettings({ cover: payload.settings.cover }),
@@ -317,6 +380,7 @@ export default function PublicProposal() {
                 <ClientSignArea
                   recipientName={myIdentity.name}
                   recipientEmail={myIdentity.email}
+                  contracts={includedContracts}
                   onSign={handleSign}
                   signing={signing}
                   error={signError}
