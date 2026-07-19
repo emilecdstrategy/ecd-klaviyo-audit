@@ -38,8 +38,8 @@ export default function WebHighlightLayer({
             />
             <button
               type="button"
-              onClick={() => onMarkerClick?.(index)}
-              className="pointer-events-auto absolute z-20 flex h-6 w-6 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-brand-primary text-xs font-bold text-white shadow ring-2 ring-white"
+              onClick={(e) => { e.stopPropagation(); onMarkerClick?.(index); }}
+              className="pointer-events-auto absolute z-20 flex h-7 w-7 -translate-x-1/2 -translate-y-1/2 items-center justify-center rounded-full bg-brand-primary text-xs font-bold text-white shadow ring-2 ring-white transition-transform hover:scale-110"
               style={{ left: `${highlight.x + highlight.w / 2}%`, top: `${highlight.y + highlight.h / 2}%` }}
               aria-label={highlight.label || `Finding ${index}`}
               title={highlight.label}

@@ -7,7 +7,6 @@ import EditablePlainText from '../edit/EditablePlainText';
 import ImageLightbox from '../../ui/ImageLightbox';
 import WebHighlightLayer from './WebHighlightLayer';
 import WebFindingCard from './WebFindingCard';
-import WebAnnotatedScreenshot, { type AnnotatedItem } from './WebAnnotatedScreenshot';
 
 export default function WebPageSection({
   section,
@@ -81,48 +80,6 @@ export default function WebPageSection({
     }
   };
 
-  // Findings whose pin sits on the shown screenshot become flanking callouts
-  // (desktop); the rest render as stacked cards below. Falls back to a stacked
-  // list on mobile.
-  const pinnedRaw = visibleFindings
-    .filter(({ f }) => f.highlight && shown && f.highlight.snapshot_id === shown.id && !f.hidden)
-    .map(({ f, number }) => {
-      const i = number - 1;
-      return {
-        number,
-        finding: f,
-        onChangeText: (v: string) => setFinding(i, 'text', v),
-        onChangeRecommendation: (v: string) => setFinding(i, 'recommendation', v),
-        onRemove: () => removeFinding(i),
-        onRemoveHighlight: () => removeFindingHighlight(i),
-        onToggleHidden: () => setFinding(i, 'hidden', !f.hidden),
-      };
-    });
-  // Place each callout on the screenshot edge nearest its pin (top/bottom/left/
-  // right), so cards surround the centered image and connector lines stay short.
-  const pinnedItems: AnnotatedItem[] = pinnedRaw.map((it) => {
-    const h = it.finding.highlight;
-    const cx = (h?.x ?? 50) + (h?.w ?? 0) / 2;
-    const cy = (h?.y ?? 50) + (h?.h ?? 0) / 2;
-    const dist: Record<'top' | 'bottom' | 'left' | 'right', number> = {
-      top: cy,
-      bottom: 100 - cy,
-      left: cx,
-      right: 100 - cx,
-    };
-    const zone = (Object.keys(dist) as Array<'top' | 'bottom' | 'left' | 'right'>).reduce(
-      (best, edge) => (dist[edge] < dist[best] ? edge : best),
-      'top' as 'top' | 'bottom' | 'left' | 'right',
-    );
-    return { ...it, zone };
-  });
-  const pinnedNumbers = new Set(pinnedItems.map((it) => it.number));
-  const unpinnedFindings = visibleFindings.filter(({ number }) => !pinnedNumbers.has(number));
-  const useAnnotated = Boolean(shown) && pinnedItems.length > 0;
-  // The annotated band breaks out to a wider, viewport-centered width, so the
-  // screenshot can be larger and the flanking callouts get real room.
-  const midWidth = viewport === 'mobile' ? 320 : 520;
-
   return (
     <section className="rounded-xl bg-white p-6 card-shadow">
       <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
@@ -161,36 +118,10 @@ export default function WebPageSection({
               )}
             </div>
 
-            {useAnnotated ? (
-              <>
-                {/* Desktop: annotated screenshot with flanking callouts + lines */}
-                <WebAnnotatedScreenshot
-                  imageUrl={shown.screenshot_url as string}
-                  alt={`${title} (${viewport})`}
-                  midWidth={midWidth}
-                  items={pinnedItems}
-                  activeIndex={activeIndex}
-                  setActiveIndex={setActiveIndex}
-                  onLightbox={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
-                />
-                {/* Mobile: plain annotated shot; findings stack below */}
-                <div className="max-h-[600px] overflow-y-auto rounded-lg lg:hidden">
-                  <div
-                    className="cursor-zoom-in"
-                    onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
-                  >
-                    <WebHighlightLayer
-                      imageUrl={shown.screenshot_url as string}
-                      alt={`${title} (${viewport})`}
-                      markers={markers}
-                      activeIndex={activeIndex}
-                      onMarkerClick={focusFinding}
-                    />
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className="max-h-[600px] overflow-y-auto rounded-lg">
+            {/* One large screenshot with numbered pins. Mobile shots are narrow,
+                so they are centered rather than stretched full width. */}
+            <div className={viewport === 'mobile' ? 'mx-auto w-full max-w-sm' : 'w-full'}>
+              <div className="max-h-[80vh] overflow-y-auto rounded-lg">
                 <div
                   className="cursor-zoom-in"
                   onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
@@ -204,8 +135,10 @@ export default function WebPageSection({
                   />
                 </div>
               </div>
-            )}
-            <p className="mt-1 text-center text-[11px] text-gray-400">Click to view the full page</p>
+            </div>
+            <p className="mt-1.5 text-center text-[11px] text-gray-400">
+              Click the image to view the full page{markers.length > 0 ? '. Click a number to jump to its finding.' : ''}
+            </p>
           </>
         ) : (
           <div className="flex aspect-[16/10] items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-xs text-gray-400">
@@ -241,64 +174,44 @@ export default function WebPageSection({
         </div>
       )}
 
-      {/* Findings */}
+      {/* Findings: a numbered list beneath the screenshot. Numbers match the pins
+          above, so clicking a pin scrolls to its card and hovering a card lights
+          up its pin. */}
       <div className="mt-6">
         <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Findings</p>
-        <div className="mt-2 space-y-4">
-          {visibleFindings.length === 0 && !editMode && (
-            <p className="text-sm text-gray-400">No issues flagged on this page.</p>
-          )}
-
-          {/* Pinned findings show as callouts on desktop; stack them here on mobile only. */}
-          {useAnnotated && (
-            <div className="space-y-4 lg:hidden">
-              {pinnedItems.map((it) => (
+        {visibleFindings.length === 0 && !editMode ? (
+          <p className="mt-2 text-sm text-gray-400">No issues flagged on this page.</p>
+        ) : (
+          <div className="mt-2 grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
+            {visibleFindings.map(({ f, number }) => {
+              const i = number - 1;
+              return (
                 <WebFindingCard
-                  key={`m-${it.number}`}
-                  number={it.number}
-                  finding={it.finding}
+                  key={i}
+                  number={number}
+                  finding={f}
                   cropShot={null}
-                  active={activeIndex === it.number}
-                  onActivate={(a) => setActiveIndex(a ? it.number : null)}
-                  onChangeText={it.onChangeText}
-                  onChangeRecommendation={it.onChangeRecommendation}
-                  onRemove={it.onRemove}
-                  onRemoveHighlight={it.onRemoveHighlight}
-                  onToggleHidden={it.onToggleHidden}
+                  active={activeIndex === number}
+                  onActivate={(a) => setActiveIndex(a ? number : null)}
+                  onChangeText={(v) => setFinding(i, 'text', v)}
+                  onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}
+                  onRemove={() => removeFinding(i)}
+                  onRemoveHighlight={() => removeFindingHighlight(i)}
+                  onToggleHidden={() => setFinding(i, 'hidden', !f.hidden)}
                 />
-              ))}
-            </div>
-          )}
-
-          {/* Findings without a pin (all screen sizes). */}
-          {unpinnedFindings.map(({ f, number }) => {
-            const i = number - 1;
-            return (
-              <WebFindingCard
-                key={i}
-                number={number}
-                finding={f}
-                cropShot={null}
-                active={activeIndex === number}
-                onActivate={(a) => setActiveIndex(a ? number : null)}
-                onChangeText={(v) => setFinding(i, 'text', v)}
-                onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}
-                onRemove={() => removeFinding(i)}
-                onRemoveHighlight={() => removeFindingHighlight(i)}
-                onToggleHidden={() => setFinding(i, 'hidden', !f.hidden)}
-              />
-            );
-          })}
-          {editMode && (
-            <button
-              type="button"
-              onClick={addFinding}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-500 hover:border-brand-primary/40 hover:text-brand-primary"
-            >
-              <Plus className="h-3.5 w-3.5" /> Add finding
-            </button>
-          )}
-        </div>
+              );
+            })}
+          </div>
+        )}
+        {editMode && (
+          <button
+            type="button"
+            onClick={addFinding}
+            className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-500 hover:border-brand-primary/40 hover:text-brand-primary"
+          >
+            <Plus className="h-3.5 w-3.5" /> Add finding
+          </button>
+        )}
       </div>
 
       {lightbox && <ImageLightbox src={lightbox} alt={title} onClose={() => setLightbox(null)} />}
