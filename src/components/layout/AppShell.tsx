@@ -3,6 +3,7 @@ import { Outlet, useLocation } from 'react-router-dom';
 import Sidebar from './Sidebar';
 import { useEffect, useMemo, useState } from 'react';
 import AppPreloader from '../ui/AppPreloader';
+import WhatsNewModal from './WhatsNewModal';
 
 const AUDIT_WORKSPACE_PATH = /^\/audits\/[^/]+$/;
 // The document workspace (a single doc, its editor, or a template editor) wants
@@ -25,6 +26,7 @@ export default function AppShell() {
 
   return (
     <div className="min-h-screen bg-[#f8f8f8]">
+      <WhatsNewModal />
       <Sidebar collapsed={collapsed} onCollapsedChange={setCollapsed} />
       <div className={`app-shell-offset ${collapsed ? 'ml-[68px]' : 'ml-[240px]'} flex flex-col min-h-screen transition-[margin] duration-300`}>
         <main className="flex flex-1 flex-col min-h-[100dvh]">

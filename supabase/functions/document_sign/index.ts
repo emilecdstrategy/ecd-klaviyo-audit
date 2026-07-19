@@ -98,7 +98,7 @@ serve(async (req) => {
         html: proposalEmailHtml({
           heading: `${escapeHtml(typedName)} signed a document`,
           bodyLines: [`"${escapeHtml(document.title || "Untitled")}" has been signed.`],
-          logoUrl: origin ? `${origin}/cropped-favicon-192x192.webp` : undefined,
+          logoUrl: origin ? `${origin}/favicon.png` : undefined,
         }),
       });
     }

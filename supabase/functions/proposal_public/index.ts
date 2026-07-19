@@ -130,7 +130,7 @@ serve(async (req) => {
               bodyLines: [
                 `${proposalReferenceLink(origin, proposal)} was viewed for the first time.`,
               ],
-              logoUrl: origin ? `${origin}/cropped-favicon-192x192.webp` : undefined,
+              logoUrl: origin ? `${origin}/favicon.png` : undefined,
             }),
           });
         }

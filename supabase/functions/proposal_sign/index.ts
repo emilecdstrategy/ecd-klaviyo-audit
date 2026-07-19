@@ -187,7 +187,7 @@ serve(async (req) => {
             ],
           ctaLabel: complete && proposalUrl ? "Countersign now" : undefined,
           ctaUrl: complete && proposalUrl ? proposalUrl : undefined,
-          logoUrl: origin ? `${origin}/cropped-favicon-192x192.webp` : undefined,
+          logoUrl: origin ? `${origin}/favicon.png` : undefined,
         }),
       });
     }

@@ -99,7 +99,7 @@ serve(async (req) => {
             html: proposalEmailHtml({
               heading: `${escapeHtml(document.recipient_name || document.recipient_email || "The recipient")} opened a document`,
               bodyLines: [`"${escapeHtml(document.title || "Untitled")}" was viewed for the first time.`],
-              logoUrl: origin ? `${origin}/cropped-favicon-192x192.webp` : undefined,
+              logoUrl: origin ? `${origin}/favicon.png` : undefined,
             }),
           });
         }

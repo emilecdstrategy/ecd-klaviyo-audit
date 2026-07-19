@@ -133,7 +133,7 @@ serve(async (req) => {
 
     const origin = (body.app_url ?? "").trim() || (Deno.env.get("APP_URL") ?? "").trim() || (req.headers.get("origin") ?? "").trim();
     const cleanOrigin = origin.replace(/\/$/, "");
-    const logoUrl = cleanOrigin ? `${cleanOrigin}/cropped-favicon-192x192.webp` : undefined;
+    const logoUrl = cleanOrigin ? `${cleanOrigin}/favicon.png` : undefined;
     const companyName = proposal.client?.company_name ?? "your company";
 
     const [primaryReplyTo, ...ccReplyTos] = replyToEmails.length

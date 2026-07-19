@@ -90,6 +90,9 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
   const status = displayStatus(doc);
   const locked = doc.status === 'signed' || doc.status === 'void';
   const editable = !locked;
+  // The sender can add/replace their own signature at any time, including AFTER
+  // the recipient has signed (a countersignature). Only a voided document blocks it.
+  const senderSignDisabled = doc.status === 'void';
 
   // Inline editing (title + body) with debounced autosave.
   const [title, setTitle] = useState(doc.title);
@@ -338,12 +341,15 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
                   <BrandedCheckbox
                     className="mt-0.5"
                     checked={doc.sender_signature_enabled}
-                    disabled={togglingSender || locked}
+                    disabled={togglingSender || senderSignDisabled}
                     onChange={checked => toggleSenderSignature(checked)}
                     aria-label="Include my signature on this document"
                   />
                   <span>Include my signature on this document</span>
                 </label>
+                {doc.status === 'signed' && !senderSignature && (
+                  <p className="mt-2 text-xs text-gray-500">The recipient has signed. You can still add your countersignature below.</p>
+                )}
                 {doc.sender_signature_enabled && (
                   senderSignature ? (
                     <div className="mt-3">
@@ -351,14 +357,14 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
                         <img src={senderSignature.signature_image} alt="Your signature" className="h-14 w-full object-contain" />
                       </div>
                       <p className="mt-1.5 text-xs text-gray-500">{senderSignature.signer_name}</p>
-                      {!locked && (
+                      {!senderSignDisabled && (
                         <div className="mt-2 flex gap-2">
                           <button onClick={() => setSignOpen(true)} className="rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50">Replace</button>
                           <button onClick={clearSenderSignature} className="flex items-center gap-1 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-red-600 hover:bg-red-50"><Trash2 className="h-3.5 w-3.5" /> Remove</button>
                         </div>
                       )}
                     </div>
-                  ) : !locked ? (
+                  ) : !senderSignDisabled ? (
                     <button onClick={() => setSignOpen(true)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-brand-primary/30 bg-brand-primary/5 px-3 py-2 text-sm font-semibold text-brand-primary hover:bg-brand-primary/10"><PenLine className="h-4 w-4" /> Add your signature</button>
                   ) : (
                     <p className="mt-2 text-xs text-gray-400">Not signed.</p>

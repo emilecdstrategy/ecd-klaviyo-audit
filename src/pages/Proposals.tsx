@@ -9,7 +9,6 @@ import ProposalTemplatesPanel from '../components/proposal/ProposalTemplatesPane
 import ContractDocsPanel from '../components/proposal/ContractDocsPanel';
 import ProposalSettingsPanel from '../components/proposal/ProposalSettingsPanel';
 import ClientPickerModal from '../components/proposal/agent/ClientPickerModal';
-import ProposalsWhatsNewModal from '../components/proposal/ProposalsWhatsNewModal';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { ProposalAgentProvider } from '../components/proposal/agent/ProposalAgentContext';
 import { ProposalAgentLayout, AgentToggleButton } from '../components/proposal/agent/ProposalAgentLayout';
@@ -118,7 +117,6 @@ export default function Proposals() {
 
   return (
     <ProposalAgentProvider config={{ proposalId: null, onApplyDraft }}>
-    <ProposalsWhatsNewModal />
     <ClientPickerModal open={clientPickerOpen} onClose={closeClientPicker} onSelect={selectClientForDraft} />
     <ProposalAgentLayout>
     <div>

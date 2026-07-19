@@ -106,8 +106,8 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
         />
         {!collapsed && (
           <div className="overflow-hidden">
-            <span className="font-bold text-sm text-gray-900 whitespace-nowrap">ECD Audit</span>
-            <span className="block text-[10px] text-gray-400 -mt-0.5">Klaviyo Audits</span>
+            <span className="font-bold text-sm text-gray-900 whitespace-nowrap">ECD</span>
+            <span className="block text-[10px] text-gray-400 -mt-0.5">Digital Strategy</span>
           </div>
         )}
       </Link>
