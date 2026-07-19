@@ -93,63 +93,33 @@ export default function WebPageSection({
         </div>
       )}
 
-      {/* Screenshot */}
-      <div className="mt-5">
-        {shown ? (
-          <>
-            <div className="mb-2 flex items-center justify-end gap-1">
-              {hasDesktop && (
-                <button
-                  type="button"
-                  onClick={() => setViewport('desktop')}
-                  className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${viewport === 'desktop' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-                >
-                  <Monitor className="h-3.5 w-3.5" /> Desktop
-                </button>
-              )}
-              {hasMobile && (
-                <button
-                  type="button"
-                  onClick={() => setViewport('mobile')}
-                  className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${viewport === 'mobile' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-                >
-                  <Smartphone className="h-3.5 w-3.5" /> Mobile
-                </button>
-              )}
-            </div>
-
-            {/* One large screenshot with numbered pins. Mobile shots are narrow,
-                so they are centered rather than stretched full width. */}
-            <div className={viewport === 'mobile' ? 'mx-auto w-full max-w-sm' : 'w-full'}>
-              <div className="max-h-[80vh] overflow-y-auto rounded-lg">
-                <div
-                  className="cursor-zoom-in"
-                  onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
-                >
-                  <WebHighlightLayer
-                    imageUrl={shown.screenshot_url as string}
-                    alt={`${title} (${viewport})`}
-                    markers={markers}
-                    activeIndex={activeIndex}
-                    onMarkerClick={focusFinding}
-                  />
-                </div>
-              </div>
-            </div>
-            <p className="mt-1.5 text-center text-[11px] text-gray-400">
-              Click the image to view the full page{markers.length > 0 ? '. Click a number to jump to its finding.' : ''}
-            </p>
-          </>
-        ) : (
-          <div className="flex aspect-[16/10] items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-xs text-gray-400">
-            No screenshot captured
-          </div>
-        )}
-      </div>
+      {/* Viewport toggle */}
+      {shown && (hasDesktop || hasMobile) && (
+        <div className="mt-4 flex items-center justify-end gap-1">
+          {hasDesktop && (
+            <button
+              type="button"
+              onClick={() => setViewport('desktop')}
+              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${viewport === 'desktop' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+            >
+              <Monitor className="h-3.5 w-3.5" /> Desktop
+            </button>
+          )}
+          {hasMobile && (
+            <button
+              type="button"
+              onClick={() => setViewport('mobile')}
+              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${viewport === 'mobile' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+            >
+              <Smartphone className="h-3.5 w-3.5" /> Mobile
+            </button>
+          )}
+        </div>
+      )}
 
       {/* What works (page-specific strengths) */}
       {(editMode || detail.pros.length > 0) && (
-        <div className="mt-5">
+        <div className="mt-4">
           <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">What works</p>
           <ul className="mt-1.5 grid grid-cols-1 gap-1 sm:grid-cols-2">
             {detail.pros.map((pro, i) => (
@@ -174,44 +144,78 @@ export default function WebPageSection({
         </div>
       )}
 
-      {/* Findings: a numbered list beneath the screenshot. Numbers match the pins
-          above, so clicking a pin scrolls to its card and hovering a card lights
-          up its pin. */}
-      <div className="mt-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Findings</p>
-        {visibleFindings.length === 0 && !editMode ? (
-          <p className="mt-2 text-sm text-gray-400">No issues flagged on this page.</p>
+      {/* Two panes: a sticky reference screenshot on the left keeps the page in
+          view while you read the findings on the right. Each finding carries its
+          own zoomed crop of the exact region, so the visual sits with the
+          critique and there is no scrolling back up to the screenshot. */}
+      <div className="mt-5 grid grid-cols-1 gap-6 lg:grid-cols-2 lg:items-start">
+        {/* Left: reference screenshot (sticky on desktop) */}
+        {shown ? (
+          <div className="lg:sticky lg:top-6">
+            <div className={viewport === 'mobile' ? 'mx-auto w-full max-w-[320px]' : 'w-full'}>
+              <div className="max-h-[calc(100vh-5rem)] overflow-y-auto rounded-lg">
+                <div
+                  className="cursor-zoom-in"
+                  onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
+                >
+                  <WebHighlightLayer
+                    imageUrl={shown.screenshot_url as string}
+                    alt={`${title} (${viewport})`}
+                    markers={markers}
+                    activeIndex={activeIndex}
+                    onMarkerClick={focusFinding}
+                  />
+                </div>
+              </div>
+            </div>
+            <p className="mt-1.5 text-center text-[11px] text-gray-400">
+              Click to enlarge{markers.length > 0 ? '. Numbers match the findings.' : ''}
+            </p>
+          </div>
         ) : (
-          <div className="mt-2 grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-            {visibleFindings.map(({ f, number }) => {
-              const i = number - 1;
-              return (
-                <WebFindingCard
-                  key={i}
-                  number={number}
-                  finding={f}
-                  cropShot={null}
-                  active={activeIndex === number}
-                  onActivate={(a) => setActiveIndex(a ? number : null)}
-                  onChangeText={(v) => setFinding(i, 'text', v)}
-                  onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}
-                  onRemove={() => removeFinding(i)}
-                  onRemoveHighlight={() => removeFindingHighlight(i)}
-                  onToggleHidden={() => setFinding(i, 'hidden', !f.hidden)}
-                />
-              );
-            })}
+          <div className="flex aspect-[16/10] items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-xs text-gray-400">
+            No screenshot captured
           </div>
         )}
-        {editMode && (
-          <button
-            type="button"
-            onClick={addFinding}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-500 hover:border-brand-primary/40 hover:text-brand-primary"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add finding
-          </button>
-        )}
+
+        {/* Right: findings, each with its own inline crop */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Findings</p>
+          {visibleFindings.length === 0 && !editMode ? (
+            <p className="mt-2 text-sm text-gray-400">No issues flagged on this page.</p>
+          ) : (
+            <div className="mt-2 space-y-4">
+              {visibleFindings.map(({ f, number }) => {
+                const i = number - 1;
+                const cropShot = f.highlight && shown && f.highlight.snapshot_id === shown.id ? shown : null;
+                return (
+                  <WebFindingCard
+                    key={i}
+                    number={number}
+                    finding={f}
+                    cropShot={cropShot}
+                    active={activeIndex === number}
+                    onActivate={(a) => setActiveIndex(a ? number : null)}
+                    onChangeText={(v) => setFinding(i, 'text', v)}
+                    onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}
+                    onRemove={() => removeFinding(i)}
+                    onRemoveHighlight={() => removeFindingHighlight(i)}
+                    onToggleHidden={() => setFinding(i, 'hidden', !f.hidden)}
+                  />
+                );
+              })}
+            </div>
+          )}
+          {editMode && (
+            <button
+              type="button"
+              onClick={addFinding}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-500 hover:border-brand-primary/40 hover:text-brand-primary"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add finding
+            </button>
+          )}
+        </div>
       </div>
 
       {lightbox && <ImageLightbox src={lightbox} alt={title} onClose={() => setLightbox(null)} />}
