@@ -99,7 +99,7 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
   const [content, setContent] = useState(doc.content);
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const [viewMode, setViewMode] = useState<'edit' | 'preview'>(editable ? 'edit' : 'preview');
-  const latest = useRef({ title: doc.title, content: doc.content });
+  const latest = useRef({ title: doc.title, content: doc.content, recipient_name: doc.recipient_name, recipient_email: doc.recipient_email });
   const timer = useRef<number | null>(null);
 
   const [sendOpen, setSendOpen] = useState(false);
@@ -107,18 +107,22 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
   const [signOpen, setSignOpen] = useState(false);
   const [name, setName] = useState(doc.recipient_name);
   const [email, setEmail] = useState(doc.recipient_email);
-  const [savingRecipient, setSavingRecipient] = useState(false);
   const [togglingSender, setTogglingSender] = useState(false);
 
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
 
-  const scheduleSave = (next: { title?: string; content?: string }) => {
+  const scheduleSave = (next: Partial<typeof latest.current>) => {
     latest.current = { ...latest.current, ...next };
     setSaveStatus('saving');
     if (timer.current) window.clearTimeout(timer.current);
     timer.current = window.setTimeout(async () => {
       try {
-        const updated = await updateDocument(doc.id, { title: latest.current.title, content: latest.current.content });
+        const updated = await updateDocument(doc.id, {
+          title: latest.current.title,
+          content: latest.current.content,
+          recipient_name: latest.current.recipient_name,
+          recipient_email: latest.current.recipient_email,
+        });
         onDocChange(updated);
         setSaveStatus('saved');
       } catch {
@@ -178,19 +182,6 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
   const downloadPdf = () => {
     setViewMode('preview');
     window.setTimeout(() => window.print(), 120);
-  };
-
-  const saveRecipient = async () => {
-    setSavingRecipient(true);
-    try {
-      const updated = await updateDocument(doc.id, { recipient_name: name.trim(), recipient_email: email.trim() });
-      onDocChange(updated);
-      toast('Recipient saved');
-    } catch (e) {
-      toast(e instanceof Error ? e.message : 'Could not save recipient');
-    } finally {
-      setSavingRecipient(false);
-    }
   };
 
   return (
@@ -310,11 +301,8 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
 
               <div className="rounded-xl bg-white p-5 card-shadow">
                 <h3 className="text-sm font-semibold text-gray-900">Recipient</h3>
-                <input value={name} onChange={e => setName(e.target.value)} disabled={locked} placeholder="Recipient name" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50 focus:border-brand-primary focus:outline-none" />
-                <input value={email} onChange={e => setEmail(e.target.value)} disabled={locked} placeholder="recipient@example.com" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50 focus:border-brand-primary focus:outline-none" />
-                {!locked && (name !== doc.recipient_name || email !== doc.recipient_email) && (
-                  <button onClick={saveRecipient} disabled={savingRecipient} className="mt-2 rounded-lg border border-gray-200 px-3 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50">{savingRecipient ? 'Saving…' : 'Save recipient'}</button>
-                )}
+                <input value={name} onChange={e => { setName(e.target.value); scheduleSave({ recipient_name: e.target.value }); }} disabled={locked} placeholder="Recipient name" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50 focus:border-brand-primary focus:outline-none" />
+                <input value={email} onChange={e => { setEmail(e.target.value); scheduleSave({ recipient_email: e.target.value }); }} disabled={locked} placeholder="recipient@example.com" className="mt-2 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50 focus:border-brand-primary focus:outline-none" />
               </div>
 
               <div className="rounded-xl bg-white p-5 card-shadow space-y-2">
