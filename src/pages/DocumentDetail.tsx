@@ -7,7 +7,7 @@ import SimpleRichEditor from '../components/ui/SimpleRichEditor';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useDocumentData } from '../hooks/useDocumentData';
-import { markDocumentSent, updateDocument, voidDocument, reopenDocument, upsertSenderSignature, removeSenderSignature } from '../lib/documents-db';
+import { markDocumentSent, updateDocument, voidDocument, reopenDocument, upsertSenderSignature, removeSenderSignature, getMySignature, type SavedSignature } from '../lib/documents-db';
 import { buildDocumentSnapshot, sanitizeCopy, type DocDraftPayload, type DocEditPayload } from '../lib/document-agent';
 import { publicProposalOrigin } from '../lib/public-origin';
 import { cn } from '../lib/utils';
@@ -108,8 +108,16 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
   const [name, setName] = useState(doc.recipient_name);
   const [email, setEmail] = useState(doc.recipient_email);
   const [togglingSender, setTogglingSender] = useState(false);
+  const [savedSig, setSavedSig] = useState<SavedSignature | null>(null);
 
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
+
+  // Load the current user's reusable signature so it can pre-fill.
+  useEffect(() => {
+    let cancelled = false;
+    getMySignature().then(sig => { if (!cancelled) setSavedSig(sig); }).catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const scheduleSave = (next: Partial<typeof latest.current>) => {
     latest.current = { ...latest.current, ...next };
@@ -131,11 +139,24 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
     }, 800);
   };
 
+  const applySavedSignature = async () => {
+    if (!savedSig) return;
+    await upsertSenderSignature({ document_id: doc.id, signer_name: savedSig.signer_name, signature_image: savedSig.signature_image, saveAsDefault: false });
+    await reload();
+    toast('Your saved signature was added');
+  };
+
   const toggleSenderSignature = async (enabled: boolean) => {
     setTogglingSender(true);
     try {
       const updated = await updateDocument(doc.id, { sender_signature_enabled: enabled });
       onDocChange(updated);
+      // Turning it on pre-fills with the user's saved signature if they have one;
+      // otherwise prompt them to draw it once.
+      if (enabled && !senderSignature) {
+        if (savedSig) await applySavedSignature();
+        else setSignOpen(true);
+      }
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not update setting');
     } finally {
@@ -145,9 +166,10 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
 
   const saveSenderSignature = async (signerName: string, image: string) => {
     await upsertSenderSignature({ document_id: doc.id, signer_name: signerName, signature_image: image });
+    setSavedSig({ signer_name: signerName, signature_image: image });
     setSignOpen(false);
     await reload();
-    toast('Your signature was added');
+    toast('Your signature was saved');
   };
 
   const clearSenderSignature = async () => {
@@ -353,7 +375,17 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
                       )}
                     </div>
                   ) : !senderSignDisabled ? (
-                    <button onClick={() => setSignOpen(true)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-brand-primary/30 bg-brand-primary/5 px-3 py-2 text-sm font-semibold text-brand-primary hover:bg-brand-primary/10"><PenLine className="h-4 w-4" /> Add your signature</button>
+                    savedSig ? (
+                      <div className="mt-3">
+                        <div className="rounded-lg border border-dashed border-gray-200 bg-gray-50/60 p-2">
+                          <img src={savedSig.signature_image} alt="Your saved signature" className="h-12 w-full object-contain opacity-90" />
+                        </div>
+                        <button onClick={applySavedSignature} className="mt-2 flex w-full items-center justify-center gap-2 rounded-lg border border-brand-primary/30 bg-brand-primary/5 px-3 py-2 text-sm font-semibold text-brand-primary hover:bg-brand-primary/10"><PenLine className="h-4 w-4" /> Use my signature</button>
+                        <button onClick={() => setSignOpen(true)} className="mt-1.5 w-full rounded-lg px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700">Draw a new one</button>
+                      </div>
+                    ) : (
+                      <button onClick={() => setSignOpen(true)} className="mt-3 flex w-full items-center justify-center gap-2 rounded-lg border border-brand-primary/30 bg-brand-primary/5 px-3 py-2 text-sm font-semibold text-brand-primary hover:bg-brand-primary/10"><PenLine className="h-4 w-4" /> Add your signature</button>
+                    )
                   ) : (
                     <p className="mt-2 text-xs text-gray-400">Not signed.</p>
                   )

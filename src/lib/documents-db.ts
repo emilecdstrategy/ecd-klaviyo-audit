@@ -319,13 +319,46 @@ export async function listDocumentSignatures(documentId: string): Promise<Docume
   return (data ?? []) as DocumentSignature[];
 }
 
+export type SavedSignature = { signer_name: string; signature_image: string };
+
+/** The current user's saved default signature, drawn once and reused. */
+export async function getMySignature(): Promise<SavedSignature | null> {
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData?.user?.id;
+  if (!uid) return null;
+  const { data, error } = await supabase
+    .from('user_signatures')
+    .select('signer_name, signature_image')
+    .eq('user_id', uid)
+    .maybeSingle();
+  if (error || !data) return null;
+  return { signer_name: data.signer_name, signature_image: data.signature_image };
+}
+
+/** Save (or update) the current user's default signature for reuse. */
+export async function saveMySignature(input: SavedSignature): Promise<void> {
+  const { data: userData } = await supabase.auth.getUser();
+  const uid = userData?.user?.id;
+  if (!uid) return;
+  const { error } = await supabase
+    .from('user_signatures')
+    .upsert(
+      { user_id: uid, signer_name: input.signer_name, signature_image: input.signature_image, updated_at: new Date().toISOString() },
+      { onConflict: 'user_id' },
+    );
+  if (error) throw error;
+}
+
 /** Sender (staff) counter-signature, applied from the app. Upserts the single
- * sender-role row for the document. */
+ * sender-role row for the document, and remembers it as the user's default so it
+ * pre-fills on future documents. */
 export async function upsertSenderSignature(input: {
   document_id: string;
   signer_name: string;
   signature_image: string;
   typed_name?: string;
+  /** When false, do not overwrite the user's saved default (e.g. applying the saved one). */
+  saveAsDefault?: boolean;
 }): Promise<DocumentSignature> {
   const { data: userData } = await supabase.auth.getUser();
   const email = userData?.user?.email ?? '';
@@ -347,6 +380,9 @@ export async function upsertSenderSignature(input: {
     .single();
   if (error) throw error;
   await recordDocumentEvent(input.document_id, 'signed', { role: 'sender' }).catch(() => {});
+  if (input.saveAsDefault !== false) {
+    await saveMySignature({ signer_name: input.signer_name, signature_image: input.signature_image }).catch(() => {});
+  }
   return data as DocumentSignature;
 }
 
