@@ -12,6 +12,7 @@ import WebCropCard from './WebCropCard';
  */
 export default function WebFindingCard({
   number,
+  anchorId,
   finding,
   cropShot,
   active,
@@ -23,6 +24,8 @@ export default function WebFindingCard({
   onToggleHidden,
 }: {
   number: number;
+  /** Unique DOM id so pins can scroll to the right finding across sections. */
+  anchorId?: string;
   finding: WebFinding;
   cropShot?: WebPageSnapshot | null;
   active: boolean;
@@ -38,7 +41,7 @@ export default function WebFindingCard({
 
   return (
     <div
-      id={`finding-${number}`}
+      id={anchorId ?? `finding-${number}`}
       onMouseEnter={() => onActivate(true)}
       onMouseLeave={() => onActivate(false)}
       className={`scroll-mt-24 rounded-xl border p-4 transition-shadow ${

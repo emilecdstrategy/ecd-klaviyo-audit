@@ -47,7 +47,7 @@ export default function WebPageSection({
 
   const markers = visibleFindings
     .filter(({ f }) => f.highlight && shown && f.highlight.snapshot_id === shown.id && !f.hidden)
-    .map(({ f, number }) => ({ index: number, highlight: f.highlight! }));
+    .map(({ f, number }) => ({ index: number, highlight: f.highlight!, text: f.text, recommendation: f.recommendation }));
 
   const setFinding = (i: number, key: string, value: unknown) => {
     const next = detail.findings.map((f, idx) => (idx === i ? { ...f, [key]: value } : f));
@@ -73,10 +73,15 @@ export default function WebPageSection({
   const removePro = (i: number) =>
     updateSectionDetailValue(section.section_key, ['web', 'pros'], detail.pros.filter((_, idx) => idx !== i));
 
+  // Anchor ids must be unique per section: every section numbers its findings
+  // from 1, so a bare `finding-1` would collide across sections and always jump
+  // to the first one (the homepage). Scope by section key.
+  const findingAnchorId = (number: number) => `finding-${section.section_key}-${number}`;
+
   const focusFinding = (index: number) => {
     setActiveIndex(index);
     if (typeof document !== 'undefined') {
-      document.getElementById(`finding-${index}`)?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      document.getElementById(findingAnchorId(index))?.scrollIntoView({ behavior: 'smooth', block: 'center' });
     }
   };
 
@@ -148,19 +153,19 @@ export default function WebPageSection({
       <div className="mt-5">
         {shown ? (
           <div className={viewport === 'mobile' ? 'mx-auto w-full max-w-[380px]' : 'w-full'}>
-            <div className="max-h-[80vh] overflow-y-auto rounded-lg">
-              <div
-                className="cursor-zoom-in"
-                onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
-              >
-                <WebHighlightLayer
-                  imageUrl={shown.screenshot_url as string}
-                  alt={`${title} (${viewport})`}
-                  markers={markers}
-                  activeIndex={activeIndex}
-                  onMarkerClick={focusFinding}
-                />
-              </div>
+            {/* No overflow clip here so the pin hover tooltips can extend past
+                the screenshot edges. */}
+            <div
+              className="cursor-zoom-in rounded-lg"
+              onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
+            >
+              <WebHighlightLayer
+                imageUrl={shown.screenshot_url as string}
+                alt={`${title} (${viewport})`}
+                markers={markers}
+                activeIndex={activeIndex}
+                onMarkerClick={focusFinding}
+              />
             </div>
             <p className="mt-1.5 text-center text-[11px] text-gray-400">
               Click to enlarge{markers.length > 0 ? '. Numbers match the findings below.' : ''}
@@ -187,6 +192,7 @@ export default function WebPageSection({
               return (
                 <WebFindingCard
                   key={i}
+                  anchorId={findingAnchorId(number)}
                   number={number}
                   finding={f}
                   cropShot={cropShot}
