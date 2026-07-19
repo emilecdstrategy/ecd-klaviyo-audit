@@ -120,7 +120,7 @@ export default function WhatsNewModal() {
   return createPortal(
     <div className="fixed inset-0 z-[70] flex items-center justify-center bg-black/40 p-4" onClick={dismiss} role="presentation">
       <div
-        className="flex max-h-[85vh] w-full max-w-md flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
+        className="flex max-h-[85vh] w-full max-w-[700px] flex-col overflow-hidden rounded-2xl bg-white shadow-xl"
         onClick={e => e.stopPropagation()}
         role="dialog"
         aria-modal="true"
