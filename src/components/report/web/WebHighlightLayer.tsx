@@ -1,3 +1,4 @@
+import { ArrowRight } from 'lucide-react';
 import type { WebHighlight } from '../../../lib/web-report-details';
 
 type Marker = { index: number; highlight: WebHighlight; text?: string; recommendation?: string };
@@ -29,9 +30,9 @@ export default function WebHighlightLayer({
         // Open the tooltip above the pin when it sits low on the shot, else below.
         const above = cy > 55;
         return (
-          <div key={index} className="pointer-events-none absolute inset-0">
+          <div key={index}>
             <div
-              className={`absolute rounded-md border-2 transition-colors ${
+              className={`pointer-events-none absolute rounded-md border-2 transition-colors ${
                 active ? 'border-brand-primary bg-brand-primary/10' : 'border-brand-primary/70'
               }`}
               style={{
@@ -41,32 +42,42 @@ export default function WebHighlightLayer({
                 height: `${highlight.h}%`,
               }}
             />
+            {/* hover:z-50 lifts the whole group (pin + tooltip) above every other
+                pin so the tooltip is never painted under a later marker. */}
             <div
-              className="group pointer-events-none absolute z-20 -translate-x-1/2 -translate-y-1/2"
+              className="group absolute z-20 -translate-x-1/2 -translate-y-1/2 hover:z-50"
               style={{ left: `${cx}%`, top: `${cy}%` }}
             >
               <button
                 type="button"
                 onClick={(e) => { e.stopPropagation(); onMarkerClick?.(index); }}
-                className="pointer-events-auto flex h-7 w-7 items-center justify-center rounded-full bg-brand-primary text-xs font-bold text-white shadow ring-2 ring-white transition-transform hover:scale-110"
+                className="flex h-7 w-7 items-center justify-center rounded-full bg-brand-primary text-xs font-bold text-white shadow ring-2 ring-white transition-transform hover:scale-110"
                 aria-label={highlight.label || `Finding ${index}`}
               >
                 {index}
               </button>
               {hasTip && (
                 <div
-                  className={`pointer-events-none absolute left-1/2 z-30 w-72 max-w-[80vw] -translate-x-1/2 rounded-xl bg-gray-900 p-3.5 text-left opacity-0 shadow-xl transition-opacity duration-150 group-hover:opacity-100 ${
-                    above ? 'bottom-full mb-2' : 'top-full mt-2'
+                  className={`pointer-events-none absolute left-1/2 w-80 max-w-[80vw] -translate-x-1/2 rounded-xl border border-gray-200 bg-white p-3.5 text-left opacity-0 shadow-xl ring-1 ring-black/5 transition-opacity duration-150 group-hover:opacity-100 ${
+                    above ? 'bottom-full mb-2.5' : 'top-full mt-2.5'
                   }`}
                 >
                   {text && text.trim() && (
-                    <p className="text-xs font-medium leading-relaxed text-white">{text}</p>
+                    <div className="flex items-start gap-2">
+                      <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-primary/10 text-[11px] font-bold text-brand-primary">
+                        {index}
+                      </span>
+                      <p className="text-sm leading-relaxed text-gray-800">{text}</p>
+                    </div>
                   )}
                   {recommendation && recommendation.trim() && (
-                    <p className="mt-2 border-t border-white/15 pt-2 text-xs leading-relaxed text-white/80">
-                      <span className="font-semibold text-white">Fix: </span>
-                      {recommendation}
-                    </p>
+                    <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-brand-primary/5 p-2.5">
+                      <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary" />
+                      <p className="text-xs leading-relaxed text-gray-600">
+                        <span className="font-semibold text-gray-700">Recommended fix: </span>
+                        {recommendation}
+                      </p>
+                    </div>
                   )}
                 </div>
               )}
