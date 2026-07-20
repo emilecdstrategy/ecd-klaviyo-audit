@@ -15,6 +15,7 @@ import ClientSearchSelect from '../components/audit/ClientSearchSelect';
 import { useAuth } from '../contexts/AuthContext';
 import { createAudit, createAuditSections, createClient, ensureClientCreator, findClientByCompanyName, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates, uploadReportScreenshot } from '../lib/db';
 import { resolveRevenueOpportunityContent } from '../lib/revenue-opportunity-content';
+import { fetchTranscriptFromLink } from '../lib/transcript';
 import type { Audit, AuditContext, AuditType, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { KLAVIYO_AUDIT_SECTION_KEYS, WEB_AUDIT_SECTION_KEYS } from '../lib/audit-sections';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
@@ -226,6 +227,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     client_background: '',
     custom_instructions: '',
   });
+  const [transcriptLink, setTranscriptLink] = useState('');
+  const [transcriptFetching, setTranscriptFetching] = useState(false);
+  const [transcriptMsg, setTranscriptMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
 
   const [attributionScreenshot, setAttributionScreenshot] = useState<File | null>(null);
   const [attributionPreviewUrl, setAttributionPreviewUrl] = useState<string | null>(null);
@@ -306,6 +310,27 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     const next = (auditContextForm.meeting_notes + block).slice(0, CONTEXT_CHAR_HARD);
     setAuditContextForm(prev => ({ ...prev, meeting_notes: next }));
     setError('');
+  };
+
+  const fetchTranscriptLink = async () => {
+    const url = transcriptLink.trim();
+    if (!url || transcriptFetching) return;
+    setTranscriptFetching(true);
+    setTranscriptMsg(null);
+    try {
+      const res = await fetchTranscriptFromLink(url);
+      if (!res.ok) {
+        setTranscriptMsg({ type: 'error', text: res.message });
+        return;
+      }
+      const existing = auditContextForm.meeting_notes.trim();
+      const next = (existing ? `${existing}\n\n${res.content}` : res.content).slice(0, CONTEXT_CHAR_HARD);
+      setAuditContextForm(prev => ({ ...prev, meeting_notes: next }));
+      setTranscriptLink('');
+      setTranscriptMsg({ type: 'ok', text: 'Transcript pulled in. Review it below.' });
+    } finally {
+      setTranscriptFetching(false);
+    }
   };
 
   function buildAuditContextForSave(): AuditContext | null {
@@ -1169,7 +1194,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Client Context</h2>
                 <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-                  Optional. Paste meeting notes from Fireflies, Fathom, Google Meet, or any tool. Add what the client cares about so the report matches their conversation.
+                  Optional. Paste a Fireflies link and we'll pull the transcript in automatically, or add notes yourself. Add what the client cares about so the report matches their conversation.
                 </p>
               </div>
               <button
@@ -1187,7 +1212,33 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 <span className="text-xs text-gray-500 font-normal">Fireflies, Fathom, etc.</span>
               </summary>
               <div className="px-4 pb-4 pt-2 border-t border-gray-100 space-y-2">
-                <label className="block text-xs font-medium text-gray-600">Paste notes or transcript</label>
+                {/* Fireflies link → auto-fetch the transcript (reuses the same
+                    Fireflies integration as Proposals and Documents). */}
+                <label className="block text-xs font-medium text-gray-600">Paste a Fireflies link</label>
+                <div className="flex flex-col gap-2 sm:flex-row">
+                  <input
+                    type="url"
+                    value={transcriptLink}
+                    onChange={e => { setTranscriptLink(e.target.value); setTranscriptMsg(null); }}
+                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void fetchTranscriptLink(); } }}
+                    placeholder="https://app.fireflies.ai/view/…"
+                    className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => void fetchTranscriptLink()}
+                    disabled={!transcriptLink.trim() || transcriptFetching}
+                    className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-50"
+                  >
+                    {transcriptFetching ? <><Loader2 className="h-4 w-4 animate-spin" /> Fetching…</> : 'Fetch transcript'}
+                  </button>
+                </div>
+                {transcriptMsg && (
+                  <p className={`text-xs ${transcriptMsg.type === 'error' ? 'text-red-600' : 'text-emerald-600'}`}>{transcriptMsg.text}</p>
+                )}
+                <p className="text-[11px] text-gray-400">A Google Doc share link works too. Or paste notes manually below.</p>
+
+                <label className="block pt-1 text-xs font-medium text-gray-600">Notes or transcript</label>
                 <textarea
                   value={auditContextForm.meeting_notes}
                   onChange={e => updateContextField('meeting_notes', e.target.value)}
