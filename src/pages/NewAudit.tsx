@@ -1205,7 +1205,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Client Context</h2>
                 <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-                  Optional. Paste a Fireflies link and we'll pull the transcript in automatically, or add notes yourself. Add what the client cares about so the report matches their conversation.
+                  Optional. Add the call transcript, then let AI draft the client background and focus areas, or fill them in yourself.
                 </p>
               </div>
               <button
@@ -1217,6 +1217,64 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               </button>
             </div>
 
+            {/* 1. Source material: the call transcript or notes. */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <label className="text-sm font-medium text-gray-900">Call transcript or notes</label>
+                <span className="text-xs text-gray-400">Fireflies or Google Doc link, or paste</span>
+              </div>
+              <div className="flex flex-col gap-2 sm:flex-row">
+                <input
+                  type="url"
+                  value={transcriptLink}
+                  onChange={e => { setTranscriptLink(e.target.value); setTranscriptMsg(null); }}
+                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void fetchTranscriptLink(); } }}
+                  placeholder="Paste a Fireflies or Google Doc link…"
+                  className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                />
+                <button
+                  type="button"
+                  onClick={() => void fetchTranscriptLink()}
+                  disabled={!transcriptLink.trim() || transcriptFetching}
+                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-50"
+                >
+                  {transcriptFetching ? <><Loader2 className="h-4 w-4 animate-spin" /> Fetching…</> : 'Fetch'}
+                </button>
+              </div>
+              {transcriptMsg && (
+                <p className={`text-xs ${transcriptMsg.type === 'error' ? 'text-red-600' : 'text-emerald-600'}`}>{transcriptMsg.text}</p>
+              )}
+              <textarea
+                value={auditContextForm.meeting_notes}
+                onChange={e => updateContextField('meeting_notes', e.target.value)}
+                rows={6}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y"
+                placeholder="Or paste the transcript / notes here…"
+              />
+              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
+                <span>
+                  {auditContextForm.meeting_notes.length.toLocaleString()} / {CONTEXT_CHAR_HARD.toLocaleString()} characters
+                  {auditContextForm.meeting_notes.length > CONTEXT_CHAR_SOFT && (
+                    <span className="text-amber-600 ml-1">(large; consider trimming)</span>
+                  )}
+                </span>
+                <label className="inline-flex items-center gap-1.5 cursor-pointer text-brand-primary font-medium">
+                  <input
+                    type="file"
+                    accept=".txt,.md,text/plain"
+                    className="sr-only"
+                    onChange={async (e) => {
+                      const f = e.target.files?.[0];
+                      e.target.value = '';
+                      if (f) await appendMeetingNotesFromFile(f);
+                    }}
+                  />
+                  Upload .txt / .md
+                </label>
+              </div>
+            </div>
+
+            {/* 2. Let the AI draft the context from the transcript above. */}
             <AuditContextAssistant
               onApply={applyContextDraft}
               getSnapshot={() => ({
@@ -1230,101 +1288,30 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               })}
             />
 
-            <details className="group border border-gray-200 rounded-lg open:ring-1 open:ring-brand-primary/15" open>
-              <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 font-medium text-gray-900 bg-gray-50/80 rounded-lg group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
-                <span>Meeting notes & transcripts</span>
-                <span className="text-xs text-gray-500 font-normal">Fireflies, Fathom, etc.</span>
-              </summary>
-              <div className="px-4 pb-4 pt-2 border-t border-gray-100 space-y-2">
-                {/* Fireflies link → auto-fetch the transcript (reuses the same
-                    Fireflies integration as Proposals and Documents). */}
-                <label className="block text-xs font-medium text-gray-600">Paste a Fireflies link</label>
-                <div className="flex flex-col gap-2 sm:flex-row">
-                  <input
-                    type="url"
-                    value={transcriptLink}
-                    onChange={e => { setTranscriptLink(e.target.value); setTranscriptMsg(null); }}
-                    onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void fetchTranscriptLink(); } }}
-                    placeholder="https://app.fireflies.ai/view/…"
-                    className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  />
-                  <button
-                    type="button"
-                    onClick={() => void fetchTranscriptLink()}
-                    disabled={!transcriptLink.trim() || transcriptFetching}
-                    className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-50"
-                  >
-                    {transcriptFetching ? <><Loader2 className="h-4 w-4 animate-spin" /> Fetching…</> : 'Fetch transcript'}
-                  </button>
-                </div>
-                {transcriptMsg && (
-                  <p className={`text-xs ${transcriptMsg.type === 'error' ? 'text-red-600' : 'text-emerald-600'}`}>{transcriptMsg.text}</p>
-                )}
-                <p className="text-[11px] text-gray-400">A Google Doc share link works too. Or paste notes manually below.</p>
+            {/* 3. The context fields (AI fills these, or edit by hand). */}
+            <div>
+              <label className="block text-sm font-medium text-gray-900">Client background</label>
+              <p className="mb-1.5 text-xs text-gray-500">Who they are, their goals and pain points.</p>
+              <textarea
+                value={auditContextForm.client_background}
+                onChange={e => updateContextField('client_background', e.target.value)}
+                rows={4}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y"
+                placeholder="e.g. Launching a new line in Q2, focused on VIP retention, deliverability concerns…"
+              />
+            </div>
 
-                <label className="block pt-1 text-xs font-medium text-gray-600">Notes or transcript</label>
-                <textarea
-                  value={auditContextForm.meeting_notes}
-                  onChange={e => updateContextField('meeting_notes', e.target.value)}
-                  rows={8}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y min-h-[120px]"
-                  placeholder="Paste call summary, transcript, or key quotes…"
-                />
-                <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                  <span>
-                    {auditContextForm.meeting_notes.length.toLocaleString()} / {CONTEXT_CHAR_HARD.toLocaleString()} characters
-                    {auditContextForm.meeting_notes.length > CONTEXT_CHAR_SOFT && (
-                      <span className="text-amber-600 ml-1">(large; consider trimming)</span>
-                    )}
-                  </span>
-                  <label className="inline-flex items-center gap-1.5 cursor-pointer text-brand-primary font-medium">
-                    <input
-                      type="file"
-                      accept=".txt,.md,text/plain"
-                      className="sr-only"
-                      onChange={async (e) => {
-                        const f = e.target.files?.[0];
-                        e.target.value = '';
-                        if (f) await appendMeetingNotesFromFile(f);
-                      }}
-                    />
-                    Upload .txt / .md
-                  </label>
-                </div>
-              </div>
-            </details>
-
-            <details className="group border border-gray-200 rounded-lg">
-              <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 font-medium text-gray-900 bg-gray-50/80 rounded-lg group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
-                <span>Client background</span>
-                <span className="text-xs text-gray-500 font-normal">Goals, pain points</span>
-              </summary>
-              <div className="px-4 pb-4 pt-2 border-t border-gray-100">
-                <textarea
-                  value={auditContextForm.client_background}
-                  onChange={e => updateContextField('client_background', e.target.value)}
-                  rows={4}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y"
-                  placeholder="e.g. Launching a new line in Q2, focused on VIP retention, deliverability concerns…"
-                />
-              </div>
-            </details>
-
-            <details className="group border border-gray-200 rounded-lg">
-              <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 font-medium text-gray-900 bg-gray-50/80 rounded-lg group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
-                <span>Custom instructions for the audit</span>
-                <span className="text-xs text-gray-500 font-normal">Focus areas</span>
-              </summary>
-              <div className="px-4 pb-4 pt-2 border-t border-gray-100">
-                <textarea
-                  value={auditContextForm.custom_instructions}
-                  onChange={e => updateContextField('custom_instructions', e.target.value)}
-                  rows={3}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y"
-                  placeholder="e.g. Deep dive on abandoned cart, they asked about SMS…"
-                />
-              </div>
-            </details>
+            <div>
+              <label className="block text-sm font-medium text-gray-900">Audit focus areas</label>
+              <p className="mb-1.5 text-xs text-gray-500">Anything specific the audit should dig into.</p>
+              <textarea
+                value={auditContextForm.custom_instructions}
+                onChange={e => updateContextField('custom_instructions', e.target.value)}
+                rows={3}
+                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y"
+                placeholder="e.g. Deep dive on abandoned cart, they asked about SMS…"
+              />
+            </div>
 
             {revenueTemplates.length > 0 && (
               <details className="group border border-gray-200 rounded-lg" open>
