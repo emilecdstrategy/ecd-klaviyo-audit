@@ -17,7 +17,6 @@ import type { AuditContextDraft } from '../lib/audit-context-agent';
 import { useAuth } from '../contexts/AuthContext';
 import { createAudit, createAuditSections, createClient, ensureClientCreator, findClientByCompanyName, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates, uploadReportScreenshot } from '../lib/db';
 import { resolveRevenueOpportunityContent } from '../lib/revenue-opportunity-content';
-import { fetchTranscriptFromLink } from '../lib/transcript';
 import type { Audit, AuditContext, AuditType, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { KLAVIYO_AUDIT_SECTION_KEYS, WEB_AUDIT_SECTION_KEYS } from '../lib/audit-sections';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
@@ -33,10 +32,9 @@ import {
 } from '../lib/audit-pipeline-status';
 import { startWebAnalysis } from '../lib/web-pipeline-status';
 
-const CONTEXT_CHAR_SOFT = 15_000;
 const CONTEXT_CHAR_HARD = 30_000;
 
-type StepKey = 'type' | 'prospect' | 'klaviyo_connection' | 'web_setup' | 'attribution' | 'context' | 'run';
+type StepKey = 'type' | 'prospect' | 'klaviyo_connection' | 'web_setup' | 'attribution' | 'context' | 'line_items' | 'run';
 
 type WizardStep = { key: StepKey; label: string; description: string };
 
@@ -45,7 +43,8 @@ const KLAVIYO_STEPS: WizardStep[] = [
   { key: 'prospect', label: 'Prospect Details', description: 'Basic information' },
   { key: 'klaviyo_connection', label: 'API Connection', description: 'Connect Klaviyo data' },
   { key: 'attribution', label: 'Attribution Model', description: 'Optional screenshot' },
-  { key: 'context', label: 'Client Context', description: 'Optional notes for the AI' },
+  { key: 'context', label: 'Client Context', description: 'AI-assisted' },
+  { key: 'line_items', label: 'Line Items', description: 'Optional add-ons' },
   { key: 'run', label: 'Run Analysis', description: 'AI-powered audit' },
 ];
 
@@ -53,7 +52,8 @@ const WEB_STEPS: WizardStep[] = [
   { key: 'type', label: 'Audit Type', description: 'Klaviyo or Web' },
   { key: 'prospect', label: 'Prospect Details', description: 'Basic information' },
   { key: 'web_setup', label: 'Website', description: 'Pages and store access' },
-  { key: 'context', label: 'Client Context', description: 'Optional notes' },
+  { key: 'context', label: 'Client Context', description: 'AI-assisted' },
+  { key: 'line_items', label: 'Line Items', description: 'Optional add-ons' },
   { key: 'run', label: 'Run Analysis', description: 'Capture and analyze' },
 ];
 
@@ -229,9 +229,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     client_background: '',
     custom_instructions: '',
   });
-  const [transcriptLink, setTranscriptLink] = useState('');
-  const [transcriptFetching, setTranscriptFetching] = useState(false);
-  const [transcriptMsg, setTranscriptMsg] = useState<{ type: 'ok' | 'error'; text: string } | null>(null);
 
   const [attributionScreenshot, setAttributionScreenshot] = useState<File | null>(null);
   const [attributionPreviewUrl, setAttributionPreviewUrl] = useState<string | null>(null);
@@ -296,44 +293,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     setForm(prev => ({ ...prev, [field]: value }));
   };
 
-  const updateContextField = (field: keyof typeof auditContextForm, value: string) => {
-    const capped = value.length > CONTEXT_CHAR_HARD ? value.slice(0, CONTEXT_CHAR_HARD) : value;
-    setAuditContextForm(prev => ({ ...prev, [field]: capped }));
-  };
-
-  const appendMeetingNotesFromFile = async (file: File) => {
-    const lower = file.name.toLowerCase();
-    if (!lower.endsWith('.txt') && !lower.endsWith('.md') && file.type !== 'text/plain') {
-      setError('Please upload a .txt or .md file, or paste notes directly.');
-      return;
-    }
-    const text = await file.text();
-    const block = `\n\n--- From file: ${file.name} ---\n${text}`;
-    const next = (auditContextForm.meeting_notes + block).slice(0, CONTEXT_CHAR_HARD);
-    setAuditContextForm(prev => ({ ...prev, meeting_notes: next }));
-    setError('');
-  };
-
-  const fetchTranscriptLink = async () => {
-    const url = transcriptLink.trim();
-    if (!url || transcriptFetching) return;
-    setTranscriptFetching(true);
-    setTranscriptMsg(null);
-    try {
-      const res = await fetchTranscriptFromLink(url);
-      if (!res.ok) {
-        setTranscriptMsg({ type: 'error', text: res.message });
-        return;
-      }
-      const existing = auditContextForm.meeting_notes.trim();
-      const next = (existing ? `${existing}\n\n${res.content}` : res.content).slice(0, CONTEXT_CHAR_HARD);
-      setAuditContextForm(prev => ({ ...prev, meeting_notes: next }));
-      setTranscriptLink('');
-      setTranscriptMsg({ type: 'ok', text: 'Transcript pulled in. Review it below.' });
-    } finally {
-      setTranscriptFetching(false);
-    }
-  };
 
   const applyContextDraft = (draft: AuditContextDraft) => {
     setAuditContextForm(prev => ({
@@ -1197,15 +1156,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {stepKey === 'context' && (
-          <div className="bg-white rounded-xl p-6 card-shadow space-y-6 animate-slide-up mx-auto w-full max-w-2xl">
+          <div className="animate-slide-up mx-auto w-full max-w-5xl">
             {error ? (
-              <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
+              <div className="mb-4 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
             ) : null}
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+            <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Client Context</h2>
-                <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-                  Optional. Add the call transcript, then let AI draft the client background and focus areas, or fill them in yourself.
+                <p className="text-sm text-gray-500 mt-1">
+                  Chat with the assistant to capture the context for this audit. Paste the Fireflies link and answer a couple of quick questions.
                 </p>
               </div>
               <button
@@ -1217,160 +1176,123 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               </button>
             </div>
 
-            {/* 1. Source material: the call transcript or notes. */}
-            <div className="space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <label className="text-sm font-medium text-gray-900">Call transcript or notes</label>
-                <span className="text-xs text-gray-400">Fireflies or Google Doc link, or paste</span>
-              </div>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <input
-                  type="url"
-                  value={transcriptLink}
-                  onChange={e => { setTranscriptLink(e.target.value); setTranscriptMsg(null); }}
-                  onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); void fetchTranscriptLink(); } }}
-                  placeholder="Paste a Fireflies or Google Doc link…"
-                  className="flex-1 px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                />
-                <button
-                  type="button"
-                  onClick={() => void fetchTranscriptLink()}
-                  disabled={!transcriptLink.trim() || transcriptFetching}
-                  className="inline-flex shrink-0 items-center justify-center gap-1.5 rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-50"
-                >
-                  {transcriptFetching ? <><Loader2 className="h-4 w-4 animate-spin" /> Fetching…</> : 'Fetch'}
-                </button>
-              </div>
-              {transcriptMsg && (
-                <p className={`text-xs ${transcriptMsg.type === 'error' ? 'text-red-600' : 'text-emerald-600'}`}>{transcriptMsg.text}</p>
-              )}
-              <textarea
-                value={auditContextForm.meeting_notes}
-                onChange={e => updateContextField('meeting_notes', e.target.value)}
-                rows={6}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y"
-                placeholder="Or paste the transcript / notes here…"
-              />
-              <div className="flex flex-wrap items-center gap-3 text-xs text-gray-500">
-                <span>
-                  {auditContextForm.meeting_notes.length.toLocaleString()} / {CONTEXT_CHAR_HARD.toLocaleString()} characters
-                  {auditContextForm.meeting_notes.length > CONTEXT_CHAR_SOFT && (
-                    <span className="text-amber-600 ml-1">(large; consider trimming)</span>
-                  )}
-                </span>
-                <label className="inline-flex items-center gap-1.5 cursor-pointer text-brand-primary font-medium">
-                  <input
-                    type="file"
-                    accept=".txt,.md,text/plain"
-                    className="sr-only"
-                    onChange={async (e) => {
-                      const f = e.target.files?.[0];
-                      e.target.value = '';
-                      if (f) await appendMeetingNotesFromFile(f);
-                    }}
-                  />
-                  Upload .txt / .md
-                </label>
-              </div>
-            </div>
-
-            {/* 2. Let the AI draft the context from the transcript above. */}
-            <AuditContextAssistant
-              onApply={applyContextDraft}
-              getSnapshot={() => ({
-                client_name: form.clientName,
-                company_name: form.companyName,
-                website_url: form.websiteUrl,
-                audit_type: auditType ?? undefined,
-                meeting_notes: auditContextForm.meeting_notes,
-                client_background: auditContextForm.client_background,
-                custom_instructions: auditContextForm.custom_instructions,
-              })}
-            />
-
-            {/* 3. The context fields (AI fills these, or edit by hand). */}
-            <div>
-              <label className="block text-sm font-medium text-gray-900">Client background</label>
-              <p className="mb-1.5 text-xs text-gray-500">Who they are, their goals and pain points.</p>
-              <textarea
-                value={auditContextForm.client_background}
-                onChange={e => updateContextField('client_background', e.target.value)}
-                rows={4}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y"
-                placeholder="e.g. Launching a new line in Q2, focused on VIP retention, deliverability concerns…"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-900">Audit focus areas</label>
-              <p className="mb-1.5 text-xs text-gray-500">Anything specific the audit should dig into.</p>
-              <textarea
-                value={auditContextForm.custom_instructions}
-                onChange={e => updateContextField('custom_instructions', e.target.value)}
-                rows={3}
-                className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 resize-y"
-                placeholder="e.g. Deep dive on abandoned cart, they asked about SMS…"
-              />
-            </div>
-
-            {revenueTemplates.length > 0 && (
-              <details className="group border border-gray-200 rounded-lg" open>
-                <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 font-medium text-gray-900 bg-gray-50/80 rounded-lg group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
-                  <span>Predefined Line Items</span>
-                  <span className="text-xs text-gray-500 font-normal">Optional report add-ons</span>
-                </summary>
-                <div className="px-4 pb-4 pt-2 border-t border-gray-100 space-y-2">
-                  <p className="text-xs text-gray-500">
-                    Select opportunities to include in this report. You can edit their copy and monthly value later in the Line Item Catalog.
-                  </p>
-                  <div className="space-y-2">
-                    {revenueTemplates.map(template => {
-                      const checked = form.selectedAddOnSlugs.includes(template.slug);
-                      return (
-                        <div
-                          key={template.id}
-                          className={`rounded-lg border px-3 py-2.5 transition-colors ${
-                            checked
-                              ? 'border-brand-primary/30 bg-brand-primary/5'
-                              : 'border-gray-100 bg-white'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-3">
-                            <div className="min-w-0 pr-2">
-                              <p className="text-sm font-medium text-gray-800">{template.name}</p>
-                              {template.description && (
-                                <p className="text-xs text-gray-500 mt-0.5">{template.description}</p>
-                              )}
-                            </div>
-                            <div className="flex shrink-0 items-center gap-2">
-                              <button
-                                type="button"
-                                role="switch"
-                                aria-checked={checked}
-                                onClick={() => {
-                                  setForm(prev => {
-                                    const current = prev.selectedAddOnSlugs;
-                                    const next = checked
-                                      ? current.filter(slug => slug !== template.slug)
-                                      : [...current, template.slug];
-                                    return {
-                                      ...prev,
-                                      selectedAddOnSlugs: next,
-                                    };
-                                  });
-                                }}
-                                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${checked ? 'bg-brand-primary' : 'bg-gray-200'}`}
-                              >
-                                <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      );
-                    })}
+            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+              {/* Left: captured context (read-only; filled by the assistant). */}
+              <div className="rounded-xl bg-white p-6 card-shadow">
+                <h3 className="text-sm font-semibold text-gray-900">Captured context</h3>
+                {(auditContextForm.client_background.trim() || auditContextForm.custom_instructions.trim()) ? (
+                  <div className="mt-3 space-y-4 text-sm">
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Client background</p>
+                      <p className="mt-1 whitespace-pre-wrap leading-relaxed text-gray-700">
+                        {auditContextForm.client_background || <span className="text-gray-400">Not captured yet</span>}
+                      </p>
+                    </div>
+                    <div>
+                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Audit focus areas</p>
+                      <p className="mt-1 whitespace-pre-wrap leading-relaxed text-gray-700">
+                        {auditContextForm.custom_instructions || <span className="text-gray-400">Not captured yet</span>}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="font-semibold uppercase tracking-wide text-gray-400">Subscriptions</span>
+                      <span className="text-gray-600">{form.clientSellsSubscriptions ? 'Sells subscriptions' : 'Not indicated'}</span>
+                    </div>
+                    {auditContextForm.meeting_notes.trim() && (
+                      <p className="text-[11px] text-gray-400">
+                        Transcript captured ({auditContextForm.meeting_notes.length.toLocaleString()} chars) and saved with the audit.
+                      </p>
+                    )}
                   </div>
-                </div>
-              </details>
+                ) : (
+                  <div className="mt-3 rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-gray-400">
+                    Chat with the assistant to capture the client background and audit focus areas. They will appear here for you to review before running the audit.
+                  </div>
+                )}
+              </div>
+
+              {/* Right: docked context assistant. */}
+              <div className="h-[540px]">
+                <AuditContextAssistant
+                  onApply={applyContextDraft}
+                  onTranscript={(notes) => setAuditContextForm(prev => ({ ...prev, meeting_notes: notes.slice(0, CONTEXT_CHAR_HARD) }))}
+                  getSnapshot={() => ({
+                    client_name: form.clientName,
+                    company_name: form.companyName,
+                    website_url: form.websiteUrl,
+                    audit_type: auditType ?? undefined,
+                    meeting_notes: auditContextForm.meeting_notes,
+                    client_background: auditContextForm.client_background,
+                    custom_instructions: auditContextForm.custom_instructions,
+                  })}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        {stepKey === 'line_items' && (
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-4 animate-slide-up mx-auto w-full max-w-2xl">
+            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900">Line Items</h2>
+                <p className="text-sm text-gray-500 mt-1">
+                  Optional. Select predefined revenue opportunities to include in the report. You can edit their copy and value later in the Line Item Catalog.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => { setError(''); setStep(step + 1); }}
+                className="text-sm text-brand-primary font-medium hover:underline whitespace-nowrap"
+              >
+                Skip this step
+              </button>
+            </div>
+
+            {revenueTemplates.length > 0 ? (
+              <div className="space-y-2">
+                {revenueTemplates.map(template => {
+                  const checked = form.selectedAddOnSlugs.includes(template.slug);
+                  return (
+                    <div
+                      key={template.id}
+                      className={`rounded-lg border px-3 py-2.5 transition-colors ${
+                        checked ? 'border-brand-primary/30 bg-brand-primary/5' : 'border-gray-100 bg-white'
+                      }`}
+                    >
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0 pr-2">
+                          <p className="text-sm font-medium text-gray-800">{template.name}</p>
+                          {template.description && (
+                            <p className="text-xs text-gray-500 mt-0.5">{template.description}</p>
+                          )}
+                        </div>
+                        <div className="flex shrink-0 items-center gap-2">
+                          <button
+                            type="button"
+                            role="switch"
+                            aria-checked={checked}
+                            onClick={() => {
+                              setForm(prev => {
+                                const current = prev.selectedAddOnSlugs;
+                                const next = checked
+                                  ? current.filter(slug => slug !== template.slug)
+                                  : [...current, template.slug];
+                                return { ...prev, selectedAddOnSlugs: next };
+                              });
+                            }}
+                            className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${checked ? 'bg-brand-primary' : 'bg-gray-200'}`}
+                          >
+                            <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${checked ? 'translate-x-4' : 'translate-x-0'}`} />
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <p className="text-sm text-gray-400">No predefined line items available. Add them in the Line Item Catalog.</p>
             )}
           </div>
         )}

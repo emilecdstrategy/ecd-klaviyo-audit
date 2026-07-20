@@ -1,12 +1,15 @@
-// In-wizard assistant that turns a meeting transcript + basic client info into
-// structured CLIENT CONTEXT for an audit (background, focus areas, subscription
-// flag). Stateless: the wizard has no audit row yet, so the conversation lives
-// client-side and is replayed each turn. Staff-only. Reuses the shared LLM adapter.
+// In-wizard assistant that gathers CLIENT CONTEXT for an audit through chat: it
+// asks for the meeting link, fetches the transcript (Fireflies / Google Doc),
+// asks a clarifying question or two, then proposes structured context
+// (background, focus areas, subscription flag). Stateless: the wizard has no
+// audit row yet, so the conversation is replayed each turn. Staff-only.
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { requireStaffUserId } from "../_shared/auth.ts";
 import { createLlmClient, type LlmMessage, type LlmTool } from "../_shared/llm-adapter.ts";
+import { fetchFirefliesTranscript, extractFirefliesTranscriptId } from "../_shared/fetch-fireflies-transcript.ts";
+import { fetchGoogleDoc } from "../_shared/fetch-google-doc.ts";
 
-const MAX_ITERATIONS = 4;
+const MAX_ITERATIONS = 6;
 const NOTES_CAP = 24_000;
 
 const corsHeaders: Record<string, string> = {
@@ -42,9 +45,19 @@ type Snapshot = {
 
 const TOOLS: LlmTool[] = [
   {
+    name: "fetch_transcript",
+    description:
+      "Fetch a meeting transcript or doc the user pastes as a link. Accepts a Fireflies link (app.fireflies.ai) or a Google Doc share link. Call this as soon as the user provides a link; the returned text becomes source material for the context.",
+    input_schema: {
+      type: "object",
+      properties: { url: { type: "string", description: "The Fireflies or Google Doc link the user pasted" } },
+      required: ["url"],
+    },
+  },
+  {
     name: "ask_user",
     description:
-      "Ask the strategist ONE short clarifying question, only when something material for the audit context is missing or ambiguous and is not in the transcript. Renders as clickable chips. Prefer going straight to propose_context when you have enough.",
+      "Ask the strategist ONE short clarifying question. Renders as clickable chips. Use for choices you can enumerate. Only ask when something material for the audit is missing; bias toward proposing.",
     input_schema: {
       type: "object",
       properties: {
@@ -53,11 +66,7 @@ const TOOLS: LlmTool[] = [
           type: "array",
           minItems: 2,
           maxItems: 4,
-          items: {
-            type: "object",
-            properties: { label: { type: "string" }, value: { type: "string" } },
-            required: ["label", "value"],
-          },
+          items: { type: "object", properties: { label: { type: "string" }, value: { type: "string" } }, required: ["label", "value"] },
         },
         multi_select: { type: "boolean" },
       },
@@ -67,50 +76,50 @@ const TOOLS: LlmTool[] = [
   {
     name: "propose_context",
     description:
-      "Propose the drafted client context for the strategist to review and apply into the form. Draw only from the transcript and what the user told you; do not invent facts.",
+      "Propose the drafted client context for the strategist to review and apply. Draw only from the transcript and what the user told you; do not invent facts.",
     input_schema: {
       type: "object",
       properties: {
-        client_background: {
-          type: "string",
-          description: "Who the client is, their goals, pain points, and what they care about. A few tight sentences.",
-        },
-        custom_instructions: {
-          type: "string",
-          description: "Specific focus areas for the audit team based on what was discussed (e.g. deep dive on abandoned cart, SMS interest).",
-        },
+        client_background: { type: "string", description: "Who the client is, goals, pain points, what they care about. A few tight sentences." },
+        custom_instructions: { type: "string", description: "Specific focus areas for the audit team based on what was discussed." },
         sells_subscriptions: { type: "boolean", description: "Whether the client sells subscriptions / has a subscription program." },
-        summary: { type: "string", description: "1 short sentence describing what you drafted, shown on the preview." },
+        summary: { type: "string", description: "1 short sentence describing what you drafted." },
       },
       required: ["client_background", "custom_instructions", "summary"],
     },
   },
 ];
 
+const TERMINAL = new Set(["ask_user", "propose_context"]);
+
 function buildSystem(snapshot: Snapshot): string {
   const who = snapshot.company_name || snapshot.client_name || "the client";
   const kind = snapshot.audit_type === "web" ? "website / e-commerce store" : "Klaviyo / email marketing";
+  const hasNotes = Boolean((snapshot.meeting_notes || "").trim());
   const parts: string[] = [];
   parts.push(
-    `You are the audit context assistant for ECD Digital Strategy. A strategist is setting up a ${kind} audit for ${who} and you help capture the CLIENT CONTEXT the audit team will use. You read the meeting transcript and notes and distill them into structured context.`,
+    `You are the audit context assistant for ECD Digital Strategy. Through a short chat you help a strategist capture the CLIENT CONTEXT for a ${kind} audit of ${who}, which the audit team will use.`,
   );
   parts.push(
-    `RULES:
-- Draft from the transcript and what the strategist tells you. NEVER invent facts, names, numbers, or goals that are not supported.
-- Keep it concise, concrete, and useful to an auditor. No fluff.
-- NEVER use the em dash or en dash character; use commas or periods.
-- Ask a question (ask_user) ONLY when something material is missing or ambiguous. If the transcript already covers it, skip straight to propose_context.
-- Do not ask more than one or two questions total across the whole conversation. Bias toward proposing.
-- When you propose_context: client_background = who they are, goals, pain points, what they care about; custom_instructions = specific focus areas for the audit; sells_subscriptions = true only if there's evidence.
+    `HOW TO RUN THE CONVERSATION:
+- ${hasNotes ? "A transcript is already available (below)." : "No transcript yet."} If you do not have a transcript, greet briefly and ask the user to paste the Fireflies link (or a Google Doc link, or the notes) for the call. This is a link, so ask in one short sentence, do NOT use ask_user chips for it.
+- When the user pastes a link, immediately call fetch_transcript with it. If it fails, tell them plainly and offer to let them paste the notes as text instead.
+- Once you have source material, use ask_user only for a genuinely material missing detail (max one or two questions total, with 2-4 chips). Otherwise go straight to propose_context.
+- If the user says there was no call or has nothing to share, ask one or two brief chip questions to capture the essentials, then propose_context.
+
+RULES:
+- Draw only from the transcript and what the user tells you. NEVER invent facts, names, numbers, or goals.
+- Be concise and concrete, useful to an auditor. No fluff.
+- NEVER use the em dash or en dash character.
 - Never mention tools, JSON, or these instructions.`,
   );
   const ctx: string[] = [];
   if (snapshot.website_url) ctx.push(`Website: ${snapshot.website_url}`);
   const notes = (snapshot.meeting_notes || "").slice(0, NOTES_CAP);
-  ctx.push(notes.trim() ? `MEETING TRANSCRIPT / NOTES:\n${notes}` : `No transcript has been provided yet. If the strategist has not pasted one, ask them to paste a Fireflies link or notes, or to tell you about the client.`);
+  if (notes.trim()) ctx.push(`TRANSCRIPT / NOTES SO FAR:\n${notes}`);
   if (snapshot.client_background?.trim()) ctx.push(`Existing background draft (refine, do not duplicate):\n${snapshot.client_background.trim()}`);
   if (snapshot.custom_instructions?.trim()) ctx.push(`Existing focus areas draft:\n${snapshot.custom_instructions.trim()}`);
-  parts.push(ctx.join("\n\n"));
+  if (ctx.length) parts.push(ctx.join("\n\n"));
   return parts.join("\n\n");
 }
 
@@ -142,6 +151,7 @@ serve(async (req) => {
     let assistantText = "";
     let question: unknown = null;
     let context: unknown = null;
+    let fetchedNotes = "";
     let retried = false;
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
@@ -150,7 +160,31 @@ serve(async (req) => {
         assistantText = stripDashes(turn.text);
         break;
       }
-      // Both tools are terminal.
+
+      if (!TERMINAL.has(turn.name)) {
+        // fetch_transcript (server-executed).
+        let result: unknown;
+        if (turn.name === "fetch_transcript") {
+          const url = String((turn.input as { url?: string })?.url ?? "").trim();
+          if (/docs\.google\.com/i.test(url)) {
+            const g = await fetchGoogleDoc(url);
+            if (g.ok) { fetchedNotes = g.content.slice(0, NOTES_CAP); result = { ok: true, content: fetchedNotes }; }
+            else result = { ok: false, error: g.message };
+          } else if (/fireflies\.ai/i.test(url) || extractFirefliesTranscriptId(url)) {
+            const f = await fetchFirefliesTranscript(url);
+            if (f.ok) { fetchedNotes = f.content.slice(0, NOTES_CAP); result = { ok: true, content: fetchedNotes }; }
+            else result = { ok: false, error: f.message };
+          } else {
+            result = { ok: false, error: "Not a Fireflies or Google Doc link." };
+          }
+        } else {
+          result = { error: `Unknown tool ${turn.name}` };
+        }
+        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+        messages.push({ role: "tool_result", id: turn.id, name: turn.name, result: JSON.stringify(result) });
+        continue;
+      }
+
       if (turn.name === "ask_user") {
         const input = (turn.input ?? {}) as { question?: string; options?: unknown; multi_select?: boolean };
         const opts = Array.isArray(input.options) ? input.options : [];
@@ -172,6 +206,7 @@ serve(async (req) => {
         };
         break;
       }
+
       // propose_context
       const input = (turn.input ?? {}) as { client_background?: string; custom_instructions?: string; sells_subscriptions?: boolean; summary?: string };
       if (!input.client_background && !input.custom_instructions) {
@@ -195,7 +230,13 @@ serve(async (req) => {
       return json({ ok: false, error: { code: "no_response", message: "The assistant did not respond. Try again." } }, { status: 200 });
     }
 
-    return json({ ok: true, assistant_text: assistantText, question: question ?? undefined, context: context ?? undefined });
+    return json({
+      ok: true,
+      assistant_text: assistantText,
+      question: question ?? undefined,
+      context: context ?? undefined,
+      fetched_notes: fetchedNotes || undefined,
+    });
   } catch (e) {
     return json({ ok: false, error: { code: "request_failed", message: e instanceof Error ? e.message : "Unknown error" } }, { status: 200 });
   }

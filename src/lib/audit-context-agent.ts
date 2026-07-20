@@ -28,6 +28,8 @@ export type AuditContextTurn = {
   assistant_text: string;
   question?: AuditContextQuestion;
   context?: AuditContextDraft;
+  /** Raw transcript the assistant fetched this turn (persisted to the audit). */
+  fetched_notes?: string;
 };
 
 export async function sendAuditContextMessage(input: {
@@ -50,5 +52,10 @@ export async function sendAuditContextMessage(input: {
     throw error;
   }
   if (data?.ok !== true) throw new Error(data?.error?.message ?? 'The assistant request failed');
-  return { assistant_text: data.assistant_text ?? '', question: data.question, context: data.context };
+  return {
+    assistant_text: data.assistant_text ?? '',
+    question: data.question,
+    context: data.context,
+    fetched_notes: data.fetched_notes,
+  };
 }
