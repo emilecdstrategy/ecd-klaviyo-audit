@@ -12,6 +12,8 @@ import {
 import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import ClientSearchSelect from '../components/audit/ClientSearchSelect';
+import AuditContextAssistant from '../components/audit/AuditContextAssistant';
+import type { AuditContextDraft } from '../lib/audit-context-agent';
 import { useAuth } from '../contexts/AuthContext';
 import { createAudit, createAuditSections, createClient, ensureClientCreator, findClientByCompanyName, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates, uploadReportScreenshot } from '../lib/db';
 import { resolveRevenueOpportunityContent } from '../lib/revenue-opportunity-content';
@@ -331,6 +333,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     } finally {
       setTranscriptFetching(false);
     }
+  };
+
+  const applyContextDraft = (draft: AuditContextDraft) => {
+    setAuditContextForm(prev => ({
+      ...prev,
+      client_background: (draft.client_background || prev.client_background).slice(0, CONTEXT_CHAR_HARD),
+      custom_instructions: (draft.custom_instructions || prev.custom_instructions).slice(0, CONTEXT_CHAR_HARD),
+    }));
+    if (draft.sells_subscriptions) setForm(prev => ({ ...prev, clientSellsSubscriptions: true }));
   };
 
   function buildAuditContextForSave(): AuditContext | null {
@@ -1205,6 +1216,19 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 Skip this step
               </button>
             </div>
+
+            <AuditContextAssistant
+              onApply={applyContextDraft}
+              getSnapshot={() => ({
+                client_name: form.clientName,
+                company_name: form.companyName,
+                website_url: form.websiteUrl,
+                audit_type: auditType ?? undefined,
+                meeting_notes: auditContextForm.meeting_notes,
+                client_background: auditContextForm.client_background,
+                custom_instructions: auditContextForm.custom_instructions,
+              })}
+            />
 
             <details className="group border border-gray-200 rounded-lg open:ring-1 open:ring-brand-primary/15" open>
               <summary className="cursor-pointer list-none flex items-center justify-between px-4 py-3 font-medium text-gray-900 bg-gray-50/80 rounded-lg group-open:rounded-b-none [&::-webkit-details-marker]:hidden">
