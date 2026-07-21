@@ -12,25 +12,16 @@ import {
 import TopBar from '../components/layout/TopBar';
 import AuditWizardStepper from '../components/audit/AuditWizardStepper';
 import ClientSearchSelect from '../components/audit/ClientSearchSelect';
-import AuditContextAssistant from '../components/audit/AuditContextAssistant';
-import type { AuditContextDraft } from '../lib/audit-context-agent';
 import { useAuth } from '../contexts/AuthContext';
 import { createAudit, createAuditSections, createClient, ensureClientCreator, findClientByCompanyName, listClients, updateAudit, updateClient, listRevenueOpportunityTemplates, uploadReportScreenshot } from '../lib/db';
 import { resolveRevenueOpportunityContent } from '../lib/revenue-opportunity-content';
-import type { Audit, AuditContext, AuditType, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
+import type { Audit, AuditType, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { KLAVIYO_AUDIT_SECTION_KEYS, WEB_AUDIT_SECTION_KEYS } from '../lib/audit-sections';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 import { ShopifyTokenHelpTrigger } from '../components/web/ShopifyTokenHelpModal';
 import ImageUploadZone from '../components/ui/ImageUploadZone';
 import { supabase } from '../lib/supabase';
-import {
-  clearAuditGenerationActive,
-  markAuditGenerationActive,
-  nudgeProfileScan,
-  waitForServerAuditAnalysis,
-} from '../lib/audit-pipeline-status';
-import { startWebAnalysis } from '../lib/web-pipeline-status';
 
 const CONTEXT_CHAR_HARD = 30_000;
 
@@ -57,130 +48,6 @@ const WEB_STEPS: WizardStep[] = [
 
 type NewAuditProps = { asModal?: boolean };
 
-async function invokeKlaviyoSnapshot(body: Record<string, unknown>) {
-  // Refresh access token so the gateway (JWT verify) and Edge auth see a valid JWT.
-  // Do not pass a custom Authorization header on invoke — that bypasses the client’s token refresh path.
-  await supabase.auth.refreshSession().catch(() => {});
-  const { data: { session } } = await supabase.auth.getSession();
-  if (!session?.access_token) {
-    throw new Error('Your session has expired. Please refresh the page, sign in again, and retry.');
-  }
-  return supabase.functions.invoke<any>('klaviyo_fetch_snapshot', { body });
-}
-
-type KlaviyoRunRow = {
-  id: string;
-  correlation_id: string;
-  stage: string | null;
-  status: string;
-  elapsed_ms: number | null;
-  error_code: string | null;
-  error_message: string | null;
-  created_at: string;
-};
-
-/**
- * Poll klaviyo_runs for a stage-2 (reporting) row for the given audit. Stage 2
- * is chain-invoked from stage 1 with a fresh 150s budget, so wall time is
- * Klaviyo-bound (2/min steady reporting rate), not edge-timeout-bound. We keep
- * a generous cap while still nudging stage 2 if nothing has appeared.
- */
-async function waitForReportingStage(
-  auditId: string,
-  onProgress?: (latest: KlaviyoRunRow | null) => void,
-): Promise<'success' | 'partial' | 'error' | 'timed_out'> {
-  const maxMs = 10 * 60 * 1000;
-  const t0 = Date.now();
-  let lastNudge = 0;
-  while (Date.now() - t0 < maxMs) {
-    const { data } = await supabase
-      .from('klaviyo_runs')
-      .select('id, correlation_id, stage, status, elapsed_ms, error_code, error_message, created_at')
-      .eq('audit_id', auditId)
-      .eq('stage', 'reporting')
-      .order('created_at', { ascending: false })
-      .limit(1);
-    const latest = (data?.[0] ?? null) as KlaviyoRunRow | null;
-    onProgress?.(latest);
-    if (latest?.status === 'success' || latest?.status === 'partial') return latest.status as any;
-    if (latest?.status === 'error' || latest?.status === 'timeout') return 'error';
-    // If no reporting row has been written after ~120s, kick stage 2 again.
-    if (!latest && Date.now() - t0 > 120_000 && Date.now() - lastNudge > 90_000) {
-      lastNudge = Date.now();
-      invokeKlaviyoSnapshot({ stage: 'reporting', audit_id: auditId }).catch(() => {});
-    }
-    await new Promise((r) => setTimeout(r, 3000));
-  }
-  return 'timed_out';
-}
-
-/** Poll until profile job finishes. Large accounts can take hours across many Edge invocations. */
-async function waitForProfileJobComplete(
-  auditId: string,
-  onProgress?: (totalProfiles: number) => void,
-): Promise<'complete' | 'skipped' | 'timed_out'> {
-  const maxMs = 4 * 60 * 60 * 1000; // 4 hours (was 45m; huge lists need many resume chunks)
-  const t0 = Date.now();
-  let lastUpdated = '';
-  let staleCount = 0;
-  let lastResumeAssist = 0;
-  while (Date.now() - t0 < maxMs) {
-    const { data, error } = await supabase
-      .from('klaviyo_profile_scan_jobs')
-      .select('status, error_message, total_profiles, subscribed, updated_at')
-      .eq('audit_id', auditId)
-      .maybeSingle();
-    if (error) throw error;
-    if (!data) throw new Error('Profile scan job not found');
-    if (data.status === 'complete') {
-      onProgress?.(data.total_profiles ?? 0);
-      return 'complete';
-    }
-    if (data.status === 'skipped') {
-      onProgress?.(data.total_profiles ?? 0);
-      return 'skipped';
-    }
-    if (data.status === 'failed') {
-      throw new Error(data.error_message || 'Audience metrics scan failed');
-    }
-    onProgress?.(data.total_profiles ?? 0);
-
-    // Detect stalled scan and re-trigger the resume chain sooner
-    if (data.updated_at === lastUpdated) {
-      staleCount++;
-    } else {
-      staleCount = 0;
-      lastUpdated = data.updated_at ?? '';
-    }
-    if (staleCount >= 3) {
-      staleCount = 0;
-      nudgeProfileScan(auditId).catch(() => {});
-    }
-    // Nudge resume periodically in case chain calls were dropped (large accounts)
-    if (Date.now() - lastResumeAssist > 90_000) {
-      lastResumeAssist = Date.now();
-      nudgeProfileScan(auditId).catch(() => {});
-    }
-    await new Promise((r) => setTimeout(r, 2000));
-  }
-  return 'timed_out';
-}
-
-function normalizeReportingDiagnostic(raw?: string | null, status?: number | null) {
-  const msg = (raw ?? '').trim();
-  if (!msg) return null;
-
-  const lower = msg.toLowerCase();
-  if (status === 429 || lower.includes('"code":"throttled"') || lower.includes('request was throttled') || lower.includes('throttle')) {
-    const m = msg.match(/expected available in\s+(\d+)\s+seconds/i);
-    const wait = m?.[1] ? ` (try again in ~${m[1]}s)` : '';
-    return `Klaviyo rate-limited reporting requests${wait}. Re-run the audit shortly.`;
-  }
-
-  if (msg.length > 140) return `${msg.slice(0, 140)}…`;
-  return msg;
-}
-
 export default function NewAudit({ asModal }: NewAuditProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -188,22 +55,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [step, setStep] = useState(0);
   const [auditType, setAuditType] = useState<AuditType | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
-  const [analysisProgress, setAnalysisProgress] = useState(0);
-  const [analysisStage, setAnalysisStage] = useState<string>('');
   const [error, setError] = useState('');
-  const [snapshotMeta, setSnapshotMeta] = useState<null | {
-    counts?: Record<string, number | null>;
-    reporting?: {
-      flow_reports?: Array<{ timeframe: string; rows: number }>;
-      campaign_reports?: Array<{ timeframe: string; rows: number }>;
-      errors?: Array<{ stage: string; status?: number | null; message: string }>;
-      reporting_ok?: boolean;
-    };
-    fetch?: any;
-    elapsed_ms?: number;
-    correlationId?: string;
-  }>(null);
-  const [stageRuns, setStageRuns] = useState<KlaviyoRunRow[]>([]);
   const [form, setForm] = useState({
     clientId: '',
     clientName: '',
@@ -221,12 +73,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     shopifyToken: '',
   });
   const [shopifyTest, setShopifyTest] = useState<{ status: 'idle' | 'testing' | 'ok' | 'failed'; message?: string }>({ status: 'idle' });
-
-  const [auditContextForm, setAuditContextForm] = useState({
-    meeting_notes: '',
-    client_background: '',
-    custom_instructions: '',
-  });
 
   const [attributionScreenshot, setAttributionScreenshot] = useState<File | null>(null);
   const [attributionPreviewUrl, setAttributionPreviewUrl] = useState<string | null>(null);
@@ -292,24 +138,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   };
 
 
-  const applyContextDraft = (draft: AuditContextDraft) => {
-    setAuditContextForm(prev => ({
-      ...prev,
-      client_background: (draft.client_background || prev.client_background).slice(0, CONTEXT_CHAR_HARD),
-      custom_instructions: (draft.custom_instructions || prev.custom_instructions).slice(0, CONTEXT_CHAR_HARD),
-    }));
-    if (draft.sells_subscriptions) setForm(prev => ({ ...prev, clientSellsSubscriptions: true }));
-  };
-
-  function buildAuditContextForSave(): AuditContext | null {
-    const meeting_notes = auditContextForm.meeting_notes.trim().slice(0, CONTEXT_CHAR_HARD) || undefined;
-    const client_background = auditContextForm.client_background.trim().slice(0, CONTEXT_CHAR_HARD) || undefined;
-    const custom_instructions = auditContextForm.custom_instructions.trim().slice(0, CONTEXT_CHAR_HARD) || undefined;
-    const sells_subscriptions = form.clientSellsSubscriptions || undefined;
-    if (!meeting_notes && !client_background && !custom_instructions && !sells_subscriptions) return null;
-    return { meeting_notes, client_background, custom_instructions, sells_subscriptions };
-  }
-
   const handleClientSelect = (clientId: string) => {
     const client = clients.find(c => c.id === clientId);
     if (client) {
@@ -335,9 +163,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [hasSavedKlaviyoConnection]);
 
-  // Poll recent klaviyo_runs (by audit_id) while analyzing so the "View run log" panel
-  // shows all stages in real time — each stage gets its own correlation_id.
-  const [currentAuditId, setCurrentAuditId] = useState<string | null>(null);
   const mountedRef = useRef(true);
   // Guards against a double-submit (rapid double-click / re-entrancy) creating two audits.
   const submittingRef = useRef(false);
@@ -349,22 +174,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     };
   }, []);
 
-  useEffect(() => {
-    if (!analyzing || !currentAuditId) return;
-    let cancelled = false;
-    const tick = async () => {
-      const { data } = await supabase
-        .from('klaviyo_runs')
-        .select('id, correlation_id, stage, status, elapsed_ms, error_code, error_message, created_at')
-        .eq('audit_id', currentAuditId)
-        .order('created_at', { ascending: false })
-        .limit(10);
-      if (!cancelled && data) setStageRuns(data as KlaviyoRunRow[]);
-    };
-    const id = setInterval(tick, 3000);
-    tick();
-    return () => { cancelled = true; clearInterval(id); };
-  }, [analyzing, currentAuditId]);
 
   const testShopifyConnection = async () => {
     setShopifyTest({ status: 'testing' });
