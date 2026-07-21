@@ -1,14 +1,21 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { normalizeShopDomain, shopifyRest, mapShopifyErrorCode, SHOPIFY_API_VERSION } from "../_shared/shopify-api.ts";
 
+const corsHeaders: Record<string, string> = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers": "authorization, x-client-info, apikey, content-type, accept, origin, referer, user-agent",
+  "access-control-allow-methods": "POST, OPTIONS",
+};
+
 function json(data: unknown, init: ResponseInit = {}) {
   return new Response(JSON.stringify(data), {
-    headers: { "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) },
+    headers: { ...corsHeaders, "content-type": "application/json; charset=utf-8", ...(init.headers ?? {}) },
     ...init,
   });
 }
 
 serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
   try {
     const { shopDomain: rawDomain, accessToken } = (await req.json()) as { shopDomain?: string; accessToken?: string };

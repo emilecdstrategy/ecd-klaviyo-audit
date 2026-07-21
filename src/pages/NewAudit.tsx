@@ -48,6 +48,18 @@ const WEB_STEPS: WizardStep[] = [
 
 type NewAuditProps = { asModal?: boolean };
 
+/** Best-effort guess of a store's *.myshopify.com domain from its public URL,
+ * e.g. https://www.powerplanter.com -> powerplanter.myshopify.com. Editable. */
+function guessShopifyDomain(url: string): string {
+  const raw = (url || '').trim();
+  if (!raw) return '';
+  const host = raw.replace(/^https?:\/\//i, '').replace(/^www\./i, '').split('/')[0].trim().toLowerCase();
+  if (!host) return '';
+  if (host.endsWith('.myshopify.com')) return host;
+  const label = host.split('.')[0];
+  return label ? `${label}.myshopify.com` : '';
+}
+
 export default function NewAudit({ asModal }: NewAuditProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -484,6 +496,14 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                   type="url"
                   value={form.websiteUrl}
                   onChange={e => updateField('websiteUrl', e.target.value)}
+                  onBlur={() => {
+                    // Prefill the Shopify store domain from the website URL as a
+                    // guess the user can correct.
+                    if (!hasSavedShopifyConnection && !form.shopifyDomain.trim()) {
+                      const guess = guessShopifyDomain(form.websiteUrl);
+                      if (guess) updateField('shopifyDomain', guess);
+                    }
+                  }}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                   placeholder="https://store.com"
                 />
@@ -533,14 +553,12 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             </div>
 
             <div className="border-t border-gray-100 pt-5 space-y-4">
-              <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
-                <div>
-                  <h3 className="text-sm font-semibold text-gray-900">Shopify backend metrics</h3>
-                  <p className="text-xs text-gray-500 mt-0.5">
-                    Optional. Connect the store's Admin API to pull orders, AOV, and revenue for the audit.
-                  </p>
-                </div>
-                <ShopifyTokenHelpTrigger className="inline-flex w-fit items-center gap-1.5 text-sm font-medium text-brand-primary transition-colors hover:text-brand-primary-dark hover:underline" />
+              <div>
+                <h3 className="text-sm font-semibold text-gray-900">Shopify backend metrics</h3>
+                <p className="text-xs text-gray-500 mt-0.5">
+                  Optional. Connect the store's Admin API to pull orders, AOV, and revenue for the audit.
+                </p>
+                <ShopifyTokenHelpTrigger className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary transition-colors hover:text-brand-primary-dark hover:underline" />
               </div>
               {hasSavedShopifyConnection ? (
                 <div className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 px-4 py-3 rounded-lg">
@@ -558,6 +576,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                         className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                         placeholder="my-store.myshopify.com"
                       />
+                      <p className="mt-1 text-[11px] text-gray-400">Auto-guessed from the website URL. Edit if it's different.</p>
                     </div>
                     <div>
                       <label className="block text-sm font-medium text-gray-700 mb-1">Admin API access token</label>
