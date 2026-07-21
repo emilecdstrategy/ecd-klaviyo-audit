@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { ExternalLink, HelpCircle, X } from 'lucide-react';
 
-const SHOPIFY_CUSTOM_APPS_HELP =
-  'https://help.shopify.com/en/manual/apps/app-types/custom-apps';
+const SHOPIFY_DEV_DASHBOARD_HELP =
+  'https://shopify.dev/docs/apps/build/dev-dashboard/get-api-access-tokens';
 
 type ShopifyTokenHelpModalProps = {
   open: boolean;
@@ -38,10 +38,12 @@ export function ShopifyTokenHelpModal({ open, onClose }: ShopifyTokenHelpModalPr
         <div className="flex shrink-0 items-start justify-between gap-3 border-b border-gray-100 px-5 py-4">
           <div>
             <h2 id="shopify-token-help-title" className="text-base font-semibold text-gray-900">
-              How to get a Shopify Admin API access token
+              How to get Shopify API credentials
             </h2>
             <p className="mt-1 text-xs text-gray-500">
-              Tokens start with <span className="font-mono text-gray-700">shpat_</span> and are only shown once when created.
+              Legacy pasteable tokens were retired in 2026. You now use an app's{' '}
+              <span className="font-mono text-gray-700">Client ID</span> and{' '}
+              <span className="font-mono text-gray-700">Client secret</span>.
             </p>
           </div>
           <button
@@ -57,45 +59,44 @@ export function ShopifyTokenHelpModal({ open, onClose }: ShopifyTokenHelpModalPr
         <div className="min-h-0 flex-1 overflow-y-auto px-5 py-4 text-sm text-gray-700">
           <ol className="list-decimal space-y-3 pl-5 marker:font-semibold marker:text-brand-primary">
             <li>
-              In the Shopify admin, go to{' '}
-              <span className="font-medium text-gray-900">Settings → Apps and sales channels → Develop apps</span>.
-              The store <strong className="font-semibold text-gray-900">owner</strong> may need to click{' '}
-              <span className="font-medium text-gray-900">Allow custom app development</span> first.
+              In the Shopify <span className="font-medium text-gray-900">Dev Dashboard</span>, create an app (or open an
+              existing one) and add the Admin API scopes{' '}
+              <strong className="font-semibold text-gray-900">read_orders</strong>,{' '}
+              <strong className="font-semibold text-gray-900">read_products</strong> and{' '}
+              <strong className="font-semibold text-gray-900">read_analytics</strong>. Read-only is enough; the audit
+              never writes to the store.
             </li>
             <li>
-              Click <span className="font-medium text-gray-900">Create an app</span> and name it something recognizable
-              (for example, "ECD Web Audit").
+              Install the app on the store you want to audit so those scopes are granted.
             </li>
             <li>
-              Open <span className="font-medium text-gray-900">Configure Admin API scopes</span> and enable{' '}
-              <strong className="font-semibold text-gray-900">read_orders</strong> and{' '}
-              <strong className="font-semibold text-gray-900">read_products</strong>. Read-only scopes are enough; the
-              audit never writes to the store.
+              Open the app's <span className="font-medium text-gray-900">Settings → Credentials</span> and copy the{' '}
+              <span className="font-medium text-gray-900">Client ID</span> and{' '}
+              <span className="font-medium text-gray-900">Client secret</span> (starts with{' '}
+              <span className="font-mono text-gray-700">shpss_</span>).
             </li>
             <li>
-              Click <span className="font-medium text-gray-900">Install app</span> in the API credentials tab.
-            </li>
-            <li>
-              Under <span className="font-medium text-gray-900">Admin API access token</span>, click{' '}
-              <span className="font-medium text-gray-900">Reveal token once</span>, copy it, and paste it into this app.
-              Shopify does not show the token again.
+              Paste both here with the store's <span className="font-mono text-gray-700">.myshopify.com</span> domain,
+              then click <span className="font-medium text-gray-900">Test connection</span>. We exchange them for a
+              short-lived token each time the audit runs.
             </li>
           </ol>
 
           <div className="mt-5 rounded-xl border border-amber-100 bg-amber-50/80 px-3 py-2.5 text-xs text-amber-900">
-            <strong className="font-semibold">Security:</strong> Treat the token like a password. Do not email it or
-            post it in chat. The store can uninstall the custom app at any time to revoke access.
+            <strong className="font-semibold">Same-organization only:</strong> the Client ID + secret method works when
+            the app and the store are in the same Shopify organization. For a client's store in a different org, the app
+            has to be installed there via OAuth instead.
           </div>
 
           <p className="mt-4 text-xs text-gray-500">
             Official guide:{' '}
             <a
-              href={SHOPIFY_CUSTOM_APPS_HELP}
+              href={SHOPIFY_DEV_DASHBOARD_HELP}
               target="_blank"
               rel="noopener noreferrer"
               className="font-medium text-brand-primary hover:underline"
             >
-              Custom apps (Shopify Help Center)
+              Get API access tokens (Shopify Dev)
               <ExternalLink className="mb-0.5 ml-0.5 inline h-3 w-3 opacity-70" aria-hidden />
             </a>
           </p>
@@ -121,7 +122,7 @@ type ShopifyTokenHelpTriggerProps = {
 };
 
 /** Opens the Shopify token help modal. Manages open state internally. */
-export function ShopifyTokenHelpTrigger({ className, label = 'How to get an access token' }: ShopifyTokenHelpTriggerProps) {
+export function ShopifyTokenHelpTrigger({ className, label = 'How to get API credentials' }: ShopifyTokenHelpTriggerProps) {
   const [open, setOpen] = useState(false);
   return (
     <>

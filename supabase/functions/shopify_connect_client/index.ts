@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization } from "../_shared/auth.ts";
 import { encryptString } from "../_shared/crypto.ts";
-import { normalizeShopDomain, shopifyRest, mapShopifyErrorCode, SHOPIFY_API_VERSION } from "../_shared/shopify-api.ts";
+import { normalizeShopDomain, shopifyRest, mapShopifyErrorCode, exchangeClientCredentials, SHOPIFY_API_VERSION } from "../_shared/shopify-api.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -43,15 +43,51 @@ serve(async (req) => {
     }
     await getUserIdFromAuthorization(req);
 
-    const input = (await req.json()) as { client_id?: string; shop_domain?: string; access_token?: string };
+    const input = (await req.json()) as {
+      client_id?: string;
+      shop_domain?: string;
+      access_token?: string;
+      shopify_client_id?: string;
+      shopify_client_secret?: string;
+    };
     const clientId = (input.client_id ?? "").trim();
-    const accessToken = (input.access_token ?? "").trim();
+    const appClientId = (input.shopify_client_id ?? "").trim();
+    const appClientSecret = (input.shopify_client_secret ?? "").trim();
+    const legacyToken = (input.access_token ?? "").trim();
     const shopDomain = normalizeShopDomain(input.shop_domain ?? "");
-    if (!clientId || !accessToken) {
-      return json({ ok: false, error: { code: "bad_request", message: "Missing client_id or access_token" }, correlationId }, { status: 400 });
+    if (!clientId) {
+      return json({ ok: false, error: { code: "bad_request", message: "Missing client_id" }, correlationId }, { status: 400 });
     }
     if (!shopDomain) {
       return json({ ok: false, error: { code: "bad_request", message: "Enter a valid *.myshopify.com store domain" }, correlationId }, { status: 400 });
+    }
+    if (!(appClientId && appClientSecret) && !legacyToken) {
+      return json({ ok: false, error: { code: "bad_request", message: "Provide a Shopify Client ID and Client secret" }, correlationId }, { status: 400 });
+    }
+
+    // Determine the auth method and get an access token to verify + read shop
+    // metadata. Preferred path: Dev Dashboard client_credentials. The secret we
+    // persist is the app client secret (exchanged for a fresh token each run);
+    // the legacy path persists a static admin token.
+    const authMethod = appClientId && appClientSecret ? "client_credentials" : "admin_token";
+    let accessToken = legacyToken;
+    if (authMethod === "client_credentials") {
+      const grant = await exchangeClientCredentials(shopDomain, appClientId, appClientSecret);
+      if (!grant.ok) {
+        return json(
+          {
+            ok: false,
+            correlationId,
+            error: {
+              code: grant.status ? mapShopifyErrorCode(grant.status) : "token_exchange_failed",
+              message: `Could not get an access token from Shopify (${grant.status || "network error"}): ${grant.error}. The client_credentials grant only works when the app and store are in the same Shopify organization.`,
+              status: grant.status,
+            },
+          },
+          { status: 200 },
+        );
+      }
+      accessToken = grant.token;
     }
 
     // Verify against Shopify
@@ -88,8 +124,11 @@ serve(async (req) => {
       );
     }
 
-    // Store encrypted token
-    const enc = await encryptString(accessToken);
+    // Store the encrypted long-lived secret: the app client secret for the
+    // client_credentials grant (re-exchanged each run), or the legacy admin
+    // token. The short-lived exchanged token is never persisted.
+    const secretToStore = authMethod === "client_credentials" ? appClientSecret : accessToken;
+    const enc = await encryptString(secretToStore);
     await sb.from("client_secrets").upsert(
       {
         client_id: clientId,
@@ -118,7 +157,8 @@ serve(async (req) => {
         currency,
         timezone,
         plan_name: planName,
-        auth_method: "admin_token",
+        auth_method: authMethod,
+        app_client_id: authMethod === "client_credentials" ? appClientId : null,
         api_version: SHOPIFY_API_VERSION,
         scopes: { shop: true },
         last_verified_at: new Date().toISOString(),

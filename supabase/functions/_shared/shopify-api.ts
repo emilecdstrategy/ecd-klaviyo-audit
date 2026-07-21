@@ -12,6 +12,54 @@ export function normalizeShopDomain(input: string): string | null {
   return raw;
 }
 
+/**
+ * Exchange a Dev Dashboard app's client id + secret for a short-lived (24h)
+ * Admin API access token via the client_credentials grant. This replaces the
+ * retired legacy custom-app "paste a shpat_ token" flow. NOTE: Shopify only
+ * honors this grant when the app and the store are in the SAME Shopify org.
+ */
+export type ClientCredentialsResult =
+  | { ok: true; token: string; scope: string; expiresIn: number }
+  | { ok: false; status: number; error: string };
+
+export async function exchangeClientCredentials(
+  shopDomain: string,
+  clientId: string,
+  clientSecret: string,
+): Promise<ClientCredentialsResult> {
+  let res: Response;
+  try {
+    res = await fetch(`https://${shopDomain}/admin/oauth/access_token`, {
+      method: "POST",
+      headers: { "content-type": "application/x-www-form-urlencoded", accept: "application/json" },
+      body: new URLSearchParams({
+        grant_type: "client_credentials",
+        client_id: clientId,
+        client_secret: clientSecret,
+      }).toString(),
+    });
+  } catch (e) {
+    return { ok: false, status: 0, error: e instanceof Error ? e.message : "Network error" };
+  }
+  const text = await res.text();
+  let body: any = null;
+  try {
+    body = text ? JSON.parse(text) : null;
+  } catch {
+    body = text;
+  }
+  if (!res.ok || !body?.access_token) {
+    const detail = (body && typeof body === "object" ? (body.error_description || body.error) : null) || `HTTP ${res.status}`;
+    return { ok: false, status: res.status, error: String(detail) };
+  }
+  return {
+    ok: true,
+    token: String(body.access_token),
+    scope: String(body.scope ?? ""),
+    expiresIn: Number(body.expires_in ?? 0),
+  };
+}
+
 export async function shopifyRest(shopDomain: string, accessToken: string, path: string) {
   const res = await fetch(`https://${shopDomain}/admin/api/${SHOPIFY_API_VERSION}${path}`, {
     headers: {

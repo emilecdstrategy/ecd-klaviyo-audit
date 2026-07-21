@@ -82,7 +82,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     collectionUrl: '',
     cartUrl: '',
     shopifyDomain: '',
-    shopifyToken: '',
+    shopifyClientId: '',
+    shopifyClientSecret: '',
   });
   const [shopifyTest, setShopifyTest] = useState<{ status: 'idle' | 'testing' | 'ok' | 'failed'; message?: string }>({ status: 'idle' });
 
@@ -202,7 +203,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     setShopifyTest({ status: 'testing' });
     try {
       const { data, error: fnErr } = await supabase.functions.invoke<any>('shopify_test_connection', {
-        body: { shopDomain: form.shopifyDomain, accessToken: form.shopifyToken },
+        body: { shopDomain: form.shopifyDomain, clientId: form.shopifyClientId, clientSecret: form.shopifyClientSecret },
       });
       if (fnErr) throw new Error(fnErr.message);
       if (!data?.ok) {
@@ -357,9 +358,14 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       await createAuditSections(audit.id, [...WEB_AUDIT_SECTION_KEYS]);
 
       // Persist the Shopify connection now so the workspace run can use it.
-      if (!hasSavedShopifyConnection && form.shopifyToken.trim()) {
+      if (!hasSavedShopifyConnection && form.shopifyClientId.trim() && form.shopifyClientSecret.trim()) {
         const { data: connData, error: connErr } = await supabase.functions.invoke<any>('shopify_connect_client', {
-          body: { client_id: clientId, shop_domain: form.shopifyDomain, access_token: form.shopifyToken },
+          body: {
+            client_id: clientId,
+            shop_domain: form.shopifyDomain,
+            shopify_client_id: form.shopifyClientId,
+            shopify_client_secret: form.shopifyClientSecret,
+          },
         });
         if (connErr) throw new Error(`Shopify connection failed: ${connErr.message}`);
         if (!connData?.ok) throw new Error(connData?.error?.message || 'Shopify connection failed');
@@ -379,7 +385,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     if (stepKey === 'klaviyo_connection') return hasSavedKlaviyoConnection || form.apiKey;
     if (stepKey === 'web_setup') {
       const hasWebsite = /^(https?:\/\/)?[^\s.]+\.[^\s]{2,}/i.test(form.websiteUrl.trim());
-      const shopifyPartial = !hasSavedShopifyConnection && (form.shopifyDomain.trim() !== '') !== (form.shopifyToken.trim() !== '');
+      const shopifyStarted = form.shopifyClientId.trim() !== '' || form.shopifyClientSecret.trim() !== '';
+      const shopifyComplete = form.shopifyDomain.trim() !== '' && form.shopifyClientId.trim() !== '' && form.shopifyClientSecret.trim() !== '';
+      const shopifyPartial = !hasSavedShopifyConnection && shopifyStarted && !shopifyComplete;
       return hasWebsite && !shopifyPartial;
     }
     return true;
@@ -567,7 +575,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               <div>
                 <h3 className="text-sm font-semibold text-gray-900">Shopify backend metrics</h3>
                 <p className="text-xs text-gray-500 mt-0.5">
-                  Optional. Connect the store's Admin API to pull orders, AOV, and revenue for the audit.
+                  Optional. Connect a Shopify app's API credentials to pull orders, AOV, and revenue for the audit.
                 </p>
                 <ShopifyTokenHelpTrigger className="mt-1.5 inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary transition-colors hover:text-brand-primary-dark hover:underline" />
               </div>
@@ -577,33 +585,43 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 </div>
               ) : (
                 <>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">Store domain</label>
+                    <input
+                      type="text"
+                      value={form.shopifyDomain}
+                      onChange={e => { updateField('shopifyDomain', e.target.value); setShopifyTest({ status: 'idle' }); }}
+                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                      placeholder="my-store.myshopify.com"
+                    />
+                    <p className="mt-1 text-[11px] text-gray-400">Auto-guessed from the website URL. Edit if it's different.</p>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Store domain</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
                       <input
                         type="text"
-                        value={form.shopifyDomain}
-                        onChange={e => { updateField('shopifyDomain', e.target.value); setShopifyTest({ status: 'idle' }); }}
-                        className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                        placeholder="my-store.myshopify.com"
+                        value={form.shopifyClientId}
+                        onChange={e => { updateField('shopifyClientId', e.target.value); setShopifyTest({ status: 'idle' }); }}
+                        className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        placeholder="e.g. 97291692e4cd7addba0f..."
                       />
-                      <p className="mt-1 text-[11px] text-gray-400">Auto-guessed from the website URL. Edit if it's different.</p>
                     </div>
                     <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-1">Admin API access token</label>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Client secret</label>
                       <input
                         type="password"
-                        value={form.shopifyToken}
-                        onChange={e => { updateField('shopifyToken', e.target.value); setShopifyTest({ status: 'idle' }); }}
+                        value={form.shopifyClientSecret}
+                        onChange={e => { updateField('shopifyClientSecret', e.target.value); setShopifyTest({ status: 'idle' }); }}
                         className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                        placeholder="shpat_xxxxxxxxxxxxxxxxxxxx"
+                        placeholder="shpss_xxxxxxxxxxxxxxxxxxxx"
                       />
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
                     <button
                       type="button"
-                      disabled={!form.shopifyDomain.trim() || !form.shopifyToken.trim() || shopifyTest.status === 'testing'}
+                      disabled={!form.shopifyDomain.trim() || !form.shopifyClientId.trim() || !form.shopifyClientSecret.trim() || shopifyTest.status === 'testing'}
                       onClick={testShopifyConnection}
                       className="text-sm font-medium text-brand-primary hover:underline disabled:opacity-40 disabled:no-underline"
                     >

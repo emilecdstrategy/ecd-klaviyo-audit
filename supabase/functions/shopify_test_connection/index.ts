@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { normalizeShopDomain, shopifyRest, mapShopifyErrorCode, SHOPIFY_API_VERSION } from "../_shared/shopify-api.ts";
+import { normalizeShopDomain, shopifyRest, mapShopifyErrorCode, exchangeClientCredentials, SHOPIFY_API_VERSION } from "../_shared/shopify-api.ts";
 
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -18,26 +18,66 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
   try {
-    const { shopDomain: rawDomain, accessToken } = (await req.json()) as { shopDomain?: string; accessToken?: string };
-    if (!accessToken || typeof accessToken !== "string") return json({ error: "Missing accessToken" }, { status: 400 });
+    const { shopDomain: rawDomain, accessToken, clientId, clientSecret } = (await req.json()) as {
+      shopDomain?: string;
+      accessToken?: string;
+      clientId?: string;
+      clientSecret?: string;
+    };
     const shopDomain = normalizeShopDomain(rawDomain ?? "");
     if (!shopDomain) return json({ error: "Enter a valid *.myshopify.com store domain" }, { status: 400 });
 
-    const shopRes = await shopifyRest(shopDomain, accessToken, "/shop.json");
+    // Resolve an access token. Preferred: Dev Dashboard app client id + secret
+    // (client_credentials grant). Legacy: a pasted admin token from an existing
+    // custom app still works.
+    let accessTokenResolved = "";
+    if (clientId && clientSecret) {
+      const grant = await exchangeClientCredentials(shopDomain, clientId.trim(), clientSecret.trim());
+      if (!grant.ok) {
+        const sameOrgHint =
+          " The client_credentials grant only works when the app and the store are in the same Shopify organization. If this is a client's store, the app must be installed there (OAuth) instead.";
+        return json({
+          ok: false,
+          apiVersion: SHOPIFY_API_VERSION,
+          error: {
+            code: grant.status ? mapShopifyErrorCode(grant.status) : "token_exchange_failed",
+            message: `Could not get an access token from Shopify (${grant.status || "network error"}): ${grant.error}. Check the Client ID, Client secret, and store domain.${sameOrgHint}`,
+            status: grant.status,
+          },
+        }, { status: 200 });
+      }
+      accessTokenResolved = grant.token;
+    } else if (accessToken && typeof accessToken === "string") {
+      accessTokenResolved = accessToken.trim();
+    } else {
+      return json({ error: "Provide a Client ID and Client secret (or a legacy access token)" }, { status: 400 });
+    }
+    const accessTokenFinal = accessTokenResolved;
+
+    const shopRes = await shopifyRest(shopDomain, accessTokenFinal, "/shop.json");
     if (!shopRes.ok) {
+      const code = mapShopifyErrorCode(shopRes.status);
+      let message: string;
+      if (code === "invalid_token" || code === "insufficient_scope") {
+        message = `Shopify accepted the credentials but the token cannot read the shop (${shopRes.status}). Add the read_products, read_orders and read_analytics scopes to the app, then try again.`;
+      } else if (code === "shop_not_found") {
+        message = `Store not found (404). Check the store domain, it must be the real .myshopify.com domain for this store (currently ${shopDomain}).`;
+      } else if (code === "rate_limited") {
+        message = "Shopify rate limited the request (429). Wait a moment and try again.";
+      } else if (code === "provider_unavailable") {
+        message = `Shopify is temporarily unavailable (${shopRes.status}). Try again shortly.`;
+      } else {
+        message = `Failed shop access (${shopRes.status}).`;
+      }
       return json({
         ok: false,
         apiVersion: SHOPIFY_API_VERSION,
-        error: {
-          code: mapShopifyErrorCode(shopRes.status),
-          message: "Failed shop access",
-          status: shopRes.status,
-        },
+        error: { code, message, status: shopRes.status },
       }, { status: 200 });
     }
 
-    const ordersRes = await shopifyRest(shopDomain, accessToken, "/orders/count.json?status=any");
-    const productsRes = await shopifyRest(shopDomain, accessToken, "/products/count.json");
+    const ordersRes = await shopifyRest(shopDomain, accessTokenFinal, "/orders/count.json?status=any");
+    const productsRes = await shopifyRest(shopDomain, accessTokenFinal, "/products/count.json");
 
     const shop = shopRes.body?.shop ?? null;
     return json({
@@ -59,8 +99,8 @@ serve(async (req) => {
         productsRead: productsRes.ok,
       },
       warnings: [
-        !ordersRes.ok ? `Orders scope may be missing (${ordersRes.status}). Enable read_orders on the custom app.` : null,
-        !productsRes.ok ? `Products scope may be missing (${productsRes.status}). Enable read_products on the custom app.` : null,
+        !ordersRes.ok ? `Orders scope may be missing (${ordersRes.status}). Add read_orders to the app's Admin API scopes.` : null,
+        !productsRes.ok ? `Products scope may be missing (${productsRes.status}). Add read_products to the app's Admin API scopes.` : null,
       ].filter(Boolean),
     }, { status: 200 });
   } catch (e) {

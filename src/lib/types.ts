@@ -717,7 +717,8 @@ export interface WebWizardData extends WizardDataBase {
   /** URLs to capture. Homepage defaults to the website URL; others optional. */
   pageUrls: { homepage: string; product?: string; collection?: string; cart?: string };
   shopifyDomain?: string;
-  shopifyToken?: string;
+  shopifyClientId?: string;
+  shopifyClientSecret?: string;
 }
 
 export type WizardData = KlaviyoWizardData | WebWizardData;
@@ -730,7 +731,8 @@ export interface ShopifyConnection {
   currency: string | null;
   timezone: string | null;
   plan_name: string | null;
-  auth_method: 'admin_token' | 'oauth';
+  auth_method: 'admin_token' | 'oauth' | 'client_credentials';
+  app_client_id: string | null;
   api_version: string;
   scopes: Record<string, unknown>;
   last_verified_at: string | null;

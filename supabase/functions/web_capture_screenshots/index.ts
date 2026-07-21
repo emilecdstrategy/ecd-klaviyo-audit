@@ -4,7 +4,7 @@ import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shar
 import { getScreenshotProvider } from "../_shared/screenshot-provider.ts";
 import { browserlessEnabled, captureWithBrowserless, type CapturedElement } from "../_shared/browserless.ts";
 import { decryptString } from "../_shared/crypto.ts";
-import { normalizeShopDomain, shopifyRest } from "../_shared/shopify-api.ts";
+import { normalizeShopDomain, shopifyRest, exchangeClientCredentials } from "../_shared/shopify-api.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -58,14 +58,19 @@ function originOf(url: string): string {
 
 async function decryptShopifyToken(sb: ReturnType<typeof assertServiceClient>, clientId: string) {
   const [{ data: conn }, { data: sec }] = await Promise.all([
-    sb.from("shopify_connections").select("shop_domain").eq("client_id", clientId).maybeSingle(),
+    sb.from("shopify_connections").select("shop_domain, auth_method, app_client_id").eq("client_id", clientId).maybeSingle(),
     sb.from("client_secrets").select("shopify_admin_token_ciphertext, shopify_admin_token_iv").eq("client_id", clientId).maybeSingle(),
   ]);
   const shopDomain = normalizeShopDomain(conn?.shop_domain ?? "");
   if (!shopDomain || !sec?.shopify_admin_token_ciphertext || !sec?.shopify_admin_token_iv) return null;
   try {
-    const token = await decryptString(sec.shopify_admin_token_ciphertext, sec.shopify_admin_token_iv);
-    return { shopDomain, token };
+    const storedSecret = await decryptString(sec.shopify_admin_token_ciphertext, sec.shopify_admin_token_iv);
+    if (conn?.auth_method === "client_credentials") {
+      const grant = await exchangeClientCredentials(shopDomain, conn.app_client_id ?? "", storedSecret);
+      if (!grant.ok) return null;
+      return { shopDomain, token: grant.token };
+    }
+    return { shopDomain, token: storedSecret };
   } catch {
     return null;
   }

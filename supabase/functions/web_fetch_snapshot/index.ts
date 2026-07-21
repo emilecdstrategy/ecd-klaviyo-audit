@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { decryptString } from "../_shared/crypto.ts";
-import { normalizeShopDomain, shopifyRest, shopifyGraphql, mapShopifyErrorCode } from "../_shared/shopify-api.ts";
+import { normalizeShopDomain, shopifyRest, shopifyGraphql, mapShopifyErrorCode, exchangeClientCredentials } from "../_shared/shopify-api.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -221,7 +221,7 @@ serve(async (req) => {
 
     const { data: conn, error: connErr } = await sb
       .from("shopify_connections")
-      .select("shop_domain, api_version")
+      .select("shop_domain, api_version, auth_method, app_client_id")
       .eq("client_id", clientId)
       .maybeSingle();
     if (connErr) throw connErr;
@@ -237,7 +237,18 @@ serve(async (req) => {
     if (!shopDomain || !sec?.shopify_admin_token_ciphertext || !sec?.shopify_admin_token_iv) {
       return json({ ok: true, skipped: "no_connection", correlationId }, { status: 200 });
     }
-    const token = await decryptString(sec.shopify_admin_token_ciphertext, sec.shopify_admin_token_iv);
+    const storedSecret = await decryptString(sec.shopify_admin_token_ciphertext, sec.shopify_admin_token_iv);
+    // For client_credentials connections the stored secret is the app client
+    // secret; exchange it for a fresh short-lived token. Legacy connections
+    // stored the admin token directly.
+    let token = storedSecret;
+    if (conn?.auth_method === "client_credentials") {
+      const grant = await exchangeClientCredentials(shopDomain, conn.app_client_id ?? "", storedSecret);
+      if (!grant.ok) {
+        return json({ ok: false, error: { code: "token_exchange_failed", message: `Shopify token exchange failed (${grant.status}): ${grant.error}`, status: grant.status }, correlationId }, { status: 200 });
+      }
+      token = grant.token;
+    }
 
     const now = new Date().toISOString();
     const results: Record<string, unknown> = {};
