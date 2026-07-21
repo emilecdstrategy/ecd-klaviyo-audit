@@ -72,12 +72,21 @@ export default function AuditContextAssistant({
       const history = nextMsgs.filter(m => m.content).map(m => ({ role: m.role, content: m.content }));
       const turn = await sendAuditContextMessage({ messages: history, snapshot: getSnapshot() });
       if (turn.fetched_notes && onTranscript) onTranscript(turn.fetched_notes);
+      // Include the question text in the stored content so it is replayed to the
+      // model next turn; otherwise the model loses what a chip answer referred to
+      // and re-asks the same question.
+      let content = turn.assistant_text || '';
+      if (turn.question?.question) {
+        content = content ? `${content}\n\n${turn.question.question}` : turn.question.question;
+      } else if (!content && turn.context?.summary) {
+        content = turn.context.summary;
+      }
       setMessages(prev => [
         ...prev,
         {
           id: `a${Date.now()}`,
           role: 'assistant',
-          content: turn.assistant_text || turn.context?.summary || turn.question?.question || '',
+          content,
           question: turn.question,
           context: turn.context,
         },
