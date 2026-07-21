@@ -128,6 +128,15 @@ export default function AuditContextAssistant({
             )}
           </div>
         ))}
+        {messages.length === 1 && !sending && (
+          <button
+            type="button"
+            onClick={() => void send("I don't have a link or any context to share. Ask me a few quick questions to capture the basics.")}
+            className="rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-sm font-medium text-gray-700 hover:border-brand-primary/40 hover:bg-gray-50"
+          >
+            I don't have a link or context
+          </button>
+        )}
         {sending && <div className="flex items-center gap-2 text-xs text-gray-400"><Loader2 className="h-3.5 w-3.5 animate-spin" /> Thinking…</div>}
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
       </div>

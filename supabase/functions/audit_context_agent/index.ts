@@ -105,7 +105,7 @@ function buildSystem(snapshot: Snapshot): string {
 - ${hasNotes ? "A transcript is already available (below)." : "No transcript yet."} If you do not have a transcript, greet briefly and ask the user to paste the Fireflies link (or a Google Doc link, or the notes) for the call. This is a link, so ask in one short sentence, do NOT use ask_user chips for it.
 - When the user pastes a link, immediately call fetch_transcript with it. If it fails, tell them plainly and offer to let them paste the notes as text instead.
 - Once you have source material, use ask_user only for a genuinely material missing detail (max one or two questions total, with 2-4 chips). Otherwise go straight to propose_context.
-- If the user says there was no call or has nothing to share, ask one or two brief chip questions to capture the essentials, then propose_context.
+- If the user says there was no call or has nothing to share, ask one or two brief chip questions to capture the essentials (for example, whether they sell subscriptions, and their main goal or focus for this audit), then propose_context.
 
 RULES:
 - Draw only from the transcript and what the user tells you. NEVER invent facts, names, numbers, or goals.

@@ -91,6 +91,8 @@ export default function AuditWorkspace() {
   const oneTimeKlaviyoKey = (location.state as { klaviyoApiKey?: string } | null)?.klaviyoApiKey;
   const [running, setRunning] = useState(false);
   const [runProgress, setRunProgress] = useState<{ progress: number; stage: string }>({ progress: 0, stage: '' });
+  // Draws attention to the Run button after the assistant's context is applied.
+  const [contextApplied, setContextApplied] = useState(false);
   const [activityOpen, setActivityOpen] = useState(false);
   const [activityEvents, setActivityEvents] = useState<AuditEvent[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
@@ -303,6 +305,7 @@ export default function AuditWorkspace() {
   const runDraft = async () => {
     if (running || !audit) return;
     setRunning(true);
+    setContextApplied(false);
     setError('');
     setRunProgress({ progress: 5, stage: 'Starting…' });
     markAuditGenerationActive(audit.id);
@@ -333,6 +336,7 @@ export default function AuditWorkspace() {
     try {
       const updated = await updateAudit(audit.id, { context: nextContext });
       setAudit(updated);
+      setContextApplied(true);
       toast('Context saved');
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Could not save context');
@@ -464,11 +468,14 @@ export default function AuditWorkspace() {
                   <button
                     type="button"
                     onClick={runDraft}
-                    className="mt-4 inline-flex items-center gap-2 rounded-lg gradient-bg px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+                    className={`mt-4 inline-flex items-center gap-2 rounded-lg gradient-bg px-6 py-3 text-sm font-semibold text-white transition-shadow hover:opacity-90 ${contextApplied ? 'animate-pulse ring-4 ring-brand-primary/30' : ''}`}
                   >
                     <Sparkles className="h-4 w-4" />
                     {audit.audit_type === 'web' ? 'Capture & analyze' : 'Run analysis'}
                   </button>
+                  {contextApplied && (
+                    <p className="mt-2 text-xs font-medium text-brand-primary">Context applied. Run the audit when you're ready.</p>
+                  )}
                   <p className="mt-2 text-xs text-gray-400">You can also run it now and add context later.</p>
                 </div>
 

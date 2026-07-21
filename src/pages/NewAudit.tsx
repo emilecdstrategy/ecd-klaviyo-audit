@@ -465,26 +465,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               <label className="block text-sm font-medium text-gray-700 mb-1">Industry</label>
               <IndustrySelectWithCustom value={form.industry} onValueChange={v => updateField('industry', v)} />
             </div>
-
-            {auditType !== 'web' && (
-            <div className="flex items-start justify-between gap-3 p-3 rounded-lg border border-gray-200 bg-gray-50/60">
-              <div className="min-w-0 pr-2">
-                <p className="text-sm font-medium text-gray-800">Client sells subscriptions</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  If enabled, the Flows audit also evaluates a Subscription lifecycle flow using soft matching on flow names.
-                </p>
-              </div>
-              <button
-                type="button"
-                role="switch"
-                aria-checked={form.clientSellsSubscriptions}
-                onClick={() => setForm(prev => ({ ...prev, clientSellsSubscriptions: !prev.clientSellsSubscriptions }))}
-                className={`relative inline-flex h-5 w-9 shrink-0 rounded-full border-2 border-transparent transition-colors ${form.clientSellsSubscriptions ? 'bg-brand-primary' : 'bg-gray-200'}`}
-              >
-                <span className={`pointer-events-none inline-block h-4 w-4 rounded-full bg-white shadow-sm ring-0 transition-transform ${form.clientSellsSubscriptions ? 'translate-x-4' : 'translate-x-0'}`} />
-              </button>
-            </div>
-            )}
           </div>
         )}
 
@@ -648,7 +628,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         )}
 
         {stepKey === 'attribution' && (
-          <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up">
+          <div className="bg-white rounded-xl p-6 card-shadow space-y-5 animate-slide-up mx-auto w-full max-w-2xl">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
               <div>
                 <h2 className="text-lg font-semibold text-gray-900">Attribution Model</h2>
