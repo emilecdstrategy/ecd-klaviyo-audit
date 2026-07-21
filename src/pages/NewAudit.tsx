@@ -98,6 +98,17 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const steps = auditType === 'web' ? WEB_STEPS : KLAVIYO_STEPS;
   const stepKey: StepKey = steps[Math.min(step, steps.length - 1)].key;
 
+  // Prefill the Shopify store domain guess when landing on the web setup step,
+  // covering the case where the website URL was pre-filled from an existing
+  // client (no blur event fires). Never overwrites a value already present.
+  useEffect(() => {
+    if (stepKey !== 'web_setup' || hasSavedShopifyConnection) return;
+    const guess = guessShopifyDomain(form.websiteUrl);
+    if (!guess) return;
+    setForm(prev => (prev.shopifyDomain.trim() ? prev : { ...prev, shopifyDomain: guess }));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepKey, form.websiteUrl, hasSavedShopifyConnection]);
+
   useEffect(() => {
     let cancelled = false;
     (async () => {
