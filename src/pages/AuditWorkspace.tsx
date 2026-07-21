@@ -1,6 +1,9 @@
 import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
-import { ExternalLink, FileSignature, History, Sparkles } from 'lucide-react';
+import { useParams, useNavigate, useLocation } from 'react-router-dom';
+import { ExternalLink, FileSignature, History, Loader2, Sparkles } from 'lucide-react';
+import AuditContextAssistant from '../components/audit/AuditContextAssistant';
+import { runKlaviyoAudit, runWebAudit } from '../lib/audit-run';
+import type { AuditContextDraft } from '../lib/audit-context-agent';
 import TopBar from '../components/layout/TopBar';
 import SiteFavicon from '../components/ui/SiteFavicon';
 import Modal from '../components/ui/Modal';
@@ -27,6 +30,7 @@ import {
   listAuditEvents,
   listIndustryEmailLibrary,
   publishAudit,
+  updateAudit,
   updateAuditStatus,
   updateAuditSection,
   type WebAuditReportBundle,
@@ -82,6 +86,11 @@ export default function AuditWorkspace() {
   const [regenerating, setRegenerating] = useState(false);
   const [analysisInProgress, setAnalysisInProgress] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  // Draft audits are created by the wizard and run from here.
+  const location = useLocation();
+  const oneTimeKlaviyoKey = (location.state as { klaviyoApiKey?: string } | null)?.klaviyoApiKey;
+  const [running, setRunning] = useState(false);
+  const [runProgress, setRunProgress] = useState<{ progress: number; stage: string }>({ progress: 0, stage: '' });
   const [activityOpen, setActivityOpen] = useState(false);
   const [activityEvents, setActivityEvents] = useState<AuditEvent[]>([]);
   const [activityLoading, setActivityLoading] = useState(false);
@@ -286,6 +295,59 @@ export default function AuditWorkspace() {
     }
   };
 
+  // A freshly-created draft that has not been run yet: show the pre-run screen
+  // (context assistant + Run button) instead of an empty report.
+  const preRun =
+    audit.status === 'draft' && !hasAnalysisContent && !analysisInProgress && !webGenerating && !regenerating;
+
+  const runDraft = async () => {
+    if (running || !audit) return;
+    setRunning(true);
+    setError('');
+    setRunProgress({ progress: 5, stage: 'Starting…' });
+    markAuditGenerationActive(audit.id);
+    try {
+      const onProgress = (progress: number, stage: string) => setRunProgress({ progress, stage });
+      if (audit.audit_type === 'web') {
+        await runWebAudit(audit.id, audit.client_id, { websiteUrl: client?.website_url ?? '', onProgress });
+      } else {
+        await runKlaviyoAudit(audit.id, audit.client_id, { apiKey: oneTimeKlaviyoKey, onProgress });
+      }
+      clearAuditGenerationActive(audit.id);
+      setReloadKey(key => key + 1);
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'The audit run failed. Please try again.');
+    } finally {
+      setRunning(false);
+    }
+  };
+
+  const applyContextDraft = async (draft: AuditContextDraft) => {
+    if (!audit) return;
+    const nextContext = {
+      ...(audit.context ?? {}),
+      client_background: draft.client_background || audit.context?.client_background,
+      custom_instructions: draft.custom_instructions || audit.context?.custom_instructions,
+      sells_subscriptions: draft.sells_subscriptions || audit.context?.sells_subscriptions,
+    };
+    try {
+      const updated = await updateAudit(audit.id, { context: nextContext });
+      setAudit(updated);
+      toast('Context saved');
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not save context');
+    }
+  };
+
+  const applyTranscript = async (notes: string) => {
+    if (!audit) return;
+    const nextContext = { ...(audit.context ?? {}), meeting_notes: notes };
+    try {
+      const updated = await updateAudit(audit.id, { context: nextContext });
+      setAudit(updated);
+    } catch { /* non-fatal */ }
+  };
+
   return (
     <ReportEditProvider
       editMode
@@ -375,7 +437,78 @@ export default function AuditWorkspace() {
         )}
 
         <div className="min-w-0 overflow-x-clip">
-          {analysisInProgress ? (
+          {running ? (
+            <div className="mx-auto max-w-md px-6 py-16 text-center">
+              <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-brand-primary" />
+              <h2 className="mb-2 text-xl font-bold text-gray-900">
+                {audit.audit_type === 'web' ? 'Building web audit…' : 'Analyzing account…'}
+              </h2>
+              <p className="mb-4 text-sm text-gray-500">{runProgress.stage || 'Working…'}</p>
+              <div className="mx-auto h-2 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
+                <div className="h-full gradient-bg rounded-full transition-all duration-500" style={{ width: `${runProgress.progress}%` }} />
+              </div>
+              <p className="mt-2 text-xs text-gray-400">
+                Analysis continues on the server; you can leave this page and reopen the audit anytime.
+              </p>
+            </div>
+          ) : preRun ? (
+            <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-6 p-6 lg:grid-cols-[1fr_400px]">
+              {/* Left: finalize + run */}
+              <div className="space-y-4">
+                <div className="rounded-xl bg-white p-6 card-shadow">
+                  <h2 className="text-lg font-semibold text-gray-900">Finalize &amp; run</h2>
+                  <p className="mt-1 text-sm text-gray-500">
+                    Use the assistant to capture the client context, then run the audit when you're ready.
+                  </p>
+                  {error && <div className="mt-3 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">{error}</div>}
+                  <button
+                    type="button"
+                    onClick={runDraft}
+                    className="mt-4 inline-flex items-center gap-2 rounded-lg gradient-bg px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+                  >
+                    <Sparkles className="h-4 w-4" />
+                    {audit.audit_type === 'web' ? 'Capture & analyze' : 'Run analysis'}
+                  </button>
+                  <p className="mt-2 text-xs text-gray-400">You can also run it now and add context later.</p>
+                </div>
+
+                <div className="rounded-xl bg-white p-6 card-shadow">
+                  <h3 className="text-sm font-semibold text-gray-900">Captured context</h3>
+                  {(audit.context?.client_background?.trim() || audit.context?.custom_instructions?.trim()) ? (
+                    <div className="mt-3 space-y-4 text-sm">
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Client background</p>
+                        <p className="mt-1 whitespace-pre-wrap leading-relaxed text-gray-700">{audit.context?.client_background || '—'}</p>
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Audit focus areas</p>
+                        <p className="mt-1 whitespace-pre-wrap leading-relaxed text-gray-700">{audit.context?.custom_instructions || '—'}</p>
+                      </div>
+                    </div>
+                  ) : (
+                    <p className="mt-2 text-sm text-gray-400">Chat with the assistant to capture the client background and audit focus areas.</p>
+                  )}
+                </div>
+              </div>
+
+              {/* Right: docked context assistant */}
+              <div className="h-[600px] lg:sticky lg:top-6">
+                <AuditContextAssistant
+                  onApply={applyContextDraft}
+                  onTranscript={applyTranscript}
+                  getSnapshot={() => ({
+                    client_name: client?.name,
+                    company_name: client?.company_name,
+                    website_url: client?.website_url,
+                    audit_type: audit.audit_type ?? 'klaviyo',
+                    meeting_notes: audit.context?.meeting_notes,
+                    client_background: audit.context?.client_background,
+                    custom_instructions: audit.context?.custom_instructions,
+                  })}
+                />
+              </div>
+            </div>
+          ) : analysisInProgress ? (
             <div className="px-6 py-4">
               <AuditGenerationStatus
                 auditId={audit.id}

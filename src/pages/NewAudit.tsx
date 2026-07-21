@@ -34,27 +34,25 @@ import { startWebAnalysis } from '../lib/web-pipeline-status';
 
 const CONTEXT_CHAR_HARD = 30_000;
 
-type StepKey = 'type' | 'prospect' | 'klaviyo_connection' | 'web_setup' | 'attribution' | 'context' | 'line_items' | 'run';
+type StepKey = 'type' | 'prospect' | 'klaviyo_connection' | 'web_setup' | 'attribution' | 'line_items';
 
 type WizardStep = { key: StepKey; label: string; description: string };
 
+// The wizard now only gathers setup data and creates a DRAFT audit; the client
+// context (AI-assisted) and the actual run happen in the audit workspace.
 const KLAVIYO_STEPS: WizardStep[] = [
   { key: 'type', label: 'Audit Type', description: 'Klaviyo or Web' },
   { key: 'prospect', label: 'Prospect Details', description: 'Basic information' },
   { key: 'klaviyo_connection', label: 'API Connection', description: 'Connect Klaviyo data' },
   { key: 'attribution', label: 'Attribution Model', description: 'Optional screenshot' },
-  { key: 'context', label: 'Client Context', description: 'AI-assisted' },
   { key: 'line_items', label: 'Line Items', description: 'Optional add-ons' },
-  { key: 'run', label: 'Run Analysis', description: 'AI-powered audit' },
 ];
 
 const WEB_STEPS: WizardStep[] = [
   { key: 'type', label: 'Audit Type', description: 'Klaviyo or Web' },
   { key: 'prospect', label: 'Prospect Details', description: 'Basic information' },
   { key: 'web_setup', label: 'Website', description: 'Pages and store access' },
-  { key: 'context', label: 'Client Context', description: 'AI-assisted' },
   { key: 'line_items', label: 'Line Items', description: 'Optional add-ons' },
-  { key: 'run', label: 'Run Analysis', description: 'Capture and analyze' },
 ];
 
 type NewAuditProps = { asModal?: boolean };
@@ -368,297 +366,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     return () => { cancelled = true; clearInterval(id); };
   }, [analyzing, currentAuditId]);
 
-  const runAnalysis = async () => {
-    if (submittingRef.current) return;
-    submittingRef.current = true;
-    setError('');
-    setAnalyzing(true);
-    setAnalysisProgress(0);
-    setAnalysisStage('Starting…');
-    setSnapshotMeta(null);
-
-    try {
-      // 1) Ensure client exists
-      setAnalysisStage('Preparing client…');
-      let clientId = form.clientId;
-      if (!clientId) {
-        const existing = await findClientByCompanyName(form.companyName);
-        if (existing) {
-          clientId = existing.id;
-        } else {
-          const created = await createClient(await ensureClientCreator(user, {
-            name: form.clientName || form.companyName,
-            company_name: form.companyName,
-            website_url: '',
-            industry: form.industry,
-            esp_platform: 'Klaviyo',
-            api_key_placeholder: '',
-            notes: '',
-          }) as Partial<Client>);
-          clientId = created.id;
-        }
-      } else {
-        const patch: Record<string, string> = {};
-        if (form.industry) patch.industry = form.industry;
-        if (Object.keys(patch).length > 0) {
-          const updated = await updateClient(clientId, patch);
-          setClients(prev => prev.map(c => (c.id === updated.id ? updated : c)));
-        }
-      }
-
-      // 2) Create audit row
-      setAnalysisStage('Creating audit…');
-      const title = `${form.companyName} - Klaviyo Audit`;
-      const contextPayload = buildAuditContextForSave();
-      const selectedAddOnItems: RevenueOpportunityAddOnItem[] = revenueTemplates
-        .filter(template => form.selectedAddOnSlugs.includes(template.slug))
-        .map((template, index) => ({
-          template_slug: template.slug,
-          name: template.name,
-          description: template.description || undefined,
-          content: template.content || resolveRevenueOpportunityContent(template),
-          bullets: [],
-          revenue_monthly: 0,
-          one_time_price: template.one_time_price ?? null,
-          one_time_label: template.one_time_label ?? null,
-          monthly_price: template.monthly_price ?? null,
-          monthly_label: template.monthly_label ?? null,
-          display_order: template.display_order ?? (index + 1) * 10,
-          is_hidden: false,
-          highlighted: false,
-        }));
-      const initialLayout: Record<string, unknown> = selectedAddOnItems.length > 0
-        ? {
-            revenue_summary: {
-              blocks: {
-                addOns: {
-                  items: selectedAddOnItems,
-                },
-              },
-            },
-          }
-        : {};
-      const audit = await createAudit({
-        client_id: clientId,
-        title,
-        status: 'draft',
-        audit_method: 'api' as Audit['audit_method'],
-        list_size: 0,
-        aov: 0,
-        monthly_traffic: 0,
-        total_revenue_opportunity: 0,
-        executive_summary: '',
-        created_by: user?.id || '',
-        show_recommendations: true,
-        context: contextPayload,
-        layout: Object.keys(initialLayout).length > 0 ? initialLayout : undefined,
-      } as any);
-
-      if (attributionScreenshot) {
-        setAnalysisStage('Uploading attribution screenshot…');
-        try {
-          const url = await uploadReportScreenshot(attributionScreenshot, 'attribution');
-          const layout = {
-            ...(initialLayout as Record<string, unknown>),
-            attribution_model: {
-              sectionTitle: 'Attribution Model',
-              screenshot_url: url,
-            },
-          };
-          await updateAudit(audit.id, { layout });
-        } catch {
-          /* optional — audit can continue without screenshot */
-        }
-      }
-
-      setCurrentAuditId(audit.id);
-      markAuditGenerationActive(audit.id);
-      setStageRuns([]);
-
-      // 3) Create default section rows
-      setAnalysisStage('Setting up audit sections…');
-      await createAuditSections(audit.id, [...KLAVIYO_AUDIT_SECTION_KEYS]);
-
-      // 4) Fetch Klaviyo snapshot (stage 1 = config; stages 2+ run on chained edge invocations)
-      setAnalysisProgress(20);
-      setAnalysisStage('Stage 1/3: Fetching Klaviyo config…');
-      const snapshotPayload = {
-        audit_id: audit.id,
-        client_id: clientId,
-        api_key: form.apiKey || undefined,
-        stage: 'config' as const,
-        profile_scan: 'full' as const,
-      };
-      const invokeSnapshot = () => invokeKlaviyoSnapshot(snapshotPayload);
-      let { data, error: fnErr } = await invokeSnapshot();
-      if (fnErr) {
-        const firstAnyErr = fnErr as any;
-        const firstStatus = firstAnyErr?.context?.status ?? firstAnyErr?.status ?? null;
-        const errMsg = String(fnErr.message || '').toLowerCase();
-        const isRetryable =
-          Number(firstStatus) === 546 || errMsg.includes('status 546') ||
-          Number(firstStatus) === 504 || errMsg.includes('status 504') ||
-          errMsg.includes('failed to send') || errMsg.includes('networkerror') ||
-          errMsg.includes('failed to fetch');
-        if (isRetryable) {
-          setAnalysisStage('Klaviyo snapshot timed out, retrying…');
-          await new Promise((r) => setTimeout(r, 2500));
-          const retried = await invokeSnapshot();
-          data = retried.data;
-          fnErr = retried.error;
-        }
-      }
-      if (fnErr) {
-        const anyErr = fnErr as any;
-        const status = anyErr?.context?.status ?? anyErr?.status ?? null;
-        const body = anyErr?.context?.body ?? anyErr?.body ?? null;
-        const bodyPreview =
-          body && typeof body === 'object' && (body as any).getReader
-            ? '[ReadableStream]'
-            : body
-              ? String(body).slice(0, 240)
-              : null;
-        const details = [
-          status ? `status ${status}` : null,
-          bodyPreview ? `body ${bodyPreview}` : null,
-          import.meta.env.VITE_SUPABASE_URL ? `supabase ${String(import.meta.env.VITE_SUPABASE_URL)}` : null,
-        ].filter(Boolean).join(' • ');
-        if (Number(status) === 401) {
-          throw new Error(
-            'Klaviyo snapshot was rejected (401), usually an expired session. Refresh the page, sign in again, and retry.',
-          );
-        }
-        throw new Error(`Klaviyo snapshot failed: ${fnErr.message}${details ? ` (${details})` : ''}`);
-      }
-      if (!data?.ok) throw new Error(data?.error?.message || 'Failed to fetch Klaviyo snapshot');
-      setSnapshotMeta({
-        counts: data?.counts,
-        fetch: (data as any)?.fetch,
-        reporting: data?.reporting,
-        elapsed_ms: data?.elapsed_ms,
-        correlationId: data?.correlationId,
-      });
-
-      // Stage 2 (reporting) runs asynchronously via edge function self-chain.
-      // Poll klaviyo_runs(stage='reporting') until it lands so rollups + flow_performance are populated before AI.
-      setAnalysisProgress(30);
-      setAnalysisStage('Stage 2/3: Pulling Klaviyo reporting (flow/campaign values)…');
-      const reportingResult = await waitForReportingStage(audit.id, (latest) => {
-        if (latest) {
-          setStageRuns((prev) => {
-            if (prev.find((p) => p.id === latest.id)) return prev;
-            return [latest, ...prev].slice(0, 10);
-          });
-        }
-      });
-      if (reportingResult === 'error') {
-        // Reporting hit a hard failure. Surface it but keep going — AI can still analyze config-level data.
-        setAnalysisStage('Reporting had errors (continuing with available data)…');
-      } else if (reportingResult === 'timed_out') {
-        setAnalysisStage('Reporting slow (Klaviyo rate-limited). Continuing with available data…');
-      }
-
-      // Refresh snapshot meta from the latest rollup so the UI and AI pick up stage-2 results.
-      try {
-        const { data: rollup } = await supabase
-          .from('klaviyo_reporting_rollups')
-          .select('computed')
-          .eq('audit_id', audit.id)
-          .eq('timeframe_key', 'last_30_days')
-          .maybeSingle();
-        const computed = (rollup?.computed ?? {}) as any;
-        setSnapshotMeta((prev) => ({
-          ...(prev ?? {}),
-          counts: computed?.counts ?? prev?.counts,
-          reporting: {
-            ...(prev?.reporting ?? {}),
-            errors: computed?.reporting_errors ?? prev?.reporting?.errors,
-            reporting_ok: (computed?.reporting_errors?.length ?? 0) === 0,
-          },
-        }));
-      } catch { /* non-critical */ }
-
-      const profilePending = (data as { profile_metrics_status?: string })?.profile_metrics_status === 'pending';
-      let audienceWait: 'complete' | 'skipped' | 'timed_out' | 'none' = 'none';
-      if (profilePending) {
-        setAnalysisProgress(35);
-        setAnalysisStage('Stage 3/3: Full Klaviyo profile scan…');
-        audienceWait = await waitForProfileJobComplete(audit.id, (totalProfiles) => {
-          setAnalysisStage(
-            totalProfiles > 0
-              ? `Stage 3/3: Scanning profiles… ${totalProfiles.toLocaleString()} scanned so far`
-              : 'Stage 3/3: Full Klaviyo profile scan…',
-          );
-        });
-        if (audienceWait === 'timed_out') {
-          setAnalysisStage('Audience scan still running in the background — continuing with AI…');
-        }
-      }
-
-      const dm = (data as { derived_metrics?: { list_size?: number; monthly_engagement?: number; revenue_per_recipient?: number | null } })?.derived_metrics;
-      let snapshotListSize = Math.round(Number(dm?.list_size) || 0);
-      let snapshotEngagement = Math.round(Number(dm?.monthly_engagement) || 0);
-      let snapshotRpr =
-        dm?.revenue_per_recipient != null && Number.isFinite(Number(dm.revenue_per_recipient))
-          ? Math.round(Number(dm.revenue_per_recipient) * 100) / 100
-          : 0;
-
-      if (profilePending) {
-        const { data: aud, error: audErr } = await supabase
-          .from('audits')
-          .select('list_size, monthly_traffic, aov')
-          .eq('id', audit.id)
-          .single();
-        if (audErr) throw audErr;
-        if (aud) {
-          snapshotListSize = Math.round(Number(aud.list_size) || 0);
-          snapshotEngagement = Math.round(Number(aud.monthly_traffic) || 0);
-          if (aud.aov != null && Number.isFinite(Number(aud.aov))) {
-            snapshotRpr = Math.round(Number(aud.aov) * 100) / 100;
-          }
-        }
-        if (audienceWait === 'timed_out') {
-          const { data: jobPartial } = await supabase
-            .from('klaviyo_profile_scan_jobs')
-            .select('total_profiles, subscribed')
-            .eq('audit_id', audit.id)
-            .maybeSingle();
-          const tp = jobPartial?.total_profiles != null ? Number(jobPartial.total_profiles) : 0;
-          const sub = jobPartial?.subscribed != null ? Number(jobPartial.subscribed) : 0;
-          if (tp > 0) snapshotListSize = Math.round(tp);
-          if (sub > 0) snapshotEngagement = Math.round(sub);
-        }
-      }
-
-      if (snapshotListSize > 0 || snapshotEngagement > 0 || snapshotRpr > 0) {
-        await updateAudit(audit.id, {
-          list_size: snapshotListSize,
-          monthly_traffic: snapshotEngagement,
-          aov: snapshotRpr,
-        } as Partial<Audit>);
-      }
-
-      setAnalysisProgress(40);
-      setAnalysisStage('Running AI analysis on server…');
-      await waitForServerAuditAnalysis(audit.id, {
-        onUpdate: (label, progress) => {
-          setAnalysisStage(label);
-          setAnalysisProgress(Math.max(40, Math.min(95, progress)));
-        },
-      });
-
-      setAnalysisProgress(100);
-      setAnalysisStage('Done');
-      setAnalyzing(false);
-      clearAuditGenerationActive(audit.id);
-      if (mountedRef.current) navigate(`/audits/${audit.id}`);
-    } catch (e: unknown) {
-      setAnalyzing(false);
-      submittingRef.current = false;
-      setError(e instanceof Error ? e.message : 'Failed to run analysis');
-    }
-  };
-
   const testShopifyConnection = async () => {
     setShopifyTest({ status: 'testing' });
     try {
@@ -682,17 +389,97 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     }
   };
 
-  const runAnalysisWeb = async () => {
+  // Create a DRAFT audit (client + audit row + sections + persisted connections)
+  // and open its workspace. Context and the actual run happen there.
+  const createDraftKlaviyo = async () => {
     if (submittingRef.current) return;
     submittingRef.current = true;
     setError('');
     setAnalyzing(true);
-    setAnalysisProgress(0);
-    setAnalysisStage('Starting…');
-
     try {
-      // 1) Ensure client exists
-      setAnalysisStage('Preparing client…');
+      let clientId = form.clientId;
+      if (!clientId) {
+        const existing = await findClientByCompanyName(form.companyName);
+        if (existing) {
+          clientId = existing.id;
+        } else {
+          const created = await createClient(await ensureClientCreator(user, {
+            name: form.clientName || form.companyName,
+            company_name: form.companyName,
+            website_url: '',
+            industry: form.industry,
+            esp_platform: 'Klaviyo',
+            api_key_placeholder: '',
+            notes: '',
+          }) as Partial<Client>);
+          clientId = created.id;
+        }
+      } else if (form.industry) {
+        const updated = await updateClient(clientId, { industry: form.industry });
+        setClients(prev => prev.map(c => (c.id === updated.id ? updated : c)));
+      }
+
+      const selectedAddOnItems: RevenueOpportunityAddOnItem[] = revenueTemplates
+        .filter(template => form.selectedAddOnSlugs.includes(template.slug))
+        .map((template, index) => ({
+          template_slug: template.slug,
+          name: template.name,
+          description: template.description || undefined,
+          content: template.content || resolveRevenueOpportunityContent(template),
+          bullets: [],
+          revenue_monthly: 0,
+          one_time_price: template.one_time_price ?? null,
+          one_time_label: template.one_time_label ?? null,
+          monthly_price: template.monthly_price ?? null,
+          monthly_label: template.monthly_label ?? null,
+          display_order: template.display_order ?? (index + 1) * 10,
+          is_hidden: false,
+          highlighted: false,
+        }));
+      const initialLayout: Record<string, unknown> = selectedAddOnItems.length > 0
+        ? { revenue_summary: { blocks: { addOns: { items: selectedAddOnItems } } } }
+        : {};
+      const audit = await createAudit({
+        client_id: clientId,
+        title: `${form.companyName} - Klaviyo Audit`,
+        status: 'draft',
+        audit_method: 'api' as Audit['audit_method'],
+        list_size: 0,
+        aov: 0,
+        monthly_traffic: 0,
+        total_revenue_opportunity: 0,
+        executive_summary: '',
+        created_by: user?.id || '',
+        show_recommendations: true,
+        layout: Object.keys(initialLayout).length > 0 ? initialLayout : undefined,
+      } as any);
+
+      if (attributionScreenshot) {
+        try {
+          const url = await uploadReportScreenshot(attributionScreenshot, 'attribution');
+          await updateAudit(audit.id, {
+            layout: { ...initialLayout, attribution_model: { sectionTitle: 'Attribution Model', screenshot_url: url } },
+          });
+        } catch { /* optional */ }
+      }
+
+      await createAuditSections(audit.id, [...KLAVIYO_AUDIT_SECTION_KEYS]);
+      // Pass a one-time entered key so the workspace's first run can store the
+      // connection; if a connection is already saved, form.apiKey is empty.
+      if (mountedRef.current) navigate(`/audits/${audit.id}`, { state: { klaviyoApiKey: form.apiKey || undefined } });
+    } catch (e: unknown) {
+      setAnalyzing(false);
+      submittingRef.current = false;
+      setError(e instanceof Error ? e.message : 'Failed to create audit');
+    }
+  };
+
+  const createDraftWeb = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
+    setError('');
+    setAnalyzing(true);
+    try {
       let clientId = form.clientId;
       if (!clientId) {
         const existing = await findClientByCompanyName(form.companyName);
@@ -720,9 +507,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         }
       }
 
-      // 2) Create audit row
-      setAnalysisStage('Creating audit…');
-      const contextPayload = buildAuditContextForSave();
       const audit = await createAudit({
         client_id: clientId,
         title: `${form.companyName} - Web Audit`,
@@ -736,89 +520,19 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         executive_summary: '',
         created_by: user?.id || '',
         show_recommendations: true,
-        context: contextPayload,
       } as any);
-      setCurrentAuditId(audit.id);
-      setAnalysisProgress(10);
 
-      // 3) Seed web section rows
-      setAnalysisStage('Setting up audit sections…');
       await createAuditSections(audit.id, [...WEB_AUDIT_SECTION_KEYS]);
 
-      // 4) Connect Shopify + fetch backend metrics (optional)
+      // Persist the Shopify connection now so the workspace run can use it.
       if (!hasSavedShopifyConnection && form.shopifyToken.trim()) {
-        setAnalysisProgress(20);
-        setAnalysisStage('Connecting Shopify…');
         const { data: connData, error: connErr } = await supabase.functions.invoke<any>('shopify_connect_client', {
           body: { client_id: clientId, shop_domain: form.shopifyDomain, access_token: form.shopifyToken },
         });
         if (connErr) throw new Error(`Shopify connection failed: ${connErr.message}`);
         if (!connData?.ok) throw new Error(connData?.error?.message || 'Shopify connection failed');
       }
-      if (hasSavedShopifyConnection || form.shopifyToken.trim()) {
-        setAnalysisProgress(30);
-        setAnalysisStage('Fetching Shopify data (orders, products)…');
-        const { data: fetchData, error: fetchErr } = await supabase.functions.invoke<any>('web_fetch_snapshot', {
-          body: { audit_id: audit.id, client_id: clientId },
-        });
-        if (fetchErr || !fetchData?.ok) {
-          // Non-fatal: continue with screenshots only.
-          setAnalysisStage('Shopify data fetch had issues, continuing with screenshots…');
-        }
-      }
 
-      // 5) Seed capture targets. The edge function auto-detects the product,
-      //    collection, and cart pages (from Shopify or the homepage HTML) when
-      //    they aren't supplied manually.
-      setAnalysisProgress(45);
-      setAnalysisStage('Detecting key pages…');
-      const pages: Record<string, string> = { homepage: form.websiteUrl.trim() };
-      if (form.productUrl.trim()) pages.product = form.productUrl.trim();
-      if (form.collectionUrl.trim()) pages.collection = form.collectionUrl.trim();
-      if (form.cartUrl.trim()) pages.cart = form.cartUrl.trim();
-      const { data: seedData, error: seedErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
-        body: { action: 'seed', audit_id: audit.id, client_id: clientId, pages },
-      });
-      if (seedErr) throw new Error(`Screenshot setup failed: ${seedErr.message}`);
-      if (!seedData?.ok) throw new Error(seedData?.error?.message || 'Screenshot setup failed');
-      const total = Number(seedData.total) || 0;
-
-      // 6) Capture one screenshot per call, browser-driven. Keeping each edge
-      //    invocation short (a single Playwright shot) avoids the platform
-      //    rate limiter that a long self-chaining function tripped.
-      setAnalysisStage('Capturing website screenshots (desktop & mobile)…');
-      let remaining = total;
-      let safety = total + 6;
-      while (remaining > 0 && safety-- > 0) {
-        const { data: capData, error: capErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
-          body: { action: 'capture_one', audit_id: audit.id, client_id: clientId },
-        });
-        if (capErr || !capData?.ok) {
-          await new Promise(r => setTimeout(r, 2500));
-          continue;
-        }
-        remaining = Number.isFinite(capData.remaining) ? Number(capData.remaining) : remaining;
-        const done = Math.max(0, total - remaining);
-        setAnalysisProgress(Math.min(95, 45 + Math.round((done / Math.max(total, 1)) * 50)));
-        setAnalysisStage(`Capturing screenshots… ${done}/${total} done`);
-        if (capData.done) break;
-        // Pause between captures so neither the Supabase gateway nor the target
-        // store throttles the back-to-back requests.
-        await new Promise(r => setTimeout(r, 2500));
-      }
-
-      // 7) Kick off AI analysis (runs on the server); the workspace shows progress.
-      setAnalysisProgress(97);
-      setAnalysisStage('Starting AI analysis…');
-      try {
-        await startWebAnalysis(audit.id);
-      } catch {
-        // Non-fatal: the workspace can resume/retry the analysis.
-      }
-
-      setAnalysisProgress(100);
-      setAnalysisStage('Done');
-      setAnalyzing(false);
       if (mountedRef.current) navigate(`/audits/${audit.id}`);
     } catch (e: unknown) {
       setAnalyzing(false);
@@ -1155,82 +869,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {stepKey === 'context' && (
-          <div className="animate-slide-up mx-auto w-full max-w-5xl">
-            {error ? (
-              <div className="mb-4 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
-            ) : null}
-            <div className="mb-4 flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Client Context</h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  Chat with the assistant to capture the context for this audit. Paste the Fireflies link and answer a couple of quick questions.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setError(''); setStep(step + 1); }}
-                className="text-sm text-brand-primary font-medium hover:underline whitespace-nowrap"
-              >
-                Skip this step
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-              {/* Left: captured context (read-only; filled by the assistant). */}
-              <div className="rounded-xl bg-white p-6 card-shadow">
-                <h3 className="text-sm font-semibold text-gray-900">Captured context</h3>
-                {(auditContextForm.client_background.trim() || auditContextForm.custom_instructions.trim()) ? (
-                  <div className="mt-3 space-y-4 text-sm">
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Client background</p>
-                      <p className="mt-1 whitespace-pre-wrap leading-relaxed text-gray-700">
-                        {auditContextForm.client_background || <span className="text-gray-400">Not captured yet</span>}
-                      </p>
-                    </div>
-                    <div>
-                      <p className="text-xs font-semibold uppercase tracking-wide text-gray-400">Audit focus areas</p>
-                      <p className="mt-1 whitespace-pre-wrap leading-relaxed text-gray-700">
-                        {auditContextForm.custom_instructions || <span className="text-gray-400">Not captured yet</span>}
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-2 text-xs">
-                      <span className="font-semibold uppercase tracking-wide text-gray-400">Subscriptions</span>
-                      <span className="text-gray-600">{form.clientSellsSubscriptions ? 'Sells subscriptions' : 'Not indicated'}</span>
-                    </div>
-                    {auditContextForm.meeting_notes.trim() && (
-                      <p className="text-[11px] text-gray-400">
-                        Transcript captured ({auditContextForm.meeting_notes.length.toLocaleString()} chars) and saved with the audit.
-                      </p>
-                    )}
-                  </div>
-                ) : (
-                  <div className="mt-3 rounded-lg border border-dashed border-gray-200 p-6 text-center text-sm text-gray-400">
-                    Chat with the assistant to capture the client background and audit focus areas. They will appear here for you to review before running the audit.
-                  </div>
-                )}
-              </div>
-
-              {/* Right: docked context assistant. */}
-              <div className="h-[540px]">
-                <AuditContextAssistant
-                  onApply={applyContextDraft}
-                  onTranscript={(notes) => setAuditContextForm(prev => ({ ...prev, meeting_notes: notes.slice(0, CONTEXT_CHAR_HARD) }))}
-                  getSnapshot={() => ({
-                    client_name: form.clientName,
-                    company_name: form.companyName,
-                    website_url: form.websiteUrl,
-                    audit_type: auditType ?? undefined,
-                    meeting_notes: auditContextForm.meeting_notes,
-                    client_background: auditContextForm.client_background,
-                    custom_instructions: auditContextForm.custom_instructions,
-                  })}
-                />
-              </div>
-            </div>
-          </div>
-        )}
-
         {stepKey === 'line_items' && (
           <div className="bg-white rounded-xl p-6 card-shadow space-y-4 animate-slide-up mx-auto w-full max-w-2xl">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
@@ -1297,244 +935,36 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           </div>
         )}
 
-        {stepKey === 'run' && (
-          <div className="bg-white rounded-xl p-8 card-shadow text-center animate-slide-up">
-            {error && (
-              <div className="mb-4 text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg text-left">
-                {error}
-              </div>
-            )}
-            {!analyzing ? (
-              <>
-                <div className="w-16 h-16 rounded-2xl gradient-bg flex items-center justify-center mx-auto mb-4">
-                  <Sparkles className="w-7 h-7 text-white" />
-                </div>
-                <h2 className="text-xl font-bold text-gray-900 mb-2">
-                  {auditType === 'web' ? 'Ready to Capture' : 'Ready to Analyze'}
-                </h2>
-                <p className="text-sm text-gray-500 max-w-md mx-auto mb-6">
-                  {auditType === 'web'
-                    ? "We'll capture desktop and mobile screenshots of the selected pages and pull Shopify metrics if connected. You'll be able to review everything before publishing."
-                    : "Our AI will review the collected data and generate detailed findings for each audit section. You'll be able to review and edit everything before publishing."}
-                </p>
-                <div className="flex items-center justify-center gap-2">
-                  <button
-                    onClick={() => { setError(''); setStep(step - 1); }}
-                    className="inline-flex items-center gap-2 px-4 py-3 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
-                  >
-                    <ArrowLeft className="w-4 h-4" />
-                    Back
-                  </button>
-                  <button
-                    onClick={auditType === 'web' ? runAnalysisWeb : runAnalysis}
-                    className="inline-flex items-center gap-2 px-6 py-3 gradient-bg text-white font-medium rounded-lg hover:opacity-90 transition-opacity"
-                  >
-                    <Sparkles className="w-4 h-4" />
-                    {auditType === 'web' ? 'Create Web Audit' : 'Run AI Analysis'}
-                  </button>
-                </div>
-              </>
-            ) : (
-              <>
-                <Loader2 className="w-12 h-12 text-brand-primary animate-spin mx-auto mb-4" />
-                <h2 className="text-xl font-bold text-gray-900 mb-2">
-                  {auditType === 'web' ? 'Building Web Audit...' : 'Analyzing Account...'}
-                </h2>
-                <p className="text-sm text-gray-500 mb-2">
-                  {analysisStage || 'Generating findings across all audit sections.'}
-                </p>
-                <p className="text-xs text-gray-400 mb-6 max-w-md mx-auto">
-                  Analysis continues on the server — you can safely close this tab and reopen the audit from the Audits page anytime.
-                </p>
-                <div className="max-w-xs mx-auto">
-                  <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden">
-                    <div
-                      className="h-full gradient-bg rounded-full transition-all duration-500"
-                      style={{ width: `${analysisProgress}%` }}
-                    />
-                  </div>
-                  <p className="text-xs text-gray-400 mt-2">{analysisProgress}% complete</p>
-                </div>
-                <div className="max-w-md mx-auto mt-5 text-left">
-                  {[
-                    {
-                      key: 'create',
-                      label: 'Create audit',
-                      done: analysisProgress >= 10,
-                      active: analysisProgress < 10,
-                    },
-                    {
-                      key: 'input',
-                      label: auditType === 'web' ? 'Fetch Shopify data' : 'Fetch Klaviyo snapshot',
-                      done: analysisProgress >= 40,
-                      active: analysisProgress >= 10 && analysisProgress < 40,
-                    },
-                    {
-                      key: 'ai',
-                      label: auditType === 'web' ? 'Capture screenshots' : 'Run AI analysis',
-                      done: analysisProgress >= 70,
-                      active: analysisProgress >= 40 && analysisProgress < 70,
-                    },
-                    {
-                      key: 'save',
-                      label: 'Save results',
-                      done: analysisProgress >= 100,
-                      active: analysisProgress >= 70 && analysisProgress < 100,
-                    },
-                  ].map((s) => (
-                    <div
-                      key={s.key}
-                      className={[
-                        'flex items-center gap-2 text-sm rounded-md px-2 py-1 transition-colors',
-                        s.done ? 'text-gray-900' : 'text-gray-600',
-                        s.active ? 'bg-gray-50' : '',
-                      ].join(' ')}
-                    >
-                      <div className="relative">
-                        <CheckCircle2 className={s.done ? 'w-4 h-4 text-green-600' : s.active ? 'w-4 h-4 text-brand-primary' : 'w-4 h-4 text-gray-300'} />
-                        {s.active && (
-                          <span className="absolute inset-0 rounded-full blur-[6px] bg-brand-primary/25 animate-pulse" />
-                        )}
-                      </div>
-                      <span className={s.active ? 'font-medium text-brand-primary animate-pulse [text-shadow:0_0_18px_rgba(99,102,241,0.35)]' : ''}>
-                        {s.label}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-                {snapshotMeta?.counts && (() => {
-                  const fetch = snapshotMeta.fetch as Record<string, { ok: boolean; status?: number | null }> | undefined;
-                  const resources = ['flows', 'campaigns', 'segments', 'forms', 'lists'] as const;
-                  const failedFetches = fetch ? resources.filter(r => fetch[r] && !fetch[r].ok) : [];
-                  const failedScopes = failedFetches.filter(r => {
-                    const status = fetch?.[r]?.status ?? null;
-                    return status === 401 || status === 403;
-                  });
-                  const failedOther = failedFetches.filter(r => !failedScopes.includes(r));
-                  return (
-                    <div className="max-w-md mx-auto mt-4 text-left bg-gray-50 border border-gray-100 rounded-lg px-3 py-2">
-                      <p className="text-[11px] font-semibold text-gray-500 uppercase tracking-wider mb-2">Klaviyo data pulled</p>
-                      <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-gray-600">
-                        {resources.filter(r => r !== 'lists').map(r => {
-                          const diag = fetch?.[r];
-                          const ok = diag ? diag.ok : true;
-                          const count = snapshotMeta.counts?.[r];
-                          const failLabel =
-                            ok === false
-                              ? (diag?.status === 401 || diag?.status === 403 ? 'No access' : 'Fetch failed')
-                              : '';
-                          return (
-                            <div key={r} className="flex items-center justify-between">
-                              <span className="capitalize">{r}</span>
-                              {ok === false ? (
-                                <span className="font-medium text-amber-600">{failLabel}</span>
-                              ) : (
-                                <span className="font-medium text-gray-900">{count ?? '—'}</span>
-                              )}
-                            </div>
-                          );
-                        })}
-                      </div>
-                      {failedScopes.length > 0 && (
-                        <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1.5 rounded">
-                          Your API key is missing permissions for: <strong>{failedScopes.join(', ')}</strong>.
-                          Regenerate the key in Klaviyo with full read access for complete data.
-                        </div>
-                      )}
-                      {failedOther.length > 0 && (
-                        <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1.5 rounded">
-                          Could not pull: <strong>{failedOther.join(', ')}</strong>. This is usually a temporary Klaviyo API issue — retry the audit or contact support if it persists.
-                        </div>
-                      )}
-                      {Array.isArray(snapshotMeta.reporting?.errors) && snapshotMeta.reporting!.errors!.length > 0 && (
-                        <div className="mt-2 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 px-2 py-1.5 rounded space-y-1">
-                          <p className="font-semibold">Reporting metrics could not be fully pulled.</p>
-                          {snapshotMeta.reporting!.errors!.slice(0, 3).map((e, idx) => (
-                            <p key={`${e.stage}-${idx}`}>
-                              {(() => {
-                                const friendly = normalizeReportingDiagnostic(e.message, e.status ?? null);
-                                return (
-                                  <>
-                              <span className="font-medium">{e.stage}</span>
-                              {e.status ? ` (${e.status})` : ''}: {friendly ?? 'Reporting request failed'}
-                                  </>
-                                );
-                              })()}
-                            </p>
-                          ))}
-                          <p>Flow KPI cards may show N/A until reporting access succeeds.</p>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })()}
-                {stageRuns.length > 0 && (
-                  <details className="max-w-md mx-auto mt-3 text-left border border-gray-100 rounded-lg bg-gray-50/60">
-                    <summary className="cursor-pointer px-3 py-2 text-[11px] font-semibold text-gray-500 uppercase tracking-wider list-none flex items-center justify-between [&::-webkit-details-marker]:hidden">
-                      <span>Run log ({stageRuns.length})</span>
-                      <span className="text-[10px] text-gray-400 normal-case tracking-normal">audit_id {currentAuditId?.slice(0, 8)}</span>
-                    </summary>
-                    <div className="px-3 pb-3 space-y-1.5">
-                      {stageRuns.map((r) => {
-                        const badge =
-                          r.status === 'success' ? 'bg-emerald-100 text-emerald-700'
-                          : r.status === 'partial' ? 'bg-amber-100 text-amber-700'
-                          : r.status === 'timeout' ? 'bg-orange-100 text-orange-700'
-                          : 'bg-red-100 text-red-700';
-                        return (
-                          <div key={r.id} className="flex items-start justify-between gap-2 text-[11px] text-gray-700">
-                            <div className="flex-1 min-w-0">
-                              <div className="flex items-center gap-1.5">
-                                <span className={`px-1.5 py-0.5 rounded ${badge} font-medium`}>
-                                  {r.stage ?? 'unknown'}
-                                </span>
-                                <span className="text-gray-500">{r.status}</span>
-                                {r.elapsed_ms != null && (
-                                  <span className="text-gray-400">· {(r.elapsed_ms / 1000).toFixed(1)}s</span>
-                                )}
-                              </div>
-                              {r.error_message && (
-                                <p className="text-[10px] text-gray-500 mt-0.5 break-words">{r.error_message.slice(0, 200)}</p>
-                              )}
-                            </div>
-                            <span className="text-[10px] text-gray-400 whitespace-nowrap">
-                              {new Date(r.created_at).toLocaleTimeString()}
-                            </span>
-                          </div>
-                        );
-                      })}
-                    </div>
-                  </details>
-                )}
-              </>
-            )}
-          </div>
-        )}
-
-        {stepKey !== 'run' && (
-          <div className="flex items-center mt-6 mx-auto w-full max-w-2xl">
-            {step > 0 ? (
-              <button
-                onClick={() => { setError(''); setStep(step - 1); }}
-                className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors"
-              >
-                <ArrowLeft className="w-4 h-4" />
-                Back
-              </button>
-            ) : <span />}
+        <div className="flex items-center mt-6 mx-auto w-full max-w-2xl">
+          {step > 0 ? (
             <button
-              onClick={() => {
-                if (stepKey === 'context') setError('');
-                setStep(step + 1);
-              }}
+              onClick={() => { setError(''); setStep(step - 1); }}
+              disabled={analyzing}
+              className="flex items-center gap-2 px-4 py-2.5 border border-gray-200 text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-40"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back
+            </button>
+          ) : <span />}
+          {step >= steps.length - 1 ? (
+            <button
+              onClick={() => { void (auditType === 'web' ? createDraftWeb() : createDraftKlaviyo()); }}
+              disabled={!canProceed() || analyzing}
+              className="ml-auto flex items-center gap-2 px-6 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+            >
+              {analyzing ? <><Loader2 className="w-4 h-4 animate-spin" /> Creating…</> : <><Sparkles className="w-4 h-4" /> Create audit</>}
+            </button>
+          ) : (
+            <button
+              onClick={() => { setStep(step + 1); }}
               disabled={!canProceed()}
               className="ml-auto flex items-center gap-2 px-6 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
             >
               Continue
               <ArrowRight className="w-4 h-4" />
             </button>
-          </div>
-        )}
+          )}
+        </div>
       </div>
   );
 
