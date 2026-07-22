@@ -638,7 +638,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
 
       <div className="sticky top-0 z-40 bg-white">
         <div className="border-b border-gray-100">
-          <div className="max-w-[90rem] mx-auto px-6">
+          <div className="max-w-[77rem] mx-auto px-6">
             <nav className="flex overflow-x-auto">
               {visibleNavItems.map(item => (
                 <a
@@ -674,7 +674,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
         />
       </div>
 
-      <main className="max-w-[90rem] mx-auto px-6 py-10 space-y-16">
+      <main className="max-w-[77rem] mx-auto px-6 py-10 space-y-16">
         <ReportSectionShell
           id="summary"
           setRef={setRef}

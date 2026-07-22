@@ -16,14 +16,13 @@ import StatusBadge from '../components/ui/StatusBadge';
 import { SkeletonKPICards, SkeletonListCard } from '../components/ui/Skeleton';
 import SiteFavicon from '../components/ui/SiteFavicon';
 import { formatCurrency } from '../lib/revenue-calculator';
-import { isLikelyAuditGenerating } from '../lib/audit-pipeline-status';
 import { listAudits, listClients } from '../lib/db';
 import { listProposals } from '../lib/proposals-db';
 import { deriveProposalStatus, isProposalOpen } from '../lib/proposal-status';
 import { computeProposalTotals, proposalDiscountFromRow, proposalPipelineValue } from '../lib/proposal-pricing';
 import { canSeeProposalsBeta } from '../lib/feature-flags';
 import { useAuth } from '../contexts/AuthContext';
-import GeneratingBadge from '../components/ui/GeneratingBadge';
+import AuditStatusBadge from '../components/ui/AuditStatusBadge';
 import type { Audit, Client, Proposal } from '../lib/types';
 
 function proposalValue(proposal: Proposal): number {
@@ -158,7 +157,7 @@ export default function Dashboard() {
                         </span>
                         <div className="flex items-center gap-2">
                           <StatusBadge status={audit.status} />
-                          {isLikelyAuditGenerating(audit) && <GeneratingBadge />}
+                          <AuditStatusBadge audit={audit} />
                         </div>
                       </div>
                     </button>

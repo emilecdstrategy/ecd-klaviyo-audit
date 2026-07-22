@@ -397,3 +397,23 @@ export function clearAuditGenerationActive(auditId?: string) {
     // ignore
   }
 }
+
+export function isAuditGenerationActive(auditId: string): boolean {
+  try {
+    return sessionStorage.getItem(ACTIVE_AUDIT_GENERATION_KEY) === auditId;
+  } catch {
+    return false;
+  }
+}
+
+/** List-view badge for an audit: 'generating' only while a run is actively in
+ * progress (this session), 'unfinished' for an api audit that has no content and
+ * isn't running (e.g. a draft left at the context stage), otherwise null. */
+export function auditListBadge(
+  audit: Pick<Audit, 'audit_method' | 'executive_summary' | 'id'>,
+): 'generating' | 'unfinished' | null {
+  if (audit.audit_method !== 'api') return null;
+  if (audit.executive_summary?.trim()) return null;
+  if (isAuditGenerationActive(audit.id)) return 'generating';
+  return 'unfinished';
+}

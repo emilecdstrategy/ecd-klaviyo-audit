@@ -533,7 +533,7 @@ export default function AuditWorkspace() {
                 </Suspense>
               </div>
             ) : (
-              <div className="mx-auto w-full max-w-[80rem] 2xl:max-w-[90rem]">
+              <div className="mx-auto w-full max-w-[77rem]">
                 {!webBundle && <SkeletonAuditWorkspace />}
                 {webBundle && (
                   <Suspense fallback={<SkeletonAuditWorkspace />}>
