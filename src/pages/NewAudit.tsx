@@ -60,6 +60,19 @@ function guessShopifyDomain(url: string): string {
   return label ? `${label}.myshopify.com` : '';
 }
 
+/** Detect the real *.myshopify.com domain from the live storefront (the naive
+ * guess above is often wrong, e.g. power-planter-augers.myshopify.com). */
+async function detectShopifyDomain(url: string): Promise<string | null> {
+  if (!url.trim()) return null;
+  try {
+    const { data } = await supabase.functions.invoke<any>('shopify_detect_domain', { body: { websiteUrl: url } });
+    const d = data?.domain;
+    return typeof d === 'string' && d ? d : null;
+  } catch {
+    return null;
+  }
+}
+
 export default function NewAudit({ asModal }: NewAuditProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -102,13 +115,34 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   // Prefill the Shopify store domain guess when landing on the web setup step,
   // covering the case where the website URL was pre-filled from an existing
   // client (no blur event fires). Never overwrites a value already present.
-  useEffect(() => {
-    if (stepKey !== 'web_setup' || hasSavedShopifyConnection) return;
-    const guess = guessShopifyDomain(form.websiteUrl);
+  // Fill the store-domain field from the website URL: an instant naive guess,
+  // then an async upgrade to the real *.myshopify.com domain read from the live
+  // storefront. Never clobbers a value the user typed. Runs on step arrival and
+  // on website-field blur (not per keystroke).
+  const prefillShopifyDomain = (url: string) => {
+    if (hasSavedShopifyConnection) return;
+    const guess = guessShopifyDomain(url);
     if (!guess) return;
-    setForm(prev => (prev.shopifyDomain.trim() ? prev : { ...prev, shopifyDomain: guess }));
+    setForm(prev => {
+      if (prev.shopifyDomain.trim()) return prev;
+      autoDomainRef.current = guess;
+      return { ...prev, shopifyDomain: guess };
+    });
+    void detectShopifyDomain(url).then(real => {
+      if (!real) return;
+      setForm(prev => {
+        if (prev.shopifyDomain.trim() && prev.shopifyDomain !== autoDomainRef.current) return prev;
+        autoDomainRef.current = real;
+        return { ...prev, shopifyDomain: real };
+      });
+    });
+  };
+
+  useEffect(() => {
+    if (stepKey !== 'web_setup') return;
+    prefillShopifyDomain(form.websiteUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [stepKey, form.websiteUrl, hasSavedShopifyConnection]);
+  }, [stepKey, hasSavedShopifyConnection]);
 
   useEffect(() => {
     let cancelled = false;
@@ -190,6 +224,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const mountedRef = useRef(true);
   // Guards against a double-submit (rapid double-click / re-entrancy) creating two audits.
   const submittingRef = useRef(false);
+  // Tracks the last domain WE auto-filled, so storefront detection can upgrade the
+  // naive guess without clobbering a value the user typed themselves.
+  const autoDomainRef = useRef('');
 
   useEffect(() => {
     mountedRef.current = true;
@@ -515,14 +552,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                   type="url"
                   value={form.websiteUrl}
                   onChange={e => updateField('websiteUrl', e.target.value)}
-                  onBlur={() => {
-                    // Prefill the Shopify store domain from the website URL as a
-                    // guess the user can correct.
-                    if (!hasSavedShopifyConnection && !form.shopifyDomain.trim()) {
-                      const guess = guessShopifyDomain(form.websiteUrl);
-                      if (guess) updateField('shopifyDomain', guess);
-                    }
-                  }}
+                  onBlur={() => prefillShopifyDomain(form.websiteUrl)}
                   className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                   placeholder="https://store.com"
                 />
