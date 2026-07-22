@@ -456,7 +456,7 @@ export default function AuditWorkspace() {
               </p>
             </div>
           ) : preRun ? (
-            <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-6 p-6 lg:grid-cols-[1fr_400px]">
+            <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-6 p-6 pb-28 lg:grid-cols-[1fr_400px]">
               {/* Left: finalize + run */}
               <div className="space-y-4">
                 <div className="rounded-xl bg-white p-6 card-shadow">
@@ -500,7 +500,7 @@ export default function AuditWorkspace() {
 
               {/* Right: docked context assistant. Height tracks the viewport (so
                   the input stays visible when zoomed) but caps at 600px. */}
-              <div className="h-[min(600px,calc(100dvh-9rem))] min-h-[360px] lg:sticky lg:top-6">
+              <div className="h-[min(600px,calc(100dvh-13rem))] min-h-[360px] lg:sticky lg:top-6">
                 <AuditContextAssistant
                   onApply={applyContextDraft}
                   onTranscript={applyTranscript}
