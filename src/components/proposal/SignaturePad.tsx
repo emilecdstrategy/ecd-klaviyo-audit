@@ -15,7 +15,7 @@ export type SignatureMeta = {
   mode: 'draw' | 'type';
   /** The typed name (empty for drawn signatures). */
   typed_name: string;
-  /** The chosen handwriting font key (empty for drawn signatures). */
+  /** The handwriting font key (empty for drawn signatures). */
   font: string;
 };
 
@@ -31,30 +31,21 @@ type SignaturePadProps = {
   height?: number;
   onChange?: (empty: boolean) => void;
   className?: string;
-  /** Prefills the typed-signature field (e.g. the signer's name). */
+  /** Controlled typed-signature text (e.g. the name field the parent already
+   * collects). When set, type mode renders this live and shows no extra input,
+   * so the signer's name is only entered once. */
+  typedName?: string;
+  /** Uncontrolled initial typed text, used only when `typedName` is not set. */
   typedNameDefault?: string;
   /** Which tab to open on first render. */
   initialMode?: 'draw' | 'type';
-  /** Which handwriting font key to preselect in type mode. */
-  initialFontKey?: string;
 };
 
 const INK_COLOR = '#1f2937';
 const LINE_WIDTH = 2.5;
 
-/** Handwriting fonts for the type-to-sign option. `family` is loaded via the
- * Font Loading API before rendering to canvas; `stack` adds fallbacks for the
- * live DOM preview. Declared in index.html. */
-const SIGNATURE_FONTS: { key: string; label: string; family: string; stack: string; size: number }[] = [
-  { key: 'dancing', label: 'Signature', family: "'Dancing Script'", stack: "'Dancing Script', cursive", size: 60 },
-  { key: 'great-vibes', label: 'Formal', family: "'Great Vibes'", stack: "'Great Vibes', cursive", size: 58 },
-  { key: 'caveat', label: 'Casual', family: "'Caveat'", stack: "'Caveat', cursive", size: 56 },
-];
-
-function fontIndexForKey(key: string | undefined): number {
-  const i = SIGNATURE_FONTS.findIndex(f => f.key === key);
-  return i >= 0 ? i : 0;
-}
+/** Single handwriting font used for typed signatures (declared in index.html). */
+const TYPE_FONT = { key: 'great-vibes', family: "'Great Vibes'", stack: "'Great Vibes', cursive", size: 48 };
 
 function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Point[][], dpr: number) {
   ctx.save();
@@ -85,19 +76,19 @@ function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Point[][], dpr: num
   ctx.restore();
 }
 
-/** Renders typed text in a handwriting font to a tightly-cropped PNG data URL. */
-function typedSignatureDataUrl(text: string, font: { family: string; stack: string; size: number }): string | null {
+/** Renders typed text in the handwriting font to a tightly-cropped PNG data URL. */
+function typedSignatureDataUrl(text: string): string | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const pad = 16;
-  const fontSpec = `${font.size}px ${font.stack}`;
+  const pad = 20;
+  const fontSpec = `${TYPE_FONT.size}px ${TYPE_FONT.stack}`;
   const meas = document.createElement('canvas').getContext('2d');
   if (!meas) return null;
   meas.font = fontSpec;
   const m = meas.measureText(trimmed);
-  const ascent = m.actualBoundingBoxAscent || font.size * 0.8;
-  const descent = m.actualBoundingBoxDescent || font.size * 0.35;
+  const ascent = m.actualBoundingBoxAscent || TYPE_FONT.size * 0.8;
+  const descent = m.actualBoundingBoxDescent || TYPE_FONT.size * 0.4;
   const width = Math.max(1, Math.ceil(m.width) + pad * 2);
   const height = Math.max(1, Math.ceil(ascent + descent) + pad * 2);
   const out = document.createElement('canvas');
@@ -115,7 +106,7 @@ function typedSignatureDataUrl(text: string, font: { family: string; stack: stri
 
 /** Dependency-free signature pad: draw (mouse/touch/stylus) or type a stylized signature. */
 const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function SignaturePad(
-  { height = 160, onChange, className, typedNameDefault = '', initialMode = 'draw', initialFontKey },
+  { height = 160, onChange, className, typedName, typedNameDefault = '', initialMode = 'draw' },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -125,10 +116,13 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
 
   const [mode, setMode] = useState<'draw' | 'type'>(initialMode);
   const modeRef = useRef(mode);
-  const [typedText, setTypedText] = useState(typedNameDefault);
-  const typedTextRef = useRef(typedText);
-  const [fontIndex, setFontIndex] = useState(() => fontIndexForKey(initialFontKey));
-  const fontIndexRef = useRef(fontIndexForKey(initialFontKey));
+  const controlled = typedName !== undefined;
+  const [internalTyped, setInternalTyped] = useState(typedNameDefault);
+
+  // The effective typed text: parent-controlled value if given, else internal.
+  const typedValue = controlled ? (typedName as string) : internalTyped;
+  const typedValueRef = useRef(typedValue);
+  typedValueRef.current = typedValue;
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -155,12 +149,10 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
     return () => observer.disconnect();
   }, [redraw, mode]);
 
-  // Preload the handwriting fonts so canvas rendering has them available.
+  // Preload the handwriting font so canvas rendering has it available.
   useEffect(() => {
     if (mode !== 'type' || typeof document === 'undefined' || !('fonts' in document)) return;
-    for (const f of SIGNATURE_FONTS) {
-      document.fonts.load(`${f.size}px ${f.family}`).catch(() => {});
-    }
+    document.fonts.load(`${TYPE_FONT.size}px ${TYPE_FONT.family}`).catch(() => {});
   }, [mode]);
 
   const notify = useCallback(
@@ -172,9 +164,15 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
   );
 
   const isActiveEmpty = useCallback(
-    () => (modeRef.current === 'type' ? typedTextRef.current.trim().length === 0 : strokesRef.current.length === 0),
+    () => (modeRef.current === 'type' ? typedValueRef.current.trim().length === 0 : strokesRef.current.length === 0),
     [],
   );
+
+  // Keep the parent's empty-state in sync when the controlled typed value changes.
+  useEffect(() => {
+    if (modeRef.current === 'type') notify(typedValue.trim().length === 0);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [typedValue]);
 
   const pointFromEvent = (e: React.PointerEvent<HTMLCanvasElement>): Point => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -206,14 +204,13 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
 
   const clear = useCallback(() => {
     if (modeRef.current === 'type') {
-      setTypedText('');
-      typedTextRef.current = '';
+      if (!controlled) setInternalTyped('');
     } else {
       strokesRef.current = [];
       redraw();
     }
     notify(true);
-  }, [notify, redraw]);
+  }, [controlled, notify, redraw]);
 
   const undo = useCallback(() => {
     if (modeRef.current === 'type') return;
@@ -225,18 +222,7 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
   const switchMode = (next: 'draw' | 'type') => {
     modeRef.current = next;
     setMode(next);
-    notify(isActiveEmpty());
-  };
-
-  const onTypedChange = (value: string) => {
-    setTypedText(value);
-    typedTextRef.current = value;
-    notify(value.trim().length === 0);
-  };
-
-  const selectFont = (i: number) => {
-    setFontIndex(i);
-    fontIndexRef.current = i;
+    notify(next === 'type' ? typedValueRef.current.trim().length === 0 : strokesRef.current.length === 0);
   };
 
   useImperativeHandle(
@@ -247,12 +233,10 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
       undo,
       getMeta: () =>
         modeRef.current === 'type'
-          ? { mode: 'type', typed_name: typedTextRef.current.trim(), font: SIGNATURE_FONTS[fontIndexRef.current].key }
+          ? { mode: 'type', typed_name: typedValueRef.current.trim(), font: TYPE_FONT.key }
           : { mode: 'draw', typed_name: '', font: '' },
       toDataURL: () => {
-        if (modeRef.current === 'type') {
-          return typedSignatureDataUrl(typedTextRef.current, SIGNATURE_FONTS[fontIndexRef.current]);
-        }
+        if (modeRef.current === 'type') return typedSignatureDataUrl(typedValueRef.current);
         const strokes = strokesRef.current;
         if (strokes.length === 0) return null;
         // Trim to the ink bounding box (+ padding) for a tight, embeddable PNG.
@@ -283,8 +267,6 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
     }),
     [clear, undo, isActiveEmpty],
   );
-
-  const activeFont = SIGNATURE_FONTS[fontIndex];
 
   return (
     <div className={cn('space-y-2', className)}>
@@ -338,44 +320,29 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
         </div>
       ) : (
         <div className="space-y-2">
-          <input
-            type="text"
-            value={typedText}
-            onChange={e => onTypedChange(e.target.value)}
-            placeholder="Type your full name"
-            className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
-          />
+          {!controlled && (
+            <input
+              type="text"
+              value={internalTyped}
+              onChange={e => setInternalTyped(e.target.value)}
+              placeholder="Type your full name"
+              className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+            />
+          )}
           <div
             className="flex items-center justify-center overflow-hidden rounded-xl border border-dashed border-gray-300 bg-white px-4"
             style={{ height }}
           >
-            {typedText.trim() ? (
+            {typedValue.trim() ? (
               <span
-                className="max-w-full truncate leading-none text-gray-800"
-                style={{ fontFamily: activeFont.stack, fontSize: activeFont.size }}
+                className="max-w-full truncate"
+                style={{ fontFamily: TYPE_FONT.stack, fontSize: TYPE_FONT.size, lineHeight: 1.5, color: INK_COLOR }}
               >
-                {typedText}
+                {typedValue}
               </span>
             ) : (
-              <span className="text-xs text-gray-300">Your signature preview</span>
+              <span className="text-xs text-gray-300">{controlled ? 'Your signature appears here' : 'Your signature preview'}</span>
             )}
-          </div>
-          <div className="flex flex-wrap gap-1.5">
-            {SIGNATURE_FONTS.map((f, i) => (
-              <button
-                key={f.label}
-                type="button"
-                onClick={() => selectFont(i)}
-                className={cn(
-                  'rounded-lg border px-3 py-1.5 leading-none transition-colors',
-                  i === fontIndex ? 'border-brand-primary bg-brand-primary/5 text-gray-900' : 'border-gray-200 text-gray-500 hover:border-gray-300',
-                )}
-                style={{ fontFamily: f.stack, fontSize: 22 }}
-                title={f.label}
-              >
-                {typedText.trim() ? typedText.slice(0, 14) : f.label}
-              </button>
-            ))}
           </div>
           <p className="text-[11px] text-gray-400">Typing your name counts as your legal signature.</p>
         </div>

@@ -463,7 +463,7 @@ export default function ProposalDetail() {
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
-          <SignaturePad ref={countersignPadRef} onChange={setCountersignPadEmpty} />
+          <SignaturePad ref={countersignPadRef} onChange={setCountersignPadEmpty} typedName={countersignName} />
           {countersignError && <p className="text-sm text-red-600">{countersignError}</p>}
           <div className="flex items-center justify-end gap-2 border-t border-gray-100 pt-4">
             <button

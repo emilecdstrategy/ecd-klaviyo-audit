@@ -72,9 +72,8 @@ function SenderSignatureModal({ open, defaultName, initialMeta, onClose, onSave 
           <SignaturePad
             ref={padRef}
             onChange={setEmpty}
-            typedNameDefault={name}
+            typedName={name}
             initialMode={initialMeta?.signature_type === 'type' ? 'type' : 'draw'}
-            initialFontKey={initialMeta?.signature_font}
           />
         </div>
         {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>}

@@ -52,7 +52,7 @@ function SignForm({ recipientName, recipientEmail, onSign }: { recipientName: st
         <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="Email" className="rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none" />
       </div>
       <div className="mt-2">
-        <SignaturePad ref={padRef} onChange={setEmpty} typedNameDefault={recipientName} />
+        <SignaturePad ref={padRef} onChange={setEmpty} typedName={name} />
       </div>
       {error && <div className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>}
       <button onClick={submit} disabled={submitting || empty} className="mt-3 w-full rounded-lg bg-brand-primary px-4 py-2.5 text-sm font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-50">

@@ -183,7 +183,7 @@ function ClientSignArea({
           />
         </div>
       </div>
-      <SignaturePad ref={padRef} onChange={setPadEmpty} typedNameDefault={recipientName} />
+      <SignaturePad ref={padRef} onChange={setPadEmpty} typedName={typedName} />
 
       {/* Agreement to terms (clickwrap): conspicuous, links to every attached
           document, unchecked and required. */}
