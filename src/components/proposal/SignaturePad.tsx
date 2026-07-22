@@ -76,20 +76,28 @@ function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Point[][], dpr: num
   ctx.restore();
 }
 
-/** Renders typed text in the handwriting font to a tightly-cropped PNG data URL. */
+/** Renders typed text in the handwriting font to a PNG data URL, sized to the
+ * TRUE ink bounds (script swashes extend past the advance width, so measuring
+ * with actualBoundingBox avoids clipping trailing flourishes like a final "l"). */
 function typedSignatureDataUrl(text: string): string | null {
   const trimmed = text.trim();
   if (!trimmed) return null;
   const dpr = Math.min(window.devicePixelRatio || 1, 2);
-  const pad = 20;
+  const pad = 24;
   const fontSpec = `${TYPE_FONT.size}px ${TYPE_FONT.stack}`;
   const meas = document.createElement('canvas').getContext('2d');
   if (!meas) return null;
   meas.font = fontSpec;
   const m = meas.measureText(trimmed);
-  const ascent = m.actualBoundingBoxAscent || TYPE_FONT.size * 0.8;
-  const descent = m.actualBoundingBoxDescent || TYPE_FONT.size * 0.4;
-  const width = Math.max(1, Math.ceil(m.width) + pad * 2);
+  const num = (v: number | undefined, fallback: number) => (typeof v === 'number' && Number.isFinite(v) ? v : fallback);
+  const left = num(m.actualBoundingBoxLeft, 0);
+  const right = num(m.actualBoundingBoxRight, m.width);
+  const ascent = num(m.actualBoundingBoxAscent, TYPE_FONT.size * 0.8);
+  const descent = num(m.actualBoundingBoxDescent, TYPE_FONT.size * 0.4);
+  // Place the origin so the leftmost ink sits at `pad`; extend the canvas to the
+  // rightmost ink (the swash) plus padding on both sides.
+  const originX = pad + Math.max(0, left);
+  const width = Math.max(1, Math.ceil(originX + Math.max(right, m.width) + pad));
   const height = Math.max(1, Math.ceil(ascent + descent) + pad * 2);
   const out = document.createElement('canvas');
   out.width = width * dpr;
@@ -100,7 +108,7 @@ function typedSignatureDataUrl(text: string): string | null {
   ctx.fillStyle = INK_COLOR;
   ctx.textBaseline = 'alphabetic';
   ctx.font = fontSpec;
-  ctx.fillText(trimmed, pad, pad + ascent);
+  ctx.fillText(trimmed, originX, pad + ascent);
   return out.toDataURL('image/png');
 }
 
@@ -123,6 +131,7 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
   const typedValue = controlled ? (typedName as string) : internalTyped;
   const typedValueRef = useRef(typedValue);
   typedValueRef.current = typedValue;
+  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -149,11 +158,20 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
     return () => observer.disconnect();
   }, [redraw, mode]);
 
-  // Preload the handwriting font so canvas rendering has it available.
+  // Render the live preview from the exact same PNG the signature will save as,
+  // so what you see is what gets stored (and it can never clip or overflow).
+  // Wait for the handwriting font to load first, then regenerate on each change.
   useEffect(() => {
-    if (mode !== 'type' || typeof document === 'undefined' || !('fonts' in document)) return;
-    document.fonts.load(`${TYPE_FONT.size}px ${TYPE_FONT.family}`).catch(() => {});
-  }, [mode]);
+    if (mode !== 'type') return;
+    let cancelled = false;
+    const generate = () => { if (!cancelled) setPreviewUrl(typedSignatureDataUrl(typedValueRef.current)); };
+    if (typeof document !== 'undefined' && 'fonts' in document) {
+      document.fonts.load(`${TYPE_FONT.size}px ${TYPE_FONT.family}`).then(generate).catch(generate);
+    } else {
+      generate();
+    }
+    return () => { cancelled = true; };
+  }, [mode, typedValue]);
 
   const notify = useCallback(
     (empty: boolean) => {
@@ -330,16 +348,11 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
             />
           )}
           <div
-            className="flex items-center justify-center overflow-hidden rounded-xl border border-dashed border-gray-300 bg-white px-4"
+            className="flex items-center justify-center overflow-hidden rounded-xl border border-dashed border-gray-300 bg-white px-4 py-3"
             style={{ height }}
           >
-            {typedValue.trim() ? (
-              <span
-                className="max-w-full truncate"
-                style={{ fontFamily: TYPE_FONT.stack, fontSize: TYPE_FONT.size, lineHeight: 1.5, color: INK_COLOR }}
-              >
-                {typedValue}
-              </span>
+            {typedValue.trim() && previewUrl ? (
+              <img src={previewUrl} alt="Signature preview" className="max-h-full max-w-full object-contain" />
             ) : (
               <span className="text-xs text-gray-300">{controlled ? 'Your signature appears here' : 'Your signature preview'}</span>
             )}
