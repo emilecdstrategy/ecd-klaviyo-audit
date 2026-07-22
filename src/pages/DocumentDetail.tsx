@@ -16,7 +16,7 @@ import { DocumentAgentLayout, DocAgentToggleButton } from '../components/documen
 import DocumentActivityTimeline from '../components/document/DocumentActivityTimeline';
 import DocumentSignatures from '../components/document/DocumentSignatures';
 import SendDocumentModal from '../components/document/SendDocumentModal';
-import SignaturePad, { type SignaturePadHandle } from '../components/proposal/SignaturePad';
+import SignaturePad, { type SignaturePadHandle, type SignatureMeta } from '../components/proposal/SignaturePad';
 import BrandedCheckbox from '../components/ui/BrandedCheckbox';
 import Modal from '../components/ui/Modal';
 import type { Document, DocumentDisplayStatus, DocumentEvent, DocumentSignature } from '../lib/types';
@@ -38,7 +38,7 @@ function displayStatus(doc: Document): DocumentDisplayStatus {
   return doc.status;
 }
 
-function SenderSignatureModal({ open, defaultName, onClose, onSave }: { open: boolean; defaultName: string; onClose: () => void; onSave: (name: string, image: string) => Promise<void> }) {
+function SenderSignatureModal({ open, defaultName, initialMeta, onClose, onSave }: { open: boolean; defaultName: string; initialMeta?: SavedSignature | null; onClose: () => void; onSave: (name: string, image: string, meta: SignatureMeta) => Promise<void> }) {
   const padRef = useRef<SignaturePadHandle>(null);
   const [name, setName] = useState(defaultName);
   const [empty, setEmpty] = useState(true);
@@ -49,10 +49,11 @@ function SenderSignatureModal({ open, defaultName, onClose, onSave }: { open: bo
     setError('');
     if (!name.trim()) return setError('Please enter your name.');
     const image = padRef.current?.toDataURL();
+    const meta = padRef.current?.getMeta() ?? { mode: 'draw' as const, typed_name: '', font: '' };
     if (!image) return setError('Please add your signature.');
     setSaving(true);
     try {
-      await onSave(name.trim(), image);
+      await onSave(name.trim(), image, meta);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Could not save your signature.');
       setSaving(false);
@@ -68,7 +69,13 @@ function SenderSignatureModal({ open, defaultName, onClose, onSave }: { open: bo
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-600">Signature</label>
-          <SignaturePad ref={padRef} onChange={setEmpty} typedNameDefault={name} />
+          <SignaturePad
+            ref={padRef}
+            onChange={setEmpty}
+            typedNameDefault={name}
+            initialMode={initialMeta?.signature_type === 'type' ? 'type' : 'draw'}
+            initialFontKey={initialMeta?.signature_font}
+          />
         </div>
         {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>}
         <div className="flex justify-end gap-2 pt-1">
@@ -164,9 +171,16 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
     }
   };
 
-  const saveSenderSignature = async (signerName: string, image: string) => {
-    await upsertSenderSignature({ document_id: doc.id, signer_name: signerName, signature_image: image });
-    setSavedSig({ signer_name: signerName, signature_image: image });
+  const saveSenderSignature = async (signerName: string, image: string, meta: SignatureMeta) => {
+    await upsertSenderSignature({
+      document_id: doc.id,
+      signer_name: signerName,
+      signature_image: image,
+      signature_type: meta.mode,
+      signature_font: meta.font,
+      typed_name: meta.typed_name || signerName,
+    });
+    setSavedSig({ signer_name: signerName, signature_image: image, signature_type: meta.mode, typed_name: meta.typed_name, signature_font: meta.font });
     setSignOpen(false);
     await reload();
     toast('Your signature was saved');
@@ -410,6 +424,7 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
           <SenderSignatureModal
             open={signOpen}
             defaultName={senderSignature?.signer_name || user?.name || ''}
+            initialMeta={savedSig}
             onClose={() => setSignOpen(false)}
             onSave={saveSenderSignature}
           />

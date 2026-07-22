@@ -10,11 +10,21 @@ import { cn } from '../../lib/utils';
 
 type Point = { x: number; y: number };
 
+export type SignatureMeta = {
+  /** How the signature was produced. */
+  mode: 'draw' | 'type';
+  /** The typed name (empty for drawn signatures). */
+  typed_name: string;
+  /** The chosen handwriting font key (empty for drawn signatures). */
+  font: string;
+};
+
 export type SignaturePadHandle = {
   toDataURL: () => string | null;
   clear: () => void;
   undo: () => void;
   isEmpty: () => boolean;
+  getMeta: () => SignatureMeta;
 };
 
 type SignaturePadProps = {
@@ -23,6 +33,10 @@ type SignaturePadProps = {
   className?: string;
   /** Prefills the typed-signature field (e.g. the signer's name). */
   typedNameDefault?: string;
+  /** Which tab to open on first render. */
+  initialMode?: 'draw' | 'type';
+  /** Which handwriting font key to preselect in type mode. */
+  initialFontKey?: string;
 };
 
 const INK_COLOR = '#1f2937';
@@ -31,11 +45,16 @@ const LINE_WIDTH = 2.5;
 /** Handwriting fonts for the type-to-sign option. `family` is loaded via the
  * Font Loading API before rendering to canvas; `stack` adds fallbacks for the
  * live DOM preview. Declared in index.html. */
-const SIGNATURE_FONTS: { label: string; family: string; stack: string; size: number }[] = [
-  { label: 'Signature', family: "'Dancing Script'", stack: "'Dancing Script', cursive", size: 60 },
-  { label: 'Formal', family: "'Great Vibes'", stack: "'Great Vibes', cursive", size: 58 },
-  { label: 'Casual', family: "'Caveat'", stack: "'Caveat', cursive", size: 56 },
+const SIGNATURE_FONTS: { key: string; label: string; family: string; stack: string; size: number }[] = [
+  { key: 'dancing', label: 'Signature', family: "'Dancing Script'", stack: "'Dancing Script', cursive", size: 60 },
+  { key: 'great-vibes', label: 'Formal', family: "'Great Vibes'", stack: "'Great Vibes', cursive", size: 58 },
+  { key: 'caveat', label: 'Casual', family: "'Caveat'", stack: "'Caveat', cursive", size: 56 },
 ];
+
+function fontIndexForKey(key: string | undefined): number {
+  const i = SIGNATURE_FONTS.findIndex(f => f.key === key);
+  return i >= 0 ? i : 0;
+}
 
 function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Point[][], dpr: number) {
   ctx.save();
@@ -96,7 +115,7 @@ function typedSignatureDataUrl(text: string, font: { family: string; stack: stri
 
 /** Dependency-free signature pad: draw (mouse/touch/stylus) or type a stylized signature. */
 const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function SignaturePad(
-  { height = 160, onChange, className, typedNameDefault = '' },
+  { height = 160, onChange, className, typedNameDefault = '', initialMode = 'draw', initialFontKey },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
@@ -104,12 +123,12 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
   const drawingRef = useRef(false);
   const [hasInk, setHasInk] = useState(false);
 
-  const [mode, setMode] = useState<'draw' | 'type'>('draw');
+  const [mode, setMode] = useState<'draw' | 'type'>(initialMode);
   const modeRef = useRef(mode);
   const [typedText, setTypedText] = useState(typedNameDefault);
   const typedTextRef = useRef(typedText);
-  const [fontIndex, setFontIndex] = useState(0);
-  const fontIndexRef = useRef(0);
+  const [fontIndex, setFontIndex] = useState(() => fontIndexForKey(initialFontKey));
+  const fontIndexRef = useRef(fontIndexForKey(initialFontKey));
 
   const redraw = useCallback(() => {
     const canvas = canvasRef.current;
@@ -226,6 +245,10 @@ const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function 
       isEmpty: isActiveEmpty,
       clear,
       undo,
+      getMeta: () =>
+        modeRef.current === 'type'
+          ? { mode: 'type', typed_name: typedTextRef.current.trim(), font: SIGNATURE_FONTS[fontIndexRef.current].key }
+          : { mode: 'draw', typed_name: '', font: '' },
       toDataURL: () => {
         if (modeRef.current === 'type') {
           return typedSignatureDataUrl(typedTextRef.current, SIGNATURE_FONTS[fontIndexRef.current]);

@@ -319,20 +319,33 @@ export async function listDocumentSignatures(documentId: string): Promise<Docume
   return (data ?? []) as DocumentSignature[];
 }
 
-export type SavedSignature = { signer_name: string; signature_image: string };
+export type SavedSignature = {
+  signer_name: string;
+  signature_image: string;
+  /** How it was made, so the type-to-sign style can be reused. */
+  signature_type?: 'draw' | 'type';
+  typed_name?: string;
+  signature_font?: string;
+};
 
-/** The current user's saved default signature, drawn once and reused. */
+/** The current user's saved default signature, made once and reused. */
 export async function getMySignature(): Promise<SavedSignature | null> {
   const { data: userData } = await supabase.auth.getUser();
   const uid = userData?.user?.id;
   if (!uid) return null;
   const { data, error } = await supabase
     .from('user_signatures')
-    .select('signer_name, signature_image')
+    .select('signer_name, signature_image, signature_type, typed_name, signature_font')
     .eq('user_id', uid)
     .maybeSingle();
   if (error || !data) return null;
-  return { signer_name: data.signer_name, signature_image: data.signature_image };
+  return {
+    signer_name: data.signer_name,
+    signature_image: data.signature_image,
+    signature_type: (data.signature_type as 'draw' | 'type') ?? 'draw',
+    typed_name: data.typed_name ?? '',
+    signature_font: data.signature_font ?? '',
+  };
 }
 
 /** Save (or update) the current user's default signature for reuse. */
@@ -343,7 +356,15 @@ export async function saveMySignature(input: SavedSignature): Promise<void> {
   const { error } = await supabase
     .from('user_signatures')
     .upsert(
-      { user_id: uid, signer_name: input.signer_name, signature_image: input.signature_image, updated_at: new Date().toISOString() },
+      {
+        user_id: uid,
+        signer_name: input.signer_name,
+        signature_image: input.signature_image,
+        signature_type: input.signature_type ?? 'draw',
+        typed_name: input.typed_name ?? '',
+        signature_font: input.signature_font ?? '',
+        updated_at: new Date().toISOString(),
+      },
       { onConflict: 'user_id' },
     );
   if (error) throw error;
@@ -357,6 +378,9 @@ export async function upsertSenderSignature(input: {
   signer_name: string;
   signature_image: string;
   typed_name?: string;
+  /** How the signature was produced, persisted to the user's default. */
+  signature_type?: 'draw' | 'type';
+  signature_font?: string;
   /** When false, do not overwrite the user's saved default (e.g. applying the saved one). */
   saveAsDefault?: boolean;
 }): Promise<DocumentSignature> {
@@ -381,7 +405,13 @@ export async function upsertSenderSignature(input: {
   if (error) throw error;
   await recordDocumentEvent(input.document_id, 'signed', { role: 'sender' }).catch(() => {});
   if (input.saveAsDefault !== false) {
-    await saveMySignature({ signer_name: input.signer_name, signature_image: input.signature_image }).catch(() => {});
+    await saveMySignature({
+      signer_name: input.signer_name,
+      signature_image: input.signature_image,
+      signature_type: input.signature_type ?? 'draw',
+      typed_name: input.typed_name ?? '',
+      signature_font: input.signature_font ?? '',
+    }).catch(() => {});
   }
   return data as DocumentSignature;
 }
