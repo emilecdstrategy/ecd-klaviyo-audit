@@ -498,8 +498,9 @@ export default function AuditWorkspace() {
                 </div>
               </div>
 
-              {/* Right: docked context assistant */}
-              <div className="h-[600px] lg:sticky lg:top-6">
+              {/* Right: docked context assistant. Height tracks the viewport (so
+                  the input stays visible when zoomed) but caps at 600px. */}
+              <div className="h-[min(600px,calc(100dvh-9rem))] min-h-[360px] lg:sticky lg:top-6">
                 <AuditContextAssistant
                   onApply={applyContextDraft}
                   onTranscript={applyTranscript}

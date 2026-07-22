@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Loader2, Send, Sparkles } from 'lucide-react';
+import { Check, Loader2, Mic, Send, Sparkles } from 'lucide-react';
 import {
   sendAuditContextMessage,
   type AuditContextDraft,
@@ -50,18 +50,54 @@ export default function AuditContextAssistant({
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [listening, setListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const recognitionRef = useRef<any>(null);
+  const dictationBaseRef = useRef('');
 
   const lastMsg = messages[messages.length - 1];
   const awaitingChoice = !sending && lastMsg?.role === 'assistant' && Boolean(lastMsg.question);
+  const voiceSupported =
+    typeof window !== 'undefined' && Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending]);
 
+  const stopDictation = () => {
+    try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
+    recognitionRef.current = null;
+    setListening(false);
+  };
+
+  // Stop any in-progress dictation when the component unmounts.
+  useEffect(() => () => stopDictation(), []);
+
+  const toggleDictation = () => {
+    if (listening) { stopDictation(); return; }
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (!SR) return;
+    const rec = new SR();
+    rec.lang = 'en-US';
+    rec.interimResults = true;
+    rec.continuous = true;
+    dictationBaseRef.current = input.trim() ? `${input.trim()} ` : '';
+    rec.onresult = (e: any) => {
+      let transcript = '';
+      for (let i = 0; i < e.results.length; i++) transcript += e.results[i][0].transcript;
+      setInput(dictationBaseRef.current + transcript);
+    };
+    rec.onend = () => { recognitionRef.current = null; setListening(false); };
+    rec.onerror = () => { recognitionRef.current = null; setListening(false); };
+    recognitionRef.current = rec;
+    setListening(true);
+    try { rec.start(); } catch { setListening(false); }
+  };
+
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    if (listening) stopDictation();
     setError('');
     const userMsg: ChatMessage = { id: `u${Date.now()}`, role: 'user', content: trimmed };
     const nextMsgs = [...messages, userMsg];
@@ -157,9 +193,23 @@ export default function AuditContextAssistant({
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
           rows={1}
           disabled={awaitingChoice}
-          placeholder={awaitingChoice ? 'Pick an option above…' : 'Paste a link or type…'}
+          placeholder={awaitingChoice ? 'Pick an option above…' : listening ? 'Listening…' : 'Paste a link, type, or use the mic…'}
           className="max-h-28 flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none disabled:bg-gray-50"
         />
+        {voiceSupported && (
+          <button
+            type="button"
+            onClick={toggleDictation}
+            disabled={awaitingChoice || sending}
+            className={`rounded-lg p-2 transition-colors disabled:opacity-40 ${
+              listening ? 'bg-red-500 text-white animate-pulse' : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
+            }`}
+            aria-label={listening ? 'Stop dictation' : 'Dictate with your voice'}
+            title={listening ? 'Stop dictation' : 'Dictate with your voice'}
+          >
+            <Mic className="h-4 w-4" />
+          </button>
+        )}
         <button
           type="submit"
           disabled={!input.trim() || sending || awaitingChoice}
