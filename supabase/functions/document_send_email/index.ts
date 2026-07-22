@@ -80,6 +80,9 @@ serve(async (req) => {
     const origin = (body.app_url ?? "").trim() || (Deno.env.get("APP_URL") ?? "").trim() || (req.headers.get("origin") ?? "").trim();
     const cleanOrigin = origin.replace(/\/$/, "");
     const logoUrl = cleanOrigin ? `${cleanOrigin}/favicon.png` : undefined;
+    // The staff app origin (where the sender triggered this), used for the
+    // internal "open document" link in the creator failure notification.
+    const staffOrigin = (req.headers.get("origin") ?? "").trim().replace(/\/$/, "") || cleanOrigin;
 
     const [primaryReplyTo, ...ccReplyTos] = replyToEmails.length
       ? replyToEmails
@@ -131,6 +134,37 @@ serve(async (req) => {
     });
 
     if (result.status === "failed") {
+      // Notify the document's creator that the send failed, so it isn't missed.
+      // Best-effort: never let a notification problem change the send response.
+      try {
+        const creatorId = (document.created_by as string | null) ?? null;
+        if (creatorId) {
+          const { data: creator } = await sb.from("profiles").select("email, name").eq("id", creatorId).maybeSingle();
+          const creatorEmail = (creator as { email?: string } | null)?.email?.trim() ?? "";
+          if (EMAIL_RE.test(creatorEmail)) {
+            const creatorFirst = (creator as { name?: string } | null)?.name?.split(" ")[0] ?? "";
+            await sendEmail({
+              to: [creatorEmail],
+              from: resolveFromAddress(settings.email),
+              subject: `Delivery failed: ${document.title || "your document"}`,
+              html: proposalEmailHtml({
+                heading: "A document email could not be delivered",
+                bodyLines: [
+                  `Hi${creatorFirst ? ` ${escapeHtml(creatorFirst)}` : ""},`,
+                  `We tried to email the document "${escapeHtml(document.title || "Untitled")}" to ${escapeHtml(recipientEmail)}, but the message did not go through.`,
+                  `Reason: ${escapeHtml(result.reason)}`,
+                  `Open the document to check the recipient address and try resending.`,
+                ],
+                ctaLabel: "Open document",
+                ctaUrl: `${staffOrigin}/documents/${documentId}`,
+                logoUrl,
+              }),
+            });
+          }
+        }
+      } catch (_e) {
+        // swallow: the recipient send already failed; notification is a courtesy
+      }
       return documentJson(
         { ok: false, error: { code: "email_failed", message: result.reason }, public_token: token, correlationId },
         { status: 200 },

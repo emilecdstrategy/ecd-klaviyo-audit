@@ -1,9 +1,15 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, Send } from 'lucide-react';
+import { ArrowLeft, ChevronDown, Plus, Send, X } from 'lucide-react';
 import Modal from '../ui/Modal';
-import { sendDocumentEmail } from '../../lib/documents-db';
+import { sendDocumentEmail, getDocumentSettings } from '../../lib/documents-db';
+import { listAdminProfiles } from '../../lib/db';
 import { buildDocumentEmailPreview } from '../../lib/document-email-preview';
-import type { Document } from '../../lib/types';
+import type { Document, Profile } from '../../lib/types';
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+/** Sane fallback reply-to team if no reply-to is configured in settings. */
+const DEFAULT_REPLY_TO_EMAILS = ['xiomara@ecdigitalstrategy.com', 'zak@ecdigitalstrategy.com'];
 
 export default function SendDocumentModal({
   open,
@@ -22,8 +28,13 @@ export default function SendDocumentModal({
   const [message, setMessage] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
+  const [admins, setAdmins] = useState<Profile[]>([]);
+  const [replyToEmails, setReplyToEmails] = useState<string[]>(DEFAULT_REPLY_TO_EMAILS);
+  const [addMenuOpen, setAddMenuOpen] = useState(false);
+  const [manualReplyTo, setManualReplyTo] = useState('');
+  const [replyToError, setReplyToError] = useState('');
 
-  const emailValid = /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim());
+  const emailValid = EMAIL_RE.test(email.trim());
   const resend = document.status !== 'draft';
 
   useEffect(() => {
@@ -33,7 +44,38 @@ export default function SendDocumentModal({
     setEmail(document.recipient_email || '');
     setMessage('');
     setError('');
+    setAddMenuOpen(false);
+    setManualReplyTo('');
+    setReplyToError('');
+    listAdminProfiles().then(setAdmins).catch(() => setAdmins([]));
+    getDocumentSettings()
+      .then(s => {
+        const seed = (s.email.reply_to || '')
+          .split(',')
+          .map(e => e.trim())
+          .filter(e => EMAIL_RE.test(e));
+        setReplyToEmails(seed.length ? seed : DEFAULT_REPLY_TO_EMAILS);
+      })
+      .catch(() => setReplyToEmails(DEFAULT_REPLY_TO_EMAILS));
   }, [open, document.recipient_name, document.recipient_email]);
+
+  const nameForReplyTo = (e: string) => admins.find(a => a.email.toLowerCase() === e.toLowerCase())?.name || e;
+  const addableAdmins = admins.filter(a => a.email && !replyToEmails.some(e => e.toLowerCase() === a.email.toLowerCase()));
+
+  const addReplyTo = (e: string) => {
+    const trimmed = e.trim();
+    if (!trimmed) return;
+    setReplyToEmails(prev => (prev.some(x => x.toLowerCase() === trimmed.toLowerCase()) ? prev : [...prev, trimmed]));
+  };
+  const addManualReplyTo = () => {
+    const trimmed = manualReplyTo.trim();
+    if (!EMAIL_RE.test(trimmed)) { setReplyToError('Please enter a valid email address.'); return; }
+    addReplyTo(trimmed);
+    setManualReplyTo('');
+    setReplyToError('');
+    setAddMenuOpen(false);
+  };
+  const removeReplyTo = (e: string) => setReplyToEmails(prev => prev.filter(x => x !== e));
 
   const emailPreview = useMemo(
     () =>
@@ -57,6 +99,7 @@ export default function SendDocumentModal({
         recipient_email: email.trim(),
         recipient_name: name.trim(),
         message: message.trim() || undefined,
+        reply_to_emails: replyToEmails,
       });
       onSent(result);
     } catch (e) {
@@ -125,6 +168,69 @@ export default function SendDocumentModal({
           <div className="rounded-lg border border-gray-200 bg-gray-50 px-4 py-3">
             <p className="text-sm font-semibold text-gray-900">{name.trim() || 'No name provided'}</p>
             <p className="text-sm text-gray-600">{email.trim()}</p>
+          </div>
+
+          <div>
+            <p className="mb-1.5 text-xs font-medium text-gray-500">
+              Replies will go to{replyToEmails.length > 1 ? ' (first as Reply-To, rest CC’d)' : ''}
+            </p>
+            <div className="flex flex-wrap items-center gap-1.5">
+              {replyToEmails.map(e => (
+                <span key={e} className="inline-flex items-center gap-1 rounded-full bg-brand-primary/10 py-1 pl-2.5 pr-1.5 text-xs font-medium text-brand-primary">
+                  {nameForReplyTo(e)}
+                  <button type="button" onClick={() => removeReplyTo(e)} className="rounded-full p-0.5 hover:bg-brand-primary/20" aria-label={`Remove ${e}`}>
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+              {replyToEmails.length === 0 && (
+                <span className="text-xs text-gray-400">No one selected. Replies go straight to the recipient's inbox.</span>
+              )}
+              <div className="relative">
+                <button
+                  type="button"
+                  onClick={() => setAddMenuOpen(v => !v)}
+                  className="inline-flex items-center gap-1 rounded-full border border-dashed border-gray-300 px-2.5 py-1 text-xs font-medium text-gray-500 hover:border-brand-primary hover:text-brand-primary"
+                >
+                  <Plus className="h-3 w-3" />
+                  Add
+                  <ChevronDown className="h-3 w-3" />
+                </button>
+                {addMenuOpen && (
+                  <div className="absolute left-0 top-full z-10 mt-1.5 w-64 rounded-lg border border-gray-200 bg-white p-2 shadow-lg">
+                    {addableAdmins.length > 0 && (
+                      <div className="mb-2 space-y-0.5">
+                        {addableAdmins.map(a => (
+                          <button
+                            key={a.id}
+                            type="button"
+                            onClick={() => { addReplyTo(a.email); setAddMenuOpen(false); }}
+                            className="block w-full rounded-md px-2 py-1.5 text-left text-xs text-gray-700 hover:bg-gray-50"
+                          >
+                            <span className="font-medium">{a.name || a.email}</span>
+                            {a.name && <span className="text-gray-400"> · {a.email}</span>}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="flex items-center gap-1.5 border-t border-gray-100 pt-2">
+                      <input
+                        type="email"
+                        value={manualReplyTo}
+                        onChange={e => setManualReplyTo(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') addManualReplyTo(); }}
+                        placeholder="someone@else.com"
+                        className="w-full rounded-md border border-gray-200 px-2 py-1 text-xs focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
+                      />
+                      <button type="button" onClick={addManualReplyTo} className="shrink-0 rounded-md bg-brand-primary px-2 py-1 text-xs font-medium text-white hover:opacity-90">
+                        Add
+                      </button>
+                    </div>
+                    {replyToError && <p className="mt-1 text-xs text-red-600">{replyToError}</p>}
+                  </div>
+                )}
+              </div>
+            </div>
           </div>
 
           <div>
