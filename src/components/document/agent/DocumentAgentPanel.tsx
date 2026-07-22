@@ -414,8 +414,8 @@ export default function DocumentAgentPanel() {
 
   return (
     <>
-      <div aria-hidden className={cn('hidden shrink-0 transition-[width] duration-300 ease-in-out lg:block', isOpen ? 'w-[420px]' : 'w-0')} />
-      <div className={cn('fixed right-0 top-0 z-30 hidden h-screen w-[420px] transform border-l border-gray-100 bg-white shadow-sm transition-transform duration-300 ease-in-out lg:block', isOpen ? 'translate-x-0' : 'translate-x-full')}>
+      <div aria-hidden className={cn('hidden shrink-0 transition-[width] duration-300 ease-in-out lg:block', isOpen ? 'w-[340px] xl:w-[380px] 2xl:w-[420px]' : 'w-0')} />
+      <div className={cn('fixed right-0 top-0 z-30 hidden h-screen w-[340px] transform border-l border-gray-100 bg-white shadow-sm transition-transform duration-300 ease-in-out lg:block xl:w-[380px] 2xl:w-[420px]', isOpen ? 'translate-x-0' : 'translate-x-full')}>
         {body}
       </div>
       {isOpen && (

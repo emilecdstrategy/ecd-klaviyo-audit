@@ -120,7 +120,7 @@ export default function GlobalSearch() {
         onFocus={() => q.trim() && setOpen(true)}
         onKeyDown={onKeyDown}
         placeholder="Search clients and audits..."
-        className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 w-72 transition-all"
+        className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm text-gray-700 placeholder:text-gray-400 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 w-48 lg:w-56 xl:w-72 transition-all"
       />
 
       {open && (q.trim() || loading || error) && (
