@@ -49,11 +49,13 @@ serve(async (req) => {
       access_token?: string;
       shopify_client_id?: string;
       shopify_client_secret?: string;
+      use_installed_app?: boolean;
     };
     const clientId = (input.client_id ?? "").trim();
     const appClientId = (input.shopify_client_id ?? "").trim();
     const appClientSecret = (input.shopify_client_secret ?? "").trim();
     const legacyToken = (input.access_token ?? "").trim();
+    const useInstalledApp = Boolean(input.use_installed_app);
     const shopDomain = normalizeShopDomain(input.shop_domain ?? "");
     if (!clientId) {
       return json({ ok: false, error: { code: "bad_request", message: "Missing client_id" }, correlationId }, { status: 400 });
@@ -61,17 +63,39 @@ serve(async (req) => {
     if (!shopDomain) {
       return json({ ok: false, error: { code: "bad_request", message: "Enter a valid *.myshopify.com store domain" }, correlationId }, { status: 400 });
     }
-    if (!(appClientId && appClientSecret) && !legacyToken) {
+    if (!(appClientId && appClientSecret) && !legacyToken && !useInstalledApp) {
       return json({ ok: false, error: { code: "bad_request", message: "Provide a Shopify Client ID and Client secret" }, correlationId }, { status: 400 });
     }
 
     // Determine the auth method and get an access token to verify + read shop
-    // metadata. Preferred path: Dev Dashboard client_credentials. The secret we
-    // persist is the app client secret (exchanged for a fresh token each run);
-    // the legacy path persists a static admin token.
-    const authMethod = appClientId && appClientSecret ? "client_credentials" : "admin_token";
+    // metadata. Options: reuse the offline token from the already-installed
+    // promo-calendar app (installed_app), a Dev Dashboard client_credentials
+    // grant (same-org only), or a pasted legacy admin token. installed_app and
+    // legacy both persist a static admin token; client_credentials persists the
+    // app secret and re-exchanges each run.
+    let authMethod = appClientId && appClientSecret ? "client_credentials" : "admin_token";
     let accessToken = legacyToken;
-    if (authMethod === "client_credentials") {
+    if (useInstalledApp) {
+      authMethod = "admin_token";
+      const promoUrl = (Deno.env.get("PROMO_SUPABASE_URL") ?? "").trim();
+      const promoKey = (Deno.env.get("PROMO_SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
+      if (!promoUrl || !promoKey) {
+        return json({ ok: false, correlationId, error: { code: "config_missing", message: "Installed-app lookup is not configured (PROMO_SUPABASE_URL / PROMO_SUPABASE_SERVICE_ROLE_KEY)." } }, { status: 200 });
+      }
+      const promo = createClient(promoUrl, promoKey, { auth: { persistSession: false, autoRefreshToken: false } });
+      const { data: row, error: rowErr } = await promo
+        .from("promo_client_settings")
+        .select("shopify_access_token")
+        .eq("shopify_store_domain", shopDomain)
+        .not("shopify_access_token", "is", null)
+        .maybeSingle();
+      if (rowErr) throw rowErr;
+      const token = (row?.shopify_access_token ?? "").trim();
+      if (!token) {
+        return json({ ok: false, correlationId, error: { code: "not_installed", message: `No token found for ${shopDomain} in the promo calendar app. Connect this store there first, then retry.` } }, { status: 200 });
+      }
+      accessToken = token;
+    } else if (authMethod === "client_credentials") {
       const grant = await exchangeClientCredentials(shopDomain, appClientId, appClientSecret);
       if (!grant.ok) {
         return json(
