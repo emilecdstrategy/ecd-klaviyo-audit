@@ -37,6 +37,7 @@ function EmailPreviewModal({ event, onClose }: { event: DocumentEvent; onClose: 
   const bodyLines = Array.isArray(m.body_lines) ? (m.body_lines as unknown[]).map(asString).filter((l): l is string => !!l) : [];
   const firstName = recipient.name?.split(' ')[0] ?? null;
   const status = asString(m.email_status);
+  const emailError = asString(m.email_error);
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 p-4" onClick={onClose} role="presentation">
       <div className="max-h-[85vh] w-full max-w-lg overflow-y-auto rounded-xl bg-white shadow-xl" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
@@ -58,6 +59,12 @@ function EmailPreviewModal({ event, onClose }: { event: DocumentEvent; onClose: 
               {status && <span className={`ml-2 rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${status === 'sent' ? 'bg-emerald-50 text-emerald-700' : status === 'failed' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'}`}>{status === 'sent' ? 'Delivered' : status === 'failed' ? 'Failed' : 'Skipped'}</span>}
             </span>
           </div>
+          {emailError && (status === 'failed' || status === 'skipped') && (
+            <div className="flex gap-2">
+              <span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Reason</span>
+              <span className={`min-w-0 flex-1 text-xs ${status === 'failed' ? 'text-red-600' : 'text-gray-500'}`}>{emailError}</span>
+            </div>
+          )}
           {cc.length > 0 && <div className="flex gap-2"><span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Cc</span><span className="min-w-0 flex-1 text-gray-700">{cc.join(', ')}</span></div>}
           {asString(m.reply_to) && <div className="flex gap-2"><span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Reply-to</span><span className="min-w-0 flex-1 text-gray-700">{asString(m.reply_to)}</span></div>}
           {asString(m.subject) && <div className="flex gap-2"><span className="w-16 shrink-0 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Subject</span><span className="min-w-0 flex-1 font-medium text-gray-900">{asString(m.subject)}</span></div>}
@@ -100,6 +107,7 @@ export default function DocumentActivityTimeline({ events }: { events: DocumentE
           else if (senderSigned) { label = 'Countersigned'; }
 
           const clickable = emailSend;
+          const emailStatus = emailSend ? asString((event.metadata as Record<string, unknown> | null)?.email_status) : null;
           const actorName = event.actor === 'admin' && !internalView ? event.actor_name ?? null : null;
           const aiAssisted = (event.event_type === 'created' || event.event_type === 'updated') && event.metadata?.via === 'ai_assistant';
           const signerEmail = typeof event.metadata?.signer_email === 'string' ? event.metadata.signer_email : null;
@@ -113,6 +121,7 @@ export default function DocumentActivityTimeline({ events }: { events: DocumentE
                   {clickable ? (
                     <button type="button" onClick={() => setPreviewEvent(event)} className="font-medium text-blue-600 underline decoration-blue-200 underline-offset-2 hover:decoration-blue-500">{label}</button>
                   ) : label}
+                  {(emailStatus === 'failed' || emailStatus === 'skipped') && <span className={`rounded-full px-1.5 py-0.5 text-[10px] font-semibold ${emailStatus === 'failed' ? 'bg-red-50 text-red-600' : 'bg-gray-100 text-gray-500'}`}>{emailStatus === 'failed' ? 'Failed' : 'Skipped'}</span>}
                   {aiAssisted && <span className="inline-flex items-center gap-1 rounded-full bg-brand-primary/10 px-1.5 py-0.5 text-[10px] font-semibold text-brand-primary"><Sparkles className="h-2.5 w-2.5" /> AI assisted</span>}
                   {internalView && <span className="rounded-full bg-gray-100 px-1.5 py-0.5 text-[10px] font-semibold text-gray-500">Internal</span>}
                   {actorName ? <span className="font-normal text-gray-400"> · by {actorName}</span> : null}

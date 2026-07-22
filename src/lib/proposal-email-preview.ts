@@ -1,7 +1,7 @@
 // Client-side mirror of supabase/functions/_shared/mailer.ts's proposalEmailHtml,
 // used to render an accurate live preview before the real send. Keep the two in sync.
 
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
@@ -9,7 +9,9 @@ function escapeHtml(value: string): string {
     .replace(/"/g, '&quot;');
 }
 
-function proposalEmailShellHtml(options: {
+/** Shared shell mirroring supabase/functions/_shared/mailer.ts's proposalEmailHtml.
+ * Used by both the proposal and document email previews. Keep in sync with mailer. */
+export function emailShellHtml(options: {
   heading: string;
   bodyLines: string[];
   ctaLabel?: string;
@@ -68,7 +70,7 @@ export function buildProposalEmailPreview(options: {
 
   return {
     subject: `Proposal for ${companyName} from ECD Digital Strategy`,
-    html: proposalEmailShellHtml({
+    html: emailShellHtml({
       heading: 'Your proposal is ready',
       bodyLines,
       ctaLabel: 'View & sign proposal',

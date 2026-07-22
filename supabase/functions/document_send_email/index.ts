@@ -119,6 +119,7 @@ serve(async (req) => {
         send_method: "email",
         email_to: recipientEmail,
         email_status: result.status,
+        email_error: result.status === "sent" ? null : result.reason,
         subject,
         message: message || null,
         recipient: { name: recipientName || null, email: recipientEmail },
