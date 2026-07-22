@@ -1,23 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { createClient } from "npm:@supabase/supabase-js@2";
-import { normalizeShopDomain, shopifyRest, mapShopifyErrorCode, exchangeClientCredentials, SHOPIFY_API_VERSION } from "../_shared/shopify-api.ts";
-
-/** Look up the offline token the promo-calendar app already stored for a store. */
-async function fetchInstalledAppToken(shopDomain: string): Promise<string | null> {
-  const url = (Deno.env.get("PROMO_SUPABASE_URL") ?? "").trim();
-  const key = (Deno.env.get("PROMO_SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
-  if (!url || !key) throw new Error("Installed-app lookup is not configured (PROMO_SUPABASE_* env missing).");
-  const promo = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
-  const { data, error } = await promo
-    .from("promo_client_settings")
-    .select("shopify_access_token")
-    .eq("shopify_store_domain", shopDomain)
-    .not("shopify_access_token", "is", null)
-    .maybeSingle();
-  if (error) throw error;
-  const token = (data?.shopify_access_token ?? "").trim();
-  return token || null;
-}
+import { normalizeShopDomain, shopifyRest, mapShopifyErrorCode, exchangeClientCredentials, fetchInstalledAppToken, SHOPIFY_API_VERSION } from "../_shared/shopify-api.ts";
 
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
@@ -36,12 +18,13 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ error: "Method not allowed" }, { status: 405 });
   try {
-    const { shopDomain: rawDomain, accessToken, clientId, clientSecret, useInstalledApp } = (await req.json()) as {
+    const { shopDomain: rawDomain, accessToken, clientId, clientSecret, useInstalledApp, websiteUrl } = (await req.json()) as {
       shopDomain?: string;
       accessToken?: string;
       clientId?: string;
       clientSecret?: string;
       useInstalledApp?: boolean;
+      websiteUrl?: string;
     };
     const shopDomain = normalizeShopDomain(rawDomain ?? "");
     if (!shopDomain) return json({ error: "Enter a valid *.myshopify.com store domain" }, { status: 400 });
@@ -51,7 +34,7 @@ serve(async (req) => {
     // client_credentials grant, or a pasted legacy admin token.
     let accessTokenResolved = "";
     if (useInstalledApp) {
-      const token = await fetchInstalledAppToken(shopDomain);
+      const token = await fetchInstalledAppToken(shopDomain, websiteUrl);
       if (!token) {
         return json({
           ok: false,

@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization } from "../_shared/auth.ts";
 import { encryptString } from "../_shared/crypto.ts";
-import { normalizeShopDomain, shopifyRest, mapShopifyErrorCode, exchangeClientCredentials, SHOPIFY_API_VERSION } from "../_shared/shopify-api.ts";
+import { normalizeShopDomain, shopifyRest, mapShopifyErrorCode, exchangeClientCredentials, fetchInstalledAppToken, SHOPIFY_API_VERSION } from "../_shared/shopify-api.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -50,6 +50,7 @@ serve(async (req) => {
       shopify_client_id?: string;
       shopify_client_secret?: string;
       use_installed_app?: boolean;
+      website_url?: string;
     };
     const clientId = (input.client_id ?? "").trim();
     const appClientId = (input.shopify_client_id ?? "").trim();
@@ -77,20 +78,12 @@ serve(async (req) => {
     let accessToken = legacyToken;
     if (useInstalledApp) {
       authMethod = "admin_token";
-      const promoUrl = (Deno.env.get("PROMO_SUPABASE_URL") ?? "").trim();
-      const promoKey = (Deno.env.get("PROMO_SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
-      if (!promoUrl || !promoKey) {
-        return json({ ok: false, correlationId, error: { code: "config_missing", message: "Installed-app lookup is not configured (PROMO_SUPABASE_URL / PROMO_SUPABASE_SERVICE_ROLE_KEY)." } }, { status: 200 });
+      let token: string | null;
+      try {
+        token = await fetchInstalledAppToken(shopDomain, input.website_url);
+      } catch (e) {
+        return json({ ok: false, correlationId, error: { code: "config_missing", message: e instanceof Error ? e.message : "Installed-app lookup failed." } }, { status: 200 });
       }
-      const promo = createClient(promoUrl, promoKey, { auth: { persistSession: false, autoRefreshToken: false } });
-      const { data: row, error: rowErr } = await promo
-        .from("promo_client_settings")
-        .select("shopify_access_token")
-        .eq("shopify_store_domain", shopDomain)
-        .not("shopify_access_token", "is", null)
-        .maybeSingle();
-      if (rowErr) throw rowErr;
-      const token = (row?.shopify_access_token ?? "").trim();
       if (!token) {
         return json({ ok: false, correlationId, error: { code: "not_installed", message: `No token found for ${shopDomain} in the promo calendar app. Connect this store there first, then retry.` } }, { status: 200 });
       }

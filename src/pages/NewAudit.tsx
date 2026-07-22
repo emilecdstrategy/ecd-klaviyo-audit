@@ -245,7 +245,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     try {
       const { data, error: fnErr } = await supabase.functions.invoke<any>('shopify_test_connection', {
         body: shopifyAuthMode === 'installed'
-          ? { shopDomain: form.shopifyDomain, useInstalledApp: true }
+          ? { shopDomain: form.shopifyDomain, useInstalledApp: true, websiteUrl: form.websiteUrl }
           : { shopDomain: form.shopifyDomain, clientId: form.shopifyClientId, clientSecret: form.shopifyClientSecret },
       });
       if (fnErr) throw new Error(fnErr.message);
@@ -406,7 +406,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       if (!hasSavedShopifyConnection && (wantsInstalled || wantsCredentials)) {
         const { data: connData, error: connErr } = await supabase.functions.invoke<any>('shopify_connect_client', {
           body: wantsInstalled
-            ? { client_id: clientId, shop_domain: form.shopifyDomain, use_installed_app: true }
+            ? { client_id: clientId, shop_domain: form.shopifyDomain, use_installed_app: true, website_url: form.websiteUrl }
             : {
                 client_id: clientId,
                 shop_domain: form.shopifyDomain,

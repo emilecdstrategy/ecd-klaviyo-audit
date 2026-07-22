@@ -1,6 +1,43 @@
 /** Shopify Admin API helpers shared by the web-audit edge functions. */
+import { createClient } from "npm:@supabase/supabase-js@2";
 
 export const SHOPIFY_API_VERSION = "2026-04";
+
+/**
+ * Look up the offline/admin token the promo-calendar app already stored for a
+ * store. Matches on the myshopify domain OR the website host, because the promo
+ * form often leaves shopify_store_domain blank (only set "if different from the
+ * store URL"). Returns the token, or null if none is found.
+ */
+export async function fetchInstalledAppToken(shopDomain: string, websiteUrl?: string): Promise<string | null> {
+  const url = (Deno.env.get("PROMO_SUPABASE_URL") ?? "").trim();
+  const key = (Deno.env.get("PROMO_SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
+  if (!url || !key) throw new Error("Installed-app lookup is not configured (PROMO_SUPABASE_* env missing).");
+  const promo = createClient(url, key, { auth: { persistSession: false, autoRefreshToken: false } });
+
+  const host = (websiteUrl ?? "")
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .replace(/^www\./, "")
+    .split("/")[0];
+
+  const filters = [`shopify_store_domain.eq.${shopDomain}`];
+  if (host && /^[a-z0-9.-]+$/.test(host)) {
+    filters.push(`shopify_store_url.ilike.*${host}*`);
+    filters.push(`shopify_store_domain.ilike.*${host}*`);
+  }
+
+  const { data, error } = await promo
+    .from("promo_client_settings")
+    .select("shopify_access_token, shopify_store_domain, shopify_store_url")
+    .not("shopify_access_token", "is", null)
+    .or(filters.join(","))
+    .limit(1);
+  if (error) throw error;
+  const token = (data?.[0]?.shopify_access_token ?? "").trim();
+  return token || null;
+}
 
 /** Normalizes user input like "https://my-store.myshopify.com/admin" to "my-store.myshopify.com". */
 export function normalizeShopDomain(input: string): string | null {
