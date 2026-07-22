@@ -532,7 +532,7 @@ export default function AuditWorkspace() {
                 </Suspense>
               </div>
             ) : (
-              <div className="report-viewport-bleed">
+              <div className="mx-auto w-full max-w-[80rem] 2xl:max-w-[90rem]">
                 {!webBundle && <SkeletonAuditWorkspace />}
                 {webBundle && (
                   <Suspense fallback={<SkeletonAuditWorkspace />}>
@@ -542,7 +542,7 @@ export default function AuditWorkspace() {
               </div>
             )
           ) : (
-            <div className="report-viewport-bleed">
+            <div className="mx-auto w-full max-w-[80rem] 2xl:max-w-[90rem]">
               {!mergedReportData && <SkeletonAuditWorkspace />}
               {mergedReportData && (
                 <Suspense fallback={<SkeletonAuditWorkspace />}>
