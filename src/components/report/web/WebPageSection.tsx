@@ -262,18 +262,12 @@ export default function WebPageSection({
                       </div>
                     </div>
                   </div>
-                  <p className="mt-1.5 text-center text-[11px] text-gray-400">
-                    Before (numbers match the findings) vs AI concept applying the recommendations. Click either to enlarge.
-                  </p>
                 </>
               ) : displayAfter && afterUrl ? (
                 <div className="relative">
                   <div className="cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30" onClick={() => setLightbox(afterUrl)}>
                     <img src={afterUrl} alt={`${title} redesign concept (${viewport})`} className="block w-full" />
                   </div>
-                  <p className="mt-1.5 text-center text-[11px] text-gray-400">
-                    AI-generated concept applying the recommendations. Click to enlarge.
-                  </p>
                 </div>
               ) : (
                 <>
@@ -291,9 +285,6 @@ export default function WebPageSection({
                       onMarkerClick={focusFinding}
                     />
                   </div>
-                  <p className="mt-1.5 text-center text-[11px] text-gray-400">
-                    Click to enlarge{markers.length > 0 ? '. Numbers match the findings.' : ''}
-                  </p>
                 </>
               )}
               {afterError && <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-2 text-[11px] text-red-600">{afterError}</p>}
