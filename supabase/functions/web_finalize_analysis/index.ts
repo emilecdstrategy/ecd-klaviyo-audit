@@ -76,6 +76,29 @@ COVERAGE:
 
 Call the provided tool exactly once with your result.`;
 
+// Fire-and-forget the "after" image generation once analysis is complete. It
+// self-chains one section per invocation, so we only need to kick it off. No-op
+// if GEMINI_API_KEY is unset (the function returns not_configured).
+async function triggerAfterGeneration(auditId: string) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
+  try {
+    await Promise.race([
+      fetch(`${SUPABASE_URL}/functions/v1/web_generate_after`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+        },
+        body: JSON.stringify({ audit_id: auditId, mode: "auto" }),
+      }),
+      sleep(2_000),
+    ]);
+  } catch {
+    // best effort
+  }
+}
+
 async function chainSelf(auditId: string, mode?: string) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
   try {
@@ -402,6 +425,7 @@ async function runPipeline(auditId: string, correlationId: string, mode?: string
   }).eq("audit_id", auditId);
 
   if (!done) await chainSelf(auditId, mode);
+  else await triggerAfterGeneration(auditId);
   return json({ ok: true, correlationId, status: done ? "complete" : "in_progress", step: stepIndex, nextStep: nextIndex });
 }
 

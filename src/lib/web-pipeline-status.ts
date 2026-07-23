@@ -47,6 +47,24 @@ export async function fetchWebAuditPipelineStatus(auditId: string): Promise<WebP
   return { exists: true, isGenerating, failed, complete, error: data.error_message ?? null, stepIndex, progress, label };
 }
 
+/** Generate (or regenerate) the AI "after" concept image for one page section.
+ *  Returns the new image URL (and the viewport it was made for), or throws with
+ *  a readable message the report can surface. Image editing can take a while, so
+ *  no client timeout: the caller shows its own spinner. */
+export async function generateSectionAfter(
+  auditId: string,
+  sectionKey: string,
+  viewport?: 'desktop' | 'mobile',
+): Promise<{ url: string; viewport: 'desktop' | 'mobile' }> {
+  const { data, error } = await supabase.functions.invoke('web_generate_after', {
+    body: { audit_id: auditId, section_key: sectionKey, ...(viewport ? { viewport } : {}) },
+  });
+  if (error) throw new Error(error.message || 'Failed to generate the after image');
+  const res = data as { ok?: boolean; url?: string; viewport?: string; error?: { message?: string } };
+  if (!res?.ok || !res.url) throw new Error(res?.error?.message || 'Could not generate the after image.');
+  return { url: res.url, viewport: res.viewport === 'mobile' ? 'mobile' : 'desktop' };
+}
+
 /** Kick the web analysis edge function. Races an 8s timeout so a slow first
  *  step doesn't block the caller; the job keeps running server-side. */
 export async function startWebAnalysis(auditId: string, mode?: 'regenerate'): Promise<void> {

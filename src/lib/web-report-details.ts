@@ -17,10 +17,13 @@ export type WebFinding = {
   hidden?: boolean;
 };
 
+export type WebAfterImage = { url: string; generated_at: string };
+
 export type WebSectionDetail = {
   pros: string[];
   findings: WebFinding[];
   primary_snapshot_id: string | null;
+  after_images: { desktop?: WebAfterImage; mobile?: WebAfterImage };
 };
 
 export type WebAnalyticsMetric = { key: string; commentary: string; recommendation: string };
@@ -75,7 +78,19 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
         };
       })
     : [];
-  return { pros, findings, primary_snapshot_id: asString(web.primary_snapshot_id) || null };
+  const afterRaw = asRecord(web.after_images);
+  const parseAfter = (v: unknown): WebAfterImage | undefined => {
+    const rec = asRecord(v);
+    const url = asString(rec.url);
+    return url ? { url, generated_at: asString(rec.generated_at) } : undefined;
+  };
+  const after_images: WebSectionDetail['after_images'] = {};
+  const desktopAfter = parseAfter(afterRaw.desktop);
+  const mobileAfter = parseAfter(afterRaw.mobile);
+  if (desktopAfter) after_images.desktop = desktopAfter;
+  if (mobileAfter) after_images.mobile = mobileAfter;
+
+  return { pros, findings, primary_snapshot_id: asString(web.primary_snapshot_id) || null, after_images };
 }
 
 export function parseWebAnalyticsDetail(sectionDetails: unknown): WebAnalyticsDetail | null {

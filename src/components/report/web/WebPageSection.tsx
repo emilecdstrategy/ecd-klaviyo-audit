@@ -1,7 +1,8 @@
 import { useMemo, useState } from 'react';
-import { Monitor, Plus, Smartphone, Trash2 } from 'lucide-react';
+import { Loader2, Monitor, Plus, Smartphone, Sparkles, Trash2, Wand2 } from 'lucide-react';
 import type { AuditSection, WebPageSnapshot } from '../../../lib/types';
 import { parseWebSectionDetail } from '../../../lib/web-report-details';
+import { generateSectionAfter } from '../../../lib/web-pipeline-status';
 import { useReportEdit } from '../edit/ReportEditContext';
 import EditablePlainText from '../edit/EditablePlainText';
 import ImageLightbox from '../../ui/ImageLightbox';
@@ -22,6 +23,12 @@ export default function WebPageSection({
   const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop');
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  const [showAfter, setShowAfter] = useState(false);
+  const [afterBusy, setAfterBusy] = useState(false);
+  const [afterError, setAfterError] = useState('');
+  // Locally overrides the persisted after image right after a (re)generate, so
+  // the new concept shows without a full report reload.
+  const [afterOverride, setAfterOverride] = useState<{ desktop?: string; mobile?: string }>({});
 
   const successful = snapshots.filter((s) => s.status === 'success' && s.screenshot_url);
   const byId = new Map(successful.map((s) => [s.id, s]));
@@ -82,6 +89,24 @@ export default function WebPageSection({
     setActiveIndex(index);
     if (typeof document !== 'undefined') {
       document.getElementById(findingAnchorId(index))?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
+  };
+
+  const afterUrl = afterOverride[viewport] ?? detail.after_images[viewport]?.url ?? null;
+  const displayAfter = showAfter && Boolean(afterUrl);
+
+  const generateAfter = async () => {
+    setAfterBusy(true);
+    setAfterError('');
+    try {
+      const res = await generateSectionAfter(section.audit_id, section.section_key, viewport);
+      setAfterOverride((prev) => ({ ...prev, [res.viewport]: res.url }));
+      if (res.viewport !== viewport) setViewport(res.viewport);
+      setShowAfter(true);
+    } catch (e) {
+      setAfterError(e instanceof Error ? e.message : 'Could not generate the after image.');
+    } finally {
+      setAfterBusy(false);
     }
   };
 
@@ -153,27 +178,82 @@ export default function WebPageSection({
           reader scans), with every finding always expanded in a column on the
           right. The numbered pins on the shot match the numbered findings. */}
       <div className="mt-5 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-        {/* Left: reference screenshot */}
+        {/* Left: reference screenshot (before) with optional AI "after" concept */}
         <div className="lg:sticky lg:top-6">
           {shown ? (
             <div className={viewport === 'mobile' ? 'mx-auto w-full max-w-[360px]' : 'w-full'}>
-              {/* No overflow clip here so the pin hover tooltips can extend past
-                  the screenshot edges. */}
-              <div
-                className="cursor-zoom-in rounded-lg"
-                onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
-              >
-                <WebHighlightLayer
-                  imageUrl={shown.screenshot_url as string}
-                  alt={`${title} (${viewport})`}
-                  markers={markers}
-                  activeIndex={activeIndex}
-                  onMarkerClick={focusFinding}
-                />
-              </div>
-              <p className="mt-1.5 text-center text-[11px] text-gray-400">
-                Click to enlarge{markers.length > 0 ? '. Numbers match the findings.' : ''}
-              </p>
+              {/* Before / After toggle (only once an after concept exists) + the
+                  editor-only generate control. */}
+              {(afterUrl || editMode) && (
+                <div className="mb-2 flex items-center justify-between gap-2">
+                  {afterUrl ? (
+                    <div className="inline-flex overflow-hidden rounded-md border border-gray-200">
+                      <button
+                        type="button"
+                        onClick={() => setShowAfter(false)}
+                        className={`px-2.5 py-1 text-xs font-medium ${!displayAfter ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                      >
+                        Before
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowAfter(true)}
+                        className={`px-2.5 py-1 text-xs font-medium ${displayAfter ? 'bg-brand-primary text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+                      >
+                        After
+                      </button>
+                    </div>
+                  ) : (
+                    <span />
+                  )}
+                  {editMode && (
+                    <button
+                      type="button"
+                      onClick={generateAfter}
+                      disabled={afterBusy}
+                      className="inline-flex items-center gap-1.5 rounded-md border border-brand-primary/30 bg-brand-primary/5 px-2.5 py-1 text-xs font-semibold text-brand-primary hover:bg-brand-primary/10 disabled:opacity-50"
+                    >
+                      {afterBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                      {afterBusy ? 'Generating…' : afterUrl ? 'Regenerate after' : 'Generate after'}
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {displayAfter && afterUrl ? (
+                <div className="relative">
+                  <div className="cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30" onClick={() => setLightbox(afterUrl)}>
+                    <img src={afterUrl} alt={`${title} redesign concept (${viewport})`} className="block w-full" />
+                  </div>
+                  <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-brand-primary/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white shadow">
+                    <Sparkles className="h-3 w-3" /> AI concept
+                  </span>
+                  <p className="mt-1.5 text-center text-[11px] text-gray-400">
+                    AI-generated concept applying the recommendations. Click to enlarge.
+                  </p>
+                </div>
+              ) : (
+                <>
+                  {/* No overflow clip here so the pin hover tooltips can extend past
+                      the screenshot edges. */}
+                  <div
+                    className="cursor-zoom-in rounded-lg"
+                    onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
+                  >
+                    <WebHighlightLayer
+                      imageUrl={shown.screenshot_url as string}
+                      alt={`${title} (${viewport})`}
+                      markers={markers}
+                      activeIndex={activeIndex}
+                      onMarkerClick={focusFinding}
+                    />
+                  </div>
+                  <p className="mt-1.5 text-center text-[11px] text-gray-400">
+                    Click to enlarge{markers.length > 0 ? '. Numbers match the findings.' : ''}
+                  </p>
+                </>
+              )}
+              {afterError && <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-2 text-[11px] text-red-600">{afterError}</p>}
             </div>
           ) : (
             <div className="flex aspect-[16/10] items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-xs text-gray-400">
