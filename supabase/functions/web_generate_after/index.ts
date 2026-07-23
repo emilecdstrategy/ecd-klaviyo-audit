@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
+import { getSecret } from "../_shared/app-secrets.ts";
 
 // Generates an "after" concept image for a web-audit page section by editing the
 // real above-the-fold screenshot in place with Google's Gemini image model
@@ -16,8 +17,7 @@ import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shar
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const GEMINI_API_KEY = Deno.env.get("GEMINI_API_KEY") ?? Deno.env.get("GOOGLE_API_KEY") ?? "";
-const GEMINI_IMAGE_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-2.5-flash-image";
+const GEMINI_IMAGE_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
 const STORAGE_BUCKET = "audit-assets";
 
 const corsHeaders: Record<string, string> = {
@@ -82,14 +82,14 @@ function buildEditPrompt(label: string, recommendations: string[]): string {
     `Keep the brand's real logo, product photos, color palette, and typography intact so it clearly reads as the same store. Keep the same overall page structure and aspect ratio; change only what the fixes below require.`,
     `Apply these specific conversion and UX fixes:`,
     fixes || "Improve visual hierarchy, clarity of the primary call to action, and overall polish.",
-    `Make text crisp and legible. Do NOT add any annotations, numbered markers, callouts, borders, captions, or watermarks. Output only the redesigned screenshot.`,
+    `Make text crisp and legible. Do NOT invent phone numbers, prices, discounts, product names, or contact details that are not already in the original image, keep any such text the same as the source. Do NOT add any annotations, numbered markers, callouts, borders, captions, or watermarks. Output only the redesigned screenshot.`,
   ].join("\n\n");
 }
 
 // Calls Gemini image editing: source screenshot in, edited screenshot out.
-async function geminiEditImage(sourcePng: Uint8Array, prompt: string): Promise<Uint8Array> {
+async function geminiEditImage(sourcePng: Uint8Array, prompt: string, apiKey: string): Promise<Uint8Array> {
   const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${GEMINI_API_KEY}`;
+    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
@@ -156,6 +156,7 @@ async function generateForSection(
   auditId: string,
   clientId: string,
   section: { id: string; section_key: string; section_details: Record<string, unknown> | null },
+  apiKey: string,
   preferredViewport?: Viewport,
 ): Promise<{ url: string; viewport: Viewport } | null> {
   const meta = PAGE_SECTIONS.find((s) => s.key === section.section_key);
@@ -182,7 +183,7 @@ async function generateForSection(
   if (!srcRes.ok) throw new Error(`fetch_source_${srcRes.status}`);
   const srcPng = new Uint8Array(await srcRes.arrayBuffer());
 
-  const edited = await geminiEditImage(srcPng, buildEditPrompt(meta.label, recommendations));
+  const edited = await geminiEditImage(srcPng, buildEditPrompt(meta.label, recommendations), apiKey);
 
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${source.viewport}.png`;
   const { error: uploadErr } = await sb.storage
@@ -252,8 +253,16 @@ serve(async (req) => {
     }
   }
 
-  if (!GEMINI_API_KEY) {
-    return json({ ok: false, error: { code: "not_configured", message: "Image generation is not configured (missing GEMINI_API_KEY)." }, correlationId }, { status: 200 });
+  // Key is managed in admin Settings (app_secrets 'gemini_api_key'); getSecret
+  // also honors a GEMINI_API_KEY env override for local testing.
+  let apiKey = "";
+  try {
+    apiKey = (await getSecret("gemini_api_key")).trim();
+  } catch {
+    apiKey = "";
+  }
+  if (!apiKey) {
+    return json({ ok: false, error: { code: "not_configured", message: "Image generation is not configured. Add a Gemini API key in Settings." }, correlationId }, { status: 200 });
   }
 
   try {
@@ -277,7 +286,7 @@ serve(async (req) => {
     if (body.section_key) {
       const section = sections.find((s) => s.section_key === body.section_key);
       if (!section) return json({ ok: false, error: { code: "not_found", message: "Section not found" }, correlationId }, { status: 404 });
-      const result = await generateForSection(sb, auditId, clientId, section, preferredViewport);
+      const result = await generateForSection(sb, auditId, clientId, section, apiKey, preferredViewport);
       if (!result) return json({ ok: false, error: { code: "no_screenshot", message: "No screenshot available for this page yet." }, correlationId }, { status: 200 });
       return json({ ok: true, correlationId, url: result.url, viewport: result.viewport });
     }
@@ -293,7 +302,7 @@ serve(async (req) => {
       if (pending.length === 0) return json({ ok: true, correlationId, status: "complete" });
       const section = pending[0];
       try {
-        await generateForSection(sb, auditId, clientId, section);
+        await generateForSection(sb, auditId, clientId, section, apiKey);
       } catch (e) {
         // Don't let one section's failure stall the rest; mark it attempted so
         // the chain moves on instead of retrying the same section forever.

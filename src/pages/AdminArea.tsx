@@ -1027,7 +1027,7 @@ function ApiKeyCard({
   placeholder,
   savedMessage,
 }: {
-  provider: 'openai' | 'anthropic' | 'hubspot' | 'fireflies';
+  provider: 'openai' | 'anthropic' | 'hubspot' | 'fireflies' | 'gemini';
   title: string;
   description: string;
   placeholder: string;
@@ -1281,6 +1281,14 @@ function SettingsTab() {
         description="Configure your Anthropic API key to power the AI proposal assistant. Create one at console.anthropic.com. This key is stored securely and used server-side only."
         placeholder="sk-ant-..."
         savedMessage="Saved. The proposal assistant will use this key."
+      />
+
+      <ApiKeyCard
+        provider="gemini"
+        title="Google Gemini (Image) Integration"
+        description="Configure a Google Gemini API key to generate 'after' concept images on web audits (the AI edits the real screenshot to show the recommended fixes). Create one at aistudio.google.com, Get API key. Stored securely and used server-side only."
+        placeholder="Gemini API key"
+        savedMessage="Saved. Web audits will use this key to generate 'after' concept images."
       />
 
       <ApiKeyCard

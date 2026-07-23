@@ -10,6 +10,7 @@ const ENV_OVERRIDES: Record<string, string> = {
   anthropic_api_key: "ANTHROPIC_API_KEY",
   hubspot_private_app_token: "HUBSPOT_PRIVATE_APP_TOKEN",
   fireflies_api_key: "FIREFLIES_API_KEY",
+  gemini_api_key: "GEMINI_API_KEY",
 };
 
 function b64decode(b64: string) {

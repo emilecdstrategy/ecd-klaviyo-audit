@@ -75,7 +75,7 @@ serve(async (req) => {
     await requireAdminUserId(req);
     const body = (await req.json()) as {
       action?: "set" | "status";
-      provider?: "openai" | "anthropic" | "hubspot" | "fireflies";
+      provider?: "openai" | "anthropic" | "hubspot" | "fireflies" | "gemini";
       api_key?: string;
       openai_api_key?: string;
     };
@@ -86,6 +86,7 @@ serve(async (req) => {
       anthropic: "anthropic_api_key",
       hubspot: "hubspot_private_app_token",
       fireflies: "fireflies_api_key",
+      gemini: "gemini_api_key",
     };
     const secretKey = SECRET_KEYS[body.provider ?? "openai"] ?? "openai_api_key";
 
