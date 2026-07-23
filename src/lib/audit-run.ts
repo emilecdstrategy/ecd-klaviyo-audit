@@ -224,9 +224,9 @@ export async function runWebAudit(
 
   progress(45, 'Capturing website screenshots (desktop & mobile)…');
   let remaining = total;
-  // Extra headroom: rate-limited rows are requeued (up to ~4 retries each), so
-  // allow several passes over the set rather than one shot per row.
-  let safety = total * 3 + 12;
+  // Extra headroom: rows can be requeued for Browserless retries and, rarely,
+  // ScreenshotOne rate-limits, so allow many passes over the set.
+  let safety = total * 5 + 16;
   while (remaining > 0 && safety-- > 0) {
     const { data: capData, error: capErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
       body: { action: 'capture_one', audit_id: auditId, client_id: clientId },

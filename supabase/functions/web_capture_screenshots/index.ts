@@ -324,21 +324,35 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       cartAdd,
     };
     let bl = await captureWithBrowserless(blInput);
-    for (let attempt = 1; attempt <= 2 && !bl.ok; attempt++) {
-      await new Promise((r) => setTimeout(r, attempt * 5000));
-      bl = await captureWithBrowserless(blInput);
-    }
+    if (!bl.ok) { await new Promise((r) => setTimeout(r, 4000)); bl = await captureWithBrowserless(blInput); }
     if (bl.ok) {
       png = bl.png;
       elements = bl.elements;
       usedBrowserless = true;
     } else {
-      browserlessError = bl.error; // remember it; fall through to ScreenshotOne below
+      browserlessError = bl.error; // remember it
       captureError = bl.error;
     }
   }
 
-  // ScreenshotOne (also the fallback if Browserless failed above).
+  // Browserless is the reliable primary; ScreenshotOne's plan rate-limits under
+  // load. So if Browserless failed, retry IT across a few requeue passes before
+  // ever touching ScreenshotOne, most misses are transient and a later pass
+  // succeeds on Browserless (no rate-limit, no fallback).
+  if (!png && browserlessEnabled()) {
+    const rawObj = ((row as { raw?: Record<string, unknown> }).raw ?? {}) as Record<string, unknown>;
+    const blAttempts = Number(rawObj.bl_attempts ?? 0);
+    if (blAttempts < 3) {
+      await sb.from("web_page_snapshots").update({
+        raw: { ...rawObj, bl_attempts: blAttempts + 1, capture_note: `browserless_retry_${blAttempts + 1}: ${browserlessError}`.slice(0, 300) },
+        error_message: null,
+        fetched_at: new Date().toISOString(),
+      }).eq("id", row.id);
+      return { processed: 0, requeued: true, remaining: await countRemaining() };
+    }
+  }
+
+  // ScreenshotOne, only after Browserless has been retried and still failed.
   if (!png) {
     const provider = getScreenshotProvider();
     const captureInput = {
