@@ -228,13 +228,14 @@ async function seed(
   if (collection) targets.push({ page_type: "collection", url: collection });
   targets.push({ page_type: "cart", url: cart });
 
-  // Two variants per page/viewport: 'full' (report display) and 'viewport'
-  // (above-the-fold, legible for AI vision). The cart is now a real /cart page
-  // (populated via the add-to-cart permalink), so it gets both variants like the
-  // others. 16 rows total when all pages resolve.
+  // Only the 'viewport' (above-the-fold) shot per page/viewport. It's what the AI
+  // vision analyzes AND what the report displays; the old heavy full-page 'full'
+  // variant only fed an optional lightbox zoom and roughly doubled the load on
+  // the screenshot service (the main cause of local_rate_limited). 8 rows total
+  // when all pages resolve.
   const rows = targets.flatMap((t) =>
     VIEWPORTS.flatMap((viewport) => {
-      const variants = ["full", "viewport"];
+      const variants = ["viewport"];
       return variants.map((variant) => ({
         audit_id: auditId,
         client_id: clientId,
