@@ -303,6 +303,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   let elements: CapturedElement[] = [];
   let captureError = "";
   let browserlessError = ""; // kept separate so the fallback's error doesn't hide it
+  let usedBrowserless = false;
 
   // When Browserless is configured it handles every capture (full-page and
   // viewport): ad + cookie-banner blocking are built in, the cart drawer is a
@@ -330,6 +331,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
     if (bl.ok) {
       png = bl.png;
       elements = bl.elements;
+      usedBrowserless = true;
     } else {
       browserlessError = bl.error; // remember it; fall through to ScreenshotOne below
       captureError = bl.error;
@@ -377,12 +379,20 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       }).eq("id", row.id);
     } else {
       const { data: pub } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+      // If Browserless failed and we recovered via ScreenshotOne, keep a
+      // diagnostic note (the capture still succeeded) so we can see which
+      // provider handled it and why Browserless fell back.
+      const rawObj = ((row as { raw?: Record<string, unknown> }).raw ?? {}) as Record<string, unknown>;
+      const raw = usedBrowserless
+        ? rawObj
+        : { ...rawObj, capture_note: `via_screenshotone${browserlessError ? `; browserless: ${browserlessError}` : ""}`.slice(0, 300) };
       await sb.from("web_page_snapshots").update({
         status: "success",
         screenshot_path: path,
         screenshot_url: pub?.publicUrl ?? null,
         elements,
         error_message: null,
+        raw,
         fetched_at: now,
       }).eq("id", row.id);
     }
