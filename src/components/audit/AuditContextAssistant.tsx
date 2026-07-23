@@ -52,6 +52,7 @@ export default function AuditContextAssistant({
   const [error, setError] = useState('');
   const [listening, setListening] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const dictationBaseRef = useRef('');
 
@@ -156,16 +157,24 @@ export default function AuditContextAssistant({
                 {m.content && <p className="text-sm leading-relaxed text-gray-700">{m.content}</p>}
                 {m.question && awaitingChoice && lastMsg?.id === m.id && (
                   <div className="mt-2 space-y-1.5">
-                    {m.question.options.map(opt => (
-                      <button
-                        key={opt.value}
-                        type="button"
-                        onClick={() => void send(opt.value)}
-                        className="block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-sm font-medium text-gray-700 hover:border-brand-primary/40 hover:bg-gray-50"
-                      >
-                        {opt.label}
-                      </button>
-                    ))}
+                    {m.question.options.map(opt => {
+                      // An "Other"/"something else" chip shouldn't submit the literal
+                      // word; focus the composer so the strategist types their answer.
+                      const isOther = /^(other|others|something else|none( of (the above|these))?|custom|not sure)\b/i.test(
+                        `${opt.label} ${opt.value}`.trim(),
+                      );
+                      return (
+                        <button
+                          key={opt.value}
+                          type="button"
+                          onClick={() => { if (isOther) { inputRef.current?.focus(); return; } void send(opt.value); }}
+                          className="block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-sm font-medium text-gray-700 hover:border-brand-primary/40 hover:bg-gray-50"
+                        >
+                          {opt.label}
+                          {isOther && <span className="ml-1 text-xs font-normal text-gray-400">(type your answer below)</span>}
+                        </button>
+                      );
+                    })}
                   </div>
                 )}
                 {m.context && <DraftPreview draft={m.context} applied={Boolean(m.applied)} onApply={() => applyDraft(m.id, m.context!)} />}
@@ -188,6 +197,7 @@ export default function AuditContextAssistant({
 
       <form onSubmit={e => { e.preventDefault(); void send(input); }} className="flex items-end gap-2 border-t border-gray-100 p-2.5">
         <textarea
+          ref={inputRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
