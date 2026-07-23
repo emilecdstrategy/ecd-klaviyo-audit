@@ -1,8 +1,8 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Monitor, Plus, Smartphone, Trash2, Wand2 } from 'lucide-react';
 import type { AuditSection, WebPageSnapshot } from '../../../lib/types';
 import { parseWebSectionDetail } from '../../../lib/web-report-details';
-import { generateSectionAfter } from '../../../lib/web-pipeline-status';
+import { fetchSectionAfterImages, generateSectionAfter } from '../../../lib/web-pipeline-status';
 import { useReportEdit } from '../edit/ReportEditContext';
 import EditablePlainText from '../edit/EditablePlainText';
 import ImageLightbox from '../../ui/ImageLightbox';
@@ -33,6 +33,34 @@ export default function WebPageSection({
   // Locally overrides the persisted after image right after a (re)generate, so
   // the new concept shows without a full report reload.
   const [afterOverride, setAfterOverride] = useState<{ desktop?: string; mobile?: string }>({});
+
+  // "After" images are generated ~1-2 min AFTER analysis completes (the report is
+  // viewable before they finish). Poll briefly so they appear on their own without
+  // a manual refresh. Stops once both viewports have one, or after ~3 minutes.
+  useEffect(() => {
+    const PAGE_KEYS = ['web_homepage', 'web_product_page', 'web_collection_page', 'web_cart'];
+    if (!PAGE_KEYS.includes(section.section_key)) return;
+    const d0 = parseWebSectionDetail(section.section_details).after_images;
+    if (d0.desktop?.url && d0.mobile?.url) return; // already have both
+    let tries = 0;
+    let cancelled = false;
+    const id = window.setInterval(async () => {
+      tries += 1;
+      let imgs: { desktop?: string; mobile?: string } = {};
+      try {
+        imgs = await fetchSectionAfterImages(section.id);
+      } catch { /* transient, keep polling */ }
+      if (cancelled) return;
+      if (imgs.desktop || imgs.mobile) {
+        setAfterOverride((prev) => ({ desktop: prev.desktop ?? imgs.desktop, mobile: prev.mobile ?? imgs.mobile }));
+      }
+      const haveD = Boolean(imgs.desktop || d0.desktop?.url);
+      const haveM = Boolean(imgs.mobile || d0.mobile?.url);
+      if ((haveD && haveM) || tries >= 18) window.clearInterval(id);
+    }, 10000);
+    return () => { cancelled = true; window.clearInterval(id); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [section.id, section.section_key]);
 
   const successful = snapshots.filter((s) => s.status === 'success' && s.screenshot_url);
   const byId = new Map(successful.map((s) => [s.id, s]));

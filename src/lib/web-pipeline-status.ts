@@ -65,6 +65,24 @@ export async function generateSectionAfter(
   return { url: res.url, viewport: res.viewport === 'mobile' ? 'mobile' : 'desktop' };
 }
 
+/** Fetch just the current after-image URLs for a section (used to poll the
+ * report so auto-generated afters appear without a manual refresh). */
+export async function fetchSectionAfterImages(
+  sectionId: string,
+): Promise<{ desktop?: string; mobile?: string }> {
+  const { data } = await supabase
+    .from('audit_sections')
+    .select('section_details')
+    .eq('id', sectionId)
+    .maybeSingle();
+  const web = ((data?.section_details as Record<string, unknown> | null | undefined)?.web ?? {}) as Record<string, unknown>;
+  const ai = (web.after_images ?? {}) as Record<string, { url?: string } | undefined>;
+  const out: { desktop?: string; mobile?: string } = {};
+  if (ai.desktop?.url) out.desktop = ai.desktop.url;
+  if (ai.mobile?.url) out.mobile = ai.mobile.url;
+  return out;
+}
+
 /** Kick the web analysis edge function. Races an 8s timeout so a slow first
  *  step doesn't block the caller; the job keeps running server-side. */
 export async function startWebAnalysis(auditId: string, mode?: 'regenerate'): Promise<void> {
