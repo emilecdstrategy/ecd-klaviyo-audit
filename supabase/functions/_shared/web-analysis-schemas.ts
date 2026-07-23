@@ -39,8 +39,8 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
           type: "object",
           required: ["text"],
           properties: {
-            text: { type: "string", description: "The issue in ONE short sentence, max ~16 words. State the problem, no preamble." },
-            recommendation: { type: "string", description: "The fix in ONE short sentence, max ~16 words. Start with a verb, no preamble." },
+            text: { type: "string", description: "The problem in ONE short sentence, max ~16 words. State the issue, no preamble." },
+            recommendation: { type: "string", description: "The fix in 1-2 sentences: the concrete, Shopify-feasible change (element, copy, placement) plus why it lifts conversion/AOV/trust. Start with a verb. Grounded in standard e-commerce CRO best practices, no vague advice." },
             highlight: {
               type: "object",
               description:
@@ -59,7 +59,7 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
           },
         },
       },
-      recommendations: { type: "array", maxItems: 6, items: { type: "string" } },
+      recommendations: { type: "array", maxItems: 6, description: "Prioritized, CRO-focused action items for this page (highest conversion impact first). Each is concrete and Shopify-feasible, naming the change and its conversion rationale. No vague or generic advice.", items: { type: "string" } },
     },
   },
 };

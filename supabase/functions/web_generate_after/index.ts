@@ -72,37 +72,57 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-function buildEditPrompt(label: string, recommendations: string[]): string {
+function buildEditPrompt(label: string, recommendations: string[], hasReference: boolean): string {
   const fixes = recommendations
     .map((r, i) => `${i + 1}. ${r}`)
     .join("\n");
+  const common =
+    `Keep all existing real text and numbers from the source (headlines, prices, phone numbers, product names, contact details) exactly as they appear, unless a fix changes them. Keep text crisp and legible. Do not add annotations, numbered markers, callouts, arrows, borders, captions, or watermarks. Never draw any of these instructions, brackets, or placeholder text into the image. Output only the clean redesigned screenshot, as if it were a real live page.`;
+
+  if (hasReference) {
+    // Mirror mode: image 1 is the current screenshot for THIS viewport, image 2
+    // is the already-approved redesign for the OTHER viewport. Keep the concepts
+    // consistent so desktop and mobile tell the same story.
+    return [
+      `The FIRST image is a real screenshot of the ${label} of an e-commerce store.`,
+      `The SECOND image is the approved "after" redesign of the SAME page on the other device (desktop vs mobile).`,
+      `Redesign the FIRST image so it applies the SAME changes and visual direction as the SECOND image: the same new headline and body copy, the same banner, the same primary call-to-action wording and style, and the same section changes. Adapt the layout naturally to this device's proportions (do not just stretch the other layout).`,
+      `Keep the brand's real logo, product photos, color palette, and typography intact so it clearly reads as the same store.`,
+      common,
+    ].join("\n\n");
+  }
+
   return [
     `This image is a real screenshot of the ${label} of an e-commerce store.`,
     `Produce an improved "after" redesign of THIS EXACT page as a realistic screenshot of the same website.`,
     `Keep the brand's real logo, product photos, color palette, and typography intact so it clearly reads as the same store. Keep the same overall page structure and aspect ratio; change only what the fixes below require.`,
     `Apply these specific conversion and UX fixes:`,
     fixes || "Improve visual hierarchy, clarity of the primary call to action, and overall polish.",
-    `Make text crisp and legible. Do NOT invent phone numbers, prices, discounts, product names, or contact details that are not already in the original image, keep any such text the same as the source. Do NOT add any annotations, numbered markers, callouts, borders, captions, or watermarks. Output only the redesigned screenshot.`,
+    common,
   ].join("\n\n");
 }
 
-// Calls Gemini image editing: source screenshot in, edited screenshot out.
-async function geminiEditImage(sourcePng: Uint8Array, prompt: string, apiKey: string): Promise<Uint8Array> {
+// Calls Gemini image editing: source screenshot in, edited screenshot out. When a
+// reference image is supplied (the sibling viewport's approved "after"), it is
+// sent as a second image so the model mirrors the same changes across viewports.
+async function geminiEditImage(
+  sourcePng: Uint8Array,
+  prompt: string,
+  apiKey: string,
+  referencePng?: Uint8Array,
+): Promise<Uint8Array> {
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
+  const requestParts: Array<Record<string, unknown>> = [
+    { inlineData: { mimeType: "image/png", data: bytesToBase64(sourcePng) } },
+  ];
+  if (referencePng) requestParts.push({ inlineData: { mimeType: "image/png", data: bytesToBase64(referencePng) } });
+  requestParts.push({ text: prompt });
   const res = await fetch(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify({
-      contents: [
-        {
-          role: "user",
-          parts: [
-            { inlineData: { mimeType: "image/png", data: bytesToBase64(sourcePng) } },
-            { text: prompt },
-          ],
-        },
-      ],
+      contents: [{ role: "user", parts: requestParts }],
       generationConfig: { responseModalities: ["IMAGE"], temperature: 0.4 },
     }),
   });
@@ -121,53 +141,51 @@ async function geminiEditImage(sourcePng: Uint8Array, prompt: string, apiKey: st
   throw new Error("gemini_no_image_returned");
 }
 
-// Picks the source screenshot to edit for a section: prefers the requested
-// viewport's above-the-fold shot, then desktop, then mobile, then any success.
-async function pickSourceSnapshot(
-  sb: SupabaseClient,
-  auditId: string,
-  pageType: string,
-  preferred?: Viewport,
-): Promise<{ url: string; viewport: Viewport } | null> {
+type ViewportSource = { viewport: Viewport; url: string; cartCount: number };
+
+// One source screenshot per viewport for a page (above-the-fold variant preferred).
+async function listViewportSources(sb: SupabaseClient, auditId: string, pageType: string): Promise<ViewportSource[]> {
   const { data } = await sb
     .from("web_page_snapshots")
-    .select("viewport, variant, status, screenshot_url")
+    .select("viewport, variant, status, screenshot_url, raw")
     .eq("audit_id", auditId)
     .eq("page_type", pageType)
     .eq("status", "success")
     .not("screenshot_url", "is", null);
-  const rows = (data ?? []) as Array<{ viewport: string; variant: string | null; screenshot_url: string }>;
-  if (rows.length === 0) return null;
-  const order: Viewport[] = preferred === "mobile" ? ["mobile", "desktop"] : ["desktop", "mobile"];
-  for (const vp of order) {
-    const viewportShot = rows.find((r) => r.viewport === vp && r.variant === "viewport");
-    if (viewportShot) return { url: viewportShot.screenshot_url, viewport: vp };
-    const anyShot = rows.find((r) => r.viewport === vp);
-    if (anyShot) return { url: anyShot.screenshot_url, viewport: vp };
+  const rows = (data ?? []) as Array<{ viewport: string; variant: string | null; screenshot_url: string; raw: Record<string, unknown> | null }>;
+  const out: ViewportSource[] = [];
+  for (const vp of ["desktop", "mobile"] as Viewport[]) {
+    const vpRows = rows.filter((r) => r.viewport === vp);
+    if (vpRows.length === 0) continue;
+    const chosen = vpRows.find((r) => r.variant === "viewport") ?? vpRows[0];
+    const cartCount = Math.max(...vpRows.map((r) => Number(r.raw?.cart_count ?? -1)), -1);
+    out.push({ viewport: vp, url: chosen.screenshot_url, cartCount });
   }
-  const first = rows[0];
-  return { url: first.screenshot_url, viewport: first.viewport === "mobile" ? "mobile" : "desktop" };
+  return out;
 }
 
-// Generates + stores one after image for a single section. Returns the public
-// URL, or null if the section has no source screenshot to edit.
-async function generateForSection(
-  sb: SupabaseClient,
-  auditId: string,
-  clientId: string,
-  section: { id: string; section_key: string; section_details: Record<string, unknown> | null },
-  apiKey: string,
-  preferredViewport?: Viewport,
-): Promise<{ url: string; viewport: Viewport } | null> {
-  const meta = PAGE_SECTIONS.find((s) => s.key === section.section_key);
-  if (!meta) throw new Error(`section ${section.section_key} is not a page section`);
+// Which viewports to generate for a page, in order [primary, ...rest]. The
+// primary is the source of truth the other viewport mirrors. Desktop is primary
+// when available; for the cart, only viewports whose slide-cart actually filled
+// are eligible (an "after" of an empty cart is pointless), with the filled one
+// as primary.
+function orderedViewports(sources: ViewportSource[], pageType: string, preferred?: Viewport): Viewport[] {
+  let eligible = sources;
+  if (pageType === "cart") {
+    const filled = sources.filter((s) => s.cartCount > 0);
+    if (filled.length > 0) eligible = filled;
+  }
+  const vps = eligible.map((s) => s.viewport);
+  if (vps.length === 0) return [];
+  let primary: Viewport | undefined = preferred && vps.includes(preferred) ? preferred : undefined;
+  if (!primary) primary = vps.includes("desktop") ? "desktop" : vps[0];
+  return [primary, ...vps.filter((v) => v !== primary)];
+}
 
-  const source = await pickSourceSnapshot(sb, auditId, meta.page_type, preferredViewport);
-  if (!source) return null;
-
+function recommendationsFor(section: { section_details: Record<string, unknown> | null }): string[] {
   const web = asRecord(asRecord(section.section_details).web);
   const findings = Array.isArray(web.findings) ? web.findings : [];
-  const recommendations = findings
+  return findings
     .map((f) => {
       const rec = asRecord(f);
       if (rec.hidden === true) return "";
@@ -178,14 +196,42 @@ async function generateForSection(
         : "";
     })
     .filter(Boolean) as string[];
+}
 
-  const srcRes = await fetch(source.url);
+// Generates + stores the "after" for one specific (section, viewport). When
+// referenceAfterUrl is set (the sibling viewport's approved after), the model
+// mirrors those same changes so the concepts stay consistent across devices.
+async function generateOne(
+  sb: SupabaseClient,
+  auditId: string,
+  clientId: string,
+  section: { id: string; section_key: string; section_details: Record<string, unknown> | null },
+  apiKey: string,
+  viewport: Viewport,
+  sourceUrl: string,
+  referenceAfterUrl?: string,
+): Promise<{ url: string; viewport: Viewport }> {
+  const meta = PAGE_SECTIONS.find((s) => s.key === section.section_key);
+  if (!meta) throw new Error(`section ${section.section_key} is not a page section`);
+
+  const srcRes = await fetch(sourceUrl);
   if (!srcRes.ok) throw new Error(`fetch_source_${srcRes.status}`);
   const srcPng = new Uint8Array(await srcRes.arrayBuffer());
 
-  const edited = await geminiEditImage(srcPng, buildEditPrompt(meta.label, recommendations), apiKey);
+  let refPng: Uint8Array | undefined;
+  if (referenceAfterUrl) {
+    try {
+      const r = await fetch(referenceAfterUrl);
+      if (r.ok) refPng = new Uint8Array(await r.arrayBuffer());
+    } catch {
+      // best effort: fall back to a standalone (non-mirrored) generation
+    }
+  }
 
-  const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${source.viewport}.png`;
+  const prompt = buildEditPrompt(meta.label, recommendationsFor(section), Boolean(refPng));
+  const edited = await geminiEditImage(srcPng, prompt, apiKey, refPng);
+
+  const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
   const { error: uploadErr } = await sb.storage
     .from(STORAGE_BUCKET)
     .upload(path, edited, { contentType: "image/png", upsert: true });
@@ -200,12 +246,13 @@ async function generateForSection(
   const details = asRecord(section.section_details);
   const webOut = asRecord(details.web);
   const afterImages = asRecord(webOut.after_images);
-  afterImages[source.viewport] = { url: bustedUrl, generated_at: new Date().toISOString() };
+  afterImages[viewport] = { url: bustedUrl, generated_at: new Date().toISOString() };
   webOut.after_images = afterImages;
   details.web = webOut;
   await sb.from("audit_sections").update({ section_details: details }).eq("id", section.id);
+  section.section_details = details; // keep in-memory row fresh for the same invocation
 
-  return { url: bustedUrl, viewport: source.viewport };
+  return { url: bustedUrl, viewport };
 }
 
 async function chainAuto(auditId: string) {
@@ -282,40 +329,85 @@ serve(async (req) => {
     const mode = (body.mode ?? "").trim();
     const preferredViewport: Viewport | undefined = body.viewport === "mobile" ? "mobile" : body.viewport === "desktop" ? "desktop" : undefined;
 
-    // Single-section (on-demand button / explicit regenerate).
+    const afterUrlFor = (
+      section: { section_details: Record<string, unknown> | null },
+      vp: Viewport,
+    ): string | undefined => {
+      const entry = asRecord(asRecord(asRecord(section.section_details).web).after_images)[vp];
+      const url = asRecord(entry).url;
+      return typeof url === "string" && url.length > 0 ? url : undefined;
+    };
+
+    // Single-section (on-demand button / explicit regenerate). Generates the
+    // requested viewport; a non-primary viewport mirrors the primary's after.
     if (body.section_key) {
       const section = sections.find((s) => s.section_key === body.section_key);
       if (!section) return json({ ok: false, error: { code: "not_found", message: "Section not found" }, correlationId }, { status: 404 });
-      const result = await generateForSection(sb, auditId, clientId, section, apiKey, preferredViewport);
-      if (!result) return json({ ok: false, error: { code: "no_screenshot", message: "No screenshot available for this page yet." }, correlationId }, { status: 200 });
+      const meta = PAGE_SECTIONS.find((s) => s.key === section.section_key);
+      if (!meta) return json({ ok: false, error: { code: "bad_request", message: "Not a page section" }, correlationId }, { status: 400 });
+      const sources = await listViewportSources(sb, auditId, meta.page_type);
+      if (sources.length === 0) return json({ ok: false, error: { code: "no_screenshot", message: "No screenshot available for this page yet." }, correlationId }, { status: 200 });
+      const order = orderedViewports(sources, meta.page_type, preferredViewport);
+      const primaryVp = order[0];
+      const targetVp: Viewport =
+        preferredViewport && sources.some((s) => s.viewport === preferredViewport) ? preferredViewport : primaryVp;
+      const src = sources.find((s) => s.viewport === targetVp);
+      if (!src) return json({ ok: false, error: { code: "no_screenshot", message: "No screenshot for that viewport yet." }, correlationId }, { status: 200 });
+      const referenceAfterUrl = targetVp !== primaryVp ? afterUrlFor(section, primaryVp) : undefined;
+      const result = await generateOne(sb, auditId, clientId, section, apiKey, targetVp, src.url, referenceAfterUrl);
       return json({ ok: true, correlationId, url: result.url, viewport: result.viewport });
     }
 
-    // Auto: generate for the next section that has a screenshot but no after
-    // image yet, then self-chain for the remainder. One image per invocation
-    // keeps each call well under the edge runtime wall-clock limit.
+    // Auto: build ordered (section, viewport) units (desktop/primary first so
+    // mobile can mirror it), generate the next one missing an after, then
+    // self-chain. One image per invocation stays under the edge wall-clock limit.
     if (mode === "auto") {
-      const pending = sections.filter((s) => {
-        const after = asRecord(asRecord(asRecord(s.section_details).web).after_images);
-        return Object.keys(after).length === 0;
-      });
-      if (pending.length === 0) return json({ ok: true, correlationId, status: "complete" });
-      const section = pending[0];
+      type Unit = {
+        section: { id: string; section_key: string; section_details: Record<string, unknown> | null };
+        viewport: Viewport;
+        url: string;
+        primaryViewport: Viewport;
+      };
+      const units: Unit[] = [];
+      for (const meta of PAGE_SECTIONS) {
+        const section = sections.find((s) => s.section_key === meta.key);
+        if (!section) continue;
+        const sources = await listViewportSources(sb, auditId, meta.page_type);
+        const order = orderedViewports(sources, meta.page_type);
+        for (const vp of order) {
+          const src = sources.find((s) => s.viewport === vp);
+          if (src) units.push({ section, viewport: vp, url: src.url, primaryViewport: order[0] });
+        }
+      }
+      // A unit is "done" once it has an after url OR a recorded error (so a
+      // persistent failure can't loop the chain forever).
+      const isDone = (u: Unit) => {
+        const entry = asRecord(asRecord(asRecord(u.section.section_details).web).after_images)[u.viewport];
+        const e = asRecord(entry);
+        return (typeof e.url === "string" && e.url.length > 0) || e.error != null;
+      };
+      const next = units.find((u) => !isDone(u));
+      if (!next) return json({ ok: true, correlationId, status: "complete" });
+
+      const referenceAfterUrl =
+        next.viewport !== next.primaryViewport ? afterUrlFor(next.section, next.primaryViewport) : undefined;
       try {
-        await generateForSection(sb, auditId, clientId, section, apiKey);
+        await generateOne(sb, auditId, clientId, next.section, apiKey, next.viewport, next.url, referenceAfterUrl);
       } catch (e) {
-        // Don't let one section's failure stall the rest; mark it attempted so
-        // the chain moves on instead of retrying the same section forever.
-        const details = asRecord(section.section_details);
+        // Record the error on this viewport so the chain advances instead of
+        // retrying the same unit forever.
+        const details = asRecord(next.section.section_details);
         const webOut = asRecord(details.web);
         const afterImages = asRecord(webOut.after_images);
-        afterImages.error = String(e instanceof Error ? e.message : e).slice(0, 200);
+        afterImages[next.viewport] = { url: null, error: String(e instanceof Error ? e.message : e).slice(0, 200), generated_at: new Date().toISOString() };
         webOut.after_images = afterImages;
         details.web = webOut;
-        await sb.from("audit_sections").update({ section_details: details }).eq("id", section.id);
+        await sb.from("audit_sections").update({ section_details: details }).eq("id", next.section.id);
+        next.section.section_details = details;
       }
-      if (pending.length > 1) await chainAuto(auditId);
-      return json({ ok: true, correlationId, status: pending.length > 1 ? "in_progress" : "complete", section: section.section_key });
+      const remaining = units.some((u) => !isDone(u));
+      if (remaining) await chainAuto(auditId);
+      return json({ ok: true, correlationId, status: remaining ? "in_progress" : "complete", section: next.section.section_key, viewport: next.viewport });
     }
 
     return json({ ok: false, error: { code: "bad_request", message: "Provide section_key or mode:auto" }, correlationId }, { status: 400 });

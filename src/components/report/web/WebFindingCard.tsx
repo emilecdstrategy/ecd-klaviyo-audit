@@ -70,7 +70,7 @@ export default function WebFindingCard({
             <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-primary/10 text-[11px] font-bold text-brand-primary">
               {number}
             </span>
-            <div className="min-w-0 flex-1 text-sm text-gray-800">
+            <div className="min-w-0 flex-1 text-[13px] text-gray-800">
               <EditablePlainText value={finding.text} onSave={onChangeText} placeholder="Finding…" />
             </div>
             {editMode && (
@@ -99,7 +99,7 @@ export default function WebFindingCard({
           {(editMode || finding.recommendation) && (
             <div className="mt-3 flex items-start gap-2 rounded-lg bg-brand-primary/5 p-3">
               <ArrowRight className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary" />
-              <div className="min-w-0 flex-1 text-sm text-gray-600">
+              <div className="min-w-0 flex-1 text-[13px] text-gray-600">
                 <span className="font-medium text-gray-700">Recommended fix: </span>
                 <EditablePlainText
                   value={finding.recommendation}

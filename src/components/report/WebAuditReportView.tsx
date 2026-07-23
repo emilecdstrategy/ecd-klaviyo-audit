@@ -62,7 +62,7 @@ export default function WebAuditReportView({ data }: { data: WebAuditReportViewD
     (shopifySnapshots.find((s) => s.snapshot_kind === 'orders_rollup')?.computed as OrdersRollup | undefined) ?? null;
 
   return (
-    <div className="mx-auto max-w-5xl space-y-8 px-6 py-10">
+    <div className="mx-auto max-w-[77rem] space-y-8 px-6 py-10">
       {/* Hero */}
       <div className="rounded-2xl gradient-bg px-8 py-10 text-white">
         <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-white/70">
