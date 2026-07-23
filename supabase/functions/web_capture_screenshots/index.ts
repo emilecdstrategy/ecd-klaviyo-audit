@@ -343,7 +343,10 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   if (!png && browserlessEnabled()) {
     const rawObj = ((row as { raw?: Record<string, unknown> }).raw ?? {}) as Record<string, unknown>;
     const blAttempts = Number(rawObj.bl_attempts ?? 0);
-    if (blAttempts < 3) {
+    // Storefront IP rate-limits need time to clear, so give them more passes
+    // than a plain transient miss.
+    const blBudget = /rate.?limited/i.test(browserlessError) ? 6 : 3;
+    if (blAttempts < blBudget) {
       await sb.from("web_page_snapshots").update({
         raw: { ...rawObj, bl_attempts: blAttempts + 1, capture_note: `browserless_retry_${blAttempts + 1}: ${browserlessError}`.slice(0, 300) },
         error_message: null,

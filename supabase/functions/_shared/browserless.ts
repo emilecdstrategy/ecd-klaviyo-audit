@@ -50,7 +50,22 @@ export default async ({ page, context }) => {
   } else {
     await page.setViewport({ width, height, deviceScaleFactor: 1 });
   }
-  await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 });
+  const resp = await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 });
+
+  // Shopify storefronts IP-rate-limit rapid hits by serving a plain-text
+  // "local_rate_limited" page (often with a 2xx render), which would otherwise
+  // be screenshotted and stored as a "successful" capture. Detect it (and other
+  // bare error bodies) and bail out so the caller requeues instead of storing
+  // a picture of an error message.
+  const httpStatus = resp ? resp.status() : 0;
+  const bodyText = await page
+    .evaluate(() => ((document.body && document.body.innerText) || "").trim().slice(0, 300))
+    .catch(() => "");
+  const looksLikeErrorPage =
+    bodyText.length < 200 && /local_rate_limited|too many requests|rate.?limited|access denied|error 10\d\d/i.test(bodyText);
+  if (httpStatus >= 400 || looksLikeErrorPage) {
+    return { data: { error: "storefront_rate_limited (http " + httpStatus + ": " + bodyText.slice(0, 80) + ")" }, type: "application/json" };
+  }
 
   // Strip leftover fixed overlays that blockConsentModals may miss, plus common
   // live-chat / support launchers so they don't cover real content.
@@ -226,8 +241,11 @@ export async function captureWithBrowserless(input: {
     // real payload is under .data (fall back to the root if that ever changes).
     const wrapper = parsed as { data?: unknown } | null;
     const payload = (wrapper && typeof wrapper.data === "object" ? wrapper.data : wrapper) as
-      | { screenshot?: string; elements?: CapturedElement[] }
+      | { screenshot?: string; elements?: CapturedElement[]; error?: string }
       | null;
+    // In-page detection (storefront rate-limit / bot-block page) reports a
+    // structured error instead of a screenshot.
+    if (payload?.error) return { ok: false, error: String(payload.error) };
     if (!payload?.screenshot) return { ok: false, error: "browserless_no_screenshot" };
     const png = b64ToBytes(payload.screenshot);
     if (png.byteLength < 5000) return { ok: false, error: "browserless_blank_page" };

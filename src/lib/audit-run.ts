@@ -224,9 +224,9 @@ export async function runWebAudit(
 
   progress(45, 'Capturing website screenshots (desktop & mobile)…');
   let remaining = total;
-  // Extra headroom: rows can be requeued for Browserless retries and, rarely,
-  // ScreenshotOne rate-limits, so allow many passes over the set.
-  let safety = total * 5 + 16;
+  // Extra headroom: rows can be requeued for Browserless retries (storefront
+  // IP rate-limits need several passes to clear), so allow many passes.
+  let safety = total * 8 + 16;
   while (remaining > 0 && safety-- > 0) {
     const { data: capData, error: capErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
       body: { action: 'capture_one', audit_id: auditId, client_id: clientId },
@@ -236,7 +236,9 @@ export async function runWebAudit(
     const done = Math.max(0, total - remaining);
     progress(Math.min(95, 45 + Math.round((done / Math.max(total, 1)) * 50)), `Capturing screenshots… ${done}/${total} done`);
     if (capData.done) break;
-    await new Promise(r => setTimeout(r, 3500));
+    // A requeue means the storefront rate-limited the capture; give its window
+    // extra time to clear before hammering it again.
+    await new Promise(r => setTimeout(r, capData.requeued ? 10000 : 3500));
   }
 
   progress(97, 'Starting AI analysis…');
