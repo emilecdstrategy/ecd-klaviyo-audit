@@ -192,15 +192,14 @@ export default function AuditContextAssistant({
           onChange={e => setInput(e.target.value)}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
           rows={1}
-          disabled={awaitingChoice}
-          placeholder={awaitingChoice ? 'Pick an option above…' : listening ? 'Listening…' : 'Paste a link, type, or use the mic…'}
+          placeholder={awaitingChoice ? 'Pick an option above, or type your own…' : listening ? 'Listening…' : 'Paste a link, type, or use the mic…'}
           className="max-h-28 flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none disabled:bg-gray-50"
         />
         {voiceSupported && (
           <button
             type="button"
             onClick={toggleDictation}
-            disabled={awaitingChoice || sending}
+            disabled={sending}
             className={`rounded-lg p-2 transition-colors disabled:opacity-40 ${
               listening ? 'bg-red-500 text-white animate-pulse' : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
             }`}
@@ -212,7 +211,7 @@ export default function AuditContextAssistant({
         )}
         <button
           type="submit"
-          disabled={!input.trim() || sending || awaitingChoice}
+          disabled={!input.trim() || sending}
           className="rounded-lg bg-brand-primary p-2 text-white hover:bg-brand-primary-dark disabled:opacity-40"
           aria-label="Send"
         >
