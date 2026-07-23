@@ -94,8 +94,18 @@ const TERMINAL = new Set(["ask_user", "propose_context"]);
 
 function buildSystem(snapshot: Snapshot): string {
   const who = snapshot.company_name || snapshot.client_name || "the client";
-  const kind = snapshot.audit_type === "web" ? "website / e-commerce store" : "Klaviyo / email marketing";
+  const isWeb = snapshot.audit_type === "web";
+  const kind = isWeb ? "website / e-commerce store" : "Klaviyo / email marketing";
   const hasNotes = Boolean((snapshot.meeting_notes || "").trim());
+  // Keep the "no context" fallback questions relevant to the audit type. Only the
+  // Klaviyo (email) audit cares about subscriptions; the web audit is about the
+  // storefront and does not.
+  const essentialsHint = isWeb
+    ? "for example, their main product categories or hero products, and the main goal or focus for this audit (conversion, UX, merchandising, mobile experience, etc.)"
+    : "for example, whether they sell subscriptions, and their main goal or focus for this audit";
+  const focusRule = isWeb
+    ? "This is a WEBSITE / storefront audit. Focus on the store experience (homepage, product/collection/cart pages, conversion, UX, merchandising). Do NOT ask about email, Klaviyo, flows, or subscriptions."
+    : "This is a KLAVIYO / email marketing audit. Focus on their email program, flows, segmentation, and whether they sell subscriptions.";
   const parts: string[] = [];
   parts.push(
     `You are the audit context assistant for ECD Digital Strategy. Through a short chat you help a strategist capture the CLIENT CONTEXT for a ${kind} audit of ${who}, which the audit team will use.`,
@@ -105,9 +115,10 @@ function buildSystem(snapshot: Snapshot): string {
 - ${hasNotes ? "A transcript is already available (below)." : "No transcript yet."} If you do not have a transcript, greet briefly and ask the user to paste the Fireflies link (or a Google Doc link, or the notes) for the call. This is a link, so ask in one short sentence, do NOT use ask_user chips for it.
 - When the user pastes a link, immediately call fetch_transcript with it. If it fails, tell them plainly and offer to let them paste the notes as text instead.
 - Once you have source material, use ask_user only for a genuinely material missing detail (max one or two questions total, with 2-4 chips). Otherwise go straight to propose_context.
-- If the user says there was no call or has nothing to share, ask one or two brief chip questions to capture the essentials (for example, whether they sell subscriptions, and their main goal or focus for this audit), then propose_context.
+- If the user says there was no call or has nothing to share, ask one or two brief chip questions to capture the essentials (${essentialsHint}), then propose_context.
 
 RULES:
+- ${focusRule}
 - Draw only from the transcript and what the user tells you. NEVER invent facts, names, numbers, or goals.
 - Be concise and concrete, useful to an auditor. No fluff.
 - NEVER use the em dash or en dash character.
