@@ -39,8 +39,17 @@ function b64ToBytes(b64: string): Uint8Array {
 // optional cart-drawer click, and (for the viewport shot) element-box collection.
 const FUNCTION_CODE = `
 export default async ({ page, context }) => {
-  const { url, width, height, fullPage, withElements, cartAdd } = context;
-  await page.setViewport({ width, height, deviceScaleFactor: 1 });
+  const { url, width, height, fullPage, withElements, cartAdd, isMobile } = context;
+  // Some storefronts serve a blank page or bot-block the default HeadlessChrome
+  // UA at a phone viewport, so emulate a real iPhone (UA + touch) for mobile.
+  if (isMobile) {
+    try {
+      await page.setUserAgent("Mozilla/5.0 (iPhone; CPU iPhone OS 17_5 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.5 Mobile/15E148 Safari/604.1");
+    } catch (e) {}
+    await page.setViewport({ width, height, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
+  } else {
+    await page.setViewport({ width, height, deviceScaleFactor: 1 });
+  }
   await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 });
 
   // Strip leftover fixed overlays that blockConsentModals may miss, plus common
@@ -63,6 +72,24 @@ export default async ({ page, context }) => {
     }
   };
   await page.evaluate(sweep).catch(() => {});
+
+  // Trigger lazy-loaded media (common on mobile heroes and Shopify sections that
+  // load images on scroll) by stepping down the page, then return to the top so
+  // the above-the-fold viewport shot is fully painted instead of blank.
+  await page.evaluate(async () => {
+    await new Promise((resolve) => {
+      let y = 0;
+      const step = () => {
+        window.scrollTo(0, y);
+        y += Math.max(600, window.innerHeight);
+        if (y < document.body.scrollHeight && y < 15000) setTimeout(step, 150);
+        else { window.scrollTo(0, 0); setTimeout(resolve, 300); }
+      };
+      step();
+    });
+  }).catch(() => {});
+  // Let images that just entered the viewport decode after scrolling back to top.
+  await new Promise((r) => setTimeout(r, 1500));
 
   // Cart: add the product via Shopify's AJAX API (stays on the page), then click
   // a cart trigger. On drawer themes this opens the slide-cart drawer; on
@@ -180,6 +207,7 @@ export async function captureWithBrowserless(input: {
           fullPage: input.fullPage,
           withElements: input.withElements,
           cartAdd: input.cartAdd ?? null,
+          isMobile: input.viewport === "mobile",
         },
       }),
       signal: ctrl.signal,
