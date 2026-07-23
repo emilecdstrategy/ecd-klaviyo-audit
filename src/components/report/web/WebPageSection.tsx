@@ -132,18 +132,9 @@ export default function WebPageSection({
         </div>
       )}
 
-      {/* Viewport toggle */}
+      {/* Viewport toggle (mobile first, it is the default and most storefront traffic) */}
       {shown && (hasDesktop || hasMobile) && (
         <div className="mt-4 flex items-center justify-end gap-1">
-          {hasDesktop && (
-            <button
-              type="button"
-              onClick={() => setViewport('desktop')}
-              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${viewport === 'desktop' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-            >
-              <Monitor className="h-3.5 w-3.5" /> Desktop
-            </button>
-          )}
           {hasMobile && (
             <button
               type="button"
@@ -151,6 +142,15 @@ export default function WebPageSection({
               className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${viewport === 'mobile' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
             >
               <Smartphone className="h-3.5 w-3.5" /> Mobile
+            </button>
+          )}
+          {hasDesktop && (
+            <button
+              type="button"
+              onClick={() => setViewport('desktop')}
+              className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${viewport === 'desktop' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
+            >
+              <Monitor className="h-3.5 w-3.5" /> Desktop
             </button>
           )}
         </div>

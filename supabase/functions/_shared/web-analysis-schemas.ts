@@ -45,7 +45,7 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
             highlight: {
               type: "object",
               description:
-                "Optional: pinpoint the exact element this finding is about so a reader can see what you mean. STRONGLY PREFERRED: when the message lists real page elements for the referenced image (each with an id like el_12), set element_id to the one that matches, its real on-page box is used automatically (this is the accurate path, use it whenever an element fits). Only if NO listed element matches, fall back to x/y/w/h as a tight box in percentages of the image (0,0 = top-left, 100,100 = bottom-right). Omit the highlight entirely if you cannot confidently locate it; a missing pin beats a wrong one.",
+                "REQUIRED for almost every finding: pinpoint the exact element this finding is about so the reader sees a numbered pin on the screenshot for each finding. Reference the IMG_n that matches this finding's viewport (the mobile IMG for a mobile finding, the desktop IMG for a desktop finding). STRONGLY PREFERRED: when the message lists real page elements for that image (each with an id like el_12), set element_id to the one that matches; its real on-page box is used automatically. Only if NO listed element matches, fall back to x/y/w/h as a tight box in percentages of the image (0,0 = top-left, 100,100 = bottom-right). Only omit the highlight when the finding genuinely has no single on-screen location (e.g. a sitewide or structural issue). Do not leave locatable findings unpinned.",
               required: ["image_ref", "label"],
               properties: {
                 image_ref: { type: "string", description: "The IMG_n label of the screenshot this refers to" },
