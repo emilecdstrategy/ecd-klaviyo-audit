@@ -302,6 +302,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   let png: Uint8Array | null = null;
   let elements: CapturedElement[] = [];
   let captureError = "";
+  let browserlessError = ""; // kept separate so the fallback's error doesn't hide it
 
   // When Browserless is configured it handles every capture (full-page and
   // viewport): ad + cookie-banner blocking are built in, the cart drawer is a
@@ -330,7 +331,8 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       png = bl.png;
       elements = bl.elements;
     } else {
-      captureError = bl.error; // fall through to ScreenshotOne below
+      browserlessError = bl.error; // remember it; fall through to ScreenshotOne below
+      captureError = bl.error;
     }
   }
 
@@ -392,17 +394,18 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
     const rawObj = ((row as { raw?: Record<string, unknown> }).raw ?? {}) as Record<string, unknown>;
     const attempts = Number(rawObj.capture_attempts ?? 0) + 1;
     const rateLimited = /rate_limited|rate.?limit|429|too_many/i.test(captureError);
+    const blSuffix = browserlessError ? ` | browserless: ${browserlessError}` : "";
     if (rateLimited && attempts < 5) {
       await sb.from("web_page_snapshots").update({
         raw: { ...rawObj, capture_attempts: attempts },
-        error_message: `${captureError} (rate-limited; requeued, attempt ${attempts})`.slice(0, 500),
+        error_message: `${captureError} (rate-limited; requeued, attempt ${attempts})${blSuffix}`.slice(0, 500),
         fetched_at: now,
       }).eq("id", row.id);
       return { processed: 0, requeued: true, remaining: await countRemaining() };
     }
     await sb.from("web_page_snapshots").update({
       status: "error",
-      error_message: (captureError || "capture_failed").slice(0, 500),
+      error_message: `${captureError || "capture_failed"}${blSuffix}`.slice(0, 500),
       fetched_at: now,
     }).eq("id", row.id);
   }
