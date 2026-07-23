@@ -14,7 +14,7 @@
 
 export type CapturedElement = { id: string; label: string; x: number; y: number; w: number; h: number };
 export type BrowserlessResult =
-  | { ok: true; png: Uint8Array; elements: CapturedElement[] }
+  | { ok: true; png: Uint8Array; elements: CapturedElement[]; cartCount?: number | null }
   | { ok: false; error: string };
 
 const DIMENSIONS = {
@@ -62,9 +62,10 @@ export default async ({ page, context }) => {
     .evaluate(() => ((document.body && document.body.innerText) || "").trim().slice(0, 300))
     .catch(() => "");
   const looksLikeErrorPage =
-    bodyText.length < 200 && /local_rate_limited|too many requests|rate.?limited|access denied|error 10\d\d/i.test(bodyText);
+    bodyText.length < 280 &&
+    /local_rate_limited|too many requests|rate.?limited|access denied|error 10\d\d|connection needs to be verified|verify you are human|checking your browser|just a moment|attention required|enable javascript and cookies|captcha/i.test(bodyText);
   if (httpStatus >= 400 || looksLikeErrorPage) {
-    return { data: { error: "storefront_rate_limited (http " + httpStatus + ": " + bodyText.slice(0, 80) + ")" }, type: "application/json" };
+    return { data: { error: "storefront_blocked (http " + httpStatus + ": " + bodyText.slice(0, 90) + ")" }, type: "application/json" };
   }
 
   // Strip leftover fixed overlays that blockConsentModals may miss, plus common
@@ -86,7 +87,33 @@ export default async ({ page, context }) => {
       });
     }
   };
+  // Remove newsletter / promo / email-capture modals + their backdrops so they
+  // don't cover the page. NEVER touch cart/drawer elements (the cart capture
+  // needs the slide-cart drawer visible).
+  const sweepPopups = () => {
+    const sels = [
+      '[role="dialog"]','[aria-modal="true"]',
+      '[class*="modal" i]','[id*="modal" i]','[class*="popup" i]','[id*="popup" i]',
+      '[class*="newsletter" i]','[id*="newsletter" i]','[class*="subscribe" i]','[class*="signup" i]',
+      '[class*="optin" i]','[class*="email-capture" i]','[class*="lightbox" i]',
+      '[class*="klaviyo" i]','[class*="kl-private" i]','[class*="needsclick" i]',
+      '[class*="privy" i]','[id*="om-" i]','[class*="justuno" i]','[class*="attentive" i]','[class*="wisepops" i]',
+      '[class*="backdrop" i]','[class*="overlay" i]'
+    ];
+    for (const s of sels) {
+      document.querySelectorAll(s).forEach((el) => {
+        try {
+          const idc = ((el.getAttribute("class") || "") + " " + (el.id || ""));
+          if (/cart|minicart|drawer/i.test(idc)) return; // keep the cart drawer
+          const cs = getComputedStyle(el);
+          if (cs.position === "fixed" || cs.position === "sticky" || Number(cs.zIndex) > 1000) el.remove();
+        } catch (e) {}
+      });
+    }
+  };
   await page.evaluate(sweep).catch(() => {});
+  await page.keyboard.press("Escape").catch(() => {}); // closes many popups
+  await page.evaluate(sweepPopups).catch(() => {});
 
   // Trigger lazy-loaded media (common on mobile heroes and Shopify sections that
   // load images on scroll) by stepping down the page, then return to the top so
@@ -105,25 +132,63 @@ export default async ({ page, context }) => {
   }).catch(() => {});
   // Let images that just entered the viewport decode after scrolling back to top.
   await new Promise((r) => setTimeout(r, 1500));
+  // Many newsletter popups fire on a delay / after scroll — dismiss again.
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.evaluate(sweepPopups).catch(() => {});
 
   // Cart: add the product via Shopify's AJAX API (stays on the page), then click
   // a cart trigger. On drawer themes this opens the slide-cart drawer; on
   // page-based themes it navigates to the populated /cart page (we force /cart as
   // a last resort). Either way we get a POPULATED cart, never the checkout the
   // /cart/{variant}:1 permalink would land on.
+  let cartCount = null;
   if (cartAdd) {
     try {
-      if (cartAdd.variantId) {
-        await page.evaluate(async (vid) => {
+      // Try both AJAX API body shapes (themes/versions differ).
+      const addVariant = (vid) => page.evaluate(async (id) => {
+        const tryBody = async (body) => {
           try {
-            await fetch("/cart/add.js", {
+            const r = await fetch("/cart/add.js", {
               method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({ id: Number(vid), quantity: 1 }),
+              headers: { "Content-Type": "application/json", "Accept": "application/json" },
+              body: JSON.stringify(body),
             });
+            return r.ok;
+          } catch (e) { return false; }
+        };
+        if (await tryBody({ items: [{ id: Number(id), quantity: 1 }] })) return true;
+        return await tryBody({ id: Number(id), quantity: 1 });
+      }, vid);
+
+      let added = false;
+      if (cartAdd.variantId) added = await addVariant(cartAdd.variantId);
+      // Fallback: if the chosen variant can't be added (sold out / selling plan
+      // only), grab any available variant from the public storefront catalog so
+      // the cart is never empty.
+      if (!added) {
+        const vid = await page.evaluate(async () => {
+          try {
+            const res = await fetch("/products.json?limit=30");
+            const data = await res.json();
+            for (const p of (data.products || [])) {
+              const v = (p.variants || []).find((x) => x.available) || (p.variants || [])[0];
+              if (v && v.id) return v.id;
+            }
           } catch (e) {}
-        }, cartAdd.variantId);
+          return null;
+        });
+        if (vid) added = await addVariant(vid);
       }
+      // Wait until the cart actually reports an item before opening it, so we
+      // never screenshot an empty cart mid-add.
+      cartCount = await page.evaluate(async () => {
+        for (let i = 0; i < 12; i++) {
+          try { const c = await (await fetch("/cart.js")).json(); if (c && c.item_count > 0) return c.item_count; } catch (e) {}
+          await new Promise((r) => setTimeout(r, 600));
+        }
+        try { const c = await (await fetch("/cart.js")).json(); return (c && typeof c.item_count === "number") ? c.item_count : -1; } catch (e) { return -1; }
+      }).catch(() => -1);
+
       const triggers = [
         '[aria-label*="cart" i]','a[href$="/cart"]','a[href*="/cart"]',
         '[class*="cart-toggle" i]','[data-cart-toggle]','.js-drawer-open-cart',
@@ -144,6 +209,8 @@ export default async ({ page, context }) => {
 
   await new Promise((r) => setTimeout(r, 1200));
   await page.evaluate(sweep).catch(() => {});
+  // Final popup sweep (keeps the cart drawer; no Escape here so we don't close it).
+  await page.evaluate(sweepPopups).catch(() => {});
 
   let elements = [];
   if (withElements) {
@@ -186,7 +253,7 @@ export default async ({ page, context }) => {
   }
 
   const screenshot = await page.screenshot({ encoding: "base64", fullPage: !!fullPage, captureBeyondViewport: !!fullPage });
-  return { data: { screenshot, elements }, type: "application/json" };
+  return { data: { screenshot, elements, cartCount }, type: "application/json" };
 };
 `;
 
@@ -255,7 +322,7 @@ export async function captureWithBrowserless(input: {
     // real payload is under .data (fall back to the root if that ever changes).
     const wrapper = parsed as { data?: unknown } | null;
     const payload = (wrapper && typeof wrapper.data === "object" ? wrapper.data : wrapper) as
-      | { screenshot?: string; elements?: CapturedElement[]; error?: string }
+      | { screenshot?: string; elements?: CapturedElement[]; error?: string; cartCount?: number | null }
       | null;
     // In-page detection (storefront rate-limit / bot-block page) reports a
     // structured error instead of a screenshot.
@@ -264,7 +331,7 @@ export async function captureWithBrowserless(input: {
     const png = b64ToBytes(payload.screenshot);
     if (png.byteLength < 5000) return { ok: false, error: "browserless_blank_page" };
     const elements = Array.isArray(payload.elements) ? payload.elements.slice(0, 60) : [];
-    return { ok: true, png, elements };
+    return { ok: true, png, elements, cartCount: payload.cartCount ?? null };
   } catch (e) {
     const msg = e instanceof Error && (e.name === "AbortError" || /abort/i.test(e.message))
       ? "browserless_timeout"

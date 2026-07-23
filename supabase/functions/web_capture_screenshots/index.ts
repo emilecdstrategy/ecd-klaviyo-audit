@@ -304,6 +304,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   let captureError = "";
   let browserlessError = ""; // kept separate so the fallback's error doesn't hide it
   let usedBrowserless = false;
+  let cartCount: number | null = null;
 
   // When Browserless is configured it handles every capture (full-page and
   // viewport): ad + cookie-banner blocking are built in, the cart drawer is a
@@ -330,6 +331,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       png = bl.png;
       elements = bl.elements;
       usedBrowserless = true;
+      if (typeof bl.cartCount === "number") cartCount = bl.cartCount;
     } else {
       browserlessError = bl.error; // remember it
       captureError = bl.error;
@@ -340,12 +342,15 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   // load. So if Browserless failed, retry IT across a few requeue passes before
   // ever touching ScreenshotOne, most misses are transient and a later pass
   // succeeds on Browserless (no rate-limit, no fallback).
-  if (!png && browserlessEnabled()) {
+  // A quota/auth failure (out of Browserless units, bad token) won't fix itself
+  // on retry, so don't waste passes, fall straight to the ScreenshotOne fallback.
+  const blHopeless = /http_401|http_402|http_403|units usage|quota|unauthorized|forbidden/i.test(browserlessError);
+  if (!png && browserlessEnabled() && !blHopeless) {
     const rawObj = ((row as { raw?: Record<string, unknown> }).raw ?? {}) as Record<string, unknown>;
     const blAttempts = Number(rawObj.bl_attempts ?? 0);
-    // Storefront IP rate-limits need time to clear, so give them more passes
-    // than a plain transient miss.
-    const blBudget = /rate.?limited/i.test(browserlessError) ? 6 : 3;
+    // Storefront rate-limits / bot-challenges clear on a later pass (and a fresh
+    // residential IP), so give them more passes than a plain transient miss.
+    const blBudget = /rate.?limited|blocked|verif|challenge|captcha/i.test(browserlessError) ? 6 : 3;
     if (blAttempts < blBudget) {
       await sb.from("web_page_snapshots").update({
         raw: { ...rawObj, bl_attempts: blAttempts + 1, capture_note: `browserless_retry_${blAttempts + 1}: ${browserlessError}`.slice(0, 300) },
@@ -396,9 +401,14 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       // diagnostic note (the capture still succeeded) so we can see which
       // provider handled it and why Browserless fell back.
       const rawObj = ((row as { raw?: Record<string, unknown> }).raw ?? {}) as Record<string, unknown>;
-      const raw = usedBrowserless
+      const baseRaw = usedBrowserless
         ? rawObj
         : { ...rawObj, capture_note: `via_screenshotone${browserlessError ? `; browserless: ${browserlessError}` : ""}`.slice(0, 300) };
+      // Record the cart item count on cart captures so we can confirm the cart
+      // was actually filled (not an empty slide-cart).
+      const raw = row.page_type === "cart" && cartCount !== null
+        ? { ...baseRaw, cart_count: cartCount }
+        : baseRaw;
       await sb.from("web_page_snapshots").update({
         status: "success",
         screenshot_path: path,
