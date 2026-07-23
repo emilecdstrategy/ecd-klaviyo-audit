@@ -323,8 +323,9 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       withElements: isViewport,
       cartAdd,
     };
-    let bl = await captureWithBrowserless(blInput);
-    if (!bl.ok) { await new Promise((r) => setTimeout(r, 4000)); bl = await captureWithBrowserless(blInput); }
+    // One attempt per invocation — retries happen across requeue passes below,
+    // so a single capture_one never risks the edge runtime's wall-clock limit.
+    const bl = await captureWithBrowserless(blInput);
     if (bl.ok) {
       png = bl.png;
       elements = bl.elements;
@@ -361,14 +362,9 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       interaction,
       fullPage: !isViewport,
     };
-    let result = await provider.capture(captureInput);
-    // Storefronts rate-limit the screenshot service under rapid hits (serving a
-    // blank error page). Retry with a growing backoff so the store's rate-limit
-    // window has time to reset between attempts.
-    for (let attempt = 1; attempt <= 2 && !result.ok; attempt++) {
-      await new Promise((r) => setTimeout(r, attempt * 5000));
-      result = await provider.capture(captureInput);
-    }
+    // Single attempt; a rate-limit or transient failure is requeued below and
+    // retried on a later pass, keeping each invocation short.
+    const result = await provider.capture(captureInput);
     if (result.ok) {
       png = result.png;
       elements = [];

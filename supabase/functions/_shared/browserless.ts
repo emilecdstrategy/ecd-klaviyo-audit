@@ -193,7 +193,7 @@ export async function captureWithBrowserless(input: {
   const qs = new URLSearchParams({ token });
 
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 75_000);
+  const timer = setTimeout(() => ctrl.abort(), 45_000);
   try {
     const res = await fetch(`${base}/function?${qs.toString()}`, {
       method: "POST",
