@@ -48,6 +48,11 @@ export default async ({ page, context }) => {
     } catch (e) {}
     await page.setViewport({ width, height, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
   } else {
+    // Use a real desktop Chrome UA (not HeadlessChrome) — storefront bot
+    // protection blocks the default headless UA on XHRs like /cart/add.js.
+    try {
+      await page.setUserAgent("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36");
+    } catch (e) {}
     await page.setViewport({ width, height, deviceScaleFactor: 1 });
   }
   const resp = await page.goto(url, { waitUntil: "networkidle2", timeout: 55000 });

@@ -381,6 +381,26 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
     }
   }
 
+  // Never store an empty cart. The whole point of the cart shot is a filled
+  // slide-drawer; a count of 0 (or -1 = the add/cart.js call itself failed) means
+  // the add did not stick on this pass, usually a flaky residential IP or a
+  // storefront that rate-limited the /cart/add.js XHR. Requeue and retry: a later
+  // pass gets a fresh IP and the add typically succeeds (as it reliably does on
+  // mobile). Bounded so a store with no addable product can't loop forever.
+  if (png && isCart && usedBrowserless && (cartCount === null || cartCount <= 0)) {
+    const rawObj = ((row as { raw?: Record<string, unknown> }).raw ?? {}) as Record<string, unknown>;
+    const cartAttempts = Number(rawObj.cart_attempts ?? 0) + 1;
+    if (cartAttempts < 5) {
+      await sb.from("web_page_snapshots").update({
+        raw: { ...rawObj, cart_attempts: cartAttempts, capture_note: `empty_cart_retry_${cartAttempts} (count ${cartCount})` },
+        error_message: null,
+        fetched_at: new Date().toISOString(),
+      }).eq("id", row.id);
+      return { processed: 0, requeued: true, remaining: await countRemaining() };
+    }
+    // Budget exhausted: store what we have rather than block the audit forever.
+  }
+
   const now = new Date().toISOString();
 
   if (png) {

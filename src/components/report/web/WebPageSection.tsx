@@ -149,74 +149,77 @@ export default function WebPageSection({
         </div>
       )}
 
-      {/* Full-width reference screenshot for whole-page context. */}
-      <div className="mt-5">
-        {shown ? (
-          <div className={viewport === 'mobile' ? 'mx-auto w-full max-w-[380px]' : 'w-full'}>
-            {/* No overflow clip here so the pin hover tooltips can extend past
-                the screenshot edges. */}
-            <div
-              className="cursor-zoom-in rounded-lg"
-              onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
-            >
-              <WebHighlightLayer
-                imageUrl={shown.screenshot_url as string}
-                alt={`${title} (${viewport})`}
-                markers={markers}
-                activeIndex={activeIndex}
-                onMarkerClick={focusFinding}
-              />
-            </div>
-            <p className="mt-1.5 text-center text-[11px] text-gray-400">
-              Click to enlarge{markers.length > 0 ? '. Numbers match the findings below.' : ''}
-            </p>
-          </div>
-        ) : (
-          <div className="flex aspect-[16/10] items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-xs text-gray-400">
-            No screenshot captured
-          </div>
-        )}
-      </div>
-
-      {/* Findings below, in columns. Each shows a zoomed crop of its flagged
-          region, so the visual sits with the critique (no scrolling back up). */}
-      <div className="mt-6">
-        <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Findings</p>
-        {visibleFindings.length === 0 && !editMode ? (
-          <p className="mt-2 text-sm text-gray-400">No issues flagged on this page.</p>
-        ) : (
-          <div className="mt-2 grid grid-cols-1 items-start gap-4 lg:grid-cols-2">
-            {visibleFindings.map(({ f, number }) => {
-              const i = number - 1;
-              const cropShot = f.highlight && shown && f.highlight.snapshot_id === shown.id ? shown : null;
-              return (
-                <WebFindingCard
-                  key={i}
-                  anchorId={findingAnchorId(number)}
-                  number={number}
-                  finding={f}
-                  cropShot={cropShot}
-                  active={activeIndex === number}
-                  onActivate={(a) => setActiveIndex(a ? number : null)}
-                  onChangeText={(v) => setFinding(i, 'text', v)}
-                  onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}
-                  onRemove={() => removeFinding(i)}
-                  onRemoveHighlight={() => removeFindingHighlight(i)}
-                  onToggleHidden={() => setFinding(i, 'hidden', !f.hidden)}
+      {/* Side-by-side: the annotated screenshot sits on the left (sticky while the
+          reader scans), with every finding always expanded in a column on the
+          right. The numbered pins on the shot match the numbered findings. */}
+      <div className="mt-5 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+        {/* Left: reference screenshot */}
+        <div className="lg:sticky lg:top-6">
+          {shown ? (
+            <div className={viewport === 'mobile' ? 'mx-auto w-full max-w-[360px]' : 'w-full'}>
+              {/* No overflow clip here so the pin hover tooltips can extend past
+                  the screenshot edges. */}
+              <div
+                className="cursor-zoom-in rounded-lg"
+                onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
+              >
+                <WebHighlightLayer
+                  imageUrl={shown.screenshot_url as string}
+                  alt={`${title} (${viewport})`}
+                  markers={markers}
+                  activeIndex={activeIndex}
+                  onMarkerClick={focusFinding}
                 />
-              );
-            })}
-          </div>
-        )}
-        {editMode && (
-          <button
-            type="button"
-            onClick={addFinding}
-            className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-500 hover:border-brand-primary/40 hover:text-brand-primary"
-          >
-            <Plus className="h-3.5 w-3.5" /> Add finding
-          </button>
-        )}
+              </div>
+              <p className="mt-1.5 text-center text-[11px] text-gray-400">
+                Click to enlarge{markers.length > 0 ? '. Numbers match the findings.' : ''}
+              </p>
+            </div>
+          ) : (
+            <div className="flex aspect-[16/10] items-center justify-center rounded-lg border border-dashed border-gray-200 bg-gray-50 text-xs text-gray-400">
+              No screenshot captured
+            </div>
+          )}
+        </div>
+
+        {/* Right: findings, always expanded */}
+        <div>
+          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Findings</p>
+          {visibleFindings.length === 0 && !editMode ? (
+            <p className="mt-2 text-sm text-gray-400">No issues flagged on this page.</p>
+          ) : (
+            <div className="mt-2 space-y-3">
+              {visibleFindings.map(({ f, number }) => {
+                const i = number - 1;
+                return (
+                  <WebFindingCard
+                    key={i}
+                    anchorId={findingAnchorId(number)}
+                    number={number}
+                    finding={f}
+                    cropShot={null}
+                    active={activeIndex === number}
+                    onActivate={(a) => setActiveIndex(a ? number : null)}
+                    onChangeText={(v) => setFinding(i, 'text', v)}
+                    onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}
+                    onRemove={() => removeFinding(i)}
+                    onRemoveHighlight={() => removeFindingHighlight(i)}
+                    onToggleHidden={() => setFinding(i, 'hidden', !f.hidden)}
+                  />
+                );
+              })}
+            </div>
+          )}
+          {editMode && (
+            <button
+              type="button"
+              onClick={addFinding}
+              className="mt-4 inline-flex items-center gap-1.5 rounded-lg border border-dashed border-gray-300 px-3 py-2 text-xs font-medium text-gray-500 hover:border-brand-primary/40 hover:text-brand-primary"
+            >
+              <Plus className="h-3.5 w-3.5" /> Add finding
+            </button>
+          )}
+        </div>
       </div>
 
       {lightbox && <ImageLightbox src={lightbox} alt={title} onClose={() => setLightbox(null)} />}

@@ -39,8 +39,8 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
           type: "object",
           required: ["text"],
           properties: {
-            text: { type: "string", description: "The issue / observation" },
-            recommendation: { type: "string", description: "What to change" },
+            text: { type: "string", description: "The issue in ONE short sentence, max ~16 words. State the problem, no preamble." },
+            recommendation: { type: "string", description: "The fix in ONE short sentence, max ~16 words. Start with a verb, no preamble." },
             highlight: {
               type: "object",
               description:
