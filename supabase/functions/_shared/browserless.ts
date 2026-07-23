@@ -50,7 +50,7 @@ export default async ({ page, context }) => {
   } else {
     await page.setViewport({ width, height, deviceScaleFactor: 1 });
   }
-  const resp = await page.goto(url, { waitUntil: "networkidle2", timeout: 45000 });
+  const resp = await page.goto(url, { waitUntil: "networkidle2", timeout: 55000 });
 
   // Shopify storefronts IP-rate-limit rapid hits by serving a plain-text
   // "local_rate_limited" page (often with a 2xx render), which would otherwise
@@ -206,9 +206,23 @@ export async function captureWithBrowserless(input: {
   // like blockAds/blockConsentModals are for /screenshot and 400 here). Cookie
   // banners + chat widgets are removed in-code by the sweep() in FUNCTION_CODE.
   const qs = new URLSearchParams({ token });
+  // Route through Browserless residential proxies when enabled. Shopify
+  // storefronts rate-limit/block datacenter IPs (the 429 "local_rate_limited"
+  // page); a residential IP looks like a normal shopper and gets served.
+  // BROWSERLESS_PROXY=residential turns it on; sticky keeps one IP per capture.
+  const proxy = (Deno.env.get("BROWSERLESS_PROXY") ?? "").trim();
+  if (proxy) {
+    qs.set("proxy", proxy);
+    qs.set("proxySticky", "true");
+    const country = (Deno.env.get("BROWSERLESS_PROXY_COUNTRY") ?? "us").trim();
+    if (country) qs.set("proxyCountry", country);
+  }
 
   const ctrl = new AbortController();
-  const timer = setTimeout(() => ctrl.abort(), 45_000);
+  // Residential proxies add latency, so allow more time when one is in use
+  // (must exceed the in-page goto timeout + scroll/settle, and stay under the
+  // edge runtime wall-clock limit since it's a single attempt per invocation).
+  const timer = setTimeout(() => ctrl.abort(), proxy ? 90_000 : 45_000);
   try {
     const res = await fetch(`${base}/function?${qs.toString()}`, {
       method: "POST",
