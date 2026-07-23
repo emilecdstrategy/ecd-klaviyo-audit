@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Loader2, Monitor, Plus, Smartphone, Sparkles, Trash2, Wand2 } from 'lucide-react';
+import { Loader2, Monitor, Plus, Smartphone, Trash2, Wand2 } from 'lucide-react';
 import type { AuditSection, WebPageSnapshot } from '../../../lib/types';
 import { parseWebSectionDetail } from '../../../lib/web-report-details';
 import { generateSectionAfter } from '../../../lib/web-pipeline-status';
@@ -259,9 +259,6 @@ export default function WebPageSection({
                         <div className="cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30" onClick={() => setLightbox(afterUrl)}>
                           <img src={afterUrl} alt={`${title} redesign concept (mobile)`} className="block w-full" />
                         </div>
-                        <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full bg-brand-primary/90 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow">
-                          <Sparkles className="h-2.5 w-2.5" /> AI
-                        </span>
                       </div>
                     </div>
                   </div>
@@ -274,9 +271,6 @@ export default function WebPageSection({
                   <div className="cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30" onClick={() => setLightbox(afterUrl)}>
                     <img src={afterUrl} alt={`${title} redesign concept (${viewport})`} className="block w-full" />
                   </div>
-                  <span className="absolute left-2 top-2 inline-flex items-center gap-1 rounded-full bg-brand-primary/90 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-white shadow">
-                    <Sparkles className="h-3 w-3" /> AI concept
-                  </span>
                   <p className="mt-1.5 text-center text-[11px] text-gray-400">
                     AI-generated concept applying the recommendations. Click to enlarge.
                   </p>

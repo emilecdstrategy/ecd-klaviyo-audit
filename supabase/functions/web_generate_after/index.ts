@@ -99,6 +99,8 @@ function buildEditPrompt(label: string, recommendations: string[], hasReference:
       `The FIRST image is a real screenshot of the ${label} of an e-commerce store.`,
       `The SECOND image is the approved "after" redesign of the SAME page on the OTHER device.`,
       `Match the SECOND image's CONTENT and messaging decisions: the same new headline and body copy, the same offer, and the same primary call-to-action wording. But rebuild the STRUCTURE natively for THIS device using the rules below. Do NOT copy the other device's navigation style, column count, or layout (in particular, never turn a mobile menu into a desktop-style horizontal nav).`,
+      `On top of matching the reference, you MUST actually apply these ${viewport}-specific fixes (make the change clearly visible, e.g. real added spacing, larger tap targets, a repositioned or added element):`,
+      fixes || "Improve visual hierarchy, spacing, and clarity of the primary call to action.",
       `Keep the brand's real logo, product photos, color palette, and typography intact so it clearly reads as the same store.`,
       common,
     ].join("\n\n");
@@ -194,13 +196,22 @@ function orderedViewports(sources: ViewportSource[], pageType: string, preferred
   return [primary, ...vps.filter((v) => v !== primary)];
 }
 
-function recommendationsFor(section: { section_details: Record<string, unknown> | null }): string[] {
+function recommendationsFor(
+  section: { section_details: Record<string, unknown> | null },
+  viewport: Viewport,
+): string[] {
   const web = asRecord(asRecord(section.section_details).web);
   const findings = Array.isArray(web.findings) ? web.findings : [];
   return findings
+    .filter((f) => {
+      const rec = asRecord(f);
+      if (rec.hidden === true) return false;
+      // Only this viewport's fixes (plus shared 'both') drive its "after".
+      const vp = String(rec.viewport ?? "both");
+      return vp === "both" || vp === viewport;
+    })
     .map((f) => {
       const rec = asRecord(f);
-      if (rec.hidden === true) return "";
       return typeof rec.recommendation === "string" && rec.recommendation.trim()
         ? rec.recommendation.trim()
         : typeof rec.text === "string"
@@ -240,7 +251,7 @@ async function generateOne(
     }
   }
 
-  const prompt = buildEditPrompt(meta.label, recommendationsFor(section), Boolean(refPng), viewport);
+  const prompt = buildEditPrompt(meta.label, recommendationsFor(section, viewport), Boolean(refPng), viewport);
   const edited = await geminiEditImage(srcPng, prompt, apiKey, refPng);
 
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
