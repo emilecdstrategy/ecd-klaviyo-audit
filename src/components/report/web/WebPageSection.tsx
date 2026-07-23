@@ -103,6 +103,9 @@ export default function WebPageSection({
 
   const afterUrl = afterOverride[viewport] ?? detail.after_images[viewport]?.url ?? null;
   const displayAfter = showAfter && Boolean(afterUrl);
+  // Mobile shots are narrow, so show Before + After together (Oddit-style) with no
+  // toggle. Desktop stays a Before/After toggle since it is too wide for two-up.
+  const sideBySide = viewport === 'mobile' && Boolean(afterUrl);
 
   const generateAfter = async () => {
     setAfterBusy(true);
@@ -190,12 +193,13 @@ export default function WebPageSection({
         {/* Left: reference screenshot (before) with optional AI "after" concept */}
         <div className="lg:sticky lg:top-6">
           {shown ? (
-            <div className={viewport === 'mobile' ? 'mx-auto w-full max-w-[360px]' : 'w-full'}>
-              {/* Before / After toggle (only once an after concept exists) + the
-                  editor-only generate control. */}
-              {(afterUrl || editMode) && (
+            <div className={sideBySide ? 'w-full' : viewport === 'mobile' ? 'mx-auto w-full max-w-[360px]' : 'w-full'}>
+              {/* Controls: Before/After toggle (single-image views only) + the
+                  editor-only generate control. In side-by-side mode both are shown,
+                  so the toggle is hidden. */}
+              {((afterUrl && !sideBySide) || editMode) && (
                 <div className="mb-2 flex items-center justify-between gap-2">
-                  {afterUrl ? (
+                  {afterUrl && !sideBySide ? (
                     <div className="inline-flex overflow-hidden rounded-md border border-gray-200">
                       <button
                         type="button"
@@ -229,7 +233,43 @@ export default function WebPageSection({
                 </div>
               )}
 
-              {displayAfter && afterUrl ? (
+              {sideBySide && afterUrl ? (
+                <>
+                  <div className="grid grid-cols-2 items-start gap-3">
+                    {/* Before (with the numbered pins) */}
+                    <div>
+                      <p className="mb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500">Before</p>
+                      <div
+                        className="cursor-zoom-in rounded-lg"
+                        onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
+                      >
+                        <WebHighlightLayer
+                          imageUrl={shown.screenshot_url as string}
+                          alt={`${title} (mobile, before)`}
+                          markers={markers}
+                          activeIndex={activeIndex}
+                          onMarkerClick={focusFinding}
+                        />
+                      </div>
+                    </div>
+                    {/* After (AI concept) */}
+                    <div>
+                      <p className="mb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-primary">After</p>
+                      <div className="relative">
+                        <div className="cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30" onClick={() => setLightbox(afterUrl)}>
+                          <img src={afterUrl} alt={`${title} redesign concept (mobile)`} className="block w-full" />
+                        </div>
+                        <span className="absolute left-1.5 top-1.5 inline-flex items-center gap-1 rounded-full bg-brand-primary/90 px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide text-white shadow">
+                          <Sparkles className="h-2.5 w-2.5" /> AI
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <p className="mt-1.5 text-center text-[11px] text-gray-400">
+                    Before (numbers match the findings) vs AI concept applying the recommendations. Click either to enlarge.
+                  </p>
+                </>
+              ) : displayAfter && afterUrl ? (
                 <div className="relative">
                   <div className="cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30" onClick={() => setLightbox(afterUrl)}>
                     <img src={afterUrl} alt={`${title} redesign concept (${viewport})`} className="block w-full" />
