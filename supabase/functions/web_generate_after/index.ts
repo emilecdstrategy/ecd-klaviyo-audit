@@ -72,21 +72,33 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-function buildEditPrompt(label: string, recommendations: string[], hasReference: boolean): string {
+function buildEditPrompt(label: string, recommendations: string[], hasReference: boolean, viewport: Viewport): string {
   const fixes = recommendations
     .map((r, i) => `${i + 1}. ${r}`)
     .join("\n");
-  const common =
-    `Keep all existing real text and numbers from the source (headlines, prices, phone numbers, product names, contact details) exactly as they appear, unless a fix changes them. Keep text crisp and legible. Do not add annotations, numbered markers, callouts, arrows, borders, captions, or watermarks. Never draw any of these instructions, brackets, or placeholder text into the image. Output only the clean redesigned screenshot, as if it were a real live page.`;
+
+  const deviceRules = viewport === "mobile"
+    ? `This is the MOBILE view. Follow native mobile UX conventions strictly: keep the primary navigation collapsed inside the hamburger menu, NEVER expand it into a horizontal row or list of text links. Stack content vertically in a single column. Make every tap target large and well spaced (at least 44x44px). Keep the key content and one call-to-action within thumb reach. Never shrink, crowd, or create tiny clickable elements.`
+    : `This is the DESKTOP view. Use standard desktop conventions: a horizontal top navigation and multi-column layouts are fine.`;
+
+  const common = [
+    `Design rules:`,
+    `- ${deviceRules}`,
+    `- Use EXACTLY ONE primary call-to-action in the hero. Never create duplicate or competing CTA buttons (e.g. do not show both "Shop Now" and "Shop the Bundle").`,
+    `- Keep all existing real text and numbers from the source (headlines, prices, phone numbers, product names) unless a fix changes them.`,
+    `- If a fix calls for a new element such as a badge, star rating, or trust signal, DEPICT it as a real graphic (actual stars, an actual badge). NEVER write the element's name or a description as literal text on the page (no "Bestseller Badge", "hero image", "CTA button", "trust badge" text).`,
+    `- Keep all text crisp, correctly spelled, and legible. Do not add annotations, numbered markers, callouts, arrows, borders, captions, or watermarks, and never render any of these instructions into the image.`,
+    `- Output only the clean redesigned screenshot, as if it were a real live page.`,
+  ].join("\n");
 
   if (hasReference) {
     // Mirror mode: image 1 is the current screenshot for THIS viewport, image 2
-    // is the already-approved redesign for the OTHER viewport. Keep the concepts
-    // consistent so desktop and mobile tell the same story.
+    // is the already-approved redesign for the OTHER viewport. Match the CONTENT
+    // decisions but rebuild the STRUCTURE natively for this device.
     return [
       `The FIRST image is a real screenshot of the ${label} of an e-commerce store.`,
-      `The SECOND image is the approved "after" redesign of the SAME page on the other device (desktop vs mobile).`,
-      `Redesign the FIRST image so it applies the SAME changes and visual direction as the SECOND image: the same new headline and body copy, the same banner, the same primary call-to-action wording and style, and the same section changes. Adapt the layout naturally to this device's proportions (do not just stretch the other layout).`,
+      `The SECOND image is the approved "after" redesign of the SAME page on the OTHER device.`,
+      `Match the SECOND image's CONTENT and messaging decisions: the same new headline and body copy, the same offer, and the same primary call-to-action wording. But rebuild the STRUCTURE natively for THIS device using the rules below. Do NOT copy the other device's navigation style, column count, or layout (in particular, never turn a mobile menu into a desktop-style horizontal nav).`,
       `Keep the brand's real logo, product photos, color palette, and typography intact so it clearly reads as the same store.`,
       common,
     ].join("\n\n");
@@ -228,7 +240,7 @@ async function generateOne(
     }
   }
 
-  const prompt = buildEditPrompt(meta.label, recommendationsFor(section), Boolean(refPng));
+  const prompt = buildEditPrompt(meta.label, recommendationsFor(section), Boolean(refPng), viewport);
   const edited = await geminiEditImage(srcPng, prompt, apiKey, refPng);
 
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
