@@ -78,6 +78,10 @@ class ScreenshotOneProvider implements ScreenshotProvider {
       const res = await fetch(`https://api.screenshotone.com/take?${params.toString()}`);
       if (!res.ok) {
         const txt = await res.text().catch(() => "");
+        // ScreenshotOne returns 429 + error_code "local_rate_limited" when the
+        // plan's concurrency cap is hit. Normalize so the caller can requeue.
+        const isRate = res.status === 429 || /local_rate_limited|too_many_requests|rate.?limit/i.test(txt);
+        if (isRate) return { ok: false, error: `screenshotone_rate_limited (http_${res.status})` };
         return { ok: false, error: `screenshotone_http_${res.status}${txt ? `: ${txt.slice(0, 140)}` : ""}` };
       }
       const bytes = new Uint8Array(await res.arrayBuffer());

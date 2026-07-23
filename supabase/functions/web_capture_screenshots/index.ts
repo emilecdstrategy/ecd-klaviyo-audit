@@ -263,11 +263,14 @@ async function seed(
 }
 
 async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
+  // Prefer rows we haven't touched yet (fetched_at null) over ones we requeued
+  // after a rate-limit, so a stuck store doesn't block the others.
   const { data: row, error: rowErr } = await sb
     .from("web_page_snapshots")
     .select("id, page_type, viewport, variant, url, raw")
     .eq("audit_id", auditId)
     .eq("status", "pending")
+    .order("fetched_at", { ascending: true, nullsFirst: true })
     .order("page_type", { ascending: true })
     .limit(1)
     .maybeSingle();
@@ -381,6 +384,21 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       }).eq("id", row.id);
     }
   } else {
+    // A ScreenshotOne "local_rate_limited" (plan concurrency) or store bot-block
+    // is transient: requeue the row (keep it pending, deprioritized) so the
+    // orchestrator retries it later once the limit clears. Bounded so a
+    // genuinely broken page eventually errors out instead of looping forever.
+    const rawObj = ((row as { raw?: Record<string, unknown> }).raw ?? {}) as Record<string, unknown>;
+    const attempts = Number(rawObj.capture_attempts ?? 0) + 1;
+    const rateLimited = /rate_limited|rate.?limit|429|too_many/i.test(captureError);
+    if (rateLimited && attempts < 5) {
+      await sb.from("web_page_snapshots").update({
+        raw: { ...rawObj, capture_attempts: attempts },
+        error_message: `${captureError} (rate-limited; requeued, attempt ${attempts})`.slice(0, 500),
+        fetched_at: now,
+      }).eq("id", row.id);
+      return { processed: 0, requeued: true, remaining: await countRemaining() };
+    }
     await sb.from("web_page_snapshots").update({
       status: "error",
       error_message: (captureError || "capture_failed").slice(0, 500),

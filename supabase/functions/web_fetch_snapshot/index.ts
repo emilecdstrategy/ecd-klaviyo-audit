@@ -106,12 +106,11 @@ async function fetchTopProducts(shopDomain: string, token: string, currentSince:
   }
 }
 
-async function fetchOrdersRollup(shopDomain: string, token: string) {
-  const nowMs = Date.now();
-  const currentSince = new Date(nowMs - PERIOD_DAYS * DAY_MS).toISOString();
-  const priorSince = new Date(nowMs - 2 * PERIOD_DAYS * DAY_MS).toISOString();
-  const currentSinceMs = nowMs - PERIOD_DAYS * DAY_MS;
-
+/** Paginate the orders window and aggregate. `includeCustomer` pulls the
+ * protected customer field (needed for returning-customer rate); when the app
+ * lacks protected-customer-data access, that field is dropped. Throws on a hard
+ * API error so the caller can retry without the customer field. */
+async function aggregateOrders(shopDomain: string, token: string, priorSince: string, currentSinceMs: number, includeCustomer: boolean) {
   const current = emptyPeriod();
   const previous = emptyPeriod();
   const channels = new Map<string, { revenue: number; orders: number }>();
@@ -119,6 +118,8 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
   let cursor: string | null = null;
   let pages = 0;
   let truncated = false;
+
+  const customerField = includeCustomer ? "customer { numberOfOrders }" : "";
 
   while (pages < ORDERS_MAX_PAGES) {
     const res = await shopifyGraphql(
@@ -131,7 +132,7 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
             createdAt
             sourceName
             currentTotalPriceSet { shopMoney { amount currencyCode } }
-            customer { numberOfOrders }
+            ${customerField}
           }
         }
       }`,
@@ -152,8 +153,10 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
       const bucket = isCurrent ? current : previous;
       bucket.order_count += 1;
       bucket.gross_revenue += rev;
-      const lifetimeOrders = Number.parseInt(String(node?.customer?.numberOfOrders ?? "0"), 10);
-      if (Number.isFinite(lifetimeOrders) && lifetimeOrders > 1) bucket.returning_orders += 1;
+      if (includeCustomer) {
+        const lifetimeOrders = Number.parseInt(String(node?.customer?.numberOfOrders ?? "0"), 10);
+        if (Number.isFinite(lifetimeOrders) && lifetimeOrders > 1) bucket.returning_orders += 1;
+      }
       if (isCurrent) {
         const channel = String(node?.sourceName ?? "").trim() || "unknown";
         const c = channels.get(channel) ?? { revenue: 0, orders: 0 };
@@ -171,22 +174,49 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
     }
   }
 
+  return { current, previous, channels, currency, truncated };
+}
+
+async function fetchOrdersRollup(shopDomain: string, token: string) {
+  const nowMs = Date.now();
+  const currentSince = new Date(nowMs - PERIOD_DAYS * DAY_MS).toISOString();
+  const priorSince = new Date(nowMs - 2 * PERIOD_DAYS * DAY_MS).toISOString();
+  const currentSinceMs = nowMs - PERIOD_DAYS * DAY_MS;
+
+  // The customer field needs protected-customer-data access. If the app doesn't
+  // have it, the whole query 4xxs — so retry once without it (revenue/AOV/orders
+  // still work; only returning-customer rate is unavailable).
+  let customerDataUnavailable = false;
+  let agg;
+  try {
+    agg = await aggregateOrders(shopDomain, token, priorSince, currentSinceMs, true);
+  } catch {
+    customerDataUnavailable = true;
+    agg = await aggregateOrders(shopDomain, token, priorSince, currentSinceMs, false);
+  }
+  const { current, previous, channels, currency, truncated } = agg;
+
   const cur = summarizePeriod(current);
   const prev = summarizePeriod(previous);
+  // Without customer data we can't compute the returning-customer rate; null it
+  // out (rather than reporting a misleading 0%).
+  const curReturning = customerDataUnavailable ? null : cur.returning_customer_rate;
+  const prevReturning = customerDataUnavailable ? null : prev.returning_customer_rate;
   const topProducts = await fetchTopProducts(shopDomain, token, currentSince);
 
   return {
     // Two-period comparison for the Data & Analytics section.
     timeframe_key: "30d_vs_prior_30d",
     period_days: PERIOD_DAYS,
-    current: cur,
-    previous: prev,
+    current: { ...cur, returning_customer_rate: curReturning },
+    previous: { ...prev, returning_customer_rate: prevReturning },
     deltas: {
       gross_revenue: pctDelta(cur.gross_revenue, prev.gross_revenue),
       order_count: pctDelta(cur.order_count, prev.order_count),
       aov: pctDelta(cur.aov, prev.aov),
-      returning_customer_rate: pctDelta(cur.returning_customer_rate, prev.returning_customer_rate),
+      returning_customer_rate: customerDataUnavailable ? null : pctDelta(cur.returning_customer_rate, prev.returning_customer_rate),
     },
+    returning_customer_rate_available: !customerDataUnavailable,
     top_products: topProducts.items,
     top_products_note: topProducts.note,
     channels: [...channels.entries()]

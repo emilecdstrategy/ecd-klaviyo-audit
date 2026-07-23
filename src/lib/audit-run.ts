@@ -224,17 +224,19 @@ export async function runWebAudit(
 
   progress(45, 'Capturing website screenshots (desktop & mobile)…');
   let remaining = total;
-  let safety = total + 6;
+  // Extra headroom: rate-limited rows are requeued (up to ~4 retries each), so
+  // allow several passes over the set rather than one shot per row.
+  let safety = total * 3 + 12;
   while (remaining > 0 && safety-- > 0) {
     const { data: capData, error: capErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
       body: { action: 'capture_one', audit_id: auditId, client_id: clientId },
     });
-    if (capErr || !capData?.ok) { await new Promise(r => setTimeout(r, 2500)); continue; }
+    if (capErr || !capData?.ok) { await new Promise(r => setTimeout(r, 3500)); continue; }
     remaining = Number.isFinite(capData.remaining) ? Number(capData.remaining) : remaining;
     const done = Math.max(0, total - remaining);
     progress(Math.min(95, 45 + Math.round((done / Math.max(total, 1)) * 50)), `Capturing screenshots… ${done}/${total} done`);
     if (capData.done) break;
-    await new Promise(r => setTimeout(r, 2500));
+    await new Promise(r => setTimeout(r, 3500));
   }
 
   progress(97, 'Starting AI analysis…');
