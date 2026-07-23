@@ -20,7 +20,11 @@ export default function WebPageSection({
 }) {
   const { editMode, updateSectionField, updateSectionDetailValue } = useReportEdit();
   const detail = useMemo(() => parseWebSectionDetail(section.section_details), [section.section_details]);
-  const [viewport, setViewport] = useState<'desktop' | 'mobile'>('desktop');
+  // Default to mobile (most storefront traffic is mobile), falling back to
+  // desktop only when there is no successful mobile shot.
+  const [viewport, setViewport] = useState<'desktop' | 'mobile'>(() =>
+    snapshots.some((s) => s.viewport === 'mobile' && s.status === 'success' && s.screenshot_url) ? 'mobile' : 'desktop',
+  );
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
   const [showAfter, setShowAfter] = useState(false);
@@ -48,9 +52,14 @@ export default function WebPageSection({
   const hasDesktop = successful.some((s) => s.viewport === 'desktop');
   const hasMobile = successful.some((s) => s.viewport === 'mobile');
 
+  // Show only the findings for the selected viewport (plus ones tagged 'both'),
+  // then renumber 1..M within that filtered set so the pins on the shot match the
+  // list. origIndex tracks the real position in detail.findings for edits.
   const visibleFindings = detail.findings
-    .map((f, i) => ({ f, number: i + 1 }))
-    .filter(({ f }) => editMode || !f.hidden);
+    .map((f, origIndex) => ({ f, origIndex }))
+    .filter(({ f }) => editMode || !f.hidden)
+    .filter(({ f }) => f.viewport === 'both' || f.viewport === viewport)
+    .map((item, idx) => ({ ...item, number: idx + 1 }));
 
   const markers = visibleFindings
     .filter(({ f }) => f.highlight && shown && f.highlight.snapshot_id === shown.id && !f.hidden)
@@ -69,7 +78,7 @@ export default function WebPageSection({
     updateSectionDetailValue(section.section_key, ['web', 'findings'], next);
   };
   const addFinding = () => {
-    const next = [...detail.findings, { text: '', recommendation: '', highlight: null, hidden: false }];
+    const next = [...detail.findings, { text: '', recommendation: '', viewport, highlight: null, hidden: false }];
     updateSectionDetailValue(section.section_key, ['web', 'findings'], next);
   };
   const setPro = (i: number, value: string) => {
@@ -269,8 +278,8 @@ export default function WebPageSection({
             <p className="mt-2 text-sm text-gray-400">No issues flagged on this page.</p>
           ) : (
             <div className="mt-2 space-y-3">
-              {visibleFindings.map(({ f, number }) => {
-                const i = number - 1;
+              {visibleFindings.map(({ f, number, origIndex }) => {
+                const i = origIndex;
                 return (
                   <WebFindingCard
                     key={i}

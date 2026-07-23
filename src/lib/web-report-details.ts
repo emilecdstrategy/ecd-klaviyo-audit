@@ -10,9 +10,12 @@ export type WebHighlight = {
   label: string;
 };
 
+export type WebViewportTag = 'desktop' | 'mobile' | 'both';
+
 export type WebFinding = {
   text: string;
   recommendation: string;
+  viewport: WebViewportTag;
   highlight?: WebHighlight | null;
   hidden?: boolean;
 };
@@ -70,9 +73,13 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
                 label: asString(hlRaw.label),
               }
             : null;
+        const vpRaw = asString(rec.viewport).toLowerCase();
+        const viewport: WebViewportTag =
+          vpRaw === 'desktop' || vpRaw === 'mobile' ? vpRaw : 'both';
         return {
           text: asString(rec.text),
           recommendation: asString(rec.recommendation),
+          viewport,
           highlight,
           hidden: rec.hidden === true,
         };

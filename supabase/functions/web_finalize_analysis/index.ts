@@ -143,6 +143,7 @@ function buildPageImages(
   images: LlmImage[];
   refToId: Map<string, string>;
   refToElements: Map<string, ElementBox[]>;
+  refToViewport: Map<string, string>;
   primaryId: string | null;
   elementsText: string;
 } {
@@ -159,10 +160,12 @@ function buildPageImages(
   const images: LlmImage[] = [];
   const refToId = new Map<string, string>();
   const refToElements = new Map<string, ElementBox[]>();
+  const refToViewport = new Map<string, string>();
   const elementLines: string[] = [];
   ordered.forEach((s, i) => {
     const ref = `IMG_${i + 1}`;
     refToId.set(ref, s.id);
+    refToViewport.set(ref, s.viewport);
     images.push({ url: s.screenshot_url as string, label: `${ref}: ${pageLabel}, ${s.viewport}, above-the-fold` });
     const els = Array.isArray(s.elements) ? s.elements : [];
     if (els.length > 0) {
@@ -175,7 +178,7 @@ function buildPageImages(
   const elementsText = elementLines.length
     ? `\n\nReal page elements detected on these screenshots (use element_id in a finding's highlight to pin exactly, it maps to the element's true on-page box):\n${elementLines.join("\n")}`
     : "";
-  return { images, refToId, refToElements, primaryId, elementsText };
+  return { images, refToId, refToElements, refToViewport, primaryId, elementsText };
 }
 
 async function ensureJob(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
@@ -241,15 +244,15 @@ async function runStep(
       await sb.from("audit_sections").update({ section_config: hideConfig(section) }).eq("id", section.id);
       return;
     }
-    const { images, refToId, refToElements, primaryId, elementsText } = buildPageImages(rows, step.label);
+    const { images, refToId, refToElements, refToViewport, primaryId, elementsText } = buildPageImages(rows, step.label);
     const messages: LlmMessage[] = [{
       role: "user_images",
-      text: `Audit the ${step.label} of this Shopify store using the screenshots above. Identify strengths, the most important issues (with a pinpoint highlight when you are confident of the element's location, referencing the correct IMG_n), and prioritized recommendations. Call record_page_audit exactly once.${elementsText}`,
+      text: `Audit the ${step.label} of this Shopify store using the screenshots above. You are given both desktop and mobile shots. Tag each finding with the viewport it applies to (desktop, mobile, or both), and deliberately surface issues that are specific to each: desktop and mobile have different UX and conversion problems (e.g. mobile header crowding, tap-target size, thumb reach, sticky add-to-cart; desktop hero whitespace, above-the-fold density, column layout). Aim for a healthy mix of desktop-specific and mobile-specific findings, not only 'both'. Identify strengths, the most important issues (with a pinpoint highlight when you are confident of the element's location, referencing the correct IMG_n), and prioritized recommendations. Call record_page_audit exactly once.${elementsText}`,
       images,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
     if (turn.kind !== "tool_call") throw new Error(`${step.key}: model did not call the tool`);
-    let parsed = coercePageAudit(turn.input, refToId, refToElements);
+    let parsed = coercePageAudit(turn.input, refToId, refToElements, refToViewport);
     // The model occasionally returns an empty audit for a page that clearly
     // rendered. Retry once with a firmer nudge before accepting nothing.
     if (parsed.findings.length === 0) {
@@ -260,7 +263,7 @@ async function runStep(
       }];
       const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
       if (retry.kind === "tool_call") {
-        const retryParsed = coercePageAudit(retry.input, refToId, refToElements);
+        const retryParsed = coercePageAudit(retry.input, refToId, refToElements, refToViewport);
         if (retryParsed.findings.length > 0) parsed = retryParsed;
       }
     }
@@ -376,6 +379,9 @@ async function runPipeline(auditId: string, correlationId: string, mode?: string
       .single();
     job = reset ?? job;
   } else if (job.status === "complete") {
+    // Re-invoking a finished audit is a safe way to (re)kick "after" generation
+    // for any section/viewport still missing one (idempotent: it skips existing).
+    await triggerAfterGeneration(auditId);
     return json({ ok: true, correlationId, status: "complete" });
   } else if (job.status === "failed") {
     const { data: reset } = await sb
@@ -431,7 +437,10 @@ async function runPipeline(auditId: string, correlationId: string, mode?: string
     updated_at: new Date().toISOString(),
   }).eq("audit_id", auditId);
 
-  if (!done) await chainSelf(auditId, mode);
+  // IMPORTANT: never propagate `mode` to the continuation. `regenerate` must only
+  // reset (clear sections + step_index=0) on the FIRST invocation; passing it to
+  // every chained hop makes each hop reset to 0, looping the pipeline forever.
+  if (!done) await chainSelf(auditId);
   else await triggerAfterGeneration(auditId);
   return json({ ok: true, correlationId, status: done ? "complete" : "in_progress", step: stepIndex, nextStep: nextIndex });
 }

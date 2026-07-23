@@ -41,6 +41,7 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
           properties: {
             text: { type: "string", description: "The problem in ONE short sentence, max ~16 words. State the issue, no preamble." },
             recommendation: { type: "string", description: "The fix in 1-2 sentences: the concrete, Shopify-feasible change (element, copy, placement) plus why it lifts conversion/AOV/trust. Start with a verb. Grounded in standard e-commerce CRO best practices, no vague advice." },
+            viewport: { type: "string", enum: ["desktop", "mobile", "both"], description: "Which viewport this issue is about. Use 'desktop' or 'mobile' when it is specific to one (judge from the IMG_n you are looking at), or 'both' when it applies equally to both. Prefer a specific viewport over 'both' when the issue is more visible or more severe on one." },
             highlight: {
               type: "object",
               description:
@@ -129,7 +130,8 @@ export const ROADMAP_TOOL: LlmTool = {
 // --- Coercers (tool input -> persisted shape) ------------------------------
 
 export type WebHighlight = { snapshot_id: string; x: number; y: number; w: number; h: number; label: string };
-export type WebFinding = { text: string; recommendation: string; highlight?: WebHighlight; hidden: boolean };
+export type WebViewportTag = "desktop" | "mobile" | "both";
+export type WebFinding = { text: string; recommendation: string; viewport: WebViewportTag; highlight?: WebHighlight; hidden: boolean };
 
 export type ElementBox = { id: string; x: number; y: number; w: number; h: number; label?: string };
 
@@ -137,14 +139,28 @@ export function coercePageAudit(
   input: unknown,
   imageRefToSnapshotId: Map<string, string>,
   refToElements?: Map<string, ElementBox[]>,
+  refToViewport?: Map<string, string>,
 ) {
   const o = (input ?? {}) as Record<string, unknown>;
   const findingsRaw = Array.isArray(o.findings) ? o.findings : [];
   const findings: WebFinding[] = findingsRaw.slice(0, 8).map((f) => {
     const rec = (f ?? {}) as Record<string, unknown>;
+    const rawViewport = String(rec.viewport ?? "").toLowerCase();
+    const hlRef = String((rec.highlight as Record<string, unknown> | undefined)?.image_ref ?? "");
+    const viewport: WebViewportTag =
+      rawViewport === "desktop" || rawViewport === "mobile"
+        ? rawViewport
+        : rawViewport === "both"
+        ? "both"
+        : hlRef && refToViewport?.get(hlRef) === "desktop"
+        ? "desktop"
+        : hlRef && refToViewport?.get(hlRef) === "mobile"
+        ? "mobile"
+        : "both";
     const finding: WebFinding = {
       text: sanitizeDash(rec.text),
       recommendation: sanitizeDash(rec.recommendation),
+      viewport,
       hidden: false,
     };
     const hl = rec.highlight as Record<string, unknown> | undefined;
