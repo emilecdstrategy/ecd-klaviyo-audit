@@ -333,6 +333,7 @@ async function runStep(
     .from("revenue_opportunity_templates")
     .select("slug, name, one_time_price, one_time_label, monthly_price, monthly_label")
     .eq("is_active", true)
+    .in("audit_type", ["web", "both"]) // web audit: only web + both services
     .order("display_order", { ascending: true });
   const catalog = (catalogRows ?? []) as any[];
   const pageSections = sections.filter((s) => STEPS.find((st) => st.key === s.section_key && st.kind === "page"));

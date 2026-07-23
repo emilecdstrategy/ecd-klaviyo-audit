@@ -32,7 +32,7 @@ import {
   deleteRevenueOpportunityTemplate,
   uploadRevenueOpportunityImage,
 } from '../lib/db';
-import type { RevenueOpportunityTemplate } from '../lib/types';
+import type { CatalogAuditType, RevenueOpportunityTemplate } from '../lib/types';
 
 const TABS = [
   { id: 'users', label: 'Users', icon: Users },
@@ -405,6 +405,12 @@ function UsersTab() {
   );
 }
 
+const AUDIT_TYPE_META: Record<CatalogAuditType, { label: string; cls: string }> = {
+  both: { label: 'Both', cls: 'bg-purple-50 text-purple-700' },
+  klaviyo: { label: 'Klaviyo', cls: 'bg-blue-50 text-blue-700' },
+  web: { label: 'Website', cls: 'bg-amber-50 text-amber-700' },
+};
+
 function RevenueOpportunitiesTab() {
   const [entries, setEntries] = useState<RevenueOpportunityTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -441,10 +447,12 @@ function RevenueOpportunitiesTab() {
     }
   };
 
+  const [filterType, setFilterType] = useState<'all' | 'web' | 'klaviyo' | 'both'>('all');
   const [newEntry, setNewEntry] = useState({
     name: '',
     description: '',
     content: '',
+    auditType: 'both' as CatalogAuditType,
     oneTimePrice: '',
     oneTimeLabel: '',
     monthlyPrice: '',
@@ -497,6 +505,7 @@ function RevenueOpportunitiesTab() {
         slug: uniqueHandleFromName(entry.name, entries, entry.id),
         name: entry.name.trim(),
         description: entry.description.trim(),
+        audit_type: entry.audit_type,
         content: entry.content.trim(),
         one_time_price: entry.one_time_price ?? null,
         one_time_label: entry.one_time_label?.trim() || null,
@@ -543,6 +552,7 @@ function RevenueOpportunitiesTab() {
         slug: uniqueHandleFromName(name, entries),
         name,
         description: newEntry.description.trim(),
+        audit_type: newEntry.auditType,
         content: newEntry.content.trim(),
         bullets: [],
         default_revenue_monthly: 0,
@@ -557,6 +567,7 @@ function RevenueOpportunitiesTab() {
         name: '',
         description: '',
         content: '',
+        auditType: 'both',
         oneTimePrice: '',
         oneTimeLabel: '',
         monthlyPrice: '',
@@ -634,14 +645,27 @@ function RevenueOpportunitiesTab() {
             Manage reusable services and pricing that can be selected in the audit wizard and on proposals.
           </p>
         </div>
-        <button
-          type="button"
-          onClick={() => setShowCreateModal(true)}
-          className="inline-flex shrink-0 items-center gap-1.5 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
-        >
-          <Plus className="w-4 h-4" />
-          New template
-        </button>
+        <div className="flex shrink-0 items-center gap-2">
+          <select
+            value={filterType}
+            onChange={e => setFilterType(e.target.value as typeof filterType)}
+            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            title="Filter by audit type"
+          >
+            <option value="all">All types</option>
+            <option value="klaviyo">Klaviyo</option>
+            <option value="web">Website</option>
+            <option value="both">Both</option>
+          </select>
+          <button
+            type="button"
+            onClick={() => setShowCreateModal(true)}
+            className="inline-flex items-center gap-1.5 px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity"
+          >
+            <Plus className="w-4 h-4" />
+            New template
+          </button>
+        </div>
       </div>
 
       {error && <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>}
@@ -667,6 +691,19 @@ function RevenueOpportunitiesTab() {
               placeholder="One-line summary shown in the report card."
               className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-gray-500 mb-1">Applies to</label>
+            <select
+              value={newEntry.auditType}
+              onChange={e => setNewEntry(prev => ({ ...prev, auditType: e.target.value as CatalogAuditType }))}
+              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+            >
+              <option value="both">Both (Klaviyo + Website)</option>
+              <option value="klaviyo">Klaviyo audits only</option>
+              <option value="web">Website audits only</option>
+            </select>
+            <p className="text-xs text-gray-400 mt-1">Controls which audit type this service shows up in.</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Body</label>
@@ -762,6 +799,7 @@ function RevenueOpportunitiesTab() {
           </div>
         ) : (
           sortedEntries.map((entry, index) => {
+            if (filterType !== 'all' && entry.audit_type !== filterType) return null;
             const expanded = expandedIds.has(entry.id);
             const priceParts: string[] = [];
             if (entry.one_time_price) priceParts.push(`$${Number(entry.one_time_price).toLocaleString()} one-time`);
@@ -814,6 +852,9 @@ function RevenueOpportunitiesTab() {
                   >
                     <div className="flex items-center gap-2">
                       <p className="text-sm font-semibold text-gray-900 truncate">{entry.name || 'Untitled template'}</p>
+                      <span className={`shrink-0 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${AUDIT_TYPE_META[entry.audit_type].cls}`}>
+                        {AUDIT_TYPE_META[entry.audit_type].label}
+                      </span>
                       <span className={`shrink-0 inline-flex rounded-full px-1.5 py-0.5 text-[10px] font-medium ${entry.is_active ? 'bg-emerald-50 text-emerald-700' : 'bg-gray-100 text-gray-500'}`}>
                         {entry.is_active ? 'Active' : 'Inactive'}
                       </span>
@@ -864,6 +905,18 @@ function RevenueOpportunitiesTab() {
                         onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, name: e.target.value } : p)))}
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                       />
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Applies to</label>
+                      <select
+                        value={entry.audit_type}
+                        onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, audit_type: e.target.value as CatalogAuditType } : p)))}
+                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                      >
+                        <option value="both">Both (Klaviyo + Website)</option>
+                        <option value="klaviyo">Klaviyo audits only</option>
+                        <option value="web">Website audits only</option>
+                      </select>
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>

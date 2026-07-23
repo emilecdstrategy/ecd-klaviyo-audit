@@ -502,10 +502,12 @@ export default function RevenueAddOnItemsEditor({
   const highlightedCount = useMemo(() => addOnItems.filter(item => item.highlighted).length, [addOnItems]);
 
   useEffect(() => {
-    listRevenueOpportunityTemplates({ activeOnly: true })
+    // Only offer services that apply to this audit's type (plus 'both').
+    const auditType = audit.audit_type === 'web' ? 'web' : 'klaviyo';
+    listRevenueOpportunityTemplates({ activeOnly: true, auditType })
       .then(setTemplates)
       .catch(() => setTemplates([]));
-  }, []);
+  }, [audit.audit_type]);
 
   useEffect(() => () => {
     if (saveTimer.current) window.clearTimeout(saveTimer.current);

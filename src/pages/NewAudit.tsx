@@ -165,14 +165,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     let cancelled = false;
     (async () => {
       try {
-        const templates = await listRevenueOpportunityTemplates({ activeOnly: true });
+        // Only surface services for the chosen audit type (plus 'both').
+        const templates = await listRevenueOpportunityTemplates({ activeOnly: true, auditType });
         if (!cancelled) setRevenueTemplates(templates);
       } catch {
         if (!cancelled) setRevenueTemplates([]);
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+  }, [auditType]);
 
   useEffect(() => {
     if (!attributionScreenshot) {

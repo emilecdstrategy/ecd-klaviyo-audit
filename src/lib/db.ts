@@ -1160,6 +1160,7 @@ function mapRevenueOpportunityTemplateRow(row: any): RevenueOpportunityTemplate 
     slug: row.slug,
     name: row.name,
     description: row.description ?? '',
+    audit_type: (['web', 'klaviyo', 'both'].includes(row.audit_type) ? row.audit_type : 'both'),
     content,
     bullets,
     default_revenue_monthly: Number(row.default_revenue_monthly ?? 0),
@@ -1193,7 +1194,7 @@ export async function uploadRevenueOpportunityImage(file: File): Promise<string>
 }
 
 export async function listRevenueOpportunityTemplates(
-  options: { activeOnly?: boolean } = {},
+  options: { activeOnly?: boolean; auditType?: 'web' | 'klaviyo' } = {},
 ): Promise<RevenueOpportunityTemplate[]> {
   let query = supabase
     .from('revenue_opportunity_templates')
@@ -1202,6 +1203,10 @@ export async function listRevenueOpportunityTemplates(
     .order('name', { ascending: true });
   if (options.activeOnly) {
     query = query.eq('is_active', true);
+  }
+  // A web audit shows web + both; a klaviyo audit shows klaviyo + both.
+  if (options.auditType) {
+    query = query.in('audit_type', [options.auditType, 'both']);
   }
   const { data, error } = await query;
   if (error) throw error;

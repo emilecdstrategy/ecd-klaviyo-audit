@@ -52,11 +52,16 @@ export interface Audit {
   client?: Client;
 }
 
+/** Which audit type(s) a catalog line item / service applies to. */
+export type CatalogAuditType = 'web' | 'klaviyo' | 'both';
+
 export interface RevenueOpportunityTemplate {
   id: string;
   slug: string;
   name: string;
   description: string;
+  /** Which audit type(s) this service is offered for (web, klaviyo, or both). */
+  audit_type: CatalogAuditType;
   /** Rich-text body (markdown). List vs paragraph formatting comes from the editor. */
   content: string;
   /** @deprecated Legacy bullet strings — use `content` instead. */
