@@ -207,7 +207,12 @@ export function coercePageAudit(
       // Also drop a finding that reads purely as praise with no problem stated.
       const praiseOnly = /(works well|looks great|is (a )?nice|does exactly what|is doing exactly)/.test(txt) &&
         (/^(keep|leave|maintain)\b/.test(rec) || rec.length === 0);
-      return !noop && !praiseOnly;
+      // Drop grow-zone / planting-location widget findings: it is automatic
+      // zip-based detection and 'n/a' before a zip is entered is expected. (Kept
+      // narrow to the widget labels so product 'hardiness zone' care details, a
+      // legitimate recommendation, are not dropped.)
+      const growZone = /growing zone|planting in\b|grow zone/.test(txt + " " + rec);
+      return !noop && !praiseOnly && !growZone;
     });
   return {
     intro: sanitizeDash(o.intro),
