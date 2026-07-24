@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Receipt, ArrowUp, ArrowDown, Trash2, Plus, ChevronDown, BadgePercent, X, Play } from 'lucide-react';
 import { cn } from '../../lib/utils';
-import { addOnHasCustomerAgentDemo, resolveCustomerAgentDemoUrl } from '../../lib/customer-agent-demo';
+import { addOnHasCustomerAgentDemo, nameHasCustomerAgentDemo, customerAgentDemoUrlOrDefault } from '../../lib/customer-agent-demo';
 import DemoPopupModal, { type DemoPopupState } from '../ui/DemoPopupModal';
 import { MenuPriceRow, SummaryTotalRow } from './PriceRows';
 import ProposalPlainText from './edit/ProposalPlainText';
@@ -223,8 +223,11 @@ export default function ProposalPricingTable({ proposal, lineItems, clientWebsit
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalog, setCatalog] = useState<RevenueOpportunityTemplate[] | null>(null);
   const [demoPopup, setDemoPopup] = useState<DemoPopupState | null>(null);
-  // Live Customer Agent / Customer Hub demo, keyed to the client's storefront.
-  const demoUrl = resolveCustomerAgentDemoUrl(clientWebsite ?? proposal.client?.website_url ?? null);
+  // Live Customer Agent / Customer Hub demo, keyed to the client's storefront when
+  // known, otherwise the generic demo.
+  const demoUrl = customerAgentDemoUrlOrDefault(clientWebsite ?? proposal.client?.website_url ?? null);
+  const itemHasDemo = (item: ProposalLineItem) =>
+    (item.template_slug ? addOnHasCustomerAgentDemo(item.template_slug) : false) || nameHasCustomerAgentDemo(item.name);
 
   const sorted = [...lineItems].sort((a, b) => a.display_order - b.display_order);
   const pricedItems = sorted.filter(lineItemHasPricing);
@@ -360,7 +363,7 @@ export default function ProposalPricingTable({ proposal, lineItems, clientWebsit
                         {item.description}
                       </p>
                     ) : null}
-                    {item.template_slug && addOnHasCustomerAgentDemo(item.template_slug) && demoUrl ? (
+                    {itemHasDemo(item) ? (
                       <div className="pb-3 print:hidden">
                         <button
                           type="button"

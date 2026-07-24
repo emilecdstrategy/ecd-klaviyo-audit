@@ -22,3 +22,15 @@ export function resolveCustomerAgentDemoUrl(websiteUrl?: string | null): string 
 export function addOnHasCustomerAgentDemo(templateSlug: string): boolean {
   return CUSTOMER_AGENT_DEMO_SLUGS.has(templateSlug);
 }
+
+/** Match a Customer Hub / Customer Agent line item by name, for cases where the
+ * template_slug was not stored (e.g. items added before slugs, or hand-typed). */
+export function nameHasCustomerAgentDemo(name?: string | null): boolean {
+  return /customer\s*(hub|agent)/i.test((name ?? '').trim());
+}
+
+/** Demo URL for a line item: personalized to the client's storefront when we know
+ * it, otherwise the generic demo so the "View demo" CTA always works. */
+export function customerAgentDemoUrlOrDefault(websiteUrl?: string | null): string {
+  return resolveCustomerAgentDemoUrl(websiteUrl) ?? DEMO_BASE_URL;
+}
