@@ -16,6 +16,7 @@ export const GENERAL_LAYOUT_RULES = [
   "Only change what the fixes require. Leave global elements (the header, navigation, and footer) exactly as in the original screenshot unless a fix explicitly changes them, so they stay consistent across pages.",
   "Keep one clear visual flow down the page, with related things grouped and consistent spacing and alignment.",
   "One primary action per screen; anything secondary must clearly look secondary.",
+  "NEVER change, rewrite, relabel, or restyle the 'Growing Zone' and 'Planting in' location bar. It is an automatic zip-code-based widget; reproduce it EXACTLY as it appears in the original screenshot (including the word 'n/a'). Do not turn it into a prompt like 'Enter your zip', do not add copy to it, do not remove it.",
   "Every element must look finished and real: aligned, evenly padded, no empty icon slots, no placeholder or label text.",
 ].join(" ");
 
