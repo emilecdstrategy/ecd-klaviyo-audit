@@ -21,6 +21,48 @@ function clampPct(v: unknown): number {
   return Math.max(0, Math.min(100, Math.round(n * 100) / 100));
 }
 
+// --- Pin placement helpers -------------------------------------------------
+
+const LABEL_STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "of", "for", "to", "on", "in", "at", "with",
+  "area", "section", "block", "element", "region", "text", "label", "this",
+  "div", "span", "img", "image", "link", "icon",
+]);
+
+/** Meaningful lowercase tokens from an element or highlight label. */
+function labelTokens(raw: unknown): string[] {
+  return String(raw ?? "")
+    .toLowerCase()
+    .replace(/^[a-z0-9]+\s*:\s*/, "") // strip a tag prefix like "button: "
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length > 2 && !LABEL_STOPWORDS.has(t));
+}
+
+/** The model names elements well ("Sold out button", "Breadcrumb", "Price") but
+ * estimates pixel coordinates poorly, which lands pins on the wrong thing. When
+ * it did not give a usable element_id, snap its label to the captured element
+ * whose own label matches best and use that element's real box instead. */
+function snapToElementByLabel(
+  highlightLabel: unknown,
+  elements: ElementBox[],
+): ElementBox | undefined {
+  const wanted = labelTokens(highlightLabel);
+  if (wanted.length === 0 || elements.length === 0) return undefined;
+  let best: { el: ElementBox; score: number } | null = null;
+  for (const el of elements) {
+    const have = labelTokens(el.label);
+    if (have.length === 0) continue;
+    const hits = wanted.filter((t) => have.includes(t)).length;
+    if (hits === 0) continue;
+    // Favour matching most of the requested words against a concise label.
+    const score = hits / Math.max(wanted.length, 1) + hits / Math.max(have.length, 1);
+    if (!best || score > best.score) best = { el, score };
+  }
+  // Require a reasonably confident match so we never snap on a single weak token.
+  return best && best.score >= 1 ? best.el : undefined;
+}
+
 // --- Tool schemas (forced via tool_choice) ---------------------------------
 
 export const PAGE_AUDIT_TOOL: LlmTool = {
@@ -37,10 +79,10 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
         maxItems: 8,
         items: {
           type: "object",
-          required: ["text"],
+          required: ["text", "recommendation"],
           properties: {
             text: { type: "string", description: "The opportunity in ONE short, plain-English sentence. No jargon, no preamble." },
-            recommendation: { type: "string", description: "1-2 sentences, founder-friendly and warm, like a strategist not a QA engineer. Lead with the action, then the payoff for the shopper or brand ('Do X. It gives shoppers Y.'). Propose the actual words for any copy (real headline / button label). No jargon (never 'tap target', 'above the fold', 'CTA', 'viewport'). Must be realistic to ship on Shopify." },
+            recommendation: { type: "string", description: "REQUIRED, never empty. Every finding must state its fix. 1-2 sentences, founder-friendly and warm, like a strategist not a QA engineer. Lead with the action, then the payoff for the shopper or brand ('Do X. It gives shoppers Y.'). Propose the actual words for any copy (real headline / button label). No jargon (never 'tap target', 'above the fold', 'CTA', 'viewport'). Must be realistic to ship on Shopify." },
             viewport: { type: "string", enum: ["desktop", "mobile", "both"], description: "Which viewport this issue is about. Use 'desktop' or 'mobile' when it is specific to one (judge from the IMG_n you are looking at), or 'both' when it applies equally to both. Prefer a specific viewport over 'both' when the issue is more visible or more severe on one." },
             highlights: {
               type: "array",
@@ -158,8 +200,12 @@ export function coercePageAudit(
       const ref = String(hl.image_ref ?? "");
       const snapshotId = imageRefToSnapshotId.get(ref);
       if (!snapshotId) return null;
+      const els = refToElements?.get(ref) ?? [];
       const elId = typeof hl.element_id === "string" ? hl.element_id.trim() : "";
-      const el = elId ? (refToElements?.get(ref) ?? []).find((e) => e.id === elId) : undefined;
+      // Best: the element the model pointed at. Next best: the element whose
+      // label matches what the model called it (its coordinates are unreliable).
+      // Last resort: the model's own box.
+      const el = (elId ? els.find((e) => e.id === elId) : undefined) ?? snapToElementByLabel(hl.label, els);
       let box: { x: number; y: number; w: number; h: number; label?: string } | null = null;
       if (el) {
         box = { x: clampPct(el.x), y: clampPct(el.y), w: clampPct(el.w), h: clampPct(el.h), label: el.label };
@@ -169,6 +215,10 @@ export function coercePageAudit(
         if (w > 0 && h > 0) box = { x: clampPct(hl.x), y: clampPct(hl.y), w, h };
       }
       if (!box || box.w <= 0 || box.h <= 0) return null;
+      // A box hugging the bottom edge of the crop is almost always a coordinate
+      // guess at content that continues below the shot. Pinning there points at
+      // nothing, so drop the pin rather than show it in the wrong place.
+      if (box.y >= 92 && !el) return null;
       return {
         snapshot_id: snapshotId,
         x: box.x,
@@ -221,7 +271,10 @@ export function coercePageAudit(
     };
     return finding;
   })
-    .filter((f) => f.text)
+    // A finding with no fix renders as an empty "Recommended fix" box, so treat a
+    // blank recommendation as an incomplete finding and drop it. `recommendation`
+    // is also required in the tool schema, so this should not normally trigger.
+    .filter((f) => f.text && f.recommendation)
     // Safety net: drop non-actionable "keep as is / no change needed" findings that
     // slip past the prompt. Positives belong in strengths (pros), not findings.
     .filter((f) => {

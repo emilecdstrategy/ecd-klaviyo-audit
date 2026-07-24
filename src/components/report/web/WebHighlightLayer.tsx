@@ -3,6 +3,22 @@ import type { WebHighlight } from '../../../lib/web-report-details';
 
 type Marker = { index: number; highlight: WebHighlight; text?: string; recommendation?: string };
 
+type PlacedMarker = Marker & { badgeShiftPct: number };
+
+/** Two findings often point at the same element, which stacks their badges in
+ * exactly the same spot so only the last one is visible. Nudge each badge in a
+ * cluster sideways so every number can be seen and clicked. */
+function withBadgeOffsets(markers: Marker[]): PlacedMarker[] {
+  const seen = new Map<string, number>();
+  return markers.map((m) => {
+    // Round to the nearest whole percent so near-identical boxes cluster too.
+    const key = `${Math.round(m.highlight.x)}:${Math.round(m.highlight.y)}`;
+    const nth = seen.get(key) ?? 0;
+    seen.set(key, nth + 1);
+    return { ...m, badgeShiftPct: nth * 9 };
+  });
+}
+
 /** Numbered badges + outline boxes overlaid on a screenshot at %-coordinates. */
 export default function WebHighlightLayer({
   imageUrl,
@@ -22,14 +38,16 @@ export default function WebHighlightLayer({
     // clipped at the screenshot edges. The image keeps its own rounded corners.
     <div className="relative w-full rounded-lg border border-gray-200 bg-white">
       <img src={imageUrl} alt={alt} className="block w-full rounded-lg" loading="lazy" />
-      {markers.map(({ index, highlight, text, recommendation }) => {
+      {withBadgeOffsets(markers).map(({ index, highlight, text, recommendation, badgeShiftPct }) => {
         const active = activeIndex === index;
         // When the highlighted box is small, a badge centered inside it covers the
         // very element it points at. In that case anchor the badge just outside the
         // box's top-left corner instead of centering it.
         const small = highlight.w <= 16 || highlight.h <= 9;
-        const cx = small ? highlight.x : highlight.x + highlight.w / 2;
-        const cy = small ? highlight.y : highlight.y + highlight.h / 2;
+        // Clamp into the image so a badge near an edge is never cut off, and shift
+        // clustered badges apart so each stays visible.
+        const cx = Math.min(97, Math.max(3, (small ? highlight.x : highlight.x + highlight.w / 2) + badgeShiftPct));
+        const cy = Math.min(97, Math.max(3, small ? highlight.y : highlight.y + highlight.h / 2));
         const hasTip = Boolean((text && text.trim()) || (recommendation && recommendation.trim()));
         // Open the tooltip above the pin when it sits low on the shot, else below.
         const above = cy > 55;
