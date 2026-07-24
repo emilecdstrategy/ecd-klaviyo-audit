@@ -108,14 +108,6 @@ export default function WebPageSection({
     const next = [...detail.findings, { text: '', recommendation: '', viewport, highlight: null, hidden: false }];
     updateSectionDetailValue(section.section_key, ['web', 'findings'], next);
   };
-  const setPro = (i: number, value: string) => {
-    const next = detail.pros.map((p, idx) => (idx === i ? value : p));
-    updateSectionDetailValue(section.section_key, ['web', 'pros'], next);
-  };
-  const addPro = () => updateSectionDetailValue(section.section_key, ['web', 'pros'], [...detail.pros, 'New strength']);
-  const removePro = (i: number) =>
-    updateSectionDetailValue(section.section_key, ['web', 'pros'], detail.pros.filter((_, idx) => idx !== i));
-
   // Anchor ids must be unique per section: every section numbers its findings
   // from 1, so a bare `finding-1` would collide across sections and always jump
   // to the first one (the homepage). Scope by section key.
@@ -180,33 +172,6 @@ export default function WebPageSection({
               className={`flex items-center gap-1 rounded-md px-2 py-1 text-xs font-medium ${viewport === 'desktop' ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
             >
               <Monitor className="h-3.5 w-3.5" /> Desktop
-            </button>
-          )}
-        </div>
-      )}
-
-      {/* What works (page-specific strengths) */}
-      {(editMode || detail.pros.length > 0) && (
-        <div className="mt-4">
-          <p className="text-xs font-semibold uppercase tracking-wide text-emerald-700">What works</p>
-          <ul className="mt-1.5 grid grid-cols-1 gap-1 sm:grid-cols-2">
-            {detail.pros.map((pro, i) => (
-              <li key={i} className="flex items-start gap-2 text-sm text-gray-700">
-                <span className="mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full bg-emerald-500" />
-                <span className="flex-1">
-                  <EditablePlainText value={pro} onSave={(v) => setPro(i, v)} />
-                </span>
-                {editMode && (
-                  <button type="button" onClick={() => removePro(i)} className="text-gray-300 hover:text-red-500" aria-label="Remove">
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                )}
-              </li>
-            ))}
-          </ul>
-          {editMode && (
-            <button type="button" onClick={addPro} className="mt-1.5 inline-flex items-center gap-1 text-xs font-medium text-brand-primary hover:underline">
-              <Plus className="h-3 w-3" /> Add strength
             </button>
           )}
         </div>
