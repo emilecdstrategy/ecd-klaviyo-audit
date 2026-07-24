@@ -18,6 +18,7 @@ import SiteFavicon from '../components/ui/SiteFavicon';
 import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
+import { canUseWebAudits } from '../lib/web-audit-access';
 import { formatCurrency } from '../lib/revenue-calculator';
 import { listAudits, listClients } from '../lib/db';
 import AuditStatusBadge from '../components/ui/AuditStatusBadge';
@@ -44,8 +45,9 @@ type TabId = (typeof TABS)[number]['id'];
 export default function Audits() {
   const navigate = useNavigate();
   const location = useLocation();
-  const { hasRole } = useAuth();
+  const { hasRole, user } = useAuth();
   const isAdmin = hasRole('admin');
+  const webLocked = !canUseWebAudits(user);
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
   const availableTabs = TABS.filter(t => !t.adminOnly || isAdmin);
@@ -277,24 +279,31 @@ export default function Audits() {
               <tbody className="divide-y divide-gray-50">
                 {filtered.map(audit => {
                   const client = clientById.get(audit.client_id);
+                  const isLockedWeb = audit.audit_type === 'web' && webLocked;
                   return (
                     <tr
                       key={audit.id}
-                      onClick={() => navigate(`/audits/${audit.id}`)}
-                      className="hover:bg-gray-50/50 cursor-pointer transition-colors"
+                      onClick={() => { if (isLockedWeb) return; navigate(`/audits/${audit.id}`); }}
+                      className={`transition-colors ${isLockedWeb ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50/50 cursor-pointer'}`}
                     >
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2 min-w-0">
                           <p className="text-sm font-medium text-gray-900 truncate">{audit.title}</p>
-                          <span
-                            className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
-                              audit.audit_type === 'web'
-                                ? 'bg-sky-50 text-sky-700'
-                                : 'bg-violet-50 text-violet-700'
-                            }`}
-                          >
-                            {audit.audit_type === 'web' ? 'Web' : 'Klaviyo'}
-                          </span>
+                          {isLockedWeb ? (
+                            <span className="shrink-0 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                              Work in progress
+                            </span>
+                          ) : (
+                            <span
+                              className={`shrink-0 rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${
+                                audit.audit_type === 'web'
+                                  ? 'bg-sky-50 text-sky-700'
+                                  : 'bg-violet-50 text-violet-700'
+                              }`}
+                            >
+                              {audit.audit_type === 'web' ? 'Web' : 'Klaviyo'}
+                            </span>
+                          )}
                         </div>
                       </td>
                       <td className="px-6 py-4">
@@ -319,7 +328,7 @@ export default function Audits() {
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center justify-end gap-1">
-                          {audit.public_share_token && (
+                          {audit.public_share_token && !isLockedWeb && (
                             <a
                               href={`/report/${audit.public_share_token}`}
                               target="_blank"

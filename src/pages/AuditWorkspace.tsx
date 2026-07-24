@@ -38,6 +38,7 @@ import {
 import { createProposalFromAudit } from '../lib/proposal-convert';
 import { canSeeProposalsBeta } from '../lib/feature-flags';
 import { useAuth } from '../contexts/AuthContext';
+import { canUseWebAudits } from '../lib/web-audit-access';
 import { klaviyoScopePermissionWarnings } from '../lib/klaviyo-fetch-diagnostics';
 import { lazyAuditReportView, preloadAuditReportView } from '../lib/preload-audit-report-view';
 import { supabase } from '../lib/supabase';
@@ -249,6 +250,24 @@ export default function AuditWorkspace() {
           <p className="text-gray-500">This audit could not be found.</p>
           <button onClick={() => navigate('/')} className="mt-4 text-sm text-brand-primary font-medium hover:underline">
             Back to Dashboard
+          </button>
+        </div>
+      </div>
+    );
+  }
+
+  // Web audits are locked to the allowlist while the feature is a work in progress.
+  if (audit.audit_type === 'web' && !canUseWebAudits(user)) {
+    return (
+      <div>
+        <TopBar title="Web Audit" />
+        <div className="mx-auto mt-16 max-w-md rounded-xl border border-amber-200 bg-amber-50 p-8 text-center">
+          <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
+            Work in progress
+          </span>
+          <p className="mt-3 text-sm text-amber-900">Web audits are still being built and are not available yet.</p>
+          <button onClick={() => navigate('/audits')} className="mt-4 text-sm text-brand-primary font-medium hover:underline">
+            Back to Audits
           </button>
         </div>
       </div>

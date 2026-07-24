@@ -17,6 +17,7 @@ import { createAudit, createAuditSections, createClient, ensureClientCreator, fi
 import { resolveRevenueOpportunityContent } from '../lib/revenue-opportunity-content';
 import type { Audit, AuditType, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { KLAVIYO_AUDIT_SECTION_KEYS, WEB_AUDIT_SECTION_KEYS } from '../lib/audit-sections';
+import { canUseWebAudits } from '../lib/web-audit-access';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 import { ShopifyTokenHelpTrigger } from '../components/web/ShopifyTokenHelpModal';
@@ -77,6 +78,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
+  const webAuditsLocked = !canUseWebAudits(user);
   const [step, setStep] = useState(0);
   const [auditType, setAuditType] = useState<AuditType | null>(null);
   const [analyzing, setAnalyzing] = useState(false);
@@ -485,19 +487,33 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               </button>
               <button
                 type="button"
-                onClick={() => { setAuditType('web'); setError(''); setStep(1); }}
+                disabled={webAuditsLocked}
+                onClick={() => { if (webAuditsLocked) return; setAuditType('web'); setError(''); setStep(1); }}
+                aria-disabled={webAuditsLocked}
+                title={webAuditsLocked ? 'Web audits are a work in progress' : undefined}
                 className={`text-left rounded-xl border-2 p-5 transition-colors ${
-                  auditType === 'web'
-                    ? 'border-brand-primary bg-brand-primary/5'
-                    : 'border-gray-200 bg-white hover:border-gray-300'
+                  webAuditsLocked
+                    ? 'border-gray-200 bg-gray-50 opacity-70 cursor-not-allowed'
+                    : auditType === 'web'
+                      ? 'border-brand-primary bg-brand-primary/5'
+                      : 'border-gray-200 bg-white hover:border-gray-300'
                 }`}
               >
-                <div className={`w-10 h-10 rounded-lg flex items-center justify-center mb-3 ${auditType === 'web' ? 'gradient-bg' : 'bg-gray-100'}`}>
-                  <Globe className={`w-5 h-5 ${auditType === 'web' ? 'text-white' : 'text-gray-500'}`} />
+                <div className="flex items-center gap-2 mb-3">
+                  <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${auditType === 'web' && !webAuditsLocked ? 'gradient-bg' : 'bg-gray-100'}`}>
+                    <Globe className={`w-5 h-5 ${auditType === 'web' && !webAuditsLocked ? 'text-white' : 'text-gray-500'}`} />
+                  </div>
+                  {webAuditsLocked && (
+                    <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-amber-700">
+                      Work in progress
+                    </span>
+                  )}
                 </div>
                 <p className="text-sm font-semibold text-gray-900">Web Audit</p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Website audit with desktop and mobile screenshots of key pages, plus optional Shopify backend metrics.
+                  {webAuditsLocked
+                    ? 'Web audits are still being built and are not available yet.'
+                    : 'Website audit with desktop and mobile screenshots of key pages, plus optional Shopify backend metrics.'}
                 </p>
               </button>
             </div>
