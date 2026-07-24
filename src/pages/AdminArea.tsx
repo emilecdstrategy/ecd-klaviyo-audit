@@ -14,6 +14,7 @@ import {
   ArrowDown,
   ChevronDown,
   RefreshCw,
+  Check,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import StatusBadge from '../components/ui/StatusBadge';
@@ -411,6 +412,44 @@ const AUDIT_TYPE_META: Record<CatalogAuditType, { label: string; cls: string }> 
   web: { label: 'Website', cls: 'bg-amber-50 text-amber-700' },
 };
 
+/** Two branded checkboxes (Klaviyo / Website) that map to the audit_type value.
+ * Both checked = 'both'; keeps at least one checked. Avoids a confusing "Both"
+ * option in a plain dropdown. */
+function AppliesToChecks({ value, onChange }: { value: CatalogAuditType; onChange: (v: CatalogAuditType) => void }) {
+  const klaviyo = value === 'klaviyo' || value === 'both';
+  const web = value === 'web' || value === 'both';
+  const set = (nextK: boolean, nextW: boolean) => {
+    if (!nextK && !nextW) return; // always keep at least one channel
+    onChange(nextK && nextW ? 'both' : nextK ? 'klaviyo' : 'web');
+  };
+  const Box = ({ checked, label, onToggle }: { checked: boolean; label: string; onToggle: () => void }) => (
+    <button
+      type="button"
+      role="checkbox"
+      aria-checked={checked}
+      onClick={onToggle}
+      className={`inline-flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+        checked ? 'border-brand-primary bg-brand-primary/5 text-brand-primary' : 'border-gray-200 text-gray-600 hover:bg-gray-50'
+      }`}
+    >
+      <span
+        className={`flex h-4 w-4 shrink-0 items-center justify-center rounded border transition-colors ${
+          checked ? 'border-brand-primary bg-brand-primary text-white' : 'border-gray-300 bg-white'
+        }`}
+      >
+        {checked && <Check className="h-3 w-3" strokeWidth={3} />}
+      </span>
+      {label}
+    </button>
+  );
+  return (
+    <div className="flex flex-wrap gap-2">
+      <Box checked={klaviyo} label="Klaviyo audits" onToggle={() => set(!klaviyo, web)} />
+      <Box checked={web} label="Website audits" onToggle={() => set(klaviyo, !web)} />
+    </div>
+  );
+}
+
 function RevenueOpportunitiesTab() {
   const [entries, setEntries] = useState<RevenueOpportunityTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -447,7 +486,7 @@ function RevenueOpportunitiesTab() {
     }
   };
 
-  const [filterType, setFilterType] = useState<'all' | 'web' | 'klaviyo' | 'both'>('all');
+  const [filterType, setFilterType] = useState<'all' | 'web' | 'klaviyo'>('all');
   const [newEntry, setNewEntry] = useState({
     name: '',
     description: '',
@@ -646,17 +685,22 @@ function RevenueOpportunitiesTab() {
           </p>
         </div>
         <div className="flex shrink-0 items-center gap-2">
-          <select
-            value={filterType}
-            onChange={e => setFilterType(e.target.value as typeof filterType)}
-            className="px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white text-gray-700 focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-            title="Filter by audit type"
-          >
-            <option value="all">All types</option>
-            <option value="klaviyo">Klaviyo</option>
-            <option value="web">Website</option>
-            <option value="both">Both</option>
-          </select>
+          <div className="inline-flex rounded-lg border border-gray-200 bg-white p-0.5" role="tablist" aria-label="Filter by audit type">
+            {([['all', 'All'], ['klaviyo', 'Klaviyo'], ['web', 'Website']] as const).map(([val, label]) => (
+              <button
+                key={val}
+                type="button"
+                role="tab"
+                aria-selected={filterType === val}
+                onClick={() => setFilterType(val)}
+                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
+                  filterType === val ? 'gradient-bg text-white shadow-sm' : 'text-gray-600 hover:bg-gray-50'
+                }`}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <button
             type="button"
             onClick={() => setShowCreateModal(true)}
@@ -693,17 +737,9 @@ function RevenueOpportunitiesTab() {
             />
           </div>
           <div>
-            <label className="block text-xs font-medium text-gray-500 mb-1">Applies to</label>
-            <select
-              value={newEntry.auditType}
-              onChange={e => setNewEntry(prev => ({ ...prev, auditType: e.target.value as CatalogAuditType }))}
-              className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-            >
-              <option value="both">Both (Klaviyo + Website)</option>
-              <option value="klaviyo">Klaviyo audits only</option>
-              <option value="web">Website audits only</option>
-            </select>
-            <p className="text-xs text-gray-400 mt-1">Controls which audit type this service shows up in.</p>
+            <label className="block text-xs font-medium text-gray-500 mb-1.5">Applies to</label>
+            <AppliesToChecks value={newEntry.auditType} onChange={(v) => setNewEntry(prev => ({ ...prev, auditType: v }))} />
+            <p className="text-xs text-gray-400 mt-1.5">Which audit types this service shows up in. Pick one or both.</p>
           </div>
           <div>
             <label className="block text-xs font-medium text-gray-500 mb-1">Body</label>
@@ -799,7 +835,8 @@ function RevenueOpportunitiesTab() {
           </div>
         ) : (
           sortedEntries.map((entry, index) => {
-            if (filterType !== 'all' && entry.audit_type !== filterType) return null;
+            // Klaviyo filter shows klaviyo + both; Website shows web + both.
+            if (filterType !== 'all' && entry.audit_type !== 'both' && entry.audit_type !== filterType) return null;
             const expanded = expandedIds.has(entry.id);
             const priceParts: string[] = [];
             if (entry.one_time_price) priceParts.push(`$${Number(entry.one_time_price).toLocaleString()} one-time`);
@@ -907,16 +944,11 @@ function RevenueOpportunitiesTab() {
                       />
                     </div>
                     <div>
-                      <label className="block text-xs font-medium text-gray-500 mb-1">Applies to</label>
-                      <select
+                      <label className="block text-xs font-medium text-gray-500 mb-1.5">Applies to</label>
+                      <AppliesToChecks
                         value={entry.audit_type}
-                        onChange={e => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, audit_type: e.target.value as CatalogAuditType } : p)))}
-                        className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm bg-white focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                      >
-                        <option value="both">Both (Klaviyo + Website)</option>
-                        <option value="klaviyo">Klaviyo audits only</option>
-                        <option value="web">Website audits only</option>
-                      </select>
+                        onChange={(v) => setEntries(prev => prev.map(p => (p.id === entry.id ? { ...p, audit_type: v } : p)))}
+                      />
                     </div>
                     <div>
                       <label className="block text-xs font-medium text-gray-500 mb-1">Description</label>
