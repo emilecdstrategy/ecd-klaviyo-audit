@@ -149,43 +149,61 @@ export default async ({ page, context }) => {
   let cartCount = null;
   if (cartAdd) {
     try {
-      // Try both AJAX API body shapes (themes/versions differ).
-      const addVariant = (vid) => page.evaluate(async (id) => {
-        const tryBody = async (body) => {
-          try {
-            const r = await fetch("/cart/add.js", {
-              method: "POST",
-              headers: { "Content-Type": "application/json", "Accept": "application/json" },
-              body: JSON.stringify(body),
-            });
-            return r.ok;
-          } catch (e) { return false; }
-        };
-        if (await tryBody({ items: [{ id: Number(id), quantity: 1 }] })) return true;
-        return await tryBody({ id: Number(id), quantity: 1 });
-      }, vid);
-
-      let added = false;
-      if (cartAdd.variantId) added = await addVariant(cartAdd.variantId);
-      // Fallback: if the chosen variant can't be added (sold out / selling plan
-      // only), grab any available variant from the public storefront catalog so
-      // the cart is never empty.
-      if (!added) {
-        const vid = await page.evaluate(async () => {
+      // 1) Determine a variant to add. Prefer the one we detected; else read a
+      //    real variant id off the product page; else pull any available variant.
+      let variantId = cartAdd.variantId ? String(cartAdd.variantId) : null;
+      if (!variantId && cartAdd.productUrl) {
+        try {
+          await page.goto(cartAdd.productUrl, { waitUntil: "networkidle2", timeout: 30000 });
+          variantId = await page.evaluate(() => {
+            const input = document.querySelector('form[action*="/cart/add"] [name="id"], [name="id"]');
+            if (input && input.value) return String(input.value);
+            try {
+              const m = window.ShopifyAnalytics && window.ShopifyAnalytics.meta;
+              const v = m && m.product && m.product.variants && m.product.variants[0];
+              if (v && v.id) return String(v.id);
+            } catch (e) {}
+            return null;
+          });
+        } catch (e) {}
+      }
+      if (!variantId) {
+        variantId = await page.evaluate(async () => {
           try {
             const res = await fetch("/products.json?limit=30");
             const data = await res.json();
             for (const p of (data.products || [])) {
               const v = (p.variants || []).find((x) => x.available) || (p.variants || [])[0];
-              if (v && v.id) return v.id;
+              if (v && v.id) return String(v.id);
             }
           } catch (e) {}
           return null;
         });
-        if (vid) added = await addVariant(vid);
       }
-      // Wait until the cart actually reports an item before opening it, so we
-      // never screenshot an empty cart mid-add.
+
+      // 2) Add via the cart PERMALINK, a normal navigation (not an XHR), so
+      //    storefront bot protection is far less likely to block it than
+      //    /cart/add.js. This lands on /cart with the item in the cart cookie.
+      if (variantId) {
+        try { await page.goto(new URL("/cart/" + variantId + ":1", url).href, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
+      }
+      // Belt-and-suspenders: also try the AJAX add in case the permalink did not stick.
+      if (variantId) {
+        try {
+          await page.evaluate(async (id) => {
+            const tryBody = async (body) => {
+              try {
+                const r = await fetch("/cart/add.js", { method: "POST", headers: { "Content-Type": "application/json", "Accept": "application/json" }, body: JSON.stringify(body) });
+                return r.ok;
+              } catch (e) { return false; }
+            };
+            if (await tryBody({ items: [{ id: Number(id), quantity: 1 }] })) return true;
+            return await tryBody({ id: Number(id), quantity: 1 });
+          }, variantId);
+        } catch (e) {}
+      }
+
+      // 3) Confirm the cart actually has an item.
       cartCount = await page.evaluate(async () => {
         for (let i = 0; i < 12; i++) {
           try { const c = await (await fetch("/cart.js")).json(); if (c && c.item_count > 0) return c.item_count; } catch (e) {}
@@ -194,10 +212,19 @@ export default async ({ page, context }) => {
         try { const c = await (await fetch("/cart.js")).json(); return (c && typeof c.item_count === "number") ? c.item_count : -1; } catch (e) { return -1; }
       }).catch(() => -1);
 
+      // 4) Open the slide-cart drawer: return to the homepage (where the cart icon
+      //    lives) and click a cart trigger. The item persists via the cart cookie.
+      try { await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
+      await page.evaluate(sweep).catch(() => {});
+      await page.keyboard.press("Escape").catch(() => {});
+      await page.evaluate(sweepPopups).catch(() => {});
+      // Prefer drawer-opening toggles (buttons) FIRST; the plain /cart links are
+      // last because clicking them navigates to the cart page instead of opening
+      // the slide-cart drawer.
       const triggers = [
+        '[data-cart-toggle]','.js-drawer-open-cart','[class*="cart-toggle" i]',
+        'button[aria-label*="cart" i]','button[class*="cart" i]','[class*="cart-icon" i]',
         '[aria-label*="cart" i]','a[href$="/cart"]','a[href*="/cart"]',
-        '[class*="cart-toggle" i]','[data-cart-toggle]','.js-drawer-open-cart',
-        '[class*="cart-icon" i]','button[class*="cart" i]',
       ];
       let opened = false;
       for (const t of triggers) {
@@ -206,6 +233,7 @@ export default async ({ page, context }) => {
           if (el) { await el.click(); opened = true; await new Promise((r) => setTimeout(r, 2800)); break; }
         } catch (e) {}
       }
+      // If no drawer opened, fall back to the populated /cart page.
       if (!opened) {
         try { await page.goto(new URL("/cart", url).href, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
       }
@@ -257,6 +285,19 @@ export default async ({ page, context }) => {
     });
   }
 
+  // Final guard: cart flow navigates a few times; if any hop landed on a bot
+  // challenge / error page, bail so the caller requeues instead of storing a
+  // picture of the block. (Real pages have far more than 280 chars of text.)
+  const finalText = await page
+    .evaluate(() => ((document.body && document.body.innerText) || "").trim().slice(0, 300))
+    .catch(() => "");
+  if (
+    finalText.length < 280 &&
+    /local_rate_limited|too many requests|rate.?limited|access denied|error 10\d\d|connection needs to be verified|verify you are human|checking your browser|just a moment|attention required|enable javascript and cookies|captcha/i.test(finalText)
+  ) {
+    return { data: { error: "storefront_blocked (final: " + finalText.slice(0, 90) + ")" }, type: "application/json" };
+  }
+
   const screenshot = await page.screenshot({ encoding: "base64", fullPage: !!fullPage, captureBeyondViewport: !!fullPage });
   return { data: { screenshot, elements, cartCount }, type: "application/json" };
 };
@@ -267,8 +308,10 @@ export async function captureWithBrowserless(input: {
   viewport: "desktop" | "mobile";
   fullPage: boolean;
   withElements: boolean;
-  /** When set, add the variant to the cart and open the slide-cart drawer. */
-  cartAdd?: { variantId?: string | null };
+  /** When set, add the variant to the cart and open the slide-cart drawer.
+   * productUrl lets the capture read a real variant off the product page when no
+   * variantId is known. */
+  cartAdd?: { variantId?: string | null; productUrl?: string | null };
 }): Promise<BrowserlessResult> {
   const token = (Deno.env.get("BROWSERLESS_TOKEN") ?? "").trim();
   if (!token) return { ok: false, error: "browserless_token_missing" };

@@ -312,10 +312,23 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   // findings pin an actual element instead of a guessed coordinate. ScreenshotOne
   // remains the fallback below if Browserless is unset or a call fails.
   const isCart = row.page_type === "cart";
+  let cartAdd: { variantId: string | null; productUrl: string | null } | undefined = undefined;
+  if (isCart) {
+    // Pass the detected product page so the capture can read a real variant off it
+    // when we have no variant id, and reliably add via the cart permalink.
+    const { data: prod } = await sb
+      .from("web_page_snapshots")
+      .select("url")
+      .eq("audit_id", auditId)
+      .eq("page_type", "product")
+      .limit(1)
+      .maybeSingle();
+    cartAdd = {
+      variantId: (row as { raw?: { variant_id?: string } }).raw?.variant_id ?? null,
+      productUrl: (prod?.url as string | undefined) ?? null,
+    };
+  }
   if (browserlessEnabled()) {
-    const cartAdd = isCart
-      ? { variantId: (row as { raw?: { variant_id?: string } }).raw?.variant_id ?? null }
-      : undefined;
     const blInput = {
       url: row.url,
       viewport: row.viewport as "desktop" | "mobile",
