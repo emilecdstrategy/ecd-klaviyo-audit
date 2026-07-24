@@ -31,6 +31,18 @@ export const FINDINGS_GUARDRAILS = [
   "Do not nitpick things that follow standard e-commerce and platform conventions. Focus on changes that genuinely help shoppers.",
 ].join(" ");
 
+// Sharper CRO heuristics for the FINDINGS agent, distilled for e-commerce
+// storefronts. These make the recommendations more specific (headline, button
+// copy, trust placement, objection handling) without changing the founder voice.
+export const CRO_HEURISTICS = [
+  "The 5-second test: a first-time visitor should grasp what the store sells and why it is for them within about five seconds of the page loading. If the hero fails this, that is the highest-priority fix.",
+  "Speak in the shopper's benefit language, not internal jargon or clever slogans. Say what they get, not just what the product is.",
+  "Headlines win on specificity: concrete outcomes, real numbers, or a clear 'get X without Y' promise beat a vague brand tagline.",
+  "Button copy should signal the value of the next step, not a generic action. Prefer 'Shop best sellers' or 'Find my plant' over 'Shop now' or 'Submit'.",
+  "Place trust and proof where decisions happen: put star ratings, review counts, and short testimonials right near the buy button and immediately after any benefit claim, not only in a separate section far down.",
+  "Handle the obvious objections at the point of purchase: shipping cost and speed, returns, sizing or fit, and guarantees belong near the add-to-cart button, not buried in the footer.",
+].join(" ");
+
 export const LAYOUT_BRIEF: Record<WebPageKind, string> = {
   homepage:
     "HOMEPAGE layout: a slim announcement bar (an offer plus a link to act), a clean header (logo, search, account, cart, with navigation in a menu on phones), ONE hero with a clear headline, a single primary button, and text that stays legible over any photo (add a dark scrim if needed), then quick category shortcuts, social proof (star ratings or a customer quote), and featured products.",

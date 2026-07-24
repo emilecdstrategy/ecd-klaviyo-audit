@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { createLlmClient, type LlmImage, type LlmMessage } from "../_shared/llm-adapter.ts";
-import { FINDINGS_GUARDRAILS } from "../_shared/ecommerce-ux-kb.ts";
+import { FINDINGS_GUARDRAILS, CRO_HEURISTICS } from "../_shared/ecommerce-ux-kb.ts";
 import {
   ANALYTICS_TOOL,
   coerceAnalytics,
@@ -77,6 +77,9 @@ WHAT TO PRIORITIZE (lead with the biggest, most visible wins, in roughly this or
 4. Trust and proof (reviews, star ratings, a customer quote, guarantees) placed where they reassure at the right moment.
 5. Making the announcement bar and header earn their space (pair an offer with a next step; keep search and cart easy to reach).
 Favor these high-leverage, shopper-facing improvements over small technical nitpicks. Every recommendation must be realistic to ship on Shopify (theme settings/sections, a reputable app, or standard build work) and stay on-brand, never gimmicky.
+
+CRO HEURISTICS (apply these to sharpen findings and recommendations):
+${CRO_HEURISTICS}
 
 EXAMPLES of the quality and voice to match (do NOT copy verbatim, adapt to THIS store):
 - "Make the announcement bar do more than state the perk. Pair the free-shipping offer with a 'Shop now' link so visitors get the deal and their next step in one glance."
