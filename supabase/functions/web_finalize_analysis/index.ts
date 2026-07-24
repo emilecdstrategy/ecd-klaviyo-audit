@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { createLlmClient, type LlmImage, type LlmMessage } from "../_shared/llm-adapter.ts";
+import { FINDINGS_GUARDRAILS } from "../_shared/ecommerce-ux-kb.ts";
 import {
   ANALYTICS_TOOL,
   coerceAnalytics,
@@ -87,6 +88,9 @@ EXAMPLES of the quality and voice to match (do NOT copy verbatim, adapt to THIS 
 READING SCREENSHOTS:
 - You receive labeled screenshots (IMG_1, IMG_2, ...), one or more per page (desktop and phone). They show the top of the page as a visitor first sees it. Judge the page from what is visible; do not speculate about content further down.
 - When you pinpoint an element with a highlight, the x/y/w/h are percentages (0-100) of THAT referenced image's dimensions (IMG_n), with a tight box around the element. Reference the exact IMG_n it appears in.
+
+GUARDRAILS (do not violate these):
+${FINDINGS_GUARDRAILS}
 
 COVERAGE:
 - Every storefront page that rendered has real, specific opportunities worth flagging. For a page that rendered normally, return at least 3 findings and 2 to 4 strengths, leading with the ones that would move the needle most. Never return an empty audit for a page that rendered.

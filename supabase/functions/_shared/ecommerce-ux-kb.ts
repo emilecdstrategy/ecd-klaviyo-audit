@@ -9,9 +9,20 @@ export type WebPageKind = "homepage" | "product" | "collection" | "cart";
 export const GENERAL_LAYOUT_RULES = [
   "Follow standard, conventional e-commerce layouts that shoppers already recognize. Never invent unusual or experimental structures.",
   "Never duplicate a section or element: show each image, heading, button, or block once. Never stack two copies of the same image, and never place carousel arrows between two separate images.",
+  "Improve elements in place. If the page already has something a fix refers to (category shortcuts, a search bar, reviews, a menu), enhance the existing one; never add a second duplicate copy of it.",
+  "Only change what the fixes require. Leave global elements (the header, navigation, and footer) exactly as in the original screenshot unless a fix explicitly changes them, so they stay consistent across pages.",
   "Keep one clear visual flow down the page, with related things grouped and consistent spacing and alignment.",
   "One primary action per screen; anything secondary must clearly look secondary.",
   "Every element must look finished and real: aligned, evenly padded, no empty icon slots, no placeholder or label text.",
+].join(" ");
+
+// Guardrails for the FINDINGS agent so it doesn't fight standard conventions or
+// recommend things the page already has.
+export const FINDINGS_GUARDRAILS = [
+  "A hamburger / collapsed menu on phones is the STANDARD, correct pattern. Never flag it as a problem, and never say category shortcuts should be visible without opening the menu.",
+  "Never recommend adding an element the page already has. Look at the screenshot first: if category shortcuts, a search bar, reviews, or similar already exist, either leave them or suggest improving the existing one, do not suggest adding a duplicate.",
+  "Header suggestions should be tasteful reorganizations (simplify a cramped header, center the logo, move a non-shopping icon like account into the menu), not blanket complaints that the menu is hidden.",
+  "Do not nitpick things that follow standard e-commerce and platform conventions. Focus on changes that genuinely help shoppers.",
 ].join(" ");
 
 export const LAYOUT_BRIEF: Record<WebPageKind, string> = {
