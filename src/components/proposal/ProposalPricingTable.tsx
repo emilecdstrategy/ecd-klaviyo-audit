@@ -1,6 +1,8 @@
 import { useEffect, useState } from 'react';
-import { Receipt, ArrowUp, ArrowDown, Trash2, Plus, ChevronDown, BadgePercent, X } from 'lucide-react';
+import { Receipt, ArrowUp, ArrowDown, Trash2, Plus, ChevronDown, BadgePercent, X, Play } from 'lucide-react';
 import { cn } from '../../lib/utils';
+import { addOnHasCustomerAgentDemo, resolveCustomerAgentDemoUrl } from '../../lib/customer-agent-demo';
+import DemoPopupModal, { type DemoPopupState } from '../ui/DemoPopupModal';
 import { MenuPriceRow, SummaryTotalRow } from './PriceRows';
 import ProposalPlainText from './edit/ProposalPlainText';
 import ProposalCurrency from './edit/ProposalCurrency';
@@ -213,12 +215,16 @@ function DiscountEditor({ proposal }: { proposal: Proposal }) {
 type ProposalPricingTableProps = {
   proposal: Proposal;
   lineItems: ProposalLineItem[];
+  clientWebsite?: string | null;
 };
 
-export default function ProposalPricingTable({ proposal, lineItems }: ProposalPricingTableProps) {
+export default function ProposalPricingTable({ proposal, lineItems, clientWebsite }: ProposalPricingTableProps) {
   const { editMode, addLineItem } = useProposalEdit();
   const [catalogOpen, setCatalogOpen] = useState(false);
   const [catalog, setCatalog] = useState<RevenueOpportunityTemplate[] | null>(null);
+  const [demoPopup, setDemoPopup] = useState<DemoPopupState | null>(null);
+  // Live Customer Agent / Customer Hub demo, keyed to the client's storefront.
+  const demoUrl = resolveCustomerAgentDemoUrl(clientWebsite ?? proposal.client?.website_url ?? null);
 
   const sorted = [...lineItems].sort((a, b) => a.display_order - b.display_order);
   const pricedItems = sorted.filter(lineItemHasPricing);
@@ -354,6 +360,20 @@ export default function ProposalPricingTable({ proposal, lineItems }: ProposalPr
                         {item.description}
                       </p>
                     ) : null}
+                    {item.template_slug && addOnHasCustomerAgentDemo(item.template_slug) && demoUrl ? (
+                      <div className="pb-3 print:hidden">
+                        <button
+                          type="button"
+                          onClick={() => setDemoPopup({ url: demoUrl, title: item.name })}
+                          className="inline-flex items-center gap-1.5 rounded-lg gradient-bg px-3.5 py-2 text-xs font-semibold text-white shadow-sm transition-opacity hover:opacity-90"
+                        >
+                          <Play className="h-3.5 w-3.5 shrink-0 fill-current" aria-hidden /> View demo
+                        </button>
+                        <p className="mt-1.5 pr-[15%] text-[11px] leading-relaxed text-gray-400">
+                          This is a live demo on your own store to show what is possible. The final build depends on which Klaviyo Customer Agent add-ons you decide to go with.
+                        </p>
+                      </div>
+                    ) : null}
                   </div>
                 );
               })}
@@ -426,6 +446,7 @@ export default function ProposalPricingTable({ proposal, lineItems }: ProposalPr
           </div>
         )}
       </div>
+      <DemoPopupModal demo={demoPopup} onClose={() => setDemoPopup(null)} />
     </section>
   );
 }

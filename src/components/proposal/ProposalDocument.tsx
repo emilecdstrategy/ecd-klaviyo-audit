@@ -108,7 +108,7 @@ export default function ProposalDocument({
         ))
       )}
 
-      <ProposalPricingTable proposal={proposal} lineItems={lineItems} />
+      <ProposalPricingTable proposal={proposal} lineItems={lineItems} clientWebsite={client?.website_url ?? null} />
 
       {editMode && (
         <div className="flex flex-wrap items-center gap-2 print:hidden">
