@@ -68,6 +68,9 @@ export default function AuditWorkspace() {
   const [client, setClient] = useState<Client | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  // Pulse the context assistant on first landing to draw focus; stop once the
+  // strategist interacts with it.
+  const [assistantTouched, setAssistantTouched] = useState(false);
 
   const [sections, setSections] = useState<AuditSection[]>([]);
   const [annotations, setAnnotations] = useState<Annotation[]>([]);
@@ -519,8 +522,12 @@ export default function AuditWorkspace() {
 
               {/* Right: docked context assistant. Height tracks the viewport (so
                   the input stays visible when zoomed) but caps at 600px. */}
-              <div className="h-[min(600px,calc(100dvh-13rem))] min-h-[360px] lg:sticky lg:top-6">
+              <div className="relative h-[min(600px,calc(100dvh-13rem))] min-h-[360px] lg:sticky lg:top-6">
+                {!assistantTouched && (
+                  <div className="pointer-events-none absolute -inset-1 z-10 animate-pulse rounded-2xl ring-4 ring-brand-primary/40" />
+                )}
                 <AuditContextAssistant
+                  onFirstInteraction={() => setAssistantTouched(true)}
                   onApply={applyContextDraft}
                   onTranscript={applyTranscript}
                   getSnapshot={() => ({

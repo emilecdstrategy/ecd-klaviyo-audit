@@ -41,10 +41,13 @@ export default function AuditContextAssistant({
   getSnapshot,
   onApply,
   onTranscript,
+  onFirstInteraction,
 }: {
   getSnapshot: () => AuditContextSnapshot;
   onApply: (draft: AuditContextDraft) => void;
   onTranscript?: (notes: string) => void;
+  /** Fired once, the first time the strategist engages with the chat (focus or send). */
+  onFirstInteraction?: () => void;
 }) {
   const [messages, setMessages] = useState<ChatMessage[]>([{ id: 'greeting', role: 'assistant', content: GREETING }]);
   const [input, setInput] = useState('');
@@ -55,6 +58,13 @@ export default function AuditContextAssistant({
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const dictationBaseRef = useRef('');
+  const interactedRef = useRef(false);
+
+  const markInteracted = () => {
+    if (interactedRef.current) return;
+    interactedRef.current = true;
+    onFirstInteraction?.();
+  };
 
   const lastMsg = messages[messages.length - 1];
   const awaitingChoice = !sending && lastMsg?.role === 'assistant' && Boolean(lastMsg.question);
@@ -98,6 +108,7 @@ export default function AuditContextAssistant({
   const send = async (text: string) => {
     const trimmed = text.trim();
     if (!trimmed || sending) return;
+    markInteracted();
     if (listening) stopDictation();
     setError('');
     const userMsg: ChatMessage = { id: `u${Date.now()}`, role: 'user', content: trimmed };
@@ -200,6 +211,7 @@ export default function AuditContextAssistant({
           ref={inputRef}
           value={input}
           onChange={e => setInput(e.target.value)}
+          onFocus={markInteracted}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
           rows={1}
           placeholder={awaitingChoice ? 'Pick an option above, or type your own…' : listening ? 'Listening…' : 'Paste a link, type, or use the mic…'}
@@ -208,7 +220,7 @@ export default function AuditContextAssistant({
         {voiceSupported && (
           <button
             type="button"
-            onClick={toggleDictation}
+            onClick={() => { markInteracted(); toggleDictation(); }}
             disabled={sending}
             className={`rounded-lg p-2 transition-colors disabled:opacity-40 ${
               listening ? 'bg-red-500 text-white animate-pulse' : 'border border-gray-200 text-gray-500 hover:bg-gray-50'
