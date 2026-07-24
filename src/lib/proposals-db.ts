@@ -137,6 +137,11 @@ export async function getProposal(id: string): Promise<Proposal | null> {
   return data ? mapProposalRow(data) : null;
 }
 
+/** Contracts checked by default on every new proposal (Master Services Agreement
+ * + Operating Agreement). Used when a proposal is created without an explicit
+ * contract selection. */
+export const DEFAULT_INCLUDED_CONTRACTS = ['msa', 'operating_agreement'];
+
 export type CreateProposalInput = {
   client_id: string;
   audit_id?: string | null;
@@ -166,7 +171,9 @@ export async function createProposal(
       template_id: input.template_id ?? null,
       title: input.title,
       content_blocks: input.content_blocks ?? [],
-      include_contracts: input.include_contracts ?? [],
+      // Master Services Agreement + Operating Agreement are checked by default;
+      // an explicit non-empty selection (e.g. a template's own contracts) wins.
+      include_contracts: input.include_contracts?.length ? input.include_contracts : DEFAULT_INCLUDED_CONTRACTS,
       recipient_name: input.recipient_name ?? '',
       recipient_email: input.recipient_email ?? '',
       ...(input.discount_type ? { discount_type: input.discount_type } : {}),
