@@ -52,7 +52,7 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
                 required: ["image_ref", "label"],
                 properties: {
                   image_ref: { type: "string", description: "The IMG_n label of the screenshot this entry refers to" },
-                  element_id: { type: "string", description: "PREFERRED: the id (e.g. el_12) of the matching element from the listed page elements for THIS image; its real on-page box is used automatically" },
+                  element_id: { type: "string", description: "PREFERRED: the id (e.g. el_12) of the element from the listed page elements for THIS image whose label actually matches the thing this finding is about (match on the label text, e.g. an 'a: SHOP NOW' element for a finding about the hero button). Its real on-page box is used automatically. If no listed element genuinely matches the finding's subject, omit element_id and give x/y/w/h instead, or omit the highlight entirely. NEVER attach the pin to an unrelated element (for example the cart or search icon) just to have one." },
                   x: { type: "number", description: "Fallback only: left edge of a tight box, % of image width (0-100)" },
                   y: { type: "number", description: "Fallback only: top edge of a tight box, % of image height (0-100)" },
                   w: { type: "number", description: "Fallback only: box width, % of image width" },
@@ -235,10 +235,16 @@ export function coercePageAudit(
       const praiseOnly = /(works well|looks great|is (a )?nice|does exactly what|is doing exactly)/.test(txt) &&
         (/^(keep|leave|maintain)\b/.test(rec) || rec.length === 0);
       // Drop grow-zone / planting-location widget findings: it is automatic
-      // zip-based detection and 'n/a' before a zip is entered is expected. (Kept
-      // narrow to the widget labels so product 'hardiness zone' care details, a
-      // legitimate recommendation, are not dropped.)
-      const growZone = /growing zone|planting in\b|grow zone/.test(txt + " " + rec);
+      // zip-based detection and 'n/a' before a zip is entered is expected. The
+      // model renames it ("location fields", "personalization bar", "location
+      // detector"), so match those phrasings too, not just the literal labels.
+      // Still scoped to widget-ish wording so a product 'hardiness zone' care
+      // detail, a legitimate recommendation, is not dropped.
+      const blob = txt + " " + rec;
+      const growZone =
+        /growing zone|grow zone|planting in\b/.test(blob) ||
+        /personali[sz]ation bar/.test(blob) ||
+        /\b(location|zip|postcode|postal code)\s*(code)?\s*(bar|field|fields|row|strip|selector|detector|detection|picker|widget)\b/.test(blob);
       return !noop && !praiseOnly && !growZone;
     });
   return {
