@@ -39,8 +39,8 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
           type: "object",
           required: ["text"],
           properties: {
-            text: { type: "string", description: "The problem in ONE short sentence, max ~16 words. State the issue, no preamble." },
-            recommendation: { type: "string", description: "The fix in 1-2 sentences: the concrete, Shopify-feasible change (element, copy, placement) plus why it lifts conversion/AOV/trust. Start with a verb. Grounded in standard e-commerce CRO best practices, no vague advice." },
+            text: { type: "string", description: "The opportunity in ONE short, plain-English sentence. No jargon, no preamble." },
+            recommendation: { type: "string", description: "1-2 sentences, founder-friendly and warm, like a strategist not a QA engineer. Lead with the action, then the payoff for the shopper or brand ('Do X. It gives shoppers Y.'). Propose the actual words for any copy (real headline / button label). No jargon (never 'tap target', 'above the fold', 'CTA', 'viewport'). Must be realistic to ship on Shopify." },
             viewport: { type: "string", enum: ["desktop", "mobile", "both"], description: "Which viewport this issue is about. Use 'desktop' or 'mobile' when it is specific to one (judge from the IMG_n you are looking at), or 'both' when it applies equally to both. Prefer a specific viewport over 'both' when the issue is more visible or more severe on one." },
             highlight: {
               type: "object",
