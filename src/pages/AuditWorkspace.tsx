@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, lazy, Suspense } from 'react';
 import { useParams, useNavigate, useLocation } from 'react-router-dom';
 import { ExternalLink, FileSignature, History, Loader2, Sparkles } from 'lucide-react';
 import AuditContextAssistant from '../components/audit/AuditContextAssistant';
+import WebAuditAgentPanel from '../components/audit/WebAuditAgentPanel';
 import { runKlaviyoAudit, runWebAudit } from '../lib/audit-run';
 import type { AuditContextDraft } from '../lib/audit-context-agent';
 import TopBar from '../components/layout/TopBar';
@@ -646,6 +647,10 @@ export default function AuditWorkspace() {
             )}
           </div>
         </Modal>
+
+        {audit.audit_type === 'web' && !webGenerating && webBundle && (
+          <WebAuditAgentPanel auditId={audit.id} sections={sections} />
+        )}
       </div>
     </ReportEditProvider>
   );
