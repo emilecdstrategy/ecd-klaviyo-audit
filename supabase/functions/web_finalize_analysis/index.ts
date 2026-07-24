@@ -103,6 +103,11 @@ Call the provided tool exactly once with your result.`;
 async function triggerAfterGeneration(auditId: string) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
   try {
+    // Mark afters as pending so the report waits until they finish generating.
+    try {
+      const sb = assertServiceClient();
+      await sb.from("audits").update({ web_afters_ready: false }).eq("id", auditId);
+    } catch { /* non-fatal */ }
     await Promise.race([
       fetch(`${SUPABASE_URL}/functions/v1/web_generate_after`, {
         method: "POST",

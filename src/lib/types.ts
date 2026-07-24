@@ -49,6 +49,9 @@ export interface Audit {
   context?: AuditContext | null;
   /** Audit-wide layout overrides (nav labels, footer, etc.). JSONB column. */
   layout?: Record<string, unknown> | null;
+  /** Web audits: false while the "after" concept images are still generating. The
+   * report is gated until this is true so it never shows with missing afters. */
+  web_afters_ready?: boolean;
   client?: Client;
 }
 

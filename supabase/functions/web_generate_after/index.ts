@@ -336,6 +336,8 @@ serve(async (req) => {
     apiKey = "";
   }
   if (!apiKey) {
+    // Afters can't run without a key; don't leave the report gated on them.
+    try { await assertServiceClient().from("audits").update({ web_afters_ready: true }).eq("id", auditId); } catch { /* non-fatal */ }
     return json({ ok: false, error: { code: "not_configured", message: "Image generation is not configured. Add a Gemini API key in Settings." }, correlationId }, { status: 200 });
   }
 
@@ -414,7 +416,11 @@ serve(async (req) => {
         return (typeof e.url === "string" && e.url.length > 0) || e.error != null;
       };
       const next = units.find((u) => !isDone(u));
-      if (!next) return json({ ok: true, correlationId, status: "complete" });
+      if (!next) {
+        // All after images done (success or recorded error): let the report show.
+        try { await sb.from("audits").update({ web_afters_ready: true }).eq("id", auditId); } catch { /* non-fatal */ }
+        return json({ ok: true, correlationId, status: "complete" });
+      }
 
       const referenceAfterUrl =
         next.viewport !== next.primaryViewport ? afterUrlFor(next.section, next.primaryViewport) : undefined;
@@ -434,6 +440,10 @@ serve(async (req) => {
       }
       const remaining = units.some((u) => !isDone(u));
       if (remaining) await chainAuto(auditId);
+      else {
+        // Last unit just finished: reveal the report.
+        try { await sb.from("audits").update({ web_afters_ready: true }).eq("id", auditId); } catch { /* non-fatal */ }
+      }
       return json({ ok: true, correlationId, status: remaining ? "in_progress" : "complete", section: next.section.section_key, viewport: next.viewport });
     }
 

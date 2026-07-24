@@ -20,7 +20,7 @@ import {
   fetchAuditPipelineStatus,
   markAuditGenerationActive,
 } from '../lib/audit-pipeline-status';
-import { fetchWebAuditPipelineStatus, startWebAnalysis } from '../lib/web-pipeline-status';
+import { fetchWebAuditPipelineStatus } from '../lib/web-pipeline-status';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary, AuditEvent } from '../lib/types';
 import type { Audit, Client } from '../lib/types';
 import {
@@ -89,7 +89,10 @@ export default function AuditWorkspace() {
   const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
   const [webBundle, setWebBundle] = useState<WebAuditReportBundle | null>(null);
   const [webGenerating, setWebGenerating] = useState(false);
-  const [regenerating, setRegenerating] = useState(false);
+  // Web audits: true while the "after" concept images are still generating. The
+  // report is held back behind a finalizing screen until they finish.
+  const [webAftersPending, setWebAftersPending] = useState(false);
+  const [assistantOpen, setAssistantOpen] = useState(false);
   const [analysisInProgress, setAnalysisInProgress] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
   // Draft audits are created by the wizard and run from here.
@@ -165,6 +168,12 @@ export default function AuditWorkspace() {
             return;
           }
           setWebGenerating(false);
+          // Hold the report until every "after" concept image has been generated.
+          if (shell.audit.web_afters_ready === false) {
+            setWebAftersPending(true);
+            return;
+          }
+          setWebAftersPending(false);
           const bundle = await fetchWebAuditReportBundle(shell.audit);
           if (cancelled) return;
           if (!bundle) throw new Error('Audit not found');
@@ -202,6 +211,28 @@ export default function AuditWorkspace() {
     })();
     return () => { cancelled = true; };
   }, [id, reloadKey]);
+
+  // While "after" images are still generating, poll the flag and reveal the report
+  // once they're all done. Falls back to showing the report after ~6 min so a stalled
+  // image job can never trap the report behind the finalizing screen forever.
+  useEffect(() => {
+    if (!webAftersPending || !id) return;
+    let cancelled = false;
+    const startedAt = Date.now();
+    const timer = window.setInterval(async () => {
+      try {
+        const { data } = await supabase.from('audits').select('web_afters_ready').eq('id', id).maybeSingle();
+        const ready = data?.web_afters_ready !== false;
+        if (!cancelled && (ready || Date.now() - startedAt > 6 * 60 * 1000)) {
+          setWebAftersPending(false);
+          setReloadKey(k => k + 1);
+        }
+      } catch {
+        // transient; keep polling
+      }
+    }, 6000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [webAftersPending, id]);
 
   useEffect(() => {
     if (!emailDesignDrawerOpen || emailLibrary.length > 0) return;
@@ -279,6 +310,24 @@ export default function AuditWorkspace() {
     );
   }
 
+  // Report is complete but the "after" concept images are still rendering. Hold the
+  // report so it never appears with some sections missing their after image.
+  if (audit.audit_type === 'web' && webAftersPending) {
+    return (
+      <div>
+        <TopBar title="Web Audit" />
+        <div className="mx-auto mt-16 max-w-md rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
+          <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-brand-primary" />
+          <h2 className="text-base font-semibold text-gray-900">Finalizing your audit</h2>
+          <p className="mt-2 text-sm text-gray-500">
+            Generating the "after" concept images for each section. This usually takes a minute or two.
+            The report will appear automatically once they're ready.
+          </p>
+        </div>
+      </div>
+    );
+  }
+
   const handleSectionUpdate = (sectionId: string, updates: Partial<AuditSection>) => {
     setSections(prev => prev.map(section => (section.id === sectionId ? { ...section, ...updates } : section)));
     if (saveTimers.current[sectionId]) window.clearTimeout(saveTimers.current[sectionId]);
@@ -324,7 +373,7 @@ export default function AuditWorkspace() {
   // A freshly-created draft that has not been run yet: show the pre-run screen
   // (context assistant + Run button) instead of an empty report.
   const preRun =
-    audit.status === 'draft' && !hasAnalysisContent && !analysisInProgress && !webGenerating && !regenerating;
+    audit.status === 'draft' && !hasAnalysisContent && !analysisInProgress && !webGenerating;
 
   const runDraft = async () => {
     if (running || !audit) return;
@@ -399,26 +448,14 @@ export default function AuditWorkspace() {
                 <History className="w-4 h-4" />
                 Activity
               </button>
-              {audit.audit_type === 'web' && !webGenerating && (
+              {audit.audit_type === 'web' && !webGenerating && webBundle && (
                 <button
                   type="button"
-                  disabled={regenerating}
-                  onClick={async () => {
-                    if (!window.confirm('Regenerate the AI analysis? This replaces the current findings, recommendations, and roadmap (your manual edits to them will be lost).')) return;
-                    setRegenerating(true);
-                    try {
-                      await startWebAnalysis(audit.id, 'regenerate');
-                      setWebGenerating(true);
-                    } catch (e) {
-                      toast(e instanceof Error ? e.message : 'Failed to start analysis');
-                    } finally {
-                      setRegenerating(false);
-                    }
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
+                  onClick={() => setAssistantOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 border border-brand-primary/30 bg-brand-primary/5 text-brand-primary text-sm font-medium rounded-lg hover:bg-brand-primary/10 transition-colors"
                 >
                   <Sparkles className="w-4 h-4" />
-                  {regenerating ? 'Starting…' : 'Regenerate analysis'}
+                  AI Assistant
                 </button>
               )}
               {client && canSeeProposalsBeta(user?.email) ? (
@@ -653,6 +690,8 @@ export default function AuditWorkspace() {
           <WebAuditAgentPanel
             auditId={audit.id}
             sections={sections}
+            open={assistantOpen}
+            onClose={() => setAssistantOpen(false)}
             onReload={() => { if (id) listAuditSections(id).then(setSections).catch(() => {}); }}
           />
         )}

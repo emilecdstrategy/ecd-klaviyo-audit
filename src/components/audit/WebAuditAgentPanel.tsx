@@ -40,13 +40,16 @@ const GREETING =
 export default function WebAuditAgentPanel({
   auditId,
   sections,
+  open,
+  onClose,
   onReload,
 }: {
   auditId: string;
   sections: AuditSection[];
+  open: boolean;
+  onClose: () => void;
   onReload: () => void;
 }) {
-  const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([{ id: 'greeting', role: 'assistant', content: GREETING }]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -177,26 +180,16 @@ export default function WebAuditAgentPanel({
     }
   };
 
-  if (!open) {
-    return (
-      <button
-        type="button"
-        onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-40 inline-flex items-center gap-2 rounded-full gradient-bg px-4 py-3 text-sm font-semibold text-white shadow-lg hover:opacity-90 print:hidden"
-      >
-        <Sparkles className="h-4 w-4" /> AI assistant
-      </button>
-    );
-  }
+  if (!open) return null;
 
   return (
     <>
-      <div className="fixed inset-0 z-40 bg-black/20 lg:hidden" onClick={() => setOpen(false)} />
+      <div className="fixed inset-0 z-40 bg-black/20 lg:hidden" onClick={onClose} />
       <div className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-[420px] flex-col border-l border-gray-200 bg-white shadow-2xl print:hidden">
         <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
           <Sparkles className="h-4 w-4 text-brand-primary" />
           <p className="flex-1 text-sm font-semibold text-gray-900">Web audit assistant</p>
-          <button type="button" onClick={() => setOpen(false)} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close">
+          <button type="button" onClick={onClose} className="rounded p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600" aria-label="Close">
             <X className="h-4 w-4" />
           </button>
         </div>
