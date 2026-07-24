@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getSecret } from "../_shared/app-secrets.ts";
+import { layoutGuidance, type WebPageKind } from "../_shared/ecommerce-ux-kb.ts";
 
 // Generates an "after" concept image for a web-audit page section by editing the
 // real above-the-fold screenshot in place with Google's Gemini image model
@@ -72,7 +73,7 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-function buildEditPrompt(label: string, recommendations: string[], hasReference: boolean, viewport: Viewport): string {
+function buildEditPrompt(label: string, recommendations: string[], hasReference: boolean, viewport: Viewport, pageKind: WebPageKind): string {
   const fixes = recommendations
     .map((r, i) => `${i + 1}. ${r}`)
     .join("\n");
@@ -83,6 +84,7 @@ function buildEditPrompt(label: string, recommendations: string[], hasReference:
 
   const common = [
     `Design rules:`,
+    `- LAYOUT (follow these standard e-commerce patterns exactly): ${layoutGuidance(pageKind)}`,
     `- ${deviceRules}`,
     `- Use EXACTLY ONE primary call-to-action in the hero. Never create duplicate or competing CTA buttons (e.g. do not show both "Shop Now" and "Shop the Bundle").`,
     `- Keep all existing real text and numbers from the source (headlines, prices, phone numbers, product names) unless a fix changes them.`,
@@ -253,7 +255,7 @@ async function generateOne(
     }
   }
 
-  const prompt = buildEditPrompt(meta.label, recommendationsFor(section, viewport), Boolean(refPng), viewport);
+  const prompt = buildEditPrompt(meta.label, recommendationsFor(section, viewport), Boolean(refPng), viewport, meta.page_type as WebPageKind);
   const edited = await geminiEditImage(srcPng, prompt, apiKey, refPng);
 
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
