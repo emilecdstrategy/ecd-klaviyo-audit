@@ -45,7 +45,7 @@ export default function WebFindingCard({
       onMouseEnter={() => onActivate(true)}
       onMouseLeave={() => onActivate(false)}
       className={`scroll-mt-24 rounded-xl border p-4 transition-shadow ${
-        active ? 'border-brand-primary/40 ring-1 ring-brand-primary/20' : 'border-gray-100'
+        active ? 'border-brand-primary/50 ring-1 ring-brand-primary/20' : 'border-gray-300'
       } ${finding.hidden ? 'opacity-50' : ''}`}
     >
       <div>

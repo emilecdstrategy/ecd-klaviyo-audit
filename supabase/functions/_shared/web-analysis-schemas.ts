@@ -193,7 +193,22 @@ export function coercePageAudit(
       }
     }
     return finding;
-  }).filter((f) => f.text);
+  })
+    .filter((f) => f.text)
+    // Safety net: drop non-actionable "keep as is / no change needed" findings that
+    // slip past the prompt. Positives belong in strengths (pros), not findings.
+    .filter((f) => {
+      const rec = (f.recommendation || "").toLowerCase().trim();
+      const txt = (f.text || "").toLowerCase().trim();
+      const noop = /^(keep|leave)\b.{0,24}\bas[ -]?is\b/.test(rec) ||
+        /^no (change|changes|fix|action|edits?) (needed|required|necessary)/.test(rec) ||
+        /^(keep|leave) (this|it|them) (as is|the same|unchanged)/.test(rec) ||
+        (/\bkeep (this|it|as is)\b/.test(rec) && rec.length < 60);
+      // Also drop a finding that reads purely as praise with no problem stated.
+      const praiseOnly = /(works well|looks great|is (a )?nice|does exactly what|is doing exactly)/.test(txt) &&
+        (/^(keep|leave|maintain)\b/.test(rec) || rec.length === 0);
+      return !noop && !praiseOnly;
+    });
   return {
     intro: sanitizeDash(o.intro),
     pros: strArray(o.pros, 10),

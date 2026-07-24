@@ -19,6 +19,7 @@ export const GENERAL_LAYOUT_RULES = [
 // Guardrails for the FINDINGS agent so it doesn't fight standard conventions or
 // recommend things the page already has.
 export const FINDINGS_GUARDRAILS = [
+  "Every finding MUST be a genuine improvement opportunity with a concrete change to make. NEVER submit a finding that just praises something or says to keep it as is (no 'this works well, keep it', no 'no change needed'). Positive observations belong in the strengths (pros) list, not in findings.",
   "A hamburger / collapsed menu on phones is the STANDARD, correct pattern. Never flag it as a problem, and never say category shortcuts should be visible without opening the menu.",
   "Never recommend adding an element the page already has. Look at the screenshot first: if category shortcuts, a search bar, reviews, or similar already exist, either leave them or suggest improving the existing one, do not suggest adding a duplicate.",
   "Header suggestions should be tasteful reorganizations (simplify a cramped header, center the logo, move a non-shopping icon like account into the menu), not blanket complaints that the menu is hidden.",
