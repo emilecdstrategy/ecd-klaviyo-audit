@@ -42,19 +42,23 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
             text: { type: "string", description: "The opportunity in ONE short, plain-English sentence. No jargon, no preamble." },
             recommendation: { type: "string", description: "1-2 sentences, founder-friendly and warm, like a strategist not a QA engineer. Lead with the action, then the payoff for the shopper or brand ('Do X. It gives shoppers Y.'). Propose the actual words for any copy (real headline / button label). No jargon (never 'tap target', 'above the fold', 'CTA', 'viewport'). Must be realistic to ship on Shopify." },
             viewport: { type: "string", enum: ["desktop", "mobile", "both"], description: "Which viewport this issue is about. Use 'desktop' or 'mobile' when it is specific to one (judge from the IMG_n you are looking at), or 'both' when it applies equally to both. Prefer a specific viewport over 'both' when the issue is more visible or more severe on one." },
-            highlight: {
-              type: "object",
+            highlights: {
+              type: "array",
+              maxItems: 3,
               description:
-                "REQUIRED for almost every finding: pinpoint the exact element this finding is about so the reader sees a numbered pin on the screenshot for each finding. Reference the IMG_n that matches this finding's viewport (the mobile IMG for a mobile finding, the desktop IMG for a desktop finding). STRONGLY PREFERRED: when the message lists real page elements for that image (each with an id like el_12), set element_id to the one that matches; its real on-page box is used automatically. Only if NO listed element matches, fall back to x/y/w/h as a tight box in percentages of the image (0,0 = top-left, 100,100 = bottom-right). Only omit the highlight when the finding genuinely has no single on-screen location (e.g. a sitewide or structural issue). Do not leave locatable findings unpinned.",
-              required: ["image_ref", "label"],
-              properties: {
-                image_ref: { type: "string", description: "The IMG_n label of the screenshot this refers to" },
-                element_id: { type: "string", description: "PREFERRED: the id (e.g. el_12) of the matching element from the listed page elements for this image" },
-                x: { type: "number", description: "Fallback only: left edge of a tight box, % of image width (0-100)" },
-                y: { type: "number", description: "Fallback only: top edge of a tight box, % of image height (0-100)" },
-                w: { type: "number", description: "Fallback only: box width, % of image width" },
-                h: { type: "number", description: "Fallback only: box height, % of image height" },
-                label: { type: "string", description: "Short label naming the element, max 6 words" },
+                "REQUIRED for almost every finding: pinpoint the exact element this finding is about so the reader sees a numbered pin on each screenshot. Provide ONE entry PER image the finding is visible on: for a 'both' finding, give an entry on the desktop IMG_n AND an entry on the matching mobile IMG_n (the same element on each device), so the pin shows on both viewports. For a desktop-only or mobile-only finding, give a single entry on that device's IMG_n. Only omit entirely when the finding has no single on-screen location (e.g. a sitewide or structural issue). Do not leave locatable findings unpinned.",
+              items: {
+                type: "object",
+                required: ["image_ref", "label"],
+                properties: {
+                  image_ref: { type: "string", description: "The IMG_n label of the screenshot this entry refers to" },
+                  element_id: { type: "string", description: "PREFERRED: the id (e.g. el_12) of the matching element from the listed page elements for THIS image; its real on-page box is used automatically" },
+                  x: { type: "number", description: "Fallback only: left edge of a tight box, % of image width (0-100)" },
+                  y: { type: "number", description: "Fallback only: top edge of a tight box, % of image height (0-100)" },
+                  w: { type: "number", description: "Fallback only: box width, % of image width" },
+                  h: { type: "number", description: "Fallback only: box height, % of image height" },
+                  label: { type: "string", description: "Short label naming the element, max 6 words" },
+                },
               },
             },
           },
@@ -131,7 +135,7 @@ export const ROADMAP_TOOL: LlmTool = {
 
 export type WebHighlight = { snapshot_id: string; x: number; y: number; w: number; h: number; label: string };
 export type WebViewportTag = "desktop" | "mobile" | "both";
-export type WebFinding = { text: string; recommendation: string; viewport: WebViewportTag; highlight?: WebHighlight; hidden: boolean };
+export type WebFinding = { text: string; recommendation: string; viewport: WebViewportTag; highlight?: WebHighlight; highlights?: WebHighlight[]; hidden: boolean };
 
 export type ElementBox = { id: string; x: number; y: number; w: number; h: number; label?: string };
 
@@ -145,53 +149,76 @@ export function coercePageAudit(
   const findingsRaw = Array.isArray(o.findings) ? o.findings : [];
   const findings: WebFinding[] = findingsRaw.slice(0, 8).map((f) => {
     const rec = (f ?? {}) as Record<string, unknown>;
+
+    // Resolve one raw highlight entry (from `highlights[]` or the legacy single
+    // `highlight`) into a stored WebHighlight, preferring the real element box.
+    const resolveHighlight = (raw: unknown): WebHighlight | null => {
+      const hl = (raw ?? {}) as Record<string, unknown>;
+      if (!hl || typeof hl !== "object") return null;
+      const ref = String(hl.image_ref ?? "");
+      const snapshotId = imageRefToSnapshotId.get(ref);
+      if (!snapshotId) return null;
+      const elId = typeof hl.element_id === "string" ? hl.element_id.trim() : "";
+      const el = elId ? (refToElements?.get(ref) ?? []).find((e) => e.id === elId) : undefined;
+      let box: { x: number; y: number; w: number; h: number; label?: string } | null = null;
+      if (el) {
+        box = { x: clampPct(el.x), y: clampPct(el.y), w: clampPct(el.w), h: clampPct(el.h), label: el.label };
+      } else {
+        const w = clampPct(hl.w);
+        const h = clampPct(hl.h);
+        if (w > 0 && h > 0) box = { x: clampPct(hl.x), y: clampPct(hl.y), w, h };
+      }
+      if (!box || box.w <= 0 || box.h <= 0) return null;
+      return {
+        snapshot_id: snapshotId,
+        x: box.x,
+        y: box.y,
+        w: box.w,
+        h: box.h,
+        label: (sanitizeDash(hl.label) || sanitizeDash(box.label)).slice(0, 80),
+      };
+    };
+
+    // Accept both the new `highlights` array (one pin per viewport) and the legacy
+    // single `highlight`. De-dupe by snapshot so each shot gets at most one pin.
+    const rawHls = [
+      ...(Array.isArray(rec.highlights) ? rec.highlights : []),
+      ...(rec.highlight ? [rec.highlight] : []),
+    ];
+    const highlights: WebHighlight[] = [];
+    const seenSnap = new Set<string>();
+    for (const raw of rawHls) {
+      const resolved = resolveHighlight(raw);
+      if (resolved && !seenSnap.has(resolved.snapshot_id)) {
+        seenSnap.add(resolved.snapshot_id);
+        highlights.push(resolved);
+      }
+    }
+
     const rawViewport = String(rec.viewport ?? "").toLowerCase();
-    const hlRef = String((rec.highlight as Record<string, unknown> | undefined)?.image_ref ?? "");
+    // Infer viewport from the highlights' shots when the model did not tag it.
+    const hlViewports = new Set(
+      highlights.map((h) => {
+        for (const [ref, id] of imageRefToSnapshotId) if (id === h.snapshot_id) return refToViewport?.get(ref);
+        return undefined;
+      }).filter(Boolean),
+    );
     const viewport: WebViewportTag =
       rawViewport === "desktop" || rawViewport === "mobile"
         ? rawViewport
         : rawViewport === "both"
         ? "both"
-        : hlRef && refToViewport?.get(hlRef) === "desktop"
-        ? "desktop"
-        : hlRef && refToViewport?.get(hlRef) === "mobile"
-        ? "mobile"
+        : hlViewports.size === 1
+        ? ([...hlViewports][0] as WebViewportTag)
         : "both";
     const finding: WebFinding = {
       text: sanitizeDash(rec.text),
       recommendation: sanitizeDash(rec.recommendation),
       viewport,
+      highlights,
+      highlight: highlights[0],
       hidden: false,
     };
-    const hl = rec.highlight as Record<string, unknown> | undefined;
-    if (hl && typeof hl === "object") {
-      const ref = String(hl.image_ref ?? "");
-      const snapshotId = imageRefToSnapshotId.get(ref);
-      if (snapshotId) {
-        // Preferred: a real element box resolved from the captured page. Falls
-        // back to the model's own x/y/w/h box when no element id matches.
-        const elId = typeof hl.element_id === "string" ? hl.element_id.trim() : "";
-        const el = elId ? (refToElements?.get(ref) ?? []).find((e) => e.id === elId) : undefined;
-        let box: { x: number; y: number; w: number; h: number; label?: string } | null = null;
-        if (el) {
-          box = { x: clampPct(el.x), y: clampPct(el.y), w: clampPct(el.w), h: clampPct(el.h), label: el.label };
-        } else {
-          const w = clampPct(hl.w);
-          const h = clampPct(hl.h);
-          if (w > 0 && h > 0) box = { x: clampPct(hl.x), y: clampPct(hl.y), w, h };
-        }
-        if (box && box.w > 0 && box.h > 0) {
-          finding.highlight = {
-            snapshot_id: snapshotId,
-            x: box.x,
-            y: box.y,
-            w: box.w,
-            h: box.h,
-            label: (sanitizeDash(hl.label) || sanitizeDash(box.label)).slice(0, 80),
-          };
-        }
-      }
-    }
     return finding;
   })
     .filter((f) => f.text)

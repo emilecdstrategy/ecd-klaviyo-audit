@@ -24,8 +24,12 @@ export default function WebHighlightLayer({
       <img src={imageUrl} alt={alt} className="block w-full rounded-lg" loading="lazy" />
       {markers.map(({ index, highlight, text, recommendation }) => {
         const active = activeIndex === index;
-        const cx = highlight.x + highlight.w / 2;
-        const cy = highlight.y + highlight.h / 2;
+        // When the highlighted box is small, a badge centered inside it covers the
+        // very element it points at. In that case anchor the badge just outside the
+        // box's top-left corner instead of centering it.
+        const small = highlight.w <= 16 || highlight.h <= 9;
+        const cx = small ? highlight.x : highlight.x + highlight.w / 2;
+        const cy = small ? highlight.y : highlight.y + highlight.h / 2;
         const hasTip = Boolean((text && text.trim()) || (recommendation && recommendation.trim()));
         // Open the tooltip above the pin when it sits low on the shot, else below.
         const above = cy > 55;

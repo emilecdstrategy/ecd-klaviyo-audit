@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Monitor, Plus, Smartphone, Trash2, Wand2 } from 'lucide-react';
 import type { AuditSection, WebPageSnapshot } from '../../../lib/types';
-import { parseWebSectionDetail } from '../../../lib/web-report-details';
+import { parseWebSectionDetail, findingHighlights } from '../../../lib/web-report-details';
 import { fetchSectionAfterImages, generateSectionAfter } from '../../../lib/web-pipeline-status';
 import { useReportEdit } from '../edit/ReportEditContext';
 import EditablePlainText from '../edit/EditablePlainText';
@@ -88,16 +88,20 @@ export default function WebPageSection({
     .filter(({ f }) => f.viewport === 'both' || f.viewport === viewport)
     .map((item, idx) => ({ ...item, number: idx + 1 }));
 
-  const markers = visibleFindings
-    .filter(({ f }) => f.highlight && shown && f.highlight.snapshot_id === shown.id && !f.hidden)
-    .map(({ f, number }) => ({ index: number, highlight: f.highlight!, text: f.text, recommendation: f.recommendation }));
+  // A finding can carry a pin per screenshot (desktop AND mobile); show the one
+  // that belongs to the currently shown shot so the same finding pins on both.
+  const markers = visibleFindings.flatMap(({ f, number }) => {
+    if (!shown || f.hidden) return [];
+    const hl = findingHighlights(f).find((h) => h.snapshot_id === shown.id);
+    return hl ? [{ index: number, highlight: hl, text: f.text, recommendation: f.recommendation }] : [];
+  });
 
   const setFinding = (i: number, key: string, value: unknown) => {
     const next = detail.findings.map((f, idx) => (idx === i ? { ...f, [key]: value } : f));
     updateSectionDetailValue(section.section_key, ['web', 'findings'], next);
   };
   const removeFindingHighlight = (i: number) => {
-    const next = detail.findings.map((f, idx) => (idx === i ? { ...f, highlight: null } : f));
+    const next = detail.findings.map((f, idx) => (idx === i ? { ...f, highlight: null, highlights: [] } : f));
     updateSectionDetailValue(section.section_key, ['web', 'findings'], next);
   };
   const removeFinding = (i: number) => {

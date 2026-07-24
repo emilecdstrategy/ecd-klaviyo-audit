@@ -16,9 +16,26 @@ export type WebFinding = {
   text: string;
   recommendation: string;
   viewport: WebViewportTag;
+  /** Legacy single pin (kept for backward compat). Prefer `highlights`. */
   highlight?: WebHighlight | null;
+  /** One pin per screenshot this finding is visible on (e.g. desktop AND mobile),
+   * each carrying its own snapshot_id + coordinates. */
+  highlights?: WebHighlight[];
   hidden?: boolean;
 };
+
+/** All pins for a finding, combining the new `highlights` array with the legacy
+ * single `highlight`, de-duplicated by snapshot_id. */
+export function findingHighlights(f: WebFinding): WebHighlight[] {
+  const out: WebHighlight[] = [];
+  const seen = new Set<string>();
+  for (const h of [...(f.highlights ?? []), ...(f.highlight ? [f.highlight] : [])]) {
+    if (!h || seen.has(h.snapshot_id)) continue;
+    seen.add(h.snapshot_id);
+    out.push(h);
+  }
+  return out;
+}
 
 export type WebAfterImage = { url: string; generated_at: string };
 
@@ -61,9 +78,9 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
   const findings: WebFinding[] = Array.isArray(web.findings)
     ? web.findings.map((f) => {
         const rec = asRecord(f);
-        const hlRaw = rec.highlight ? asRecord(rec.highlight) : null;
-        const highlight: WebHighlight | null =
-          hlRaw && asString(hlRaw.snapshot_id)
+        const parseHl = (raw: unknown): WebHighlight | null => {
+          const hlRaw = raw ? asRecord(raw) : null;
+          return hlRaw && asString(hlRaw.snapshot_id)
             ? {
                 snapshot_id: asString(hlRaw.snapshot_id),
                 x: asNumber(hlRaw.x),
@@ -73,6 +90,17 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
                 label: asString(hlRaw.label),
               }
             : null;
+        };
+        const highlight = parseHl(rec.highlight);
+        const highlights: WebHighlight[] = [];
+        const seenSnap = new Set<string>();
+        for (const raw of [...(Array.isArray(rec.highlights) ? rec.highlights : []), rec.highlight]) {
+          const hl = parseHl(raw);
+          if (hl && !seenSnap.has(hl.snapshot_id)) {
+            seenSnap.add(hl.snapshot_id);
+            highlights.push(hl);
+          }
+        }
         const vpRaw = asString(rec.viewport).toLowerCase();
         const viewport: WebViewportTag =
           vpRaw === 'desktop' || vpRaw === 'mobile' ? vpRaw : 'both';
@@ -81,6 +109,7 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
           recommendation: asString(rec.recommendation),
           viewport,
           highlight,
+          highlights,
           hidden: rec.hidden === true,
         };
       })
