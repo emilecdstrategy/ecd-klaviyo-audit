@@ -3,7 +3,8 @@ import { CheckCircle2, Loader2 } from 'lucide-react';
 import {
   fetchWebAuditPipelineStatus,
   startWebAnalysis,
-  WEB_STEP_LABELS,
+  kickAfterGeneration,
+  WEB_DISPLAY_STEP_LABELS,
   type WebPipelineStatus,
 } from '../../lib/web-pipeline-status';
 
@@ -45,7 +46,10 @@ export default function WebAuditGenerationStatus({ auditId, onComplete }: Props)
           else { staleTicksRef.current = 0; lastStepRef.current = next.stepIndex; }
           if (staleTicksRef.current >= STALE_NUDGE_TICKS) {
             staleTicksRef.current = 0;
-            startWebAnalysis(auditId).catch(() => {});
+            // In the afters phase re-kick the image chain; during analysis re-kick
+            // the analysis chain. Each is idempotent and skips finished work.
+            if (next.phase === 'afters') kickAfterGeneration(auditId).catch(() => {});
+            else startWebAnalysis(auditId).catch(() => {});
           }
         }
       } catch {
@@ -109,7 +113,7 @@ export default function WebAuditGenerationStatus({ auditId, onComplete }: Props)
         <p className="mt-2 text-xs text-gray-400">{progress}% estimated</p>
       </div>
       <div className="mx-auto mt-5 max-w-md text-left">
-        {WEB_STEP_LABELS.map((label, index) => {
+        {WEB_DISPLAY_STEP_LABELS.map((label, index) => {
           const done = status.stepIndex > index;
           const active = status.stepIndex === index;
           return (
