@@ -34,6 +34,7 @@ import {
   updateAudit,
   updateAuditStatus,
   updateAuditSection,
+  listAuditSections,
   type WebAuditReportBundle,
 } from '../lib/db';
 import { createProposalFromAudit } from '../lib/proposal-convert';
@@ -649,7 +650,11 @@ export default function AuditWorkspace() {
         </Modal>
 
         {audit.audit_type === 'web' && !webGenerating && webBundle && (
-          <WebAuditAgentPanel auditId={audit.id} sections={sections} />
+          <WebAuditAgentPanel
+            auditId={audit.id}
+            sections={sections}
+            onReload={() => { if (id) listAuditSections(id).then(setSections).catch(() => {}); }}
+          />
         )}
       </div>
     </ReportEditProvider>

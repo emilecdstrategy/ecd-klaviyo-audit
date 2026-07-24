@@ -1,13 +1,19 @@
 import { useEffect, useRef, useState } from 'react';
-import { Sparkles, Send, X, Loader2, Check, Wand2 } from 'lucide-react';
+import { Sparkles, Send, X, Loader2, Check, Wand2, RefreshCw } from 'lucide-react';
 import type { AuditSection } from '../../lib/types';
 import { parseWebSectionDetail } from '../../lib/web-report-details';
-import { useReportEdit } from '../report/edit/ReportEditContext';
+import { updateAuditSection } from '../../lib/db';
+import { generateSectionAfter } from '../../lib/web-pipeline-status';
 import {
   sendWebAuditAgentMessage,
+  regenerateWebSection,
   applyEditsToFindings,
   describeEditOp,
+  listWebAuditAgentMessages,
+  insertWebAuditAgentMessage,
+  markWebAuditAgentMessageApplied,
   type WebAuditEditSet,
+  type WebAuditRegenerate,
   type WebAuditAgentQuestion,
 } from '../../lib/web-audit-agent';
 
@@ -17,26 +23,38 @@ type ChatMessage = {
   content: string;
   question?: WebAuditAgentQuestion;
   edits?: WebAuditEditSet;
+  regenerate?: WebAuditRegenerate;
   applied?: boolean;
+  busy?: string; // status text while applying (empty = not busy)
 };
 
 const PRESETS = [
   'Make the findings more concise',
   'Make the recommendations more CRO-focused',
-  'Add a finding about mobile',
+  'Regenerate the homepage findings',
 ];
 
 const GREETING =
-  "Hi! Tell me how to adjust this audit's findings, for example \"make the cart findings about trust\" or \"add a homepage finding about the hero.\" I'll target the right section (and ask if it's unclear), then you review and apply.";
+  "Hi! Tell me how to adjust this audit's findings, for example \"make the cart findings about trust\", \"add a homepage finding about the hero\", or \"redo the product page findings.\" I'll target the right section (and ask if it's unclear), you review and apply, and I'll refresh the after images.";
 
-export default function WebAuditAgentPanel({ auditId, sections }: { auditId: string; sections: AuditSection[] }) {
-  const { updateSectionDetailValue, updateSectionField } = useReportEdit();
+export default function WebAuditAgentPanel({
+  auditId,
+  sections,
+  onReload,
+}: {
+  auditId: string;
+  sections: AuditSection[];
+  onReload: () => void;
+}) {
   const [open, setOpen] = useState(false);
   const [messages, setMessages] = useState<ChatMessage[]>([{ id: 'greeting', role: 'assistant', content: GREETING }]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  // Keep the latest sections for apply, even across reloads, without stale closures.
+  const sectionsRef = useRef(sections);
+  sectionsRef.current = sections;
 
   const lastMsg = messages[messages.length - 1];
   const awaitingChoice = !sending && lastMsg?.role === 'assistant' && Boolean(lastMsg.question);
@@ -44,6 +62,29 @@ export default function WebAuditAgentPanel({ auditId, sections }: { auditId: str
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending, open]);
+
+  // Load persisted chat history for this audit (one thread per audit).
+  useEffect(() => {
+    let cancelled = false;
+    listWebAuditAgentMessages(auditId)
+      .then(rows => {
+        if (cancelled || rows.length === 0) return;
+        setMessages(rows.map(r => ({
+          id: r.id,
+          role: r.role,
+          content: r.content,
+          question: r.payload?.question,
+          edits: r.payload?.edits,
+          regenerate: r.payload?.regenerate,
+          applied: r.applied,
+        })));
+      })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [auditId]);
+
+  const setMsg = (id: string, patch: Partial<ChatMessage>) =>
+    setMessages(prev => prev.map(m => (m.id === id ? { ...m, ...patch } : m)));
 
   const send = async (text: string) => {
     const trimmed = text.trim();
@@ -59,7 +100,19 @@ export default function WebAuditAgentPanel({ auditId, sections }: { auditId: str
       let content = res.assistant_text || '';
       if (res.question?.question) content = content ? `${content}\n\n${res.question.question}` : res.question.question;
       if (!content && res.edits) content = res.edits.summary;
-      setMessages(prev => [...prev, { id: `a${Date.now()}`, role: 'assistant', content, question: res.question, edits: res.edits }]);
+      if (!content && res.regenerate) content = res.regenerate.summary;
+      // Persist the turn (best effort); use the DB id so apply-marking sticks.
+      let assistantId = `a${Date.now()}`;
+      try {
+        await insertWebAuditAgentMessage({ auditId, role: 'user', content: trimmed });
+        assistantId = await insertWebAuditAgentMessage({
+          auditId,
+          role: 'assistant',
+          content,
+          payload: { question: res.question, edits: res.edits, regenerate: res.regenerate },
+        });
+      } catch { /* non-fatal: keep the chat working even if persistence fails */ }
+      setMessages(prev => [...prev, { id: assistantId, role: 'assistant', content, question: res.question, edits: res.edits, regenerate: res.regenerate }]);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'The assistant request failed.');
     } finally {
@@ -67,18 +120,61 @@ export default function WebAuditAgentPanel({ auditId, sections }: { auditId: str
     }
   };
 
-  const applyEdits = (msgId: string, edits: WebAuditEditSet) => {
-    const section = sections.find(s => s.section_key === edits.section_key);
+  // Regenerate both after images for a section (best effort) then refresh the report.
+  const regenAfters = async (sectionKey: string) => {
+    await Promise.allSettled([
+      generateSectionAfter(auditId, sectionKey, 'desktop'),
+      generateSectionAfter(auditId, sectionKey, 'mobile'),
+    ]);
+  };
+
+  const applyEdits = async (msgId: string, edits: WebAuditEditSet) => {
+    const section = sectionsRef.current.find(s => s.section_key === edits.section_key);
     if (!section) { setError('That section is no longer available.'); return; }
-    const current = parseWebSectionDetail(section.section_details).findings;
-    if (edits.operations.length > 0) {
-      const next = applyEditsToFindings(current, edits.operations);
-      updateSectionDetailValue(edits.section_key, ['web', 'findings'], next);
+    setMsg(msgId, { busy: 'Applying changes…' });
+    try {
+      if (edits.operations.length > 0) {
+        const current = parseWebSectionDetail(section.section_details).findings;
+        const nextFindings = applyEditsToFindings(current, edits.operations);
+        const raw = section.section_details && typeof section.section_details === 'object' && !Array.isArray(section.section_details)
+          ? { ...(section.section_details as Record<string, unknown>) }
+          : {};
+        const web = raw.web && typeof raw.web === 'object' ? { ...(raw.web as Record<string, unknown>) } : {};
+        web.findings = nextFindings;
+        raw.web = web;
+        await updateAuditSection(section.id, {
+          section_details: raw,
+          ...(edits.section_summary != null ? { summary_text: edits.section_summary } : {}),
+        });
+      } else if (edits.section_summary != null) {
+        await updateAuditSection(section.id, { summary_text: edits.section_summary });
+      }
+      onReload();
+      setMsg(msgId, { busy: 'Refreshing after images…' });
+      await regenAfters(edits.section_key);
+      onReload();
+      void markWebAuditAgentMessageApplied(msgId).catch(() => {});
+      setMsg(msgId, { applied: true, busy: undefined });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not apply the change.');
+      setMsg(msgId, { busy: undefined });
     }
-    if (edits.section_summary != null) {
-      updateSectionField(edits.section_key, 'summary_text', edits.section_summary);
+  };
+
+  const applyRegenerate = async (msgId: string, regen: WebAuditRegenerate) => {
+    setMsg(msgId, { busy: 'Regenerating section…' });
+    try {
+      await regenerateWebSection(auditId, regen.section_key, regen.instruction);
+      onReload();
+      setMsg(msgId, { busy: 'Refreshing after images…' });
+      await regenAfters(regen.section_key);
+      onReload();
+      void markWebAuditAgentMessageApplied(msgId).catch(() => {});
+      setMsg(msgId, { applied: true, busy: undefined });
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not regenerate the section.');
+      setMsg(msgId, { busy: undefined });
     }
-    setMessages(prev => prev.map(m => (m.id === msgId ? { ...m, applied: true } : m)));
   };
 
   if (!open) {
@@ -129,27 +225,35 @@ export default function WebAuditAgentPanel({ auditId, sections }: { auditId: str
                   )}
                   {m.edits && (
                     <div className="mt-2 rounded-xl border border-brand-primary/20 bg-brand-primary/[0.04] p-3">
-                      <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-primary">
-                        {m.edits.section_title} · proposed change
-                      </p>
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-primary">{m.edits.section_title} · proposed change</p>
                       <p className="mt-1 text-xs text-gray-600">{m.edits.summary}</p>
                       <ul className="mt-2 space-y-1">
-                        {m.edits.section_summary != null && (
-                          <li className="text-xs text-gray-600">• Update the section summary</li>
-                        )}
-                        {m.edits.operations.map((op, i) => (
-                          <li key={i} className="text-xs text-gray-600">• {describeEditOp(op)}</li>
-                        ))}
+                        {m.edits.section_summary != null && <li className="text-xs text-gray-600">• Update the section summary</li>}
+                        {m.edits.operations.map((op, i) => <li key={i} className="text-xs text-gray-600">• {describeEditOp(op)}</li>)}
                       </ul>
                       {m.applied ? (
                         <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600"><Check className="h-3.5 w-3.5" /> Applied</div>
+                      ) : m.busy ? (
+                        <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-gray-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {m.busy}</div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={() => applyEdits(m.id, m.edits!)}
-                          className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-brand-primary px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-primary-dark"
-                        >
+                        <button type="button" onClick={() => void applyEdits(m.id, m.edits!)} className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-brand-primary px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-brand-primary-dark">
                           <Wand2 className="h-3.5 w-3.5" /> Apply
+                        </button>
+                      )}
+                    </div>
+                  )}
+                  {m.regenerate && (
+                    <div className="mt-2 rounded-xl border border-amber-200 bg-amber-50/60 p-3">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-700">{m.regenerate.section_title} · regenerate</p>
+                      <p className="mt-1 text-xs text-gray-600">{m.regenerate.summary}</p>
+                      {m.regenerate.instruction && <p className="mt-1 text-[11px] text-gray-500">Focus: {m.regenerate.instruction}</p>}
+                      {m.applied ? (
+                        <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-emerald-600"><Check className="h-3.5 w-3.5" /> Done</div>
+                      ) : m.busy ? (
+                        <div className="mt-2 inline-flex items-center gap-1.5 text-xs font-medium text-gray-500"><Loader2 className="h-3.5 w-3.5 animate-spin" /> {m.busy}</div>
+                      ) : (
+                        <button type="button" onClick={() => void applyRegenerate(m.id, m.regenerate!)} className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-amber-600 px-3.5 py-1.5 text-xs font-semibold text-white hover:bg-amber-700">
+                          <RefreshCw className="h-3.5 w-3.5" /> Regenerate section
                         </button>
                       )}
                     </div>
@@ -161,12 +265,7 @@ export default function WebAuditAgentPanel({ auditId, sections }: { auditId: str
           {messages.length === 1 && !sending && (
             <div className="space-y-1.5 pt-1">
               {PRESETS.map(p => (
-                <button
-                  key={p}
-                  type="button"
-                  onClick={() => void send(p)}
-                  className="block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-sm font-medium text-gray-700 hover:border-brand-primary/40 hover:bg-gray-50"
-                >
+                <button key={p} type="button" onClick={() => void send(p)} className="block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-sm font-medium text-gray-700 hover:border-brand-primary/40 hover:bg-gray-50">
                   {p}
                 </button>
               ))}

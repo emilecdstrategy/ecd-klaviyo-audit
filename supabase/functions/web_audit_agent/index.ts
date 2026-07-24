@@ -79,6 +79,20 @@ const PROPOSE_TOOL: LlmTool = {
   },
 };
 
+const REGENERATE_TOOL: LlmTool = {
+  name: "regenerate_section",
+  description: "Redo a whole section's findings from scratch (a fresh AI pass over that page's screenshots), optionally steered by the strategist's focus. Use this when they want the section re-done rather than a few tweaks.",
+  input_schema: {
+    type: "object",
+    required: ["section_key", "summary"],
+    properties: {
+      section_key: { type: "string", enum: SECTION_KEYS, description: "Which section to regenerate." },
+      instruction: { type: "string", description: "Optional focus to steer the regeneration (e.g. 'lean into trust and social proof')." },
+      summary: { type: "string", description: "One short sentence describing what this will do, for the preview." },
+    },
+  },
+};
+
 function buildSystemPrompt(): string {
   return `You are the editing assistant for ECD Digital Strategy's website (Shopify storefront) audit reports. A strategist is reviewing an audit and wants you to adjust the findings and recommendations for a page.
 
@@ -91,7 +105,8 @@ HOW YOU WORK:
 - You edit ONE page section per proposal. Figure out which section the strategist means from their message and the section contents provided. If it is genuinely unclear, call ask_user with concrete options (list the section names).
 - Use the provided screenshots and existing findings to keep edits grounded and specific. Do not invent features, prices, or facts.
 - Findings must be genuine improvement opportunities. Never add a "keep as is" or praise-only finding.
-- When you have a concrete change, call propose_section_edits with the operations. Index-based operations (update_finding, remove_finding) refer to the CURRENT findings list shown to you (0-based). add_finding appends.
+- When you have a concrete change to specific findings, call propose_section_edits with the operations. Index-based operations (update_finding, remove_finding) refer to the CURRENT findings list shown to you (0-based). add_finding appends.
+- When the strategist wants a whole section redone from scratch (e.g. "redo the cart findings", "regenerate the homepage focused on trust"), call regenerate_section instead of enumerating operations.
 - If the strategist is just chatting or asking a question, reply in plain text without calling a tool.
 
 Call at most one tool per turn.`;
@@ -174,7 +189,7 @@ serve(async (req) => {
     const llm = createLlmClient("anthropic", { model: WEB_MODEL });
     const system = buildSystemPrompt();
 
-    const runOnce = () => llm.runTurn({ system, messages, tools: [ASK_USER_TOOL, PROPOSE_TOOL] });
+    const runOnce = () => llm.runTurn({ system, messages, tools: [ASK_USER_TOOL, PROPOSE_TOOL, REGENERATE_TOOL] });
     let turn = await runOnce();
 
     if (turn.kind === "text") {
@@ -182,7 +197,13 @@ serve(async (req) => {
     }
 
     // Tool call: validate and shape the response.
-    const validateAndBuild = (name: string, input: Record<string, unknown>): { question?: unknown; edits?: unknown; error?: string } => {
+    const validateAndBuild = (name: string, input: Record<string, unknown>): { question?: unknown; edits?: unknown; regenerate?: unknown; error?: string } => {
+      if (name === "regenerate_section") {
+        const sectionKey = String(input.section_key ?? "");
+        if (!SECTION_KEYS.includes(sectionKey)) return { error: `section_key must be one of ${SECTION_KEYS.join(", ")}` };
+        const meta = PAGE_SECTIONS.find((m) => m.key === sectionKey)!;
+        return { regenerate: { section_key: sectionKey, section_title: meta.label, instruction: input.instruction != null ? dash(input.instruction) : undefined, summary: dash(input.summary) } };
+      }
       if (name === "ask_user") {
         const q = dash(input.question);
         const options = Array.isArray(input.options) ? input.options.map(dash).filter(Boolean).slice(0, 4) : [];
@@ -232,7 +253,7 @@ serve(async (req) => {
       if (built.error) return json({ ok: false, error: { code: "invalid_proposal", message: built.error } }, { status: 200 });
     }
 
-    return json({ ok: true, assistant_text: dash(turn.text), question: built.question, edits: built.edits });
+    return json({ ok: true, assistant_text: dash(turn.text), question: built.question, edits: built.edits, regenerate: built.regenerate });
   } catch (e) {
     return json({ ok: false, error: { code: "agent_failed", message: e instanceof Error ? e.message : "Unknown error" } }, { status: 200 });
   }

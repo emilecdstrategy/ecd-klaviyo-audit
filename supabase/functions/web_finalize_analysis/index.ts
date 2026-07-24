@@ -242,6 +242,7 @@ async function runStep(
   auditId: string,
   step: Step,
   sections: SectionRow[],
+  extraInstruction?: string,
 ) {
   const section = sections.find((s) => s.section_key === step.key);
   if (!section) return;
@@ -261,7 +262,7 @@ async function runStep(
     const { images, refToId, refToElements, refToViewport, primaryId, elementsText } = buildPageImages(rows, step.label);
     const messages: LlmMessage[] = [{
       role: "user_images",
-      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding a highlight so it shows a numbered pin: reference the IMG_n for the finding's device and use element_id from the listed elements when one fits. Only skip the highlight when a point has no single spot on screen. Return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${elementsText}`,
+      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding a highlight so it shows a numbered pin: reference the IMG_n for the finding's device and use element_id from the listed elements when one fits. Only skip the highlight when a point has no single spot on screen. Return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${elementsText}`,
       images,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
@@ -473,6 +474,7 @@ serve(async (req) => {
   }
   const auditId = (body.audit_id ?? "").trim();
   if (!auditId) return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id" }, correlationId }, { status: 400 });
+  const mode = (body.mode ?? "").trim();
 
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.replace(/^Bearer\s+/i, "");
@@ -484,8 +486,30 @@ serve(async (req) => {
     }
   }
 
+  // Regenerate a SINGLE page section's findings (used by the web-audit assistant),
+  // optionally steered by a strategist instruction. Synchronous, no job/chain.
+  if (mode === "regenerate_section") {
+    const b = body as { section_key?: string; instruction?: string };
+    const sectionKey = (b.section_key ?? "").trim();
+    const step = STEPS.find((s) => s.key === sectionKey && s.kind === "page");
+    if (!step) return json({ ok: false, error: { code: "bad_request", message: "Unknown or non-page section_key" }, correlationId }, { status: 400 });
+    try {
+      const sb = assertServiceClient();
+      const { data: rows } = await sb
+        .from("audit_sections")
+        .select("id, section_key, summary_text, section_details, section_config")
+        .eq("audit_id", auditId);
+      const sectionsList = (rows ?? []) as SectionRow[];
+      const llm = createLlmClient("anthropic", { model: WEB_MODEL });
+      await runStep(sb, llm, auditId, step, sectionsList, b.instruction?.trim() || undefined);
+      return json({ ok: true, correlationId, status: "complete", section: sectionKey });
+    } catch (e) {
+      return json({ ok: false, error: { code: "regenerate_failed", message: e instanceof Error ? e.message : "Unknown error" }, correlationId }, { status: 200 });
+    }
+  }
+
   try {
-    return await runPipeline(auditId, correlationId, (body.mode ?? "").trim() || undefined);
+    return await runPipeline(auditId, correlationId, mode || undefined);
   } catch (e) {
     return json({ ok: false, error: { code: "pipeline_failed", message: e instanceof Error ? e.message : "Unknown error" }, correlationId }, { status: 500 });
   }

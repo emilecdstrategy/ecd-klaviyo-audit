@@ -16,13 +16,60 @@ export type WebAuditEditSet = {
   operations: WebAuditEditOp[];
 };
 
+export type WebAuditRegenerate = {
+  section_key: string;
+  section_title: string;
+  instruction?: string;
+  summary: string;
+};
+
 export type WebAuditAgentResponse = {
   ok?: boolean;
   assistant_text?: string;
   question?: WebAuditAgentQuestion;
   edits?: WebAuditEditSet;
+  regenerate?: WebAuditRegenerate;
   error?: { code?: string; message?: string };
 };
+
+// --- Persisted chat history (one thread per audit) -------------------------
+
+export type WebAuditAgentMessageRow = {
+  id: string;
+  role: 'user' | 'assistant';
+  content: string;
+  payload: { question?: WebAuditAgentQuestion; edits?: WebAuditEditSet; regenerate?: WebAuditRegenerate } | null;
+  applied: boolean;
+};
+
+export async function listWebAuditAgentMessages(auditId: string): Promise<WebAuditAgentMessageRow[]> {
+  const { data, error } = await supabase
+    .from('web_audit_agent_messages')
+    .select('id, role, content, payload, applied')
+    .eq('audit_id', auditId)
+    .order('created_at', { ascending: true });
+  if (error) throw error;
+  return (data ?? []) as WebAuditAgentMessageRow[];
+}
+
+export async function insertWebAuditAgentMessage(input: {
+  auditId: string;
+  role: 'user' | 'assistant';
+  content: string;
+  payload?: WebAuditAgentMessageRow['payload'];
+}): Promise<string> {
+  const { data, error } = await supabase
+    .from('web_audit_agent_messages')
+    .insert({ audit_id: input.auditId, role: input.role, content: input.content, payload: input.payload ?? null })
+    .select('id')
+    .single();
+  if (error) throw error;
+  return data.id as string;
+}
+
+export async function markWebAuditAgentMessageApplied(id: string): Promise<void> {
+  await supabase.from('web_audit_agent_messages').update({ applied: true }).eq('id', id);
+}
 
 /** Send one message to the web-audit assistant. */
 export async function sendWebAuditAgentMessage(input: {
@@ -36,6 +83,16 @@ export async function sendWebAuditAgentMessage(input: {
   if (error) throw new Error(error.message || 'The assistant request failed.');
   if (!data?.ok) throw new Error(data?.error?.message || 'The assistant could not complete that request.');
   return data;
+}
+
+/** Regenerate a whole section's findings server-side (a fresh AI pass over the
+ * page screenshots), optionally steered by an instruction. Runs synchronously. */
+export async function regenerateWebSection(auditId: string, sectionKey: string, instruction?: string): Promise<void> {
+  const { data, error } = await supabase.functions.invoke<{ ok?: boolean; error?: { message?: string } }>('web_finalize_analysis', {
+    body: { audit_id: auditId, mode: 'regenerate_section', section_key: sectionKey, instruction },
+  });
+  if (error) throw new Error(error.message || 'Section regeneration failed');
+  if (!data?.ok) throw new Error(data?.error?.message || 'Section regeneration failed');
 }
 
 /** Apply an edit set's operations to a section's current findings, returning the
