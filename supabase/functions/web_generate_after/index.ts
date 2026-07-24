@@ -87,8 +87,10 @@ function buildEditPrompt(label: string, recommendations: string[], hasReference:
     `- Use EXACTLY ONE primary call-to-action in the hero. Never create duplicate or competing CTA buttons (e.g. do not show both "Shop Now" and "Shop the Bundle").`,
     `- Keep all existing real text and numbers from the source (headlines, prices, phone numbers, product names) unless a fix changes them.`,
     `- If a fix calls for a new element such as a badge, star rating, or trust signal, DEPICT it as a real graphic (actual stars, an actual badge). NEVER write the element's name or a description as literal text on the page (no "Bestseller Badge", "hero image", "CTA button", "trust badge" text).`,
+    `- READABILITY IS CRITICAL: any text placed over a photo must be easy to read. Add a dark gradient or semi-transparent scrim behind the text (or place the text on a solid color panel) so it has strong contrast. Never leave light text sitting on a busy or light photo where it is hard to read.`,
+    `- Every button, pill, chip, or element must look FINISHED and real: text centered and aligned, consistent padding, no empty icon boxes, no blank slots, no missing or broken icons. If you cannot render a clean icon, use text only, do not leave an empty space where an icon would go.`,
     `- Keep all text crisp, correctly spelled, and legible. Do not add annotations, numbered markers, callouts, arrows, borders, captions, or watermarks, and never render any of these instructions into the image.`,
-    `- Output only the clean redesigned screenshot, as if it were a real live page.`,
+    `- Output only the clean, polished, production-quality redesigned screenshot, as if it were a real live page.`,
   ].join("\n");
 
   if (hasReference) {
