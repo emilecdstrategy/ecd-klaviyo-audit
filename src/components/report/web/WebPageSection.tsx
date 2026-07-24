@@ -27,7 +27,6 @@ export default function WebPageSection({
   );
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
-  const [showAfter, setShowAfter] = useState(false);
   const [afterBusy, setAfterBusy] = useState(false);
   const [afterError, setAfterError] = useState('');
   // Locally overrides the persisted after image right after a (re)generate, so
@@ -130,10 +129,10 @@ export default function WebPageSection({
   };
 
   const afterUrl = afterOverride[viewport] ?? detail.after_images[viewport]?.url ?? null;
-  const displayAfter = showAfter && Boolean(afterUrl);
-  // Mobile shots are narrow, so show Before + After together (Oddit-style) with no
-  // toggle. Desktop stays a Before/After toggle since it is too wide for two-up.
-  const sideBySide = viewport === 'mobile' && Boolean(afterUrl);
+  // Both Before and After are always shown together when an after exists: mobile
+  // side-by-side (narrow shots), desktop stacked (before above, after below). No
+  // toggle needed.
+  const twoUp = viewport === 'mobile';
 
   const generateAfter = async () => {
     setAfterBusy(true);
@@ -142,7 +141,6 @@ export default function WebPageSection({
       const res = await generateSectionAfter(section.audit_id, section.section_key, viewport);
       setAfterOverride((prev) => ({ ...prev, [res.viewport]: res.url }));
       if (res.viewport !== viewport) setViewport(res.viewport);
-      setShowAfter(true);
     } catch (e) {
       setAfterError(e instanceof Error ? e.message : 'Could not generate the after image.');
     } finally {
@@ -221,99 +219,66 @@ export default function WebPageSection({
         {/* Left: reference screenshot (before) with optional AI "after" concept */}
         <div className="lg:sticky lg:top-6">
           {shown ? (
-            <div className={sideBySide ? 'w-full' : viewport === 'mobile' ? 'mx-auto w-full max-w-[360px]' : 'w-full'}>
-              {/* Controls: Before/After toggle (single-image views only) + the
-                  editor-only generate control. In side-by-side mode both are shown,
-                  so the toggle is hidden. */}
-              {((afterUrl && !sideBySide) || editMode) && (
-                <div className="mb-2 flex items-center justify-between gap-2">
-                  {afterUrl && !sideBySide ? (
-                    <div className="inline-flex overflow-hidden rounded-md border border-gray-200">
-                      <button
-                        type="button"
-                        onClick={() => setShowAfter(false)}
-                        className={`px-2.5 py-1 text-xs font-medium ${!displayAfter ? 'bg-gray-900 text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-                      >
-                        Before
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setShowAfter(true)}
-                        className={`px-2.5 py-1 text-xs font-medium ${displayAfter ? 'bg-brand-primary text-white' : 'text-gray-500 hover:bg-gray-100'}`}
-                      >
-                        After
-                      </button>
-                    </div>
-                  ) : (
-                    <span />
-                  )}
-                  {editMode && (
-                    <button
-                      type="button"
-                      onClick={generateAfter}
-                      disabled={afterBusy}
-                      className="inline-flex items-center gap-1.5 rounded-md border border-brand-primary/30 bg-brand-primary/5 px-2.5 py-1 text-xs font-semibold text-brand-primary hover:bg-brand-primary/10 disabled:opacity-50"
-                    >
-                      {afterBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
-                      {afterBusy ? 'Generating…' : afterUrl ? 'Regenerate after' : 'Generate after'}
-                    </button>
-                  )}
+            <div className={afterUrl || viewport === 'desktop' ? 'w-full' : 'mx-auto w-full max-w-[360px]'}>
+              {/* Editor-only generate / regenerate control. */}
+              {editMode && (
+                <div className="mb-2 flex items-center justify-end">
+                  <button
+                    type="button"
+                    onClick={generateAfter}
+                    disabled={afterBusy}
+                    className="inline-flex items-center gap-1.5 rounded-md border border-brand-primary/30 bg-brand-primary/5 px-2.5 py-1 text-xs font-semibold text-brand-primary hover:bg-brand-primary/10 disabled:opacity-50"
+                  >
+                    {afterBusy ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wand2 className="h-3.5 w-3.5" />}
+                    {afterBusy ? 'Generating…' : afterUrl ? 'Regenerate after' : 'Generate after'}
+                  </button>
                 </div>
               )}
 
-              {sideBySide && afterUrl ? (
-                <>
-                  <div className="grid grid-cols-2 items-start gap-3">
-                    {/* Before (with the numbered pins) */}
-                    <div>
-                      <p className="mb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500">Before</p>
-                      <div
-                        className="cursor-zoom-in rounded-lg"
-                        onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
-                      >
-                        <WebHighlightLayer
-                          imageUrl={shown.screenshot_url as string}
-                          alt={`${title} (mobile, before)`}
-                          markers={markers}
-                          activeIndex={activeIndex}
-                          onMarkerClick={focusFinding}
-                        />
-                      </div>
-                    </div>
-                    {/* After (AI concept) */}
-                    <div>
-                      <p className="mb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-primary">After</p>
-                      <div className="relative">
-                        <div className="cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30" onClick={() => setLightbox(afterUrl)}>
-                          <img src={afterUrl} alt={`${title} redesign concept (mobile)`} className="block w-full" />
-                        </div>
-                      </div>
+              {afterUrl ? (
+                // Show Before and After together: mobile side-by-side (narrow shots),
+                // desktop stacked (Before above, After below) so both are visible
+                // without a toggle.
+                <div className={twoUp ? 'grid grid-cols-2 items-start gap-3' : 'space-y-4'}>
+                  {/* Before (with the numbered pins) */}
+                  <div>
+                    <p className="mb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500">Before</p>
+                    <div
+                      className="cursor-zoom-in rounded-lg"
+                      onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
+                    >
+                      <WebHighlightLayer
+                        imageUrl={shown.screenshot_url as string}
+                        alt={`${title} (before)`}
+                        markers={markers}
+                        activeIndex={activeIndex}
+                        onMarkerClick={focusFinding}
+                      />
                     </div>
                   </div>
-                </>
-              ) : displayAfter && afterUrl ? (
-                <div className="relative">
-                  <div className="cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30" onClick={() => setLightbox(afterUrl)}>
-                    <img src={afterUrl} alt={`${title} redesign concept (${viewport})`} className="block w-full" />
+                  {/* After (AI concept) */}
+                  <div>
+                    <p className="mb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-primary">After</p>
+                    <div className="cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30" onClick={() => setLightbox(afterUrl)}>
+                      <img src={afterUrl} alt={`${title} redesign concept`} className="block w-full" />
+                    </div>
                   </div>
                 </div>
               ) : (
-                <>
-                  {/* No overflow clip here so the pin hover tooltips can extend past
-                      the screenshot edges. */}
-                  <div
-                    className="cursor-zoom-in rounded-lg"
-                    onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
-                  >
-                    <WebHighlightLayer
-                      imageUrl={shown.screenshot_url as string}
-                      alt={`${title} (${viewport})`}
-                      markers={markers}
-                      activeIndex={activeIndex}
-                      onMarkerClick={focusFinding}
-                    />
-                  </div>
-                </>
+                // No overflow clip here so the pin hover tooltips can extend past
+                // the screenshot edges.
+                <div
+                  className="cursor-zoom-in rounded-lg"
+                  onClick={() => setLightbox(fullForLightbox?.screenshot_url ?? shown.screenshot_url)}
+                >
+                  <WebHighlightLayer
+                    imageUrl={shown.screenshot_url as string}
+                    alt={`${title} (${viewport})`}
+                    markers={markers}
+                    activeIndex={activeIndex}
+                    onMarkerClick={focusFinding}
+                  />
+                </div>
               )}
               {afterError && <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-2 text-[11px] text-red-600">{afterError}</p>}
             </div>
