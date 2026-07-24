@@ -73,6 +73,7 @@ export default function ProposalEditor() {
 
   return (
     <ProposalAgentProvider
+      defaultOpen
       config={{
         proposalId: proposal.id,
         clientId: proposal.client_id,

@@ -217,6 +217,17 @@ export default function NewProposal({ asModal }: NewProposalProps) {
           </button>
           <p className="mb-3 text-sm font-medium text-gray-700">Start from</p>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {/* Blank proposal always comes first, then saved templates. */}
+            <button
+              type="button"
+              disabled={creating}
+              onClick={() => create(null)}
+              className="rounded-xl border border-dashed border-gray-300 p-4 text-left transition-colors hover:border-brand-primary/40 hover:bg-brand-primary/[0.03] disabled:opacity-50"
+            >
+              <FileText className="mb-2 h-5 w-5 text-gray-400" />
+              <p className="text-sm font-semibold text-gray-900">Blank proposal</p>
+              <p className="mt-0.5 text-xs text-gray-500">Start from scratch.</p>
+            </button>
             {templates.map(template => (
               <button
                 key={template.id}
@@ -234,16 +245,6 @@ export default function NewProposal({ asModal }: NewProposalProps) {
                 </p>
               </button>
             ))}
-            <button
-              type="button"
-              disabled={creating}
-              onClick={() => create(null)}
-              className="rounded-xl border border-dashed border-gray-300 p-4 text-left transition-colors hover:border-brand-primary/40 hover:bg-brand-primary/[0.03] disabled:opacity-50"
-            >
-              <FileText className="mb-2 h-5 w-5 text-gray-400" />
-              <p className="text-sm font-semibold text-gray-900">Blank proposal</p>
-              <p className="mt-0.5 text-xs text-gray-500">Start from scratch.</p>
-            </button>
           </div>
           {creating && <p className="mt-4 text-center text-sm text-gray-400">Creating proposal…</p>}
         </div>

@@ -90,11 +90,14 @@ function tempId(): string {
 export function ProposalAgentProvider({
   config,
   children,
+  defaultOpen = false,
 }: {
   config: ProposalAgentHostConfig;
   children: ReactNode;
+  /** Open the assistant panel by default (e.g. on the proposal edit page). */
+  defaultOpen?: boolean;
 }) {
-  const [isOpen, setIsOpen] = useState(false);
+  const [isOpen, setIsOpen] = useState(defaultOpen);
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AgentChatMessage[]>([]);
   const [sending, setSending] = useState(false);
