@@ -63,6 +63,67 @@ function snapToElementByLabel(
   return best && best.score >= 1 ? best.el : undefined;
 }
 
+// --- Cross-section duplicate detection -------------------------------------
+
+const DUP_STOPWORDS = new Set([
+  "the", "a", "an", "and", "or", "of", "for", "to", "on", "in", "at", "with", "is",
+  "are", "was", "be", "it", "its", "this", "that", "there", "no", "not", "but",
+  "so", "you", "your", "they", "their", "them", "can", "could", "would", "just",
+  "which", "when", "who", "has", "have", "sits", "sit", "look", "looks", "page",
+  "pages", "shoppers", "shopper", "visitors", "visitor", "screen", "phones",
+  "phone", "mobile", "desktop", "devices", "both", "right", "near", "very",
+  "into", "onto", "from", "than", "then", "also", "each", "other", "same", "own",
+]);
+
+/** Furniture that is identical on every page of a storefront. Whatever page it
+ * is spotted on, it is the SAME issue, so the audit should raise it once. Keyed
+ * so a later section can be blocked from repeating a topic already covered. */
+const SITEWIDE_TOPIC_PATTERNS: Array<{ topic: string; re: RegExp }> = [
+  { topic: "announcement_bar", re: /announcement bar|free[- ]shipping (bar|banner|message)|promo bar|top bar/ },
+  { topic: "main_nav", re: /top navigation|main navigation|nav bar|navigation bar|menu items|menu categories|top-level categor|main menu|shop by brands/ },
+  { topic: "floating_widgets", re: /chat (bubble|widget|launcher|button)|loyalty badge|rewards badge|floating badge|floating (icon|widget|button)|back to top/ },
+  { topic: "header_chrome", re: /\bheader\b|logo (sits|is|placement)|search icon|cart icon/ },
+  { topic: "footer", re: /\bfooter\b/ },
+];
+
+/** Which sitewide topic (if any) a finding is about. */
+export function sitewideTopic(text: string): string | null {
+  const t = (text || "").toLowerCase();
+  for (const { topic, re } of SITEWIDE_TOPIC_PATTERNS) if (re.test(t)) return topic;
+  return null;
+}
+
+function dupTokens(raw: string): Set<string> {
+  return new Set(
+    raw
+      .toLowerCase()
+      .replace(/[^a-z0-9\s]/g, " ")
+      .split(/\s+/)
+      .filter((t) => t.length > 2 && !DUP_STOPWORDS.has(t)),
+  );
+}
+
+/** Is this finding essentially something already reported in an earlier section?
+ * Sitewide furniture (header, nav, announcement bar, floating chat and loyalty
+ * widgets) shows up on every page, and re-flagging it in each section is just
+ * noise. Compares meaningful content words, so a reworded restatement of the
+ * same issue is still caught. */
+export function isNearDuplicateFinding(text: string, priorTexts: string[]): boolean {
+  const mine = dupTokens(text);
+  if (mine.size < 3) return false;
+  for (const prior of priorTexts) {
+    const theirs = dupTokens(prior);
+    if (theirs.size < 3) continue;
+    let shared = 0;
+    for (const t of mine) if (theirs.has(t)) shared += 1;
+    // Overlap relative to the SHORTER set: a terse restatement of a longer
+    // earlier finding still counts as the same issue.
+    const ratio = shared / Math.min(mine.size, theirs.size);
+    if (ratio >= 0.6) return true;
+  }
+  return false;
+}
+
 // --- Tool schemas (forced via tool_choice) ---------------------------------
 
 export const PAGE_AUDIT_TOOL: LlmTool = {

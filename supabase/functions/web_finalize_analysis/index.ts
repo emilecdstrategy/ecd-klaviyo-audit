@@ -9,6 +9,8 @@ import {
   coerceOverview,
   coercePageAudit,
   coerceRoadmap,
+  isNearDuplicateFinding,
+  sitewideTopic,
   OVERVIEW_TOOL,
   PAGE_AUDIT_TOOL,
   ROADMAP_TOOL,
@@ -52,7 +54,7 @@ type Step =
 // otherwise the same "group the nav categories" finding (and the same header
 // change in the after-image) is repeated on every section.
 const GLOBAL_CHROME_NOTE =
-  " IMPORTANT SCOPE RULE: the announcement bar, the header, the main navigation, and the footer are shared sitewide and are already audited on the homepage section of this report. Do NOT write any finding about them here, even if you see something worth improving. Focus only on what is specific to THIS page's own content and layout.";
+  " IMPORTANT SCOPE RULE: the announcement bar, the header, the main navigation, the footer, and any floating widgets (chat bubble, loyalty or rewards badge, back-to-top button) are shared sitewide and are already audited on the homepage section of this report. Do NOT write any finding about them here, even if you see something worth improving. Focus only on what is specific to THIS page's own content and layout.";
 
 const STEPS: Step[] = [
   { key: "web_homepage", kind: "page", page_type: "homepage", label: "homepage" },
@@ -275,9 +277,33 @@ async function runStep(
       return;
     }
     const { images, refToId, refToElements, refToViewport, primaryId, elementsText } = buildPageImages(rows, step.label);
+
+    // Memory of what earlier page sections already reported. Sitewide furniture
+    // (header, nav, announcement bar, floating chat/loyalty widgets) looks the
+    // same on every page, so without this each section re-flags it and the reader
+    // sees the same point four times.
+    const myIndex = STEPS.findIndex((s) => s.key === step.key);
+    const priorFindings: string[] = [];
+    const priorTopics = new Set<string>();
+    for (let i = 0; i < myIndex; i++) {
+      const prev = STEPS[i];
+      if (prev.kind !== "page") continue;
+      const prevSection = sections.find((s) => s.section_key === prev.key);
+      const prevWeb = (prevSection?.section_details?.web ?? {}) as { findings?: Array<{ text?: string }> };
+      for (const f of prevWeb.findings ?? []) {
+        const t = (f.text ?? "").trim();
+        if (!t) continue;
+        priorFindings.push(t);
+        const topic = sitewideTopic(t);
+        if (topic) priorTopics.add(topic);
+      }
+    }
+    const priorText = priorFindings.length
+      ? `\n\nALREADY REPORTED earlier in this same audit, on other pages of this store. Do NOT repeat any of these, and do NOT restate the same issue in different words. Anything sitewide (the announcement bar, header, main navigation, footer, floating chat or loyalty widgets) is covered once and must not be raised again here:\n${priorFindings.map((t) => `- ${t}`).join("\n")}`
+      : "";
     const messages: LlmMessage[] = [{
       role: "user_images",
-      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. Return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${elementsText}`,
+      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. Return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${priorText}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${elementsText}`,
       images,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
@@ -297,10 +323,21 @@ async function runStep(
         if (retryParsed.findings.length > 0) parsed = retryParsed;
       }
     }
+    // Enforce the memory in code: the prompt asks the model not to repeat, but it
+    // still does, so drop anything that restates an earlier section's finding or
+    // re-raises a sitewide topic already covered. Only enforced when this page has
+    // enough findings left to stay useful.
+    let deduped = parsed.findings.filter((f) => {
+      const topic = sitewideTopic(f.text);
+      if (topic && priorTopics.has(topic)) return false;
+      return !isNearDuplicateFinding(f.text, priorFindings);
+    });
+    if (deduped.length === 0) deduped = parsed.findings; // never blank a whole page
+
     const details = { ...(section.section_details ?? {}) };
     (details as Record<string, unknown>).web = {
       pros: parsed.pros,
-      findings: parsed.findings,
+      findings: deduped,
       primary_snapshot_id: primaryId,
     };
     await sb.from("audit_sections").update({

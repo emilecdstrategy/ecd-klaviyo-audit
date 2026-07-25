@@ -69,6 +69,38 @@ function bytesToBase64(bytes: Uint8Array): string {
   return btoa(binary);
 }
 
+/** Read a PNG's pixel dimensions straight out of the IHDR chunk (width and
+ * height are big-endian uint32 at byte offsets 16 and 20). Lets us check the
+ * generated image's SHAPE deterministically instead of trusting the model to
+ * honour "keep the same aspect ratio". */
+function pngSize(bytes: Uint8Array): { w: number; h: number } | null {
+  if (bytes.length < 24) return null;
+  // PNG signature
+  if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
+  const read32 = (o: number) => ((bytes[o] << 24) | (bytes[o + 1] << 16) | (bytes[o + 2] << 8) | bytes[o + 3]) >>> 0;
+  const w = read32(16);
+  const h = read32(20);
+  if (!w || !h) return null;
+  return { w, h };
+}
+
+/** Is the generated image the wrong SHAPE for the device? A phone screenshot is
+ * portrait and a desktop one is landscape; the image model sometimes returns a
+ * wide desktop-looking layout for a mobile source, which is unusable. */
+function wrongShape(source: Uint8Array, generated: Uint8Array): boolean {
+  const a = pngSize(source);
+  const b = pngSize(generated);
+  if (!a || !b) return false; // can't tell, don't block
+  const srcRatio = a.w / a.h;
+  const genRatio = b.w / b.h;
+  // Orientation flip (portrait source -> landscape output, or the reverse).
+  if (srcRatio < 1 && genRatio >= 1) return true;
+  if (srcRatio > 1 && genRatio <= 1) return true;
+  // Same orientation but a very different shape (more than ~45% off) also reads
+  // as broken next to the original.
+  return Math.abs(genRatio - srcRatio) / srcRatio > 0.45;
+}
+
 function base64ToBytes(b64: string): Uint8Array {
   const binary = atob(b64);
   const out = new Uint8Array(binary.length);
@@ -353,7 +385,32 @@ async function generateOne(
     return `${publicUrl}?v=${Date.now()}`;
   };
 
-  let bustedUrl = await store(await geminiEditImage(srcPng, basePrompt, apiKey, refPng));
+  const shapeNote = viewport === "mobile"
+    ? "Your previous attempt came back in the WRONG SHAPE: it was a wide desktop-style layout, but this is a PHONE screenshot. Output a tall, narrow, single-column phone image with the same aspect ratio as the source."
+    : "Your previous attempt came back in the WRONG SHAPE. Output a wide desktop image with the same aspect ratio as the source.";
+
+  let edited = await geminiEditImage(srcPng, basePrompt, apiKey, refPng);
+
+  // Deterministic shape gate BEFORE anything else: a mobile source that comes
+  // back landscape is unusable, and no amount of prompting reliably prevents it.
+  // Regenerate once without the sibling reference, which is what tempts the model
+  // to copy the other device's layout in the first place.
+  if (wrongShape(srcPng, edited)) {
+    try {
+      const reshot = await geminiEditImage(srcPng, `${basePrompt}\n\n${shapeNote}`, apiKey, undefined);
+      if (!wrongShape(srcPng, reshot)) edited = reshot;
+      else {
+        // Still the wrong device shape. Storing it would show a desktop layout
+        // under a "mobile" toggle, so record the failure and show Before only.
+        throw new Error("wrong_shape_after_retry");
+      }
+    } catch (e) {
+      if (e instanceof Error && e.message === "wrong_shape_after_retry") throw e;
+      throw new Error("wrong_shape");
+    }
+  }
+
+  let bustedUrl = await store(edited);
 
   // Grade the result and give the model ONE corrective attempt when it skipped a
   // fix or introduced a defect. Capped at one retry to stay inside the edge
@@ -363,7 +420,9 @@ async function generateOne(
   if (!check.ok) {
     try {
       const retryPrompt = `${basePrompt}\n\nIMPORTANT, THIS IS A SECOND ATTEMPT. ${check.feedback}\n\nProduce the corrected screenshot with every fix above clearly visible and no duplicated or leftover elements.`;
-      bustedUrl = await store(await geminiEditImage(srcPng, retryPrompt, apiKey, refPng));
+      const retried = await geminiEditImage(srcPng, retryPrompt, apiKey, refPng);
+      // Never let a corrective attempt regress the device shape.
+      if (!wrongShape(srcPng, retried)) bustedUrl = await store(retried);
     } catch {
       // Retry failed outright: the first attempt is already stored, keep it.
     }
