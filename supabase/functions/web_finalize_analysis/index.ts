@@ -47,6 +47,13 @@ type Step =
   | { key: string; kind: "page"; page_type: string; label: string }
   | { key: string; kind: "analytics" | "overview" | "roadmap" };
 
+// The announcement bar, header, main nav and footer are the same on every page,
+// so they are audited once on the homepage. Other pages get told to skip them,
+// otherwise the same "group the nav categories" finding (and the same header
+// change in the after-image) is repeated on every section.
+const GLOBAL_CHROME_NOTE =
+  " IMPORTANT SCOPE RULE: the announcement bar, the header, the main navigation, and the footer are shared sitewide and are already audited on the homepage section of this report. Do NOT write any finding about them here, even if you see something worth improving. Focus only on what is specific to THIS page's own content and layout.";
+
 const STEPS: Step[] = [
   { key: "web_homepage", kind: "page", page_type: "homepage", label: "homepage" },
   { key: "web_product_page", kind: "page", page_type: "product", label: "product page" },
@@ -270,7 +277,7 @@ async function runStep(
     const { images, refToId, refToElements, refToViewport, primaryId, elementsText } = buildPageImages(rows, step.label);
     const messages: LlmMessage[] = [{
       role: "user_images",
-      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. Return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${elementsText}`,
+      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. Return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${elementsText}`,
       images,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });

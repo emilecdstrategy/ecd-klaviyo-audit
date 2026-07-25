@@ -212,9 +212,17 @@ export default async ({ page, context }) => {
         try { const c = await (await fetch("/cart.js")).json(); return (c && typeof c.item_count === "number") ? c.item_count : -1; } catch (e) { return -1; }
       }).catch(() => -1);
 
-      // 4) Open the slide-cart drawer: return to the homepage (where the cart icon
-      //    lives) and click a cart trigger. The item persists via the cart cookie.
-      try { await page.goto(url, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
+      // 4) Open the slide-cart drawer: go to a NON-cart page (the cart icon lives
+      //    in the header there) and click a cart trigger. The item persists via
+      //    the cart cookie. Using the storefront root when the configured cart
+      //    target is itself /cart matters: a drawer cannot open on the cart page,
+      //    which previously left us screenshotting the full /cart page instead.
+      let drawerBase = url;
+      try {
+        const u = new URL(url);
+        if (/^\\/cart(\\/|$)/.test(u.pathname)) drawerBase = u.origin + "/";
+      } catch (e) {}
+      try { await page.goto(drawerBase, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
       await page.evaluate(sweep).catch(() => {});
       await page.keyboard.press("Escape").catch(() => {});
       await page.evaluate(sweepPopups).catch(() => {});
@@ -226,16 +234,59 @@ export default async ({ page, context }) => {
         'button[aria-label*="cart" i]','button[class*="cart" i]','[class*="cart-icon" i]',
         '[aria-label*="cart" i]','a[href$="/cart"]','a[href*="/cart"]',
       ];
+      // Is a slide-cart drawer actually on screen? A click alone proves nothing:
+      // on many themes the cart icon is a plain <a href="/cart"> that navigates,
+      // which used to be accepted as "opened" and gave us the /cart page instead.
+      const drawerVisible = () => page.evaluate(() => {
+        const sel = '[class*="drawer" i],[id*="drawer" i],[class*="mini-cart" i],[id*="mini-cart" i],'
+          + '[class*="minicart" i],[id*="minicart" i],[class*="cart-modal" i],[class*="cart-popup" i],'
+          + 'dialog[open],[role="dialog"],[aria-modal="true"]';
+        const vw = window.innerWidth, vh = window.innerHeight;
+        const nodes = Array.from(document.querySelectorAll(sel));
+        for (const el of nodes) {
+          const cs = window.getComputedStyle(el);
+          if (cs.display === "none" || cs.visibility === "hidden") continue;
+          if (parseFloat(cs.opacity || "1") < 0.1) continue;
+          const r = el.getBoundingClientRect();
+          // A real slide panel occupies a meaningful slice of the screen and is
+          // actually within the viewport (a closed drawer sits translated off it).
+          if (r.width < vw * 0.18 || r.height < vh * 0.25) continue;
+          if (r.right <= 4 || r.left >= vw - 4 || r.bottom <= 4 || r.top >= vh - 4) continue;
+          const txt = ((el.innerText || "") + "").toLowerCase();
+          if (!/cart|subtotal|checkout/.test(txt)) continue;
+          return true;
+        }
+        return false;
+      }).catch(() => false);
+
       let opened = false;
       for (const t of triggers) {
         try {
           const el = await page.$(t);
-          if (el) { await el.click(); opened = true; await new Promise((r) => setTimeout(r, 2800)); break; }
+          if (!el) continue;
+          const before = page.url();
+          try { await el.click(); } catch (e) { continue; }
+          await new Promise((r) => setTimeout(r, 2200));
+          if (await drawerVisible()) {
+            opened = true;
+            await new Promise((r) => setTimeout(r, 700));
+            break;
+          }
+          // The click navigated (typically to /cart) rather than opening a drawer.
+          // Return to the page and try the next, more drawer-specific trigger.
+          if (page.url() !== before) {
+            try { await page.goto(drawerBase, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
+            await page.evaluate(sweep).catch(() => {});
+            await page.evaluate(sweepPopups).catch(() => {});
+          }
         } catch (e) {}
       }
-      // If no drawer opened, fall back to the populated /cart page.
+      // No drawer on this theme (or none would open): fall back to the populated
+      // /cart page so we still show a real cart rather than an empty one.
       if (!opened) {
         try { await page.goto(new URL("/cart", url).href, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
+        await page.evaluate(sweep).catch(() => {});
+        await page.evaluate(sweepPopups).catch(() => {});
       }
     } catch (e) {}
   }

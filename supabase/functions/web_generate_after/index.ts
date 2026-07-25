@@ -105,6 +105,9 @@ function buildEditPrompt(label: string, recommendations: string[], hasReference:
     return [
       `The FIRST image is a real screenshot of the ${label} of an e-commerce store.`,
       `The SECOND image is the approved "after" redesign of the SAME page on the OTHER device.`,
+      viewport === "mobile"
+        ? `MANDATORY OUTPUT SHAPE: your image must be a TALL, NARROW SINGLE-COLUMN PHONE screenshot matching the FIRST image's aspect ratio and width. The SECOND image is a wide desktop layout: do NOT copy its shape, column count, or navigation. Copying the desktop layout onto the phone is the single worst mistake you can make here.`
+        : `MANDATORY OUTPUT SHAPE: your image must be a WIDE DESKTOP screenshot matching the FIRST image's aspect ratio. The SECOND image is a narrow phone layout: do NOT copy its shape or its collapsed mobile navigation.`,
       `Match the SECOND image's CONTENT and messaging decisions: the same new headline and body copy, the same offer, and the same primary call-to-action wording. But rebuild the STRUCTURE natively for THIS device using the rules below. Do NOT copy the other device's navigation style, column count, or layout (in particular, never turn a mobile menu into a desktop-style horizontal nav).`,
       `On top of matching the reference, you MUST actually apply these ${viewport}-specific fixes (make the change clearly visible, e.g. real added spacing, larger tap targets, a repositioned or added element):`,
       fixes || "Improve visual hierarchy, spacing, and clarity of the primary call to action.",
@@ -250,7 +253,7 @@ const VERIFY_TOOL: LlmTool = {
         type: "array",
         items: { type: "string" },
         description:
-          "Visual defects the edit introduced: duplicated text or elements, an element left behind in its old place after a move, overlapping or colliding elements, unreadable text over a photo, empty icon slots, or misspellings.",
+          "Visual defects the edit introduced: duplicated text or elements, an element left behind in its old place after a move, overlapping or colliding elements, unreadable text over a photo, empty icon slots, or misspellings. ALSO report it as a defect when IMG_2 is in the WRONG DEVICE LAYOUT, i.e. IMG_1 is a narrow phone screenshot but IMG_2 is a wide multi-column desktop layout (or the reverse). That is a serious defect.",
       },
     },
   },
