@@ -3,6 +3,7 @@ import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getSecret } from "../_shared/app-secrets.ts";
 import { layoutGuidance, type WebPageKind } from "../_shared/ecommerce-ux-kb.ts";
+import { createLlmClient, type LlmMessage, type LlmTool } from "../_shared/llm-adapter.ts";
 
 // Generates an "after" concept image for a web-audit page section by editing the
 // real above-the-fold screenshot in place with Google's Gemini image model
@@ -19,6 +20,8 @@ import { layoutGuidance, type WebPageKind } from "../_shared/ecommerce-ux-kb.ts"
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const GEMINI_IMAGE_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
+// Vision model that grades the generated "after" against the fixes it should show.
+const VERIFY_MODEL = "claude-sonnet-5";
 const STORAGE_BUCKET = "audit-assets";
 
 const corsHeaders: Record<string, string> = {
@@ -225,6 +228,81 @@ function recommendationsFor(
     .filter(Boolean) as string[];
 }
 
+const VERIFY_TOOL: LlmTool = {
+  name: "record_after_check",
+  description:
+    "Report whether the redesigned screenshot actually applied every requested fix, and whether the edit introduced any visual defects.",
+  input_schema: {
+    type: "object",
+    required: ["all_applied", "unapplied_fixes", "defects"],
+    properties: {
+      all_applied: {
+        type: "boolean",
+        description: "true ONLY if every requested fix is clearly and completely visible in the second image",
+      },
+      unapplied_fixes: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "One short entry per requested fix that is NOT visibly applied, naming what is still wrong. Be strict: if a fix said to fit a row onto one line and it still wraps to two, or said to add an element and it is not visible, it is NOT applied.",
+      },
+      defects: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "Visual defects the edit introduced: duplicated text or elements, an element left behind in its old place after a move, overlapping or colliding elements, unreadable text over a photo, empty icon slots, or misspellings.",
+      },
+    },
+  },
+};
+
+/** Check the generated "after" against the fixes it was supposed to apply. The
+ * image model often produces a pretty screenshot that quietly skips a structural
+ * change (reflowing a nav to one row) or an addition (a notify-me button), so we
+ * grade the result and feed the misses back for one corrective attempt. Never
+ * throws: if the check itself fails we accept the image as-is. */
+async function verifyAfterImage(
+  beforeUrl: string,
+  afterUrl: string,
+  recommendations: string[],
+  viewport: Viewport,
+): Promise<{ ok: boolean; feedback: string }> {
+  if (recommendations.length === 0) return { ok: true, feedback: "" };
+  try {
+    const llm = createLlmClient("anthropic", { model: VERIFY_MODEL });
+    const fixes = recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n");
+    const messages: LlmMessage[] = [{
+      role: "user_images",
+      text:
+        `IMG_1 is the ORIGINAL ${viewport} screenshot. IMG_2 is an AI redesign of it that was supposed to apply these fixes:\n\n${fixes}\n\n` +
+        `Compare the two images and judge STRICTLY whether each fix is genuinely visible in IMG_2. A fix that was only partially done does not count as applied. Also report any defect the edit introduced, especially duplicated text or elements, or an element that was supposed to move but is still in its old position. Call record_after_check exactly once.`,
+      images: [
+        { url: beforeUrl, label: "IMG_1: original" },
+        { url: afterUrl, label: "IMG_2: redesign to grade" },
+      ],
+    }];
+    const turn = await llm.runTurn({
+      system:
+        "You are a meticulous design QA reviewer. You compare a redesigned screenshot against the original and the list of fixes it was meant to apply, and you report honestly and strictly what was not done. Never give the benefit of the doubt.",
+      messages,
+      tools: [VERIFY_TOOL],
+      toolChoice: { type: "tool", name: "record_after_check" },
+    });
+    if (turn.kind !== "tool_call") return { ok: true, feedback: "" };
+    const out = (turn.input ?? {}) as { all_applied?: unknown; unapplied_fixes?: unknown; defects?: unknown };
+    const missing = Array.isArray(out.unapplied_fixes) ? out.unapplied_fixes.map(String).filter(Boolean) : [];
+    const defects = Array.isArray(out.defects) ? out.defects.map(String).filter(Boolean) : [];
+    if (out.all_applied === true && defects.length === 0) return { ok: true, feedback: "" };
+    if (missing.length === 0 && defects.length === 0) return { ok: true, feedback: "" };
+    const parts: string[] = [];
+    if (missing.length > 0) parts.push(`These required fixes were NOT applied in your previous attempt, you MUST make each one clearly visible this time:\n${missing.map((m, i) => `${i + 1}. ${m}`).join("\n")}`);
+    if (defects.length > 0) parts.push(`Your previous attempt also introduced these defects, which you MUST avoid:\n${defects.map((d, i) => `${i + 1}. ${d}`).join("\n")}`);
+    return { ok: false, feedback: parts.join("\n\n") };
+  } catch {
+    return { ok: true, feedback: "" };
+  }
+}
+
 // Generates + stores the "after" for one specific (section, viewport). When
 // referenceAfterUrl is set (the sibling viewport's approved after), the model
 // mirrors those same changes so the concepts stay consistent across devices.
@@ -255,20 +333,37 @@ async function generateOne(
     }
   }
 
-  const prompt = buildEditPrompt(meta.label, recommendationsFor(section, viewport), Boolean(refPng), viewport, meta.page_type as WebPageKind);
-  const edited = await geminiEditImage(srcPng, prompt, apiKey, refPng);
+  const recommendations = recommendationsFor(section, viewport);
+  const basePrompt = buildEditPrompt(meta.label, recommendations, Boolean(refPng), viewport, meta.page_type as WebPageKind);
 
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
-  const { error: uploadErr } = await sb.storage
-    .from(STORAGE_BUCKET)
-    .upload(path, edited, { contentType: "image/png", upsert: true });
-  if (uploadErr) throw new Error(`upload_failed: ${uploadErr.message}`);
-  const { data: pub } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path);
-  const publicUrl = pub?.publicUrl ?? null;
-  if (!publicUrl) throw new Error("no_public_url");
+  const store = async (bytes: Uint8Array): Promise<string> => {
+    const { error: uploadErr } = await sb.storage
+      .from(STORAGE_BUCKET)
+      .upload(path, bytes, { contentType: "image/png", upsert: true });
+    if (uploadErr) throw new Error(`upload_failed: ${uploadErr.message}`);
+    const { data: pub } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+    const publicUrl = pub?.publicUrl ?? null;
+    if (!publicUrl) throw new Error("no_public_url");
+    // Cache-bust so a regenerate shows the new image immediately (same path).
+    return `${publicUrl}?v=${Date.now()}`;
+  };
 
-  // Cache-bust so a regenerate shows the new image immediately (same path).
-  const bustedUrl = `${publicUrl}?v=${Date.now()}`;
+  let bustedUrl = await store(await geminiEditImage(srcPng, basePrompt, apiKey, refPng));
+
+  // Grade the result and give the model ONE corrective attempt when it skipped a
+  // fix or introduced a defect. Capped at one retry to stay inside the edge
+  // function's wall clock. The retry gets a strictly more specific prompt, so if
+  // it succeeds we keep it; if the retry itself fails we keep the first attempt.
+  const check = await verifyAfterImage(sourceUrl, bustedUrl, recommendations, viewport);
+  if (!check.ok) {
+    try {
+      const retryPrompt = `${basePrompt}\n\nIMPORTANT, THIS IS A SECOND ATTEMPT. ${check.feedback}\n\nProduce the corrected screenshot with every fix above clearly visible and no duplicated or leftover elements.`;
+      bustedUrl = await store(await geminiEditImage(srcPng, retryPrompt, apiKey, refPng));
+    } catch {
+      // Retry failed outright: the first attempt is already stored, keep it.
+    }
+  }
 
   const details = asRecord(section.section_details);
   const webOut = asRecord(details.web);
