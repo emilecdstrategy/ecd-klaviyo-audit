@@ -258,7 +258,7 @@ export default function AuditWorkspace() {
   if (loading) {
     return (
       <div>
-        <TopBar title="Audit" />
+        <TopBar title="Audit" hideSearch />
         <SkeletonAuditWorkspace />
       </div>
     );
@@ -267,7 +267,7 @@ export default function AuditWorkspace() {
   if (error) {
     return (
       <div>
-        <TopBar title="Audit" />
+        <TopBar title="Audit" hideSearch />
         <div className="p-8">
           <div className="text-sm text-red-600 bg-red-50 px-4 py-2.5 rounded-lg">{error}</div>
           <button onClick={() => navigate('/')} className="mt-4 text-sm text-brand-primary font-medium hover:underline">
@@ -281,7 +281,7 @@ export default function AuditWorkspace() {
   if (!audit) {
     return (
       <div>
-        <TopBar title="Audit Not Found" />
+        <TopBar title="Audit Not Found" hideSearch />
         <div className="p-8 text-center">
           <p className="text-gray-500">This audit could not be found.</p>
           <button onClick={() => navigate('/')} className="mt-4 text-sm text-brand-primary font-medium hover:underline">
@@ -296,7 +296,7 @@ export default function AuditWorkspace() {
   if (audit.audit_type === 'web' && !canUseWebAudits(user)) {
     return (
       <div>
-        <TopBar title="Web Audit" />
+        <TopBar title="Web Audit" hideSearch />
         <div className="mx-auto mt-16 max-w-md rounded-xl border border-amber-200 bg-amber-50 p-8 text-center">
           <span className="inline-flex rounded-full bg-amber-100 px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide text-amber-700">
             Work in progress
@@ -315,7 +315,7 @@ export default function AuditWorkspace() {
   if (audit.audit_type === 'web' && webAftersPending) {
     return (
       <div>
-        <TopBar title="Web Audit" />
+        <TopBar title="Web Audit" hideSearch />
         <div className="mx-auto mt-16 max-w-md rounded-xl border border-gray-200 bg-white p-8 text-center shadow-sm">
           <div className="mx-auto mb-4 h-10 w-10 animate-spin rounded-full border-2 border-gray-200 border-t-brand-primary" />
           <h2 className="text-base font-semibold text-gray-900">Finalizing your audit</h2>
@@ -437,6 +437,7 @@ export default function AuditWorkspace() {
         <TopBar
           title={audit.title}
           subtitle={client?.company_name}
+          hideSearch
           leadingIcon={client ? <SiteFavicon url={client.website_url} size="md" /> : undefined}
           actions={
             <div className="flex items-center gap-3">
@@ -448,16 +449,6 @@ export default function AuditWorkspace() {
                 <History className="w-4 h-4" />
                 Activity
               </button>
-              {audit.audit_type === 'web' && !webGenerating && webBundle && (
-                <button
-                  type="button"
-                  onClick={() => setAssistantOpen(true)}
-                  className="flex items-center gap-2 px-4 py-2 border border-brand-primary/30 bg-brand-primary/5 text-brand-primary text-sm font-medium rounded-lg hover:bg-brand-primary/10 transition-colors"
-                >
-                  <Sparkles className="w-4 h-4" />
-                  AI Assistant
-                </button>
-              )}
               {client && canSeeProposalsBeta(user?.email) ? (
                 <button
                   type="button"
@@ -479,6 +470,16 @@ export default function AuditWorkspace() {
                   {creatingProposal ? 'Creating…' : 'Create Proposal'}
                 </button>
               ) : null}
+              {audit.audit_type === 'web' && !webGenerating && webBundle && (
+                <button
+                  type="button"
+                  onClick={() => setAssistantOpen(true)}
+                  className="flex items-center gap-2 px-4 py-2 border border-brand-primary/30 bg-brand-primary/5 text-brand-primary text-sm font-medium rounded-lg hover:bg-brand-primary/10 transition-colors"
+                >
+                  <Sparkles className="w-4 h-4" />
+                  AI Assistant
+                </button>
+              )}
               {audit.public_share_token ? (
                 <a
                   href={`/report/${audit.public_share_token}`}
