@@ -208,9 +208,13 @@ export default function WebPageSection({
                 // Show Before and After together: mobile side-by-side (narrow shots),
                 // desktop stacked (Before above, After below) so both are visible
                 // without a toggle.
-                <div className={twoUp ? 'grid grid-cols-2 items-start gap-3' : 'space-y-4'}>
+                // items-stretch + a flex-1 image area makes both columns the same
+                // height: the image model returns its own aspect ratio, so the
+                // After is scaled to the Before's height (contained, never cropped)
+                // instead of ending up visibly shorter beside it.
+                <div className={twoUp ? 'grid grid-cols-2 items-stretch gap-3' : 'space-y-4'}>
                   {/* Before (with the numbered pins) */}
-                  <div>
+                  <div className="flex flex-col">
                     <p className="mb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-gray-500">Before</p>
                     <div
                       className="cursor-zoom-in rounded-lg"
@@ -226,10 +230,17 @@ export default function WebPageSection({
                     </div>
                   </div>
                   {/* After (AI concept) */}
-                  <div>
+                  <div className="flex min-h-0 flex-col">
                     <p className="mb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-primary">After</p>
-                    <div className="cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30" onClick={() => setLightbox(afterUrl)}>
-                      <img src={afterUrl} alt={`${title} redesign concept`} className="block w-full" />
+                    <div
+                      className={`cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30 ${twoUp ? 'min-h-0 flex-1' : ''}`}
+                      onClick={() => setLightbox(afterUrl)}
+                    >
+                      <img
+                        src={afterUrl}
+                        alt={`${title} redesign concept`}
+                        className={twoUp ? 'block h-full w-full object-contain object-top' : 'block w-full'}
+                      />
                     </div>
                   </div>
                 </div>

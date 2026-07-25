@@ -95,6 +95,7 @@ function buildEditPrompt(label: string, recommendations: string[], hasReference:
     `- READABILITY IS CRITICAL: any text placed over a photo must be easy to read. Add a dark gradient or semi-transparent scrim behind the text (or place the text on a solid color panel) so it has strong contrast. Never leave light text sitting on a busy or light photo where it is hard to read.`,
     `- Every button, pill, chip, or element must look FINISHED and real: text centered and aligned, consistent padding, no empty icon boxes, no blank slots, no missing or broken icons. If you cannot render a clean icon, use text only, do not leave an empty space where an icon would go.`,
     `- Keep all text crisp, correctly spelled, and legible. Do not add annotations, numbered markers, callouts, arrows, borders, captions, or watermarks, and never render any of these instructions into the image.`,
+    `- OUTPUT FRAMING: match the source screenshot's aspect ratio, width, and vertical extent as closely as you can. Show the same span of the page from top to bottom. Do not zoom in, do not crop content away, and do not return a shorter or squarer image than the source: the result is displayed side by side with the original, so a different shape looks broken.`,
     `- Output only the clean, polished, production-quality redesigned screenshot, as if it were a real live page.`,
   ].join("\n");
 
