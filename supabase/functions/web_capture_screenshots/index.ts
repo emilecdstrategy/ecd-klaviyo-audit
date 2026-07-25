@@ -300,6 +300,9 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
 
   const isViewport = (row as { variant?: string }).variant === "viewport";
   let png: Uint8Array | null = null;
+  // Optional next-viewport-down shot, kept only as context for the "after" image
+  // generator so it knows what really continues below the crop.
+  let pngFold2: Uint8Array | null = null;
   let elements: CapturedElement[] = [];
   let captureError = "";
   let browserlessError = ""; // kept separate so the fallback's error doesn't hide it
@@ -335,6 +338,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       // The cart drawer is a viewport overlay, so never full-page for cart.
       fullPage: !isViewport && !isCart,
       withElements: isViewport,
+      secondFold: isViewport && !isCart,
       cartAdd,
     };
     // One attempt per invocation — retries happen across requeue passes below,
@@ -342,6 +346,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
     const bl = await captureWithBrowserless(blInput);
     if (bl.ok) {
       png = bl.png;
+      pngFold2 = bl.png2 ?? null;
       elements = bl.elements;
       usedBrowserless = true;
       if (typeof bl.cartCount === "number") cartCount = bl.cartCount;
@@ -430,6 +435,20 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       }).eq("id", row.id);
     } else {
       const { data: pub } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+
+      // Store the next-fold shot alongside it and remember its URL on the row.
+      // It is deliberately NOT a web_page_snapshots row of its own: it must never
+      // appear in the report or be analyzed for findings, it is only context for
+      // the "after" image generator.
+      let fold2Url: string | null = null;
+      if (pngFold2) {
+        const fold2Path = `${clientId}/${auditId}/web/${row.page_type}_${row.viewport}_fold2.png`;
+        const { error: f2Err } = await sb.storage
+          .from(STORAGE_BUCKET)
+          .upload(fold2Path, pngFold2, { contentType: "image/png", upsert: true });
+        if (!f2Err) fold2Url = sb.storage.from(STORAGE_BUCKET).getPublicUrl(fold2Path).data?.publicUrl ?? null;
+      }
+
       // If Browserless failed and we recovered via ScreenshotOne, keep a
       // diagnostic note (the capture still succeeded) so we can see which
       // provider handled it and why Browserless fell back.
@@ -439,9 +458,10 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
         : { ...rawObj, capture_note: `via_screenshotone${browserlessError ? `; browserless: ${browserlessError}` : ""}`.slice(0, 300) };
       // Record the cart item count on cart captures so we can confirm the cart
       // was actually filled (not an empty slide-cart).
-      const raw = row.page_type === "cart" && cartCount !== null
+      const withCart = row.page_type === "cart" && cartCount !== null
         ? { ...baseRaw, cart_count: cartCount }
         : baseRaw;
+      const raw = fold2Url ? { ...withCart, fold2_url: fold2Url } : withCart;
       await sb.from("web_page_snapshots").update({
         status: "success",
         screenshot_path: path,

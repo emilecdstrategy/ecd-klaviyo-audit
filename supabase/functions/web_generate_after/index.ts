@@ -115,6 +115,7 @@ function buildEditPrompt(
   viewport: Viewport,
   pageKind: WebPageKind,
   freezeFloatingWidgets = false,
+  hasBelowFold = false,
 ): string {
   const fixes = recommendations
     .map((r, i) => `${i + 1}. ${r}`)
@@ -124,12 +125,19 @@ function buildEditPrompt(
     ? `This is the MOBILE view. Follow native mobile UX conventions strictly: keep the primary navigation collapsed inside the hamburger menu, NEVER expand it into a horizontal row or list of text links. Stack content vertically in a single column, and that includes any product grid: exactly ONE product card per row, full width, never two side by side. Make every tap target large and well spaced (at least 44x44px). Keep the key content and one call-to-action within thumb reach. Never shrink, crowd, or create tiny clickable elements.`
     : `This is the DESKTOP view. Use standard desktop conventions: a horizontal top navigation and multi-column layouts are fine.`;
 
+  // Knowing the real next section stops the two classic failures: an empty band
+  // at the bottom, and invented filler products with made-up names and prices.
+  const belowFoldRule = hasBelowFold
+    ? [`- The FINAL image provided is NOT part of your output. It shows the real content that continues immediately BELOW this screenshot, for reference only. Keep your output framed exactly like the FIRST image (same top, same height, same aspect ratio). If your changes free up space at the bottom, fill it by continuing with the REAL next content from that final reference image, cropped naturally as a page would be. NEVER invent placeholder products, names, or prices, and NEVER leave an empty or blank band at the bottom.`]
+    : [`- If your changes free up space at the bottom, do NOT invent placeholder products, names, or prices to fill it, and do not leave a blank band: keep the existing sections and let the last one crop naturally at the bottom edge, exactly as the source screenshot does.`];
+
   const freezeRule = freezeFloatingWidgets
     ? [`- FLOATING ICONS ARE FROZEN: reproduce every floating widget (chat bubble, rewards or loyalty badge, back-to-top button) EXACTLY as it appears in the source, the same icon in the same corner, each appearing ONCE. Do NOT move them, do NOT resize them, and above all do NOT draw an extra copy anywhere. There must be exactly as many floating icons in your output as in the source, no more.`]
     : [];
 
   const common = [
     `Design rules:`,
+    ...belowFoldRule,
     ...freezeRule,
     `- LAYOUT (follow these standard e-commerce patterns exactly): ${layoutGuidance(pageKind)}`,
     `- ${deviceRules}`,
@@ -179,6 +187,7 @@ async function geminiEditImage(
   prompt: string,
   apiKey: string,
   referencePng?: Uint8Array,
+  belowFoldPng?: Uint8Array,
 ): Promise<Uint8Array> {
   const url =
     `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
@@ -186,6 +195,9 @@ async function geminiEditImage(
     { inlineData: { mimeType: "image/png", data: bytesToBase64(sourcePng) } },
   ];
   if (referencePng) requestParts.push({ inlineData: { mimeType: "image/png", data: bytesToBase64(referencePng) } });
+  // The below-the-fold context image always goes LAST so its position in the
+  // prompt text ("the FINAL image shows what continues below") stays stable.
+  if (belowFoldPng) requestParts.push({ inlineData: { mimeType: "image/png", data: bytesToBase64(belowFoldPng) } });
   requestParts.push({ text: prompt });
   const res = await fetch(url, {
     method: "POST",
@@ -210,7 +222,7 @@ async function geminiEditImage(
   throw new Error("gemini_no_image_returned");
 }
 
-type ViewportSource = { viewport: Viewport; url: string; cartCount: number };
+type ViewportSource = { viewport: Viewport; url: string; cartCount: number; fold2Url?: string | null };
 
 // One source screenshot per viewport for a page (above-the-fold variant preferred).
 async function listViewportSources(sb: SupabaseClient, auditId: string, pageType: string): Promise<ViewportSource[]> {
@@ -228,7 +240,13 @@ async function listViewportSources(sb: SupabaseClient, auditId: string, pageType
     if (vpRows.length === 0) continue;
     const chosen = vpRows.find((r) => r.variant === "viewport") ?? vpRows[0];
     const cartCount = Math.max(...vpRows.map((r) => Number(r.raw?.cart_count ?? -1)), -1);
-    out.push({ viewport: vp, url: chosen.screenshot_url, cartCount });
+    const f2 = chosen.raw?.fold2_url;
+    out.push({
+      viewport: vp,
+      url: chosen.screenshot_url,
+      cartCount,
+      fold2Url: typeof f2 === "string" && f2.length > 0 ? f2 : null,
+    });
   }
   return out;
 }
@@ -377,6 +395,7 @@ async function generateOne(
   viewport: Viewport,
   sourceUrl: string,
   referenceAfterUrl?: string,
+  belowFoldUrl?: string | null,
 ): Promise<{ url: string; viewport: Viewport }> {
   const meta = PAGE_SECTIONS.find((s) => s.key === section.section_key);
   if (!meta) throw new Error(`section ${section.section_key} is not a page section`);
@@ -395,6 +414,18 @@ async function generateOne(
     }
   }
 
+  // Context only: the real content just below this crop, so the redesign can
+  // continue it instead of inventing filler or leaving the bottom empty.
+  let belowPng: Uint8Array | undefined;
+  if (belowFoldUrl) {
+    try {
+      const r = await fetch(belowFoldUrl);
+      if (r.ok) belowPng = new Uint8Array(await r.arrayBuffer());
+    } catch {
+      // best effort: the prompt falls back to "do not invent filler"
+    }
+  }
+
   const allRecommendations = recommendationsFor(section, viewport);
   // Drop floating-widget repositioning fixes: the model reliably duplicates the
   // widget instead of moving it. Everything else is still applied.
@@ -407,6 +438,7 @@ async function generateOne(
     viewport,
     meta.page_type as WebPageKind,
     skippedWidgetFix,
+    Boolean(belowPng),
   );
 
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
@@ -426,7 +458,7 @@ async function generateOne(
     ? "Your previous attempt came back in the WRONG SHAPE: it was a wide desktop-style layout, but this is a PHONE screenshot. Output a tall, narrow, single-column phone image with the same aspect ratio as the source."
     : "Your previous attempt came back in the WRONG SHAPE. Output a wide desktop image with the same aspect ratio as the source.";
 
-  let edited = await geminiEditImage(srcPng, basePrompt, apiKey, refPng);
+  let edited = await geminiEditImage(srcPng, basePrompt, apiKey, refPng, belowPng);
 
   // Deterministic shape gate BEFORE anything else: a mobile source that comes
   // back landscape is unusable, and no amount of prompting reliably prevents it.
@@ -434,7 +466,7 @@ async function generateOne(
   // to copy the other device's layout in the first place.
   if (wrongShape(srcPng, edited)) {
     try {
-      const reshot = await geminiEditImage(srcPng, `${basePrompt}\n\n${shapeNote}`, apiKey, undefined);
+      const reshot = await geminiEditImage(srcPng, `${basePrompt}\n\n${shapeNote}`, apiKey, undefined, belowPng);
       if (!wrongShape(srcPng, reshot)) edited = reshot;
       else {
         // Still the wrong device shape. Storing it would show a desktop layout
@@ -457,7 +489,7 @@ async function generateOne(
   if (!check.ok) {
     try {
       const retryPrompt = `${basePrompt}\n\nIMPORTANT, THIS IS A SECOND ATTEMPT. ${check.feedback}\n\nProduce the corrected screenshot with every fix above clearly visible and no duplicated or leftover elements.`;
-      const retried = await geminiEditImage(srcPng, retryPrompt, apiKey, refPng);
+      const retried = await geminiEditImage(srcPng, retryPrompt, apiKey, refPng, belowPng);
       // Never let a corrective attempt regress the device shape.
       if (!wrongShape(srcPng, retried)) bustedUrl = await store(retried);
     } catch {
@@ -578,7 +610,7 @@ serve(async (req) => {
       const src = sources.find((s) => s.viewport === targetVp);
       if (!src) return json({ ok: false, error: { code: "no_screenshot", message: "No screenshot for that viewport yet." }, correlationId }, { status: 200 });
       const referenceAfterUrl = targetVp !== primaryVp ? afterUrlFor(section, primaryVp) : undefined;
-      const result = await generateOne(sb, auditId, clientId, section, apiKey, targetVp, src.url, referenceAfterUrl);
+      const result = await generateOne(sb, auditId, clientId, section, apiKey, targetVp, src.url, referenceAfterUrl, src.fold2Url);
       return json({ ok: true, correlationId, url: result.url, viewport: result.viewport });
     }
 
@@ -590,6 +622,7 @@ serve(async (req) => {
         section: { id: string; section_key: string; section_details: Record<string, unknown> | null };
         viewport: Viewport;
         url: string;
+        fold2Url?: string | null;
         primaryViewport: Viewport;
       };
       const units: Unit[] = [];
@@ -600,7 +633,7 @@ serve(async (req) => {
         const order = orderedViewports(sources, meta.page_type);
         for (const vp of order) {
           const src = sources.find((s) => s.viewport === vp);
-          if (src) units.push({ section, viewport: vp, url: src.url, primaryViewport: order[0] });
+          if (src) units.push({ section, viewport: vp, url: src.url, fold2Url: src.fold2Url, primaryViewport: order[0] });
         }
       }
       // A unit is "done" once it has an after url OR a recorded error (so a
@@ -620,7 +653,7 @@ serve(async (req) => {
       const referenceAfterUrl =
         next.viewport !== next.primaryViewport ? afterUrlFor(next.section, next.primaryViewport) : undefined;
       try {
-        await generateOne(sb, auditId, clientId, next.section, apiKey, next.viewport, next.url, referenceAfterUrl);
+        await generateOne(sb, auditId, clientId, next.section, apiKey, next.viewport, next.url, referenceAfterUrl, next.fold2Url);
       } catch (e) {
         // Record the error on this viewport so the chain advances instead of
         // retrying the same unit forever.

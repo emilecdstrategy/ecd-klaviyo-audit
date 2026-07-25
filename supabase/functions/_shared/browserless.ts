@@ -14,7 +14,7 @@
 
 export type CapturedElement = { id: string; label: string; x: number; y: number; w: number; h: number };
 export type BrowserlessResult =
-  | { ok: true; png: Uint8Array; elements: CapturedElement[]; cartCount?: number | null }
+  | { ok: true; png: Uint8Array; png2?: Uint8Array | null; elements: CapturedElement[]; cartCount?: number | null }
   | { ok: false; error: string };
 
 const DIMENSIONS = {
@@ -39,7 +39,7 @@ function b64ToBytes(b64: string): Uint8Array {
 // optional cart-drawer click, and (for the viewport shot) element-box collection.
 const FUNCTION_CODE = `
 export default async ({ page, context }) => {
-  const { url, width, height, fullPage, withElements, cartAdd, isMobile } = context;
+  const { url, width, height, fullPage, withElements, cartAdd, isMobile, secondFold } = context;
   // Some storefronts serve a blank page or bot-block the default HeadlessChrome
   // UA at a phone viewport, so emulate a real iPhone (UA + touch) for mobile.
   if (isMobile) {
@@ -378,7 +378,25 @@ export default async ({ page, context }) => {
   }
 
   const screenshot = await page.screenshot({ encoding: "base64", fullPage: !!fullPage, captureBeyondViewport: !!fullPage });
-  return { data: { screenshot, elements, cartCount }, type: "application/json" };
+
+  // Optional second fold: the same page, scrolled down one viewport. Costs one
+  // scroll plus a screenshot in this same session (no extra page load, so no
+  // extra rate-limit exposure). It is never shown in the report; it gives the
+  // "after" image generator the real content that continues below the crop, so
+  // it does not invent products or leave an empty band when content shifts up.
+  let screenshot2 = null;
+  if (secondFold && !fullPage) {
+    try {
+      await page.evaluate(() => { window.scrollTo(0, window.innerHeight); });
+      await new Promise((r) => setTimeout(r, 900));
+      await page.evaluate(sweepPopups).catch(() => {});
+      const y = await page.evaluate(() => window.scrollY).catch(() => 0);
+      // Only useful if the page actually scrolled (short pages have no fold 2).
+      if (y > 40) screenshot2 = await page.screenshot({ encoding: "base64" });
+      await page.evaluate(() => { window.scrollTo(0, 0); });
+    } catch (e) {}
+  }
+  return { data: { screenshot, screenshot2, elements, cartCount }, type: "application/json" };
 };
 `;
 
@@ -391,6 +409,8 @@ export async function captureWithBrowserless(input: {
    * productUrl lets the capture read a real variant off the product page when no
    * variantId is known. */
   cartAdd?: { variantId?: string | null; productUrl?: string | null };
+  /** Also capture the next viewport down, as context for the "after" generator. */
+  secondFold?: boolean;
 }): Promise<BrowserlessResult> {
   const token = (Deno.env.get("BROWSERLESS_TOKEN") ?? "").trim();
   if (!token) return { ok: false, error: "browserless_token_missing" };
@@ -431,6 +451,7 @@ export async function captureWithBrowserless(input: {
           withElements: input.withElements,
           cartAdd: input.cartAdd ?? null,
           isMobile: input.viewport === "mobile",
+          secondFold: Boolean(input.secondFold),
         },
       }),
       signal: ctrl.signal,
@@ -449,7 +470,7 @@ export async function captureWithBrowserless(input: {
     // real payload is under .data (fall back to the root if that ever changes).
     const wrapper = parsed as { data?: unknown } | null;
     const payload = (wrapper && typeof wrapper.data === "object" ? wrapper.data : wrapper) as
-      | { screenshot?: string; elements?: CapturedElement[]; error?: string; cartCount?: number | null }
+      | { screenshot?: string; screenshot2?: string | null; elements?: CapturedElement[]; error?: string; cartCount?: number | null }
       | null;
     // In-page detection (storefront rate-limit / bot-block page) reports a
     // structured error instead of a screenshot.
@@ -458,7 +479,12 @@ export async function captureWithBrowserless(input: {
     const png = b64ToBytes(payload.screenshot);
     if (png.byteLength < 5000) return { ok: false, error: "browserless_blank_page" };
     const elements = Array.isArray(payload.elements) ? payload.elements.slice(0, 60) : [];
-    return { ok: true, png, elements, cartCount: payload.cartCount ?? null };
+    let png2: Uint8Array | null = null;
+    if (payload.screenshot2) {
+      const b = b64ToBytes(payload.screenshot2);
+      if (b.byteLength >= 5000) png2 = b;
+    }
+    return { ok: true, png, png2, elements, cartCount: payload.cartCount ?? null };
   } catch (e) {
     const msg = e instanceof Error && (e.name === "AbortError" || /abort/i.test(e.message))
       ? "browserless_timeout"
