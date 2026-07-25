@@ -19,6 +19,34 @@ export const WEB_DISPLAY_STEP_LABELS = [
   'Generating concept images',
 ] as const;
 
+/** The capture phase, which runs in the browser before the server-side analysis
+ * job exists. Shown as the first steps of the same checklist so a web audit has
+ * ONE progress screen from start to finish instead of two. */
+export const WEB_CAPTURE_STEP_LABELS = [
+  'Fetching store data',
+  'Detecting key pages',
+  'Capturing screenshots (desktop and mobile)',
+] as const;
+
+/** Every step of a web audit, capture then analysis then concept images. */
+export const WEB_ALL_STEP_LABELS = [
+  ...WEB_CAPTURE_STEP_LABELS,
+  ...WEB_DISPLAY_STEP_LABELS,
+] as const;
+
+export const WEB_CAPTURE_STEP_COUNT = WEB_CAPTURE_STEP_LABELS.length;
+
+/** Map a capture-phase stage message from runWebAudit onto its checklist index.
+ * Returns WEB_CAPTURE_STEP_COUNT once capture is finished and the analysis job is
+ * taking over. */
+export function webCaptureStepFromStage(stage: string): number {
+  const s = (stage || '').toLowerCase();
+  if (/starting ai analysis|^done$/.test(s)) return WEB_CAPTURE_STEP_COUNT;
+  if (/capturing/.test(s)) return 2;
+  if (/detecting key pages/.test(s)) return 1;
+  return 0; // "Starting…" and the Shopify/store data fetch
+}
+
 const TOTAL_ANALYSIS_STEPS = WEB_STEP_LABELS.length;
 // Analysis steps + the after-image generation step.
 const TOTAL_STEPS = TOTAL_ANALYSIS_STEPS + 1;

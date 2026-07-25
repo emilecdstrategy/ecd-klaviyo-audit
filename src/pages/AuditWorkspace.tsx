@@ -20,7 +20,7 @@ import {
   fetchAuditPipelineStatus,
   markAuditGenerationActive,
 } from '../lib/audit-pipeline-status';
-import { fetchWebAuditPipelineStatus } from '../lib/web-pipeline-status';
+import { fetchWebAuditPipelineStatus, webCaptureStepFromStage } from '../lib/web-pipeline-status';
 import type { AuditSection, Annotation, AuditEmailDesign, IndustryEmailLibrary, AuditEvent } from '../lib/types';
 import type { Audit, Client } from '../lib/types';
 import {
@@ -504,19 +504,33 @@ export default function AuditWorkspace() {
 
         <div className="min-w-0 overflow-x-clip">
           {running ? (
-            <div className="mx-auto max-w-md px-6 py-16 text-center">
-              <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-brand-primary" />
-              <h2 className="mb-2 text-xl font-bold text-gray-900">
-                {audit.audit_type === 'web' ? 'Building web audit…' : 'Analyzing account…'}
-              </h2>
-              <p className="mb-4 text-sm text-gray-500">{runProgress.stage || 'Working…'}</p>
-              <div className="mx-auto h-2 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
-                <div className="h-full gradient-bg rounded-full transition-all duration-500" style={{ width: `${runProgress.progress}%` }} />
+            audit.audit_type === 'web' ? (
+              // One continuous progress screen for web audits: the capture steps
+              // and the analysis steps live in the same checklist.
+              <div className="px-6 py-10">
+                <Suspense fallback={<div className="flex items-center justify-center py-16"><Loader2 className="h-8 w-8 animate-spin text-brand-primary" /></div>}>
+                  <WebAuditGenerationStatus
+                    auditId={audit.id}
+                    capture={{
+                      stepIndex: webCaptureStepFromStage(runProgress.stage),
+                      detail: runProgress.stage,
+                    }}
+                  />
+                </Suspense>
               </div>
-              <p className="mt-2 text-xs text-gray-400">
-                Analysis continues on the server; you can leave this page and reopen the audit anytime.
-              </p>
-            </div>
+            ) : (
+              <div className="mx-auto max-w-md px-6 py-16 text-center">
+                <Loader2 className="mx-auto mb-4 h-12 w-12 animate-spin text-brand-primary" />
+                <h2 className="mb-2 text-xl font-bold text-gray-900">Analyzing account…</h2>
+                <p className="mb-4 text-sm text-gray-500">{runProgress.stage || 'Working…'}</p>
+                <div className="mx-auto h-2 w-full max-w-xs overflow-hidden rounded-full bg-gray-100">
+                  <div className="h-full gradient-bg rounded-full transition-all duration-500" style={{ width: `${runProgress.progress}%` }} />
+                </div>
+                <p className="mt-2 text-xs text-gray-400">
+                  Analysis continues on the server; you can leave this page and reopen the audit anytime.
+                </p>
+              </div>
+            )
           ) : preRun ? (
             <div className="mx-auto grid max-w-[1200px] grid-cols-1 gap-6 p-6 pb-28 lg:grid-cols-[1fr_400px]">
               {/* Left: finalize + run */}
