@@ -52,3 +52,4 @@ scripts/write-repair-migration.mjs
 
 # Local Netlify folder
 .netlify
+.env.gemini.local
