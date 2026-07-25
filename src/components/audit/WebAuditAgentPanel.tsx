@@ -135,6 +135,7 @@ export default function WebAuditAgentPanel({
     const section = sectionsRef.current.find(s => s.section_key === edits.section_key);
     if (!section) { setError('That section is no longer available.'); return; }
     setMsg(msgId, { busy: 'Applying changes…' });
+    const nextSummary = (edits.section_summary ?? '').trim();
     try {
       if (edits.operations.length > 0) {
         const current = parseWebSectionDetail(section.section_details).findings;
@@ -147,10 +148,12 @@ export default function WebAuditAgentPanel({
         raw.web = web;
         await updateAuditSection(section.id, {
           section_details: raw,
-          ...(edits.section_summary != null ? { summary_text: edits.section_summary } : {}),
+          // Only replace the summary when the agent actually supplied one. An
+          // empty string used to pass the != null check and wipe the summary.
+          ...(nextSummary ? { summary_text: nextSummary } : {}),
         });
-      } else if (edits.section_summary != null) {
-        await updateAuditSection(section.id, { summary_text: edits.section_summary });
+      } else if (nextSummary) {
+        await updateAuditSection(section.id, { summary_text: nextSummary });
       }
       onReload();
       setMsg(msgId, { busy: 'Refreshing after images…' });

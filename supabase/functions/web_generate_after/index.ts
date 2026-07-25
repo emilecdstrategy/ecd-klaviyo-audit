@@ -108,7 +108,14 @@ function base64ToBytes(b64: string): Uint8Array {
   return out;
 }
 
-function buildEditPrompt(label: string, recommendations: string[], hasReference: boolean, viewport: Viewport, pageKind: WebPageKind): string {
+function buildEditPrompt(
+  label: string,
+  recommendations: string[],
+  hasReference: boolean,
+  viewport: Viewport,
+  pageKind: WebPageKind,
+  freezeFloatingWidgets = false,
+): string {
   const fixes = recommendations
     .map((r, i) => `${i + 1}. ${r}`)
     .join("\n");
@@ -117,8 +124,13 @@ function buildEditPrompt(label: string, recommendations: string[], hasReference:
     ? `This is the MOBILE view. Follow native mobile UX conventions strictly: keep the primary navigation collapsed inside the hamburger menu, NEVER expand it into a horizontal row or list of text links. Stack content vertically in a single column. Make every tap target large and well spaced (at least 44x44px). Keep the key content and one call-to-action within thumb reach. Never shrink, crowd, or create tiny clickable elements.`
     : `This is the DESKTOP view. Use standard desktop conventions: a horizontal top navigation and multi-column layouts are fine.`;
 
+  const freezeRule = freezeFloatingWidgets
+    ? [`- FLOATING ICONS ARE FROZEN: reproduce every floating widget (chat bubble, rewards or loyalty badge, back-to-top button) EXACTLY as it appears in the source, the same icon in the same corner, each appearing ONCE. Do NOT move them, do NOT resize them, and above all do NOT draw an extra copy anywhere. There must be exactly as many floating icons in your output as in the source, no more.`]
+    : [];
+
   const common = [
     `Design rules:`,
+    ...freezeRule,
     `- LAYOUT (follow these standard e-commerce patterns exactly): ${layoutGuidance(pageKind)}`,
     `- ${deviceRules}`,
     `- Use EXACTLY ONE primary call-to-action in the hero. Never create duplicate or competing CTA buttons (e.g. do not show both "Shop Now" and "Shop the Bundle").`,
@@ -237,6 +249,20 @@ function orderedViewports(sources: ViewportSource[], pageType: string, preferred
   let primary: Viewport | undefined = preferred && vps.includes(preferred) ? preferred : undefined;
   if (!primary) primary = vps.includes("desktop") ? "desktop" : vps[0];
   return [primary, ...vps.filter((v) => v !== primary)];
+}
+
+// Fixes about repositioning floating widgets (chat bubble, rewards/loyalty
+// badge, back-to-top). The image model cannot do this edit: instead of moving the
+// widget it draws a second copy and leaves the original overlapping, which is
+// worse than not attempting it. We keep these OUT of the image prompt and replace
+// them with a hard "reproduce the floating icons exactly once, unchanged"
+// constraint. The finding still states the fix in the report text.
+const FLOATING_WIDGET_FIX_RE =
+  /(chat (bubble|widget|launcher|icon|button)|loyalty badge|rewards badge|floating (badge|icon|widget|button)|back to top)/i;
+const REPOSITION_RE = /\b(move|relocate|reposition|shift|tuck|stack|space|separate|collapse)\b/i;
+
+function isFloatingWidgetRepositionFix(text: string): boolean {
+  return FLOATING_WIDGET_FIX_RE.test(text) && REPOSITION_RE.test(text);
 }
 
 function recommendationsFor(
@@ -369,8 +395,19 @@ async function generateOne(
     }
   }
 
-  const recommendations = recommendationsFor(section, viewport);
-  const basePrompt = buildEditPrompt(meta.label, recommendations, Boolean(refPng), viewport, meta.page_type as WebPageKind);
+  const allRecommendations = recommendationsFor(section, viewport);
+  // Drop floating-widget repositioning fixes: the model reliably duplicates the
+  // widget instead of moving it. Everything else is still applied.
+  const recommendations = allRecommendations.filter((r) => !isFloatingWidgetRepositionFix(r));
+  const skippedWidgetFix = recommendations.length !== allRecommendations.length;
+  const basePrompt = buildEditPrompt(
+    meta.label,
+    recommendations,
+    Boolean(refPng),
+    viewport,
+    meta.page_type as WebPageKind,
+    skippedWidgetFix,
+  );
 
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
   const store = async (bytes: Uint8Array): Promise<string> => {

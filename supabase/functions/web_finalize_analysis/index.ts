@@ -340,8 +340,11 @@ async function runStep(
       findings: deduped,
       primary_snapshot_id: primaryId,
     };
+    // Never blank an existing summary: if the model returned no intro this pass,
+    // keep whatever the section already had rather than writing an empty string.
+    const nextSummary = parsed.intro?.trim() ? parsed.intro : (section.summary_text ?? "");
     await sb.from("audit_sections").update({
-      summary_text: parsed.intro,
+      summary_text: nextSummary,
       key_findings: { items: parsed.recommendations, items_hidden: parsed.recommendations.map(() => false) },
       section_details: details,
     }).eq("id", section.id);

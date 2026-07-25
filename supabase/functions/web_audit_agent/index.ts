@@ -234,7 +234,10 @@ serve(async (req) => {
             return { error: `unknown op: ${op}` };
           }
         }
-        const sectionSummary = input.section_summary != null ? dash(input.section_summary) : undefined;
+        // Treat an empty/whitespace summary as "not provided". Passing "" through
+        // used to blank the section summary in the report, because "" != null.
+        const rawSummary = input.section_summary != null ? dash(input.section_summary).trim() : "";
+        const sectionSummary = rawSummary.length > 0 ? rawSummary : undefined;
         if (operations.length === 0 && !sectionSummary) return { error: "propose at least one operation or a section_summary" };
         const meta = PAGE_SECTIONS.find((m) => m.key === sectionKey)!;
         return { edits: { section_key: sectionKey, section_title: meta.label, summary: dash(input.summary), section_summary: sectionSummary, operations } };
