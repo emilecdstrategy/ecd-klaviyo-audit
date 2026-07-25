@@ -18,7 +18,7 @@ export default function WebPageSection({
   title: string;
   snapshots: WebPageSnapshot[];
 }) {
-  const { editMode, updateSectionField, updateSectionDetailValue } = useReportEdit();
+  const { editMode, updateSectionField, updateSectionDetailValue, flushSaves } = useReportEdit();
   const detail = useMemo(() => parseWebSectionDetail(section.section_details), [section.section_details]);
   // Default to mobile (most storefront traffic is mobile), falling back to
   // desktop only when there is no successful mobile shot.
@@ -134,6 +134,10 @@ export default function WebPageSection({
     setAfterBusy(true);
     setAfterError('');
     try {
+      // The server reads this section's SAVED findings, so make sure any edit
+      // still sitting in the 800ms debounce is written first. Otherwise a manual
+      // tweak made moments ago would be missing from the concept image.
+      await flushSaves();
       const res = await generateSectionAfter(section.audit_id, section.section_key, viewport);
       setAfterOverride((prev) => ({ ...prev, [res.viewport]: res.url }));
       if (res.viewport !== viewport) setViewport(res.viewport);

@@ -4,6 +4,7 @@ import type { AuditSection } from '../../lib/types';
 import { parseWebSectionDetail } from '../../lib/web-report-details';
 import { updateAuditSection } from '../../lib/db';
 import { generateSectionAfter } from '../../lib/web-pipeline-status';
+import { useReportEdit } from '../report/edit/ReportEditContext';
 import {
   sendWebAuditAgentMessage,
   regenerateWebSection,
@@ -50,6 +51,7 @@ export default function WebAuditAgentPanel({
   onClose: () => void;
   onReload: () => void;
 }) {
+  const { flushSaves } = useReportEdit();
   const [messages, setMessages] = useState<ChatMessage[]>([{ id: 'greeting', role: 'assistant', content: GREETING }]);
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
@@ -132,6 +134,9 @@ export default function WebAuditAgentPanel({
   };
 
   const applyEdits = async (msgId: string, edits: WebAuditEditSet) => {
+    // Land any debounced manual edit first, so it is not written on top of the
+    // agent's change a moment later (and so the agent builds on current data).
+    await flushSaves();
     const section = sectionsRef.current.find(s => s.section_key === edits.section_key);
     if (!section) { setError('That section is no longer available.'); return; }
     setMsg(msgId, { busy: 'Applying changes…' });

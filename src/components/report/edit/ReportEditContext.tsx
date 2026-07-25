@@ -176,6 +176,11 @@ type ReportEditContextValue = {
     value: string,
   ) => void;
   patchSectionBlock: (sectionKey: string, blockKey: string, patch: Record<string, unknown>) => void;
+  /** Write any debounced edits immediately. Await this before an action that
+   * reads the saved report server-side (e.g. regenerating an "after" image from
+   * the current findings), otherwise the 800ms debounce can still be pending and
+   * the server would work from stale data. */
+  flushSaves: () => Promise<void>;
 };
 
 const ReportEditContext = createContext<ReportEditContextValue>({
@@ -223,6 +228,7 @@ const ReportEditContext = createContext<ReportEditContextValue>({
   updateSectionDetailValue: () => {},
   updateCoreFlowMatrixNote: () => {},
   patchSectionBlock: () => {},
+  flushSaves: async () => {},
 });
 
 export function useReportEdit() {
@@ -248,14 +254,18 @@ export function ReportEditProvider({
 }) {
   const [saveStatus, setSaveStatus] = useState<SaveStatus>('idle');
   const timers = useRef<Record<string, number>>({});
+  // The debounced write for each key, kept so flushSaves() can run them early.
+  const pending = useRef<Record<string, () => Promise<void>>>({});
   const toast = useToast();
 
   const schedule = useCallback((key: string, fn: () => Promise<void>) => {
     if (timers.current[key]) window.clearTimeout(timers.current[key]);
     setSaveStatus('saving');
+    pending.current[key] = fn;
     timers.current[key] = window.setTimeout(async () => {
       try {
         await fn();
+        delete pending.current[key];
         setSaveStatus('saved');
         scheduleSavedToast(toast);
         window.setTimeout(() => setSaveStatus(s => (s === 'saved' ? 'idle' : s)), 2500);
@@ -264,6 +274,32 @@ export function ReportEditProvider({
         toast('Could not save');
       }
     }, 800) as unknown as number;
+  }, [toast]);
+
+  /** Run every debounced write now instead of waiting out the timer. */
+  const flushSaves = useCallback(async () => {
+    const keys = Object.keys(pending.current);
+    if (keys.length === 0) return;
+    for (const key of keys) {
+      if (timers.current[key]) {
+        window.clearTimeout(timers.current[key]);
+        delete timers.current[key];
+      }
+    }
+    setSaveStatus('saving');
+    try {
+      // Sequential: several writes can target the same section row.
+      for (const key of keys) {
+        const fn = pending.current[key];
+        delete pending.current[key];
+        if (fn) await fn();
+      }
+      setSaveStatus('saved');
+      window.setTimeout(() => setSaveStatus(s => (s === 'saved' ? 'idle' : s)), 2500);
+    } catch {
+      setSaveStatus('error');
+      toast('Could not save');
+    }
   }, [toast]);
 
   const getExecPayload = useCallback(
@@ -1205,6 +1241,7 @@ export function ReportEditProvider({
       updateSectionDetailValue,
       updateCoreFlowMatrixNote,
       patchSectionBlock,
+      flushSaves,
     }),
     [
       editMode,
@@ -1253,6 +1290,7 @@ export function ReportEditProvider({
       updateSectionDetailValue,
       updateCoreFlowMatrixNote,
       patchSectionBlock,
+      flushSaves,
     ],
   );
 
