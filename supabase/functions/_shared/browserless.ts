@@ -231,9 +231,33 @@ export default async ({ page, context }) => {
       // the slide-cart drawer.
       const triggers = [
         '[data-cart-toggle]','.js-drawer-open-cart','[class*="cart-toggle" i]',
-        'button[aria-label*="cart" i]','button[class*="cart" i]','[class*="cart-icon" i]',
+        'button[aria-label*="cart" i]','button[class*="cart" i]',
+        '#cart-icon-bubble','#CartButton','[data-cart-drawer-toggle]',
+        '[class*="cart-icon" i]',
         '[aria-label*="cart" i]','a[href$="/cart"]','a[href*="/cart"]',
       ];
+
+      // On most themes (and on desktop especially) the cart icon is a plain
+      // <a href="/cart">: the theme's own JS opens the drawer, but the browser
+      // ALSO follows the link, so we ended up on the /cart page. Swallow the
+      // link's default action in the capture phase. preventDefault stops the
+      // navigation but does NOT stop propagation, so the theme's own click
+      // handler still runs and the drawer opens.
+      const blockLinkNav = async (on) => {
+        await page.evaluate((enable) => {
+          if (enable) {
+            window.__ecdBlockNav = function (e) {
+              const t = e.target;
+              const a = t && t.closest ? t.closest("a[href]") : null;
+              if (a) e.preventDefault();
+            };
+            document.addEventListener("click", window.__ecdBlockNav, true);
+          } else if (window.__ecdBlockNav) {
+            document.removeEventListener("click", window.__ecdBlockNav, true);
+            window.__ecdBlockNav = null;
+          }
+        }, on).catch(() => {});
+      };
       // Is a slide-cart drawer actually on screen? A click alone proves nothing:
       // on many themes the cart icon is a plain <a href="/cart"> that navigates,
       // which used to be accepted as "opened" and gave us the /cart page instead.
@@ -260,6 +284,7 @@ export default async ({ page, context }) => {
       }).catch(() => false);
 
       let opened = false;
+      await blockLinkNav(true);
       for (const t of triggers) {
         try {
           const el = await page.$(t);
@@ -278,9 +303,12 @@ export default async ({ page, context }) => {
             try { await page.goto(drawerBase, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
             await page.evaluate(sweep).catch(() => {});
             await page.evaluate(sweepPopups).catch(() => {});
+            // A fresh document dropped the listener, so re-arm it.
+            await blockLinkNav(true);
           }
         } catch (e) {}
       }
+      await blockLinkNav(false);
       // No drawer on this theme (or none would open): fall back to the populated
       // /cart page so we still show a real cart rather than an empty one.
       if (!opened) {
