@@ -685,6 +685,21 @@ serve(async (req) => {
 
     return json({ ok: false, error: { code: "bad_request", message: "Provide section_key or mode:auto" }, correlationId }, { status: 400 });
   } catch (e) {
-    return json({ ok: false, error: { code: "generate_failed", message: e instanceof Error ? e.message : "Unknown error" }, correlationId }, { status: 500 });
+    const raw = e instanceof Error ? e.message : "Unknown error";
+    // Surface an out-of-credits / quota failure as a readable message with a 200,
+    // so the report shows what is actually wrong instead of the client's generic
+    // "Edge Function returned a non-2xx status code".
+    const outOfCredits = /prepayment credits|quota|billing|RESOURCE_EXHAUSTED|gemini_http_429/i.test(raw);
+    if (outOfCredits) {
+      return json({
+        ok: false,
+        error: {
+          code: "quota_exhausted",
+          message: "Image generation is out of credits on the Gemini account. Top up billing in Google AI Studio, then try again.",
+        },
+        correlationId,
+      }, { status: 200 });
+    }
+    return json({ ok: false, error: { code: "generate_failed", message: raw }, correlationId }, { status: 500 });
   }
 });

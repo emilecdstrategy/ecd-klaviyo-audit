@@ -153,7 +153,7 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
     type: "object",
     required: ["intro", "findings", "recommendations"],
     properties: {
-      intro: { type: "string", description: "2-3 sentence summary of this page's state" },
+      intro: { type: "string", description: "REQUIRED, never empty. The section summary shown at the top of this page's section: 2-3 sentences in the founder-friendly voice describing where this page stands, what it does well, and what is holding it back. Always write this before anything else." },
       pros: { type: "array", items: { type: "string" }, description: "What already works well on this page" },
       findings: {
         type: "array",

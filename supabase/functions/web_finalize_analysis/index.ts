@@ -303,24 +303,35 @@ async function runStep(
       : "";
     const messages: LlmMessage[] = [{
       role: "user_images",
-      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. Return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${priorText}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${elementsText}`,
+      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. ALWAYS write the intro field first: it is this section's summary paragraph in the report, 2-3 sentences on where this page stands, what it does well, and what is holding it back. Never leave it blank. Then return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${priorText}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${elementsText}`,
       images,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
     if (turn.kind !== "tool_call") throw new Error(`${step.key}: model did not call the tool`);
     let parsed = coercePageAudit(turn.input, refToId, refToElements, refToViewport);
-    // The model occasionally returns an empty audit for a page that clearly
-    // rendered. Retry once with a firmer nudge before accepting nothing.
-    if (parsed.findings.length === 0) {
+    // The model sometimes returns an empty audit for a page that clearly
+    // rendered, and it often skips the intro entirely (which left the report's
+    // section summary blank). Retry once for whichever piece is missing.
+    const needFindings = parsed.findings.length === 0;
+    const needIntro = !parsed.intro.trim();
+    if (needFindings || needIntro) {
+      const ask = needFindings && needIntro
+        ? `You returned no findings and no intro for the ${step.label}. This page rendered normally and every storefront page has concrete issues worth raising. Write the intro (2-3 sentences summarising this page) AND at least 3 specific, visible findings, each with a recommendation.`
+        : needFindings
+          ? `You returned no findings for the ${step.label}, but this page rendered normally and every storefront page has concrete UX and conversion issues. Look again and identify at least 3 specific, visible issues, each with a recommendation, plus a few strengths.`
+          : `You left the intro empty for the ${step.label}. Write it now: 2-3 sentences in the founder-friendly voice summarising where this page stands, what it does well, and what is holding it back. Keep the same findings and recommendations you already gave.`;
       const retryMessages: LlmMessage[] = [{
         role: "user_images",
-        text: `You returned no findings for the ${step.label}, but this page rendered normally and every storefront page has concrete UX and conversion issues. Look again at the screenshots above and identify at least 3 specific, visible issues, each with a recommendation, plus a few strengths. Call record_page_audit exactly once.${elementsText}`,
+        text: `${ask} Call record_page_audit exactly once.${elementsText}`,
         images,
       }];
       const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
       if (retry.kind === "tool_call") {
         const retryParsed = coercePageAudit(retry.input, refToId, refToElements, refToViewport);
-        if (retryParsed.findings.length > 0) parsed = retryParsed;
+        // Only take what was actually missing, so a retry cannot throw away good
+        // findings from the first pass.
+        if (needFindings && retryParsed.findings.length > 0) parsed = retryParsed;
+        else if (needIntro && retryParsed.intro.trim()) parsed = { ...parsed, intro: retryParsed.intro };
       }
     }
     // Enforce the memory in code: the prompt asks the model not to repeat, but it
