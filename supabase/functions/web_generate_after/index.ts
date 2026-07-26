@@ -429,8 +429,16 @@ async function generateOne(
   const allRecommendations = recommendationsFor(section, viewport);
   // Drop floating-widget repositioning fixes: the model reliably duplicates the
   // widget instead of moving it. Everything else is still applied.
-  const recommendations = allRecommendations.filter((r) => !isFloatingWidgetRepositionFix(r));
-  const skippedWidgetFix = recommendations.length !== allRecommendations.length;
+  const applicable = allRecommendations.filter((r) => !isFloatingWidgetRepositionFix(r));
+  const skippedWidgetFix = applicable.length !== allRecommendations.length;
+  // Cap how many fixes one image tries to show. Asking for every fix at once
+  // makes the model shrink type and cram blocks together, which reads as a
+  // cluttered page and undercuts the very point of the concept. Findings are
+  // written highest-impact first, so the top few are the ones worth depicting;
+  // the rest still appear as text in the report. A phone screen holds less, so
+  // its budget is tighter.
+  const MAX_FIXES = viewport === "mobile" ? 4 : 5;
+  const recommendations = applicable.slice(0, MAX_FIXES);
   const basePrompt = buildEditPrompt(
     meta.label,
     recommendations,
