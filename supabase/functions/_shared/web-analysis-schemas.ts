@@ -86,6 +86,26 @@ const SITEWIDE_TOPIC_PATTERNS: Array<{ topic: string; re: RegExp }> = [
   { topic: "footer", re: /\bfooter\b/ },
 ];
 
+const FLOATING_WIDGET_RE =
+  /chat (bubble|widget|launcher|icon|button)|loyalty badge|rewards badge|floating (badge|icon|widget|button)|back to top/;
+// Evidence that widgets actually collide: another widget alongside, or the
+// widget sitting over something the shopper needs.
+const WIDGET_COLLISION_RE =
+  /overlap|on top of|stack|collid|cover(s|ing|ed)?\b|block(s|ing|ed)?\b|each other|obscur/;
+const SECOND_WIDGET_RE =
+  /(chat[^.]{0,40}(badge|loyalty|rewards|star))|((badge|loyalty|rewards|star)[^.]{0,40}chat)|both (icons|badges|widgets|buttons)|two (icons|badges|widgets)/;
+
+/** A lone chat bubble pinned in a corner is a storefront convention, not a
+ * defect, however "crowded" it looks. Only a real collision (two widgets on each
+ * other, or one covering content) is worth a finding, so drop the rest. */
+export function isLoneFloatingWidgetNitpick(text: string, recommendation: string): boolean {
+  const blob = `${text} ${recommendation}`.toLowerCase();
+  if (!FLOATING_WIDGET_RE.test(blob)) return false;
+  if (WIDGET_COLLISION_RE.test(blob)) return false;
+  if (SECOND_WIDGET_RE.test(blob)) return false;
+  return true;
+}
+
 /** Which sitewide topic (if any) a finding is about. */
 export function sitewideTopic(text: string): string | null {
   const t = (text || "").toLowerCase();
@@ -355,11 +375,13 @@ export function coercePageAudit(
       // Still scoped to widget-ish wording so a product 'hardiness zone' care
       // detail, a legitimate recommendation, is not dropped.
       const blob = txt + " " + rec;
+      // A single floating widget in a corner is normal, not a defect.
+      const loneWidget = isLoneFloatingWidgetNitpick(txt, rec);
       const growZone =
         /growing zone|grow zone|planting in\b/.test(blob) ||
         /personali[sz]ation bar/.test(blob) ||
         /\b(location|zip|postcode|postal code)\s*(code)?\s*(bar|field|fields|row|strip|selector|detector|detection|picker|widget)\b/.test(blob);
-      return !noop && !praiseOnly && !growZone;
+      return !noop && !praiseOnly && !growZone && !loneWidget;
     });
   return {
     intro: sanitizeDash(o.intro),
