@@ -88,6 +88,10 @@ function mapProposalRow(row: Record<string, unknown>): Proposal {
     contracts_snapshot: Array.isArray(row.contracts_snapshot)
       ? (row.contracts_snapshot as Proposal['contracts_snapshot'])
       : null,
+    contract_overrides:
+      row.contract_overrides && typeof row.contract_overrides === 'object' && !Array.isArray(row.contract_overrides)
+        ? (row.contract_overrides as Record<string, string>)
+        : {},
     discount_value: Number(row.discount_value ?? 0),
     line_items: Array.isArray(row.line_items)
       ? (row.line_items as Record<string, unknown>[])
@@ -200,6 +204,7 @@ export async function updateProposal(
       | 'content_blocks'
       | 'include_contracts'
       | 'contracts_snapshot'
+      | 'contract_overrides'
       | 'discount_type'
       | 'discount_value'
       | 'discount_applies_to'
@@ -334,12 +339,15 @@ export async function markProposalSent(proposal: Proposal): Promise<Proposal> {
   // not at client_signed_at (which now means fully signed).
   const hasClientSignature = signatures.some(s => s.role === 'client');
 
+  // Freeze the text the client will actually see: a per-proposal override wins
+  // over the shared catalog copy.
+  const overrides = proposal.contract_overrides ?? {};
   const snapshot = contractDocs
     .filter(doc => proposal.include_contracts.includes(doc.slug))
     .map(doc => ({
       slug: doc.slug,
       name: doc.name,
-      content: doc.content,
+      content: overrides[doc.slug]?.trim() ? overrides[doc.slug] : doc.content,
       version_updated_at: doc.updated_at,
     }));
 
@@ -394,6 +402,7 @@ export type PublicProposalPayload = {
     | 'content_blocks'
     | 'include_contracts'
     | 'contracts_snapshot'
+    | 'contract_overrides'
     | 'discount_type'
     | 'discount_value'
     | 'discount_applies_to'

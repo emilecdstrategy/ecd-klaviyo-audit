@@ -49,6 +49,8 @@ type ProposalEditContextValue = {
     discount_label?: string | null;
   }) => void;
   toggleContract: (slug: string, included: boolean) => void;
+  /** Override one contract body for this proposal, or null to use the catalog text. */
+  setContractOverride: (slug: string, content: string | null) => void;
 };
 
 const noop = () => {};
@@ -66,6 +68,7 @@ const READ_ONLY_VALUE: Omit<ProposalEditContextValue, 'mode' | 'editMode'> = {
   moveLineItem: noop,
   updateDiscount: noop,
   toggleContract: noop,
+  setContractOverride: noop,
 };
 
 const ProposalEditContext = createContext<ProposalEditContextValue>({
@@ -279,9 +282,16 @@ export function ProposalEditProvider({
         setSaveStatus('saving');
         listContractDocuments()
           .then(docs => {
+            const overrides = proposal.contract_overrides ?? {};
             const snapshot = docs
               .filter(d => next.includes(d.slug))
-              .map(d => ({ slug: d.slug, name: d.name, content: d.content, version_updated_at: d.updated_at }));
+              .map(d => ({
+                slug: d.slug,
+                name: d.name,
+                // A per-proposal rewrite wins over the shared catalog text.
+                content: overrides[d.slug]?.trim() ? overrides[d.slug] : d.content,
+                version_updated_at: d.updated_at,
+              }));
             onProposalChange?.({ ...proposal, include_contracts: next, contracts_snapshot: snapshot } as Proposal);
             return updateProposal(proposal.id, { include_contracts: next, contracts_snapshot: snapshot });
           })
@@ -298,6 +308,48 @@ export function ProposalEditProvider({
       }
 
       saveProposalPatch('contracts', { include_contracts: next });
+    },
+    [proposal, onProposalChange, saveProposalPatch, toast],
+  );
+
+  /** Tailor one contract's text for THIS proposal only, or pass null to drop the
+   * override and fall back to the shared catalog copy. Keeps the frozen snapshot
+   * in step while the proposal is still unsigned, the same as toggleContract. */
+  const setContractOverride = useCallback(
+    (slug: string, content: string | null) => {
+      const current = proposal.contract_overrides ?? {};
+      const nextOverrides = { ...current };
+      if (content && content.trim()) nextOverrides[slug] = content;
+      else delete nextOverrides[slug];
+
+      if (proposal.contracts_snapshot && !proposal.client_signed_at) {
+        setSaveStatus('saving');
+        listContractDocuments()
+          .then(docs => {
+            const snapshot = docs
+              .filter(d => proposal.include_contracts.includes(d.slug))
+              .map(d => ({
+                slug: d.slug,
+                name: d.name,
+                content: nextOverrides[d.slug]?.trim() ? nextOverrides[d.slug] : d.content,
+                version_updated_at: d.updated_at,
+              }));
+            onProposalChange?.({ ...proposal, contract_overrides: nextOverrides, contracts_snapshot: snapshot } as Proposal);
+            return updateProposal(proposal.id, { contract_overrides: nextOverrides, contracts_snapshot: snapshot });
+          })
+          .then(() => {
+            setSaveStatus('saved');
+            scheduleSavedToast(toast);
+            window.setTimeout(() => setSaveStatus(s => (s === 'saved' ? 'idle' : s)), 2500);
+          })
+          .catch(() => {
+            setSaveStatus('error');
+            toast('Could not save');
+          });
+        return;
+      }
+
+      saveProposalPatch('contract_overrides', { contract_overrides: nextOverrides });
     },
     [proposal, onProposalChange, saveProposalPatch, toast],
   );
@@ -321,6 +373,8 @@ export function ProposalEditProvider({
       moveLineItem,
       updateDiscount,
       toggleContract,
+    setContractOverride,
+      setContractOverride,
     };
   }, [
     mode,
@@ -336,6 +390,7 @@ export function ProposalEditProvider({
     moveLineItem,
     updateDiscount,
     toggleContract,
+    setContractOverride,
   ]);
 
   return <ProposalEditContext.Provider value={value}>{children}</ProposalEditContext.Provider>;
@@ -576,6 +631,8 @@ export function TemplateEditProvider({
       moveLineItem,
       updateDiscount,
       toggleContract,
+    setContractOverride,
+      setContractOverride,
     };
   }, [
     mode,
@@ -591,6 +648,7 @@ export function TemplateEditProvider({
     moveLineItem,
     updateDiscount,
     toggleContract,
+    setContractOverride,
   ]);
 
   return <ProposalEditContext.Provider value={value}>{children}</ProposalEditContext.Provider>;

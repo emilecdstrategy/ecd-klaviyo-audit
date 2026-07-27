@@ -1,4 +1,6 @@
-import { Plus, Check } from 'lucide-react';
+import { useState } from 'react';
+import { Plus, Check, Pencil } from 'lucide-react';
+import ContractOverrideModal from './ContractOverrideModal';
 import ProposalCover from './ProposalCover';
 import ProposalRichBlock from './ProposalRichBlock';
 import ProposalPricingTable from './ProposalPricingTable';
@@ -50,7 +52,9 @@ export default function ProposalDocument({
   collapsibleContracts = false,
   variant = 'proposal',
 }: ProposalDocumentProps) {
-  const { editMode, addBlock, toggleContract } = useProposalEdit();
+  const { editMode, addBlock, toggleContract, setContractOverride } = useProposalEdit();
+  // Which attached contract is open in the per-proposal text editor.
+  const [editingContract, setEditingContract] = useState<string | null>(null);
   const isTemplate = variant === 'template';
 
   const clientSignatureAt = (index: number) =>
@@ -75,10 +79,15 @@ export default function ProposalDocument({
   ];
 
   // Once sent, contracts render from the frozen snapshot; drafts use the live docs.
+  const contractOverrides = proposal.contract_overrides ?? {};
   const includedContracts = (proposal.contracts_snapshot ?? contractDocs
     .filter(doc => proposal.include_contracts.includes(doc.slug))
     .map(doc => ({ slug: doc.slug, name: doc.name, content: doc.content, version_updated_at: doc.updated_at }))
-  ).filter(doc => proposal.include_contracts.includes(doc.slug));
+  )
+    .filter(doc => proposal.include_contracts.includes(doc.slug))
+    // A per-proposal rewrite always wins, including over a snapshot taken before
+    // the text was tailored.
+    .map(doc => (contractOverrides[doc.slug]?.trim() ? { ...doc, content: contractOverrides[doc.slug] } : doc));
 
   return (
     <div className="proposal-print-root space-y-8">
@@ -143,15 +152,55 @@ export default function ProposalDocument({
         </div>
       )}
 
-      {includedContracts.map(doc => (
-        <ProposalContractSection
-          key={doc.slug}
-          id={`contract-${doc.slug}`}
-          name={doc.name}
-          content={doc.content}
-          collapsible={collapsibleContracts}
+      {includedContracts.map(doc => {
+        const overridden = Boolean(contractOverrides[doc.slug]?.trim());
+        return (
+          <div key={doc.slug} className="space-y-1.5">
+            {/* Per-proposal overrides belong to a proposal, not a template: the
+                template surface only chooses which contracts attach. */}
+            {editMode && !isTemplate && (
+              <div className="flex items-center justify-end gap-2 print:hidden">
+                {overridden && (
+                  <span className="rounded-full bg-brand-primary/10 px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-brand-primary">
+                    Custom for this proposal
+                  </span>
+                )}
+                <button
+                  type="button"
+                  onClick={() => setEditingContract(doc.slug)}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-gray-200 px-2.5 py-1 text-xs font-medium text-gray-600 hover:border-brand-primary/40 hover:text-brand-primary"
+                >
+                  <Pencil className="h-3 w-3" />
+                  Edit text
+                </button>
+              </div>
+            )}
+            <ProposalContractSection
+              id={`contract-${doc.slug}`}
+              name={doc.name}
+              content={doc.content}
+              collapsible={collapsibleContracts}
+            />
+          </div>
+        );
+      })}
+
+      {editMode && !isTemplate && editingContract && (
+        <ContractOverrideModal
+          open
+          name={contractDocs.find(d => d.slug === editingContract)?.name
+            ?? includedContracts.find(d => d.slug === editingContract)?.name
+            ?? 'contract'}
+          // Reset always goes back to the shared catalog copy, falling back to
+          // the snapshot when the catalog is not loaded on this surface.
+          defaultContent={contractDocs.find(d => d.slug === editingContract)?.content
+            ?? includedContracts.find(d => d.slug === editingContract)?.content
+            ?? ''}
+          overrideContent={contractOverrides[editingContract] ?? null}
+          onClose={() => setEditingContract(null)}
+          onSave={content => setContractOverride(editingContract, content)}
         />
-      ))}
+      )}
 
       {!isTemplate && (
         <ProposalSignatureSection

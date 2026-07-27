@@ -38,6 +38,9 @@ function templateToProposal(t: ProposalTemplate): Proposal {
     content_blocks: t.content_blocks,
     include_contracts: t.default_contracts,
     contracts_snapshot: null,
+    // Templates pick which contracts attach, but per-proposal text overrides
+    // belong to a real proposal, so there is never one here.
+    contract_overrides: {},
     discount_type: t.discount_type,
     discount_value: t.discount_value,
     discount_applies_to: t.discount_applies_to,

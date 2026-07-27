@@ -377,6 +377,9 @@ export interface Proposal {
   /** Contract document slugs toggled on for this proposal. */
   include_contracts: string[];
   contracts_snapshot: ProposalContractSnapshot[] | null;
+  /** Contract text tailored for THIS proposal, keyed by contract slug. Anything
+   * not listed here uses the shared catalog text from contract_documents. */
+  contract_overrides: Record<string, string>;
   discount_type: ProposalDiscountType;
   discount_value: number;
   discount_applies_to: ProposalDiscountAppliesTo;
