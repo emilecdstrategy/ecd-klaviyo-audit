@@ -619,7 +619,10 @@ export default function AuditWorkspace() {
                 {!webBundle && <SkeletonAuditWorkspace />}
                 {webBundle && (
                   <Suspense fallback={<SkeletonAuditWorkspace />}>
-                    <WebAuditReportView data={{ ...webBundle, audit, client: client ?? webBundle.client, sections }} />
+                    <WebAuditReportView
+                      data={{ ...webBundle, audit, client: client ?? webBundle.client, sections }}
+                      onManageAddOns={() => setRevenueDrawerOpen(true)}
+                    />
                   </Suspense>
                 )}
               </div>

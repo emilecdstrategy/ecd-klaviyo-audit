@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Globe } from 'lucide-react';
+import { Globe, Settings2 } from 'lucide-react';
 import type { Audit, AuditSection, Client, ShopifyDataSnapshot, WebPageSnapshot, WebPageType } from '../../lib/types';
 import { type OrdersRollup } from '../../lib/web-report-details';
+import { getAddOnItemsFromLayout } from '../../lib/addon-highlight';
+import { addOnIsCustomerAgent, addOnIsHelpdesk } from '../../lib/customer-agent-demo';
 import { useReportEdit } from './edit/ReportEditContext';
 import EditablePlainText from './edit/EditablePlainText';
 import WebPageSection from './web/WebPageSection';
 import WebAnalyticsSection from './web/WebAnalyticsSection';
 import WebRoadmapTable from './web/WebRoadmapTable';
+import WebAgentDemoSection, { type AgentDemoKind } from './web/WebAgentDemoSection';
 
 export interface WebAuditReportViewData {
   audit: Audit;
@@ -83,9 +86,31 @@ function OverviewBlock({ section, companyName }: { section: AuditSection; compan
   );
 }
 
-export default function WebAuditReportView({ data }: { data: WebAuditReportViewData }) {
+export default function WebAuditReportView({
+  data,
+  onManageAddOns,
+}: {
+  data: WebAuditReportViewData;
+  /** Opens the shared add-ons editor, the same drawer the Klaviyo report uses. */
+  onManageAddOns?: () => void;
+}) {
   const { audit, client, sections, pageSnapshots, shopifySnapshots } = data;
+  const { editMode } = useReportEdit();
   const byKey = new Map(sections.map((s) => [s.section_key, s]));
+
+  // Customer Agent and Helpdesk share one demo app, so selecting both gets a
+  // single combined section rather than the same embed twice.
+  const demoKind = useMemo<AgentDemoKind | null>(() => {
+    const items = getAddOnItemsFromLayout(audit.layout).filter(item => !item.is_hidden);
+    const hasAgent = items.some(item => addOnIsCustomerAgent(item.template_slug, item.name));
+    const hasHelpdesk = items.some(item => addOnIsHelpdesk(item.template_slug, item.name));
+    if (hasAgent && hasHelpdesk) return 'both';
+    if (hasAgent) return 'agent';
+    if (hasHelpdesk) return 'helpdesk';
+    return null;
+  }, [audit.report_layout]);
+
+  const demoLabel = demoKind === 'helpdesk' ? 'Helpdesk' : demoKind === 'both' ? 'Agent & Helpdesk' : 'Customer Agent';
 
   const overview = byKey.get('web_overview');
   const performance = byKey.get('web_performance');
@@ -107,9 +132,10 @@ export default function WebAuditReportView({ data }: { data: WebAuditReportViewD
     }
     if (performance && !isHidden(performance)) items.push({ id: 'web_performance', label: 'Performance' });
     if (roadmap && !isHidden(roadmap)) items.push({ id: 'web_revenue_summary', label: 'Roadmap' });
+    if (demoKind) items.push({ id: 'web_agent_demo', label: demoLabel });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sections, pageSnapshots]);
+  }, [sections, pageSnapshots, demoKind, demoLabel]);
 
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const setRef = (id: string, el: HTMLElement | null) => { sectionRefs.current[id] = el; };
@@ -248,6 +274,30 @@ export default function WebAuditReportView({ data }: { data: WebAuditReportViewD
           <WebSectionShell id="web_revenue_summary" number={nextNumber()} label="Prioritized Roadmap" setRef={setRef}>
             <WebRoadmapTable section={roadmap} title="Prioritized Roadmap" hideTitle />
           </WebSectionShell>
+        )}
+
+        {demoKind && (
+          <WebSectionShell
+            id="web_agent_demo"
+            number={nextNumber()}
+            label={demoKind === 'helpdesk' ? 'Helpdesk' : demoKind === 'both' ? 'Customer Agent and Helpdesk' : 'Customer Agent'}
+            setRef={setRef}
+          >
+            <WebAgentDemoSection kind={demoKind} websiteUrl={client.website_url} />
+          </WebSectionShell>
+        )}
+
+        {editMode && onManageAddOns && (
+          <div className="flex justify-center">
+            <button
+              type="button"
+              onClick={onManageAddOns}
+              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+            >
+              <Settings2 className="h-3.5 w-3.5" aria-hidden />
+              {demoKind ? 'Manage add-ons' : 'Add Customer Agent or Helpdesk'}
+            </button>
+          </div>
         )}
 
         <p className="text-center text-[11px] text-gray-400">

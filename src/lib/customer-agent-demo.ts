@@ -23,6 +23,25 @@ export function addOnHasCustomerAgentDemo(templateSlug: string): boolean {
   return CUSTOMER_AGENT_DEMO_SLUGS.has(templateSlug);
 }
 
+/** Add-on templates for the Helpdesk. It shares the Customer Agent demo app, so
+ * both resolve to the same embed URL. */
+export const HELPDESK_SLUGS = new Set(['klaviyo_helpdesk']);
+
+export function nameIsHelpdesk(name?: string | null): boolean {
+  return /help\s*desk/i.test((name ?? '').trim());
+}
+
+export function addOnIsHelpdesk(templateSlug?: string | null, name?: string | null): boolean {
+  return HELPDESK_SLUGS.has((templateSlug ?? '').trim()) || nameIsHelpdesk(name);
+}
+
+export function addOnIsCustomerAgent(templateSlug?: string | null, name?: string | null): boolean {
+  // Helpdesk names can contain "customer", so exclude it before the loose
+  // name match claims the item for the agent.
+  if (addOnIsHelpdesk(templateSlug, name)) return false;
+  return CUSTOMER_AGENT_DEMO_SLUGS.has((templateSlug ?? '').trim()) || nameHasCustomerAgentDemo(name);
+}
+
 /** Match a Customer Hub / Customer Agent line item by name, for cases where the
  * template_slug was not stored (e.g. items added before slugs, or hand-typed). */
 export function nameHasCustomerAgentDemo(name?: string | null): boolean {
