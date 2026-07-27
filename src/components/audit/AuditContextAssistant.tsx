@@ -11,6 +11,8 @@ type ChatMessage = {
   id: string;
   role: 'user' | 'assistant';
   content: string;
+  /** What is replayed to the model, when it must carry more than the bubble shows. */
+  historyContent?: string;
   question?: AuditContextQuestion;
   context?: AuditContextDraft;
   applied?: boolean;
@@ -117,15 +119,24 @@ export default function AuditContextAssistant({
     setInput('');
     setSending(true);
     try {
-      const history = nextMsgs.filter(m => m.content).map(m => ({ role: m.role, content: m.content }));
+      const history = nextMsgs
+        .filter(m => m.content)
+        .map(m => ({ role: m.role, content: m.historyContent ?? m.content }));
       const turn = await sendAuditContextMessage({ messages: history, snapshot: getSnapshot() });
       if (turn.fetched_notes && onTranscript) onTranscript(turn.fetched_notes);
       // Include the question text in the stored content so it is replayed to the
       // model next turn; otherwise the model loses what a chip answer referred to
       // and re-asks the same question.
       let content = turn.assistant_text || '';
+      let historyContent: string | undefined;
       if (turn.question?.question) {
         content = content ? `${content}\n\n${turn.question.question}` : turn.question.question;
+        // The chips are UI, not text, so the replayed message must also name the
+        // options. Without them the model reads its own turn back as a bare open
+        // question, decides it forgot the chips, and asks the very same thing
+        // again, which is what made this chat loop.
+        const labels = turn.question.options.map(o => o.label).filter(Boolean);
+        if (labels.length) historyContent = `${content}\n\n(Options offered: ${labels.join(' / ')})`;
       } else if (!content && turn.context?.summary) {
         content = turn.context.summary;
       }
@@ -135,6 +146,7 @@ export default function AuditContextAssistant({
           id: `a${Date.now()}`,
           role: 'assistant',
           content,
+          historyContent,
           question: turn.question,
           context: turn.context,
         },

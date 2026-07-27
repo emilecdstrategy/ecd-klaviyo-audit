@@ -92,6 +92,18 @@ const TOOLS: LlmTool[] = [
 
 const TERMINAL = new Set(["ask_user", "propose_context"]);
 
+function normalizeQuestion(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9 ]+/g, " ").replace(/\s+/g, " ").trim();
+}
+
+/** True when this exact question already appears in an earlier assistant turn.
+ * Re-asking it can only loop: the user already answered it. */
+function alreadyAsked(question: string, history: Array<{ role: "user" | "assistant"; content: string }>): boolean {
+  const asked = normalizeQuestion(question);
+  if (asked.length < 8) return false;
+  return history.some((m) => m.role === "assistant" && normalizeQuestion(m.content).includes(asked));
+}
+
 function buildSystem(snapshot: Snapshot): string {
   const who = snapshot.company_name || snapshot.client_name || "the client";
   const isWeb = snapshot.audit_type === "web";
@@ -116,6 +128,9 @@ function buildSystem(snapshot: Snapshot): string {
 - When the user pastes a link, immediately call fetch_transcript with it. If it fails, tell them plainly and offer to let them paste the notes as text instead.
 - Once you have source material, use ask_user only for a genuinely material missing detail (max one or two questions total, with 2-4 chips). Otherwise go straight to propose_context.
 - If the user says there was no call or has nothing to share, ask one or two brief chip questions to capture the essentials (${essentialsHint}), then propose_context.
+
+- NEVER ASK THE SAME QUESTION TWICE. Your earlier questions appear in your own messages, with the chips you offered listed as "(Options offered: ...)". Whatever the user replied after that IS their answer, even if it is one word like "mix" or "both", and even if it does not exactly match a chip. Accept it, move on, and never apologise for how a previous question was worded or offer to "ask it properly this time". At most two questions total, then call propose_context with whatever you have.
+- A vague answer is still an answer. If the user says "both" or "a mix", record exactly that and stop probing.
 
 RULES:
 - ${focusRule}
@@ -164,6 +179,7 @@ serve(async (req) => {
     let context: unknown = null;
     let fetchedNotes = "";
     let retried = false;
+    let repeated = false;
 
     for (let i = 0; i < MAX_ITERATIONS; i++) {
       const turn = await llm.runTurn({ system, messages, tools: TOOLS });
@@ -204,6 +220,22 @@ serve(async (req) => {
           retried = true;
           messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
           messages.push({ role: "tool_result", id: turn.id, name: turn.name, result: JSON.stringify({ error: "Provide a question and 2-4 options." }) });
+          continue;
+        }
+        if (alreadyAsked(String(input.question), history)) {
+          // The user answered this already; asking again is the loop, not a fix.
+          if (repeated) return json({ ok: false, error: { code: "bad_response", message: "The assistant repeated itself. Try rephrasing, or fill the context in manually." } }, { status: 200 });
+          repeated = true;
+          messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+          messages.push({
+            role: "tool_result",
+            id: turn.id,
+            name: turn.name,
+            result: JSON.stringify({
+              error:
+                "You already asked this question and the user answered it. Their last reply IS the answer, even if it is one word. Do not ask it again and do not apologise for it. Either ask something genuinely different or call propose_context now with what you have.",
+            }),
+          });
           continue;
         }
         assistantText = stripDashes(turn.text ?? "");
