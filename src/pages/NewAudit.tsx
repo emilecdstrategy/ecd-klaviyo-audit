@@ -270,6 +270,30 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
   // Create a DRAFT audit (client + audit row + sections + persisted connections)
   // and open its workspace. Context and the actual run happen there.
+  /** The add-on picker is shown on BOTH wizard branches, so both must persist it.
+   * The web branch used to collect the toggles and drop them on the floor, which
+   * left the report with no Customer Agent / Customer Hub section to show. */
+  const buildAddOnLayout = (): Record<string, unknown> => {
+    const items: RevenueOpportunityAddOnItem[] = revenueTemplates
+      .filter(template => form.selectedAddOnSlugs.includes(template.slug))
+      .map((template, index) => ({
+        template_slug: template.slug,
+        name: template.name,
+        description: template.description || undefined,
+        content: template.content || resolveRevenueOpportunityContent(template),
+        bullets: [],
+        revenue_monthly: 0,
+        one_time_price: template.one_time_price ?? null,
+        one_time_label: template.one_time_label ?? null,
+        monthly_price: template.monthly_price ?? null,
+        monthly_label: template.monthly_label ?? null,
+        display_order: template.display_order ?? (index + 1) * 10,
+        is_hidden: false,
+        highlighted: false,
+      }));
+    return items.length > 0 ? { revenue_summary: { blocks: { addOns: { items } } } } : {};
+  };
+
   const createDraftKlaviyo = async () => {
     if (submittingRef.current) return;
     submittingRef.current = true;
@@ -298,26 +322,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         setClients(prev => prev.map(c => (c.id === updated.id ? updated : c)));
       }
 
-      const selectedAddOnItems: RevenueOpportunityAddOnItem[] = revenueTemplates
-        .filter(template => form.selectedAddOnSlugs.includes(template.slug))
-        .map((template, index) => ({
-          template_slug: template.slug,
-          name: template.name,
-          description: template.description || undefined,
-          content: template.content || resolveRevenueOpportunityContent(template),
-          bullets: [],
-          revenue_monthly: 0,
-          one_time_price: template.one_time_price ?? null,
-          one_time_label: template.one_time_label ?? null,
-          monthly_price: template.monthly_price ?? null,
-          monthly_label: template.monthly_label ?? null,
-          display_order: template.display_order ?? (index + 1) * 10,
-          is_hidden: false,
-          highlighted: false,
-        }));
-      const initialLayout: Record<string, unknown> = selectedAddOnItems.length > 0
-        ? { revenue_summary: { blocks: { addOns: { items: selectedAddOnItems } } } }
-        : {};
+      const initialLayout = buildAddOnLayout();
       const audit = await createAudit({
         client_id: clientId,
         title: `${form.companyName} - Klaviyo Audit`,
@@ -387,11 +392,13 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         }
       }
 
+      const webLayout = buildAddOnLayout();
       const audit = await createAudit({
         client_id: clientId,
         title: `${form.companyName} - Web Audit`,
         status: 'draft',
         audit_type: 'web',
+        layout: Object.keys(webLayout).length > 0 ? webLayout : undefined,
         audit_method: 'screenshot' as Audit['audit_method'],
         list_size: 0,
         aov: 0,
