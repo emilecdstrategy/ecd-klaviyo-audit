@@ -342,10 +342,7 @@ export default function ProposalActivityTimeline({ events }: { events: ProposalE
                 </p>
                 <p className="text-[11px] text-gray-400">{formatEventTime(event.created_at)}</p>
                 {methodHint ? (
-                  <p className="mt-0.5 truncate text-[11px] text-gray-400">
-                    {methodHint}
-                    {clickable ? <span className="text-blue-500"> · View email</span> : null}
-                  </p>
+                  <p className="mt-0.5 truncate text-[11px] text-gray-400">{methodHint}</p>
                 ) : null}
                 {reason ? <p className="mt-0.5 text-[11px] italic text-gray-500">“{reason}”</p> : null}
                 {(signerEmail || ip) && (
