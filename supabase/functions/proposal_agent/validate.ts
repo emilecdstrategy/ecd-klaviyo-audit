@@ -147,6 +147,7 @@ const EDIT_OPS = new Set([
   "delete_line_item",
   "update_discount",
   "toggle_contract",
+  "override_contract",
   "update_recipient",
 ]);
 
@@ -220,6 +221,22 @@ export function validateEditSet(
         }
         if (typeof o.included !== "boolean") return { ok: false, error: `${label}: included must be boolean` };
         break;
+      case "override_contract": {
+        if (!isStr(o.slug) || !ctx.contractSlugs.has(o.slug)) {
+          return { ok: false, error: `${label}: slug must be a known contract slug` };
+        }
+        // null clears the override; anything else must be the full document.
+        if (o.contract_content !== null && !isStr(o.contract_content)) {
+          return { ok: false, error: `${label}: contract_content must be the full contract text, or null to reset` };
+        }
+        if (isStr(o.contract_content) && o.contract_content.trim().length < 40) {
+          return {
+            ok: false,
+            error: `${label}: contract_content looks like a fragment. Send the ENTIRE contract text, or null to reset.`,
+          };
+        }
+        break;
+      }
       case "update_recipient":
         if (o.recipient_name == null && o.recipient_email == null) {
           return { ok: false, error: `${label}: provide recipient_name and/or recipient_email` };

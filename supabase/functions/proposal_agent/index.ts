@@ -168,12 +168,14 @@ serve(async (req) => {
     const rows = ((historyRows ?? []) as MessageRow[]).reverse();
 
     // --- Context: contracts list + mode -------------------------------------
+    // Content is included so the assistant can rewrite a contract for a single
+    // proposal (override_contract) rather than only attach or detach it.
     const { data: contractRows } = await sb
       .from("contract_documents")
-      .select("slug, name")
+      .select("slug, name, content")
       .eq("is_active", true)
       .order("display_order", { ascending: true });
-    const contracts = (contractRows ?? []) as Array<{ slug: string; name: string }>;
+    const contracts = (contractRows ?? []) as Array<{ slug: string; name: string; content?: string }>;
 
     const snapshot = body.snapshot ?? null;
     const mode: "draft" | "edit" = snapshot ? "edit" : "draft";
@@ -318,7 +320,7 @@ serve(async (req) => {
           const { data: p } = await sb
             .from("proposals")
             .select(
-              "id, title, status, content_blocks, include_contracts, discount_type, discount_value, discount_applies_to, discount_label, client:clients(company_name), line_items:proposal_line_items(name, description, content, one_time_price, one_time_label, monthly_price, monthly_label, display_order)",
+              "id, title, status, content_blocks, include_contracts, contract_overrides, discount_type, discount_value, discount_applies_to, discount_label, client:clients(company_name), line_items:proposal_line_items(name, description, content, one_time_price, one_time_label, monthly_price, monthly_label, display_order)",
             )
             .eq("id", id)
             .maybeSingle();
@@ -352,6 +354,10 @@ serve(async (req) => {
                 label: (p as any).discount_label ?? null,
               },
               include_contracts: Array.isArray((p as any).include_contracts) ? (p as any).include_contracts : [],
+              // Which contracts already have wording tailored for this proposal,
+              // so the assistant edits the current text instead of the catalog copy.
+              contracts_overridden: Object.keys((p as any).contract_overrides ?? {}),
+              contract_overrides: (p as any).contract_overrides ?? {},
             };
           }
         } else if (turn.name === "get_client_history") {

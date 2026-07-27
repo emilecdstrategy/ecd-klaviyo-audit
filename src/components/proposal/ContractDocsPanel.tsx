@@ -1,8 +1,13 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { FileCheck2 } from 'lucide-react';
+import { FileCheck2, Plus, Trash2 } from 'lucide-react';
 import SimpleRichEditor from '../ui/SimpleRichEditor';
 import { useToast, scheduleSavedToast } from '../ui/Toast';
-import { listContractDocuments, updateContractDocument } from '../../lib/proposals-db';
+import {
+  createContractDocument,
+  deleteContractDocument,
+  listContractDocuments,
+  updateContractDocument,
+} from '../../lib/proposals-db';
 import type { ContractDocument } from '../../lib/types';
 
 export default function ContractDocsPanel() {
@@ -10,7 +15,36 @@ export default function ContractDocsPanel() {
   const [docs, setDocs] = useState<ContractDocument[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [newName, setNewName] = useState('');
+  const [creating, setCreating] = useState(false);
   const saveTimers = useRef<Map<string, number>>(new Map());
+
+  const addDocument = async () => {
+    const name = newName.trim();
+    if (!name || creating) return;
+    setCreating(true);
+    setError('');
+    try {
+      const created = await createContractDocument(name);
+      setDocs(prev => [...prev, created]);
+      setNewName('');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not create the contract document');
+    } finally {
+      setCreating(false);
+    }
+  };
+
+  const removeDocument = async (doc: ContractDocument) => {
+    if (!window.confirm(`Delete "${doc.name}"? Proposals already sent keep their copy, but it can no longer be attached to new ones.`)) return;
+    setError('');
+    try {
+      await deleteContractDocument(doc.id);
+      setDocs(prev => prev.filter(d => d.id !== doc.id));
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not delete the contract document');
+    }
+  };
 
   const reload = useCallback(async () => {
     setError('');
@@ -79,12 +113,21 @@ export default function ContractDocsPanel() {
             <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-white border border-gray-200 text-brand-primary">
               <FileCheck2 className="h-4 w-4" />
             </div>
-            <div className="min-w-0">
+            <div className="min-w-0 flex-1">
               <h3 className="text-sm font-semibold text-gray-900">{doc.name}</h3>
               <p className="text-xs text-gray-500 mt-0.5">
                 Last updated {new Date(doc.updated_at).toLocaleDateString()}
               </p>
             </div>
+            <button
+              type="button"
+              onClick={() => removeDocument(doc)}
+              className="shrink-0 rounded-lg p-2 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500"
+              aria-label={`Delete ${doc.name}`}
+              title="Delete this contract document"
+            >
+              <Trash2 className="h-4 w-4" />
+            </button>
           </div>
           <div className="p-5">
             <SimpleRichEditor
@@ -98,6 +141,38 @@ export default function ContractDocsPanel() {
           </div>
         </section>
       ))}
+
+      <section className="rounded-xl bg-white p-5 card-shadow">
+        <h3 className="text-sm font-semibold text-gray-900">Add a contract document</h3>
+        <p className="mt-0.5 text-xs text-gray-500">
+          Give it a name, then paste the text below. New documents start empty and are available to attach to any
+          proposal straight away.
+        </p>
+        <div className="mt-3 flex flex-wrap items-center gap-2">
+          <input
+            type="text"
+            value={newName}
+            onChange={e => setNewName(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                addDocument();
+              }
+            }}
+            placeholder="e.g. Data Processing Agreement"
+            className="min-w-0 flex-1 rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none"
+          />
+          <button
+            type="button"
+            onClick={addDocument}
+            disabled={!newName.trim() || creating}
+            className="inline-flex items-center gap-1.5 rounded-lg gradient-bg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+          >
+            <Plus className="h-4 w-4" />
+            {creating ? 'Adding…' : 'Add document'}
+          </button>
+        </div>
+      </section>
     </div>
   );
 }

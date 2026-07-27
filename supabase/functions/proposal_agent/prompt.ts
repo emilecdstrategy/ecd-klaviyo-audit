@@ -94,7 +94,8 @@ export function buildSystemPrompt(args: {
 
   parts.push(
     `AVAILABLE CONTRACT DOCUMENTS (slugs for include_contracts / toggle_contract):\n` +
-      args.contracts.map((c) => `- ${c.slug}: ${c.name}`).join("\n"),
+      args.contracts.map((c) => `- ${c.slug}: ${c.name}`).join("\n") +
+      `\n\nYou can also TAILOR a contract's wording for this one proposal with the override_contract operation. Call get_contracts first to read the current text, then send contract_content as the COMPLETE rewritten document (never a fragment or a diff), keeping every clause you were not asked to change. This affects only this proposal; the shared version in Settings is untouched. Pass contract_content: null to drop the override and go back to the shared version. Because contract wording is legally meaningful, only do this when the user clearly asks for it, change no more than they asked, and say plainly in your summary what you altered.`,
   );
 
   if (args.dossier && args.dossier.trim()) {

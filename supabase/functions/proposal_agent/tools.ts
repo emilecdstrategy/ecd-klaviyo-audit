@@ -180,6 +180,7 @@ export const AGENT_TOOLS: LlmTool[] = [
                   "delete_line_item",
                   "update_discount",
                   "toggle_contract",
+                  "override_contract",
                   "update_recipient",
                 ],
               },
@@ -195,8 +196,13 @@ export const AGENT_TOOLS: LlmTool[] = [
                 properties: LINE_ITEM_SCHEMA.properties,
               },
               discount: { ...DISCOUNT_SCHEMA, description: "For update_discount" },
-              slug: { type: "string", description: "For toggle_contract" },
+              slug: { type: "string", description: "For toggle_contract / override_contract" },
               included: { type: "boolean", description: "For toggle_contract" },
+              contract_content: {
+                type: ["string", "null"],
+                description:
+                  "For override_contract: the full replacement text of that contract FOR THIS PROPOSAL ONLY (the shared version in Settings is untouched). Send the entire document, not a fragment. Pass null to drop the override and go back to the shared version.",
+              },
               recipient_name: { type: "string", description: "For update_recipient" },
               recipient_email: { type: "string", description: "For update_recipient" },
             },

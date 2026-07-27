@@ -311,6 +311,12 @@ function describeOp(op: ProposalEditOp): string {
         : `Set discount: ${op.discount.type === 'percent' ? `${op.discount.value}%` : formatCurrency(op.discount.value)} off ${op.discount.applies_to.replace('_', '-')}`;
     case 'toggle_contract':
       return `${op.included ? 'Attach' : 'Detach'} contract: ${op.slug === 'msa' ? 'MSA' : op.slug.replace(/_/g, ' ')}`;
+    case 'override_contract': {
+      const label = op.slug === 'msa' ? 'MSA' : op.slug.replace(/_/g, ' ');
+      return op.contract_content
+        ? `Rewrite the ${label} for this proposal only (the shared version stays as it is)`
+        : `Reset the ${label} back to the shared version`;
+    }
     case 'update_recipient':
       return `Update recipient${op.recipient_name ? ` name to ${op.recipient_name}` : ''}${op.recipient_email ? ` email to ${op.recipient_email}` : ''}`;
   }

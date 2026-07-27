@@ -622,6 +622,46 @@ export async function listContractDocuments(): Promise<ContractDocument[]> {
   return (data ?? []) as ContractDocument[];
 }
 
+/** Turn a document name into a stable slug. Proposals reference contracts by
+ * slug, so it is generated once at creation and never changes afterwards. */
+function contractSlugFromName(name: string): string {
+  return name
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '')
+    .slice(0, 40) || 'contract';
+}
+
+/** Add a contract document to the shared catalog. */
+export async function createContractDocument(name: string): Promise<ContractDocument> {
+  const trimmed = name.trim();
+  if (!trimmed) throw new Error('Give the contract document a name.');
+
+  const existing = await listContractDocuments();
+  const base = contractSlugFromName(trimmed);
+  // Slugs are unique and permanent, so de-duplicate before inserting.
+  let slug = base;
+  let n = 2;
+  while (existing.some(d => d.slug === slug)) slug = `${base}_${n++}`;
+
+  const displayOrder = existing.reduce((max, d) => Math.max(max, d.display_order), 0) + 10;
+
+  const { data, error } = await supabase
+    .from('contract_documents')
+    .insert({ slug, name: trimmed, content: '', display_order: displayOrder })
+    .select('*')
+    .single();
+  if (error) throw error;
+  return data as ContractDocument;
+}
+
+/** Remove a contract document from the catalog. Proposals that already froze it
+ * into contracts_snapshot keep their copy. */
+export async function deleteContractDocument(id: string): Promise<void> {
+  const { error } = await supabase.from('contract_documents').delete().eq('id', id);
+  if (error) throw error;
+}
+
 export async function updateContractDocument(
   id: string,
   updates: Partial<Pick<ContractDocument, 'name' | 'content' | 'is_active'>>,

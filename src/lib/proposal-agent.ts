@@ -65,6 +65,8 @@ export type ProposalEditOp =
   | { op: 'delete_line_item'; item_id: string }
   | { op: 'update_discount'; discount: AgentDiscount }
   | { op: 'toggle_contract'; slug: string; included: boolean }
+  /** Rewrite one contract for THIS proposal only. null clears the override. */
+  | { op: 'override_contract'; slug: string; contract_content: string | null }
   | { op: 'update_recipient'; recipient_name?: string; recipient_email?: string };
 
 export type ProposalEditSet = { summary: string; operations: ProposalEditOp[] };
@@ -320,6 +322,7 @@ export async function applyEditSet(
   let blocks: ProposalBlock[] = proposal.content_blocks.map(b => ({ ...b }));
   let title = proposal.title;
   let includeContracts = [...proposal.include_contracts];
+  let contractOverrides = { ...(proposal.contract_overrides ?? {}) };
   let recipientName = proposal.recipient_name;
   let recipientEmail = proposal.recipient_email;
   let discount: AgentDiscount | null = null;
@@ -385,6 +388,14 @@ export async function applyEditSet(
           : includeContracts.filter(s => s !== op.slug);
         proposalDirty = true;
         break;
+      case 'override_contract': {
+        const next = { ...contractOverrides };
+        if (op.contract_content && op.contract_content.trim()) next[op.slug] = op.contract_content;
+        else delete next[op.slug];
+        contractOverrides = next;
+        proposalDirty = true;
+        break;
+      }
       case 'update_recipient':
         if (op.recipient_name != null) recipientName = op.recipient_name;
         if (op.recipient_email != null) recipientEmail = op.recipient_email;
@@ -399,6 +410,7 @@ export async function applyEditSet(
       title,
       content_blocks: blocks,
       include_contracts: includeContracts,
+      contract_overrides: contractOverrides,
       recipient_name: recipientName,
       recipient_email: recipientEmail,
       ...(discount
