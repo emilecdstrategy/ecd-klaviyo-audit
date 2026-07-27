@@ -98,6 +98,10 @@ export default function AuditWorkspace() {
   // Draft audits are created by the wizard and run from here.
   const location = useLocation();
   const oneTimeKlaviyoKey = (location.state as { klaviyoApiKey?: string } | null)?.klaviyoApiKey;
+  // The wizard now creates the audit even when the optional Shopify connection
+  // fails, and hands the reason over so it is not silently dropped.
+  const shopifyWarning = (location.state as { shopifyWarning?: string } | null)?.shopifyWarning;
+  const [shopifyWarningOpen, setShopifyWarningOpen] = useState(true);
   const [running, setRunning] = useState(false);
   const [runProgress, setRunProgress] = useState<{ progress: number; stage: string }>({ progress: 0, stage: '' });
   // Draws attention to the Run button after the assistant's context is applied.
@@ -499,6 +503,22 @@ export default function AuditWorkspace() {
           <div className="report-viewport-bleed mt-3 border-b border-amber-200 bg-amber-50 px-6 py-2.5 text-center text-xs text-amber-800">
             <strong>Incomplete Klaviyo data:</strong> Your API key is missing permissions for <strong>{scopeWarnings.join(', ')}</strong>.
             Regenerate the key in Klaviyo with full read access, then re-run the audit for complete data.
+          </div>
+        )}
+
+        {shopifyWarning && shopifyWarningOpen && (
+          <div className="report-viewport-bleed mt-3 flex items-center justify-center gap-3 border-b border-amber-200 bg-amber-50 px-6 py-2.5 text-xs text-amber-800">
+            <span>
+              <strong>Shopify not connected:</strong> {shopifyWarning}. The audit was created anyway and the page
+              screenshots will still run. Connect Shopify later to add the analytics section.
+            </span>
+            <button
+              type="button"
+              onClick={() => setShopifyWarningOpen(false)}
+              className="shrink-0 font-semibold underline underline-offset-2 hover:no-underline"
+            >
+              Dismiss
+            </button>
           </div>
         )}
 

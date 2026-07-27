@@ -358,6 +358,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     submittingRef.current = true;
     setError('');
     setAnalyzing(true);
+    let shopifyWarning = '';
     try {
       let clientId = form.clientId;
       if (!clientId) {
@@ -407,21 +408,32 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       const wantsInstalled = shopifyAuthMode === 'installed' && form.shopifyDomain.trim();
       const wantsCredentials = shopifyAuthMode === 'credentials' && form.shopifyClientId.trim() && form.shopifyClientSecret.trim();
       if (!hasSavedShopifyConnection && (wantsInstalled || wantsCredentials)) {
-        const { data: connData, error: connErr } = await supabase.functions.invoke<any>('shopify_connect_client', {
-          body: wantsInstalled
-            ? { client_id: clientId, shop_domain: form.shopifyDomain, use_installed_app: true, website_url: form.websiteUrl }
-            : {
-                client_id: clientId,
-                shop_domain: form.shopifyDomain,
-                shopify_client_id: form.shopifyClientId,
-                shopify_client_secret: form.shopifyClientSecret,
-              },
-        });
-        if (connErr) throw new Error(`Shopify connection failed: ${connErr.message}`);
-        if (!connData?.ok) throw new Error(connData?.error?.message || 'Shopify connection failed');
+        // Non-fatal. The audit and its sections already exist by this point, and
+        // Shopify is optional for a web audit (the screenshots do not need it).
+        // Throwing here used to abandon a perfectly good audit and leave an
+        // orphan draft behind on every retry.
+        try {
+          const { data: connData, error: connErr } = await supabase.functions.invoke<any>('shopify_connect_client', {
+            body: wantsInstalled
+              ? { client_id: clientId, shop_domain: form.shopifyDomain, use_installed_app: true, website_url: form.websiteUrl }
+              : {
+                  client_id: clientId,
+                  shop_domain: form.shopifyDomain,
+                  shopify_client_id: form.shopifyClientId,
+                  shopify_client_secret: form.shopifyClientSecret,
+                },
+          });
+          if (connErr) throw new Error(connErr.message);
+          if (!connData?.ok) throw new Error(connData?.error?.message || 'Shopify connection failed');
+        } catch (e) {
+          console.error('Shopify connection failed while creating the web audit', e);
+          shopifyWarning = e instanceof Error ? e.message : 'Shopify connection failed';
+        }
       }
 
-      if (mountedRef.current) navigate(`/audits/${audit.id}`);
+      if (mountedRef.current) {
+        navigate(`/audits/${audit.id}`, shopifyWarning ? { state: { shopifyWarning } } : undefined);
+      }
     } catch (e: unknown) {
       setAnalyzing(false);
       submittingRef.current = false;
@@ -859,6 +871,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             ) : (
               <p className="text-sm text-gray-400">No predefined line items available. Add them in the Line Item Catalog.</p>
             )}
+          </div>
+        )}
+
+        {/* The wizard set this state but never rendered it, so a failed create
+            looked like the button doing nothing at all. It sits by the buttons
+            rather than at the top, which is off-screen on the later steps. */}
+        {error && (
+          <div className="mt-6 mx-auto w-full max-w-2xl rounded-lg border border-red-200 bg-red-50 px-4 py-3">
+            <p className="text-sm font-medium text-red-800">{error}</p>
           </div>
         )}
 
