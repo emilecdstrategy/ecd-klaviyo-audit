@@ -116,6 +116,7 @@ function buildEditPrompt(
   pageKind: WebPageKind,
   freezeFloatingWidgets = false,
   hasBelowFold = false,
+  photoShape: string | null = null,
 ): string {
   const fixes = recommendations
     .map((r, i) => `${i + 1}. ${r}`)
@@ -151,6 +152,20 @@ function buildEditPrompt(
     `- Output only the clean, polished, production-quality redesigned screenshot, as if it were a real live page.`,
   ].join("\n");
 
+  // Repeated last, on purpose. These are the failures that make an image
+  // unusable rather than merely imperfect, and they were getting lost inside the
+  // long rule list above.
+  const hardConstraints = [
+    `ABSOLUTE CONSTRAINTS. Breaking any of these makes the image unusable, no matter how good the rest is:`,
+    photoShape
+      ? `1. PHOTO SHAPE IS FIXED. ${photoShape} Reproduce every product photo at that exact shape. Do not make them taller, wider, or squarer.`
+      : `1. PHOTO SHAPE IS FIXED. Every product photo keeps the exact aspect ratio it has in the source. If the grid cards are square, every card in your output is square.`,
+    `2. PHOTO FRAMING IS FIXED. Never crop, zoom, or re-centre a photo. The same amount of the product stays in shot with the same margins. If you need vertical space, take it from padding, gaps, or headings, never from inside an image.`,
+    `3. Never remove or shrink the main product photo, and never replace it with thumbnails.`,
+    `4. A slide-out cart stays exactly where it is: on desktop, pinned to the right edge with the page still visible behind it. Never centre it and never blank out the page behind it.`,
+    `5. Nothing may get taller than it is in the source. A cart drawer, a header, or a line of text that fits one row must still fit one row.`,
+  ].join("\n");
+
   if (hasReference) {
     // Mirror mode: image 1 is the current screenshot for THIS viewport, image 2
     // is the already-approved redesign for the OTHER viewport. Match the CONTENT
@@ -166,6 +181,7 @@ function buildEditPrompt(
       fixes || "Improve visual hierarchy, spacing, and clarity of the primary call to action.",
       `Keep the brand's real logo, product photos, color palette, and typography intact so it clearly reads as the same store.`,
       common,
+      hardConstraints,
     ].join("\n\n");
   }
 
@@ -176,6 +192,7 @@ function buildEditPrompt(
     `Apply these specific conversion and UX fixes:`,
     fixes || "Improve visual hierarchy, clarity of the primary call to action, and overall polish.",
     common,
+    hardConstraints,
   ].join("\n\n");
 }
 
@@ -222,18 +239,58 @@ async function geminiEditImage(
   throw new Error("gemini_no_image_returned");
 }
 
-type ViewportSource = { viewport: Viewport; url: string; cartCount: number; fold2Url?: string | null };
+type CapturedEl = { label?: string; w?: number; h?: number };
+type ViewportSource = {
+  viewport: Viewport;
+  url: string;
+  cartCount: number;
+  fold2Url?: string | null;
+  elements?: CapturedEl[];
+};
+
+/** Describe the shape of the repeated product photos, measured from the real DOM
+ * boxes captured with the screenshot. Telling the model "these are square" beats
+ * telling it "do not change the aspect ratio", which it has ignored repeatedly. */
+function photoShapeNote(elements: CapturedEl[] | undefined, png: { w: number; h: number } | null): string | null {
+  if (!png || png.w <= 0 || png.h <= 0) return null;
+  // Cards only: wide enough to be a product photo rather than a logo or icon.
+  const cards = (elements ?? []).filter(
+    (e) => typeof e.label === "string" && /^img\b/i.test(e.label) && (e.w ?? 0) >= 20 && (e.h ?? 0) >= 4,
+  );
+  if (cards.length < 2) return null;
+  const ratios = cards
+    .map((e) => ((e.w as number) / 100 * png.w) / ((e.h as number) / 100 * png.h))
+    .filter((r) => Number.isFinite(r) && r > 0.1 && r < 10)
+    .sort((a, b) => a - b);
+  if (ratios.length < 2) return null;
+  const median = ratios[Math.floor(ratios.length / 2)];
+  // Only speak up when the photos agree with each other, so a page of mixed
+  // shapes does not get told they are all one shape.
+  const consistent = ratios.every((r) => Math.abs(r - median) / median <= 0.15);
+  if (!consistent) return null;
+  if (Math.abs(median - 1) <= 0.06) {
+    return "The product photos in the source are SQUARE (1:1).";
+  }
+  const wide = Math.round(median * 100) / 100;
+  return `The product photos in the source are ${median > 1 ? "landscape" : "portrait"}, about ${wide} wide for every 1 tall.`;
+}
 
 // One source screenshot per viewport for a page (above-the-fold variant preferred).
 async function listViewportSources(sb: SupabaseClient, auditId: string, pageType: string): Promise<ViewportSource[]> {
   const { data } = await sb
     .from("web_page_snapshots")
-    .select("viewport, variant, status, screenshot_url, raw")
+    .select("viewport, variant, status, screenshot_url, raw, elements")
     .eq("audit_id", auditId)
     .eq("page_type", pageType)
     .eq("status", "success")
     .not("screenshot_url", "is", null);
-  const rows = (data ?? []) as Array<{ viewport: string; variant: string | null; screenshot_url: string; raw: Record<string, unknown> | null }>;
+  const rows = (data ?? []) as Array<{
+    viewport: string;
+    variant: string | null;
+    screenshot_url: string;
+    raw: Record<string, unknown> | null;
+    elements: CapturedEl[] | null;
+  }>;
   const out: ViewportSource[] = [];
   for (const vp of ["desktop", "mobile"] as Viewport[]) {
     const vpRows = rows.filter((r) => r.viewport === vp);
@@ -246,6 +303,7 @@ async function listViewportSources(sb: SupabaseClient, auditId: string, pageType
       url: chosen.screenshot_url,
       cartCount,
       fold2Url: typeof f2 === "string" && f2.length > 0 ? f2 : null,
+      elements: Array.isArray(chosen.elements) ? chosen.elements : [],
     });
   }
   return out;
@@ -396,6 +454,7 @@ async function generateOne(
   sourceUrl: string,
   referenceAfterUrl?: string,
   belowFoldUrl?: string | null,
+  sourceElements?: CapturedEl[],
 ): Promise<{ url: string; viewport: Viewport }> {
   const meta = PAGE_SECTIONS.find((s) => s.key === section.section_key);
   if (!meta) throw new Error(`section ${section.section_key} is not a page section`);
@@ -447,6 +506,7 @@ async function generateOne(
     meta.page_type as WebPageKind,
     skippedWidgetFix,
     Boolean(belowPng),
+    photoShapeNote(sourceElements, pngSize(srcPng)),
   );
 
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
@@ -618,7 +678,7 @@ serve(async (req) => {
       const src = sources.find((s) => s.viewport === targetVp);
       if (!src) return json({ ok: false, error: { code: "no_screenshot", message: "No screenshot for that viewport yet." }, correlationId }, { status: 200 });
       const referenceAfterUrl = targetVp !== primaryVp ? afterUrlFor(section, primaryVp) : undefined;
-      const result = await generateOne(sb, auditId, clientId, section, apiKey, targetVp, src.url, referenceAfterUrl, src.fold2Url);
+      const result = await generateOne(sb, auditId, clientId, section, apiKey, targetVp, src.url, referenceAfterUrl, src.fold2Url, src.elements);
       return json({ ok: true, correlationId, url: result.url, viewport: result.viewport });
     }
 
@@ -632,6 +692,7 @@ serve(async (req) => {
         url: string;
         fold2Url?: string | null;
         primaryViewport: Viewport;
+        elements?: CapturedEl[];
       };
       const units: Unit[] = [];
       for (const meta of PAGE_SECTIONS) {
@@ -641,7 +702,7 @@ serve(async (req) => {
         const order = orderedViewports(sources, meta.page_type);
         for (const vp of order) {
           const src = sources.find((s) => s.viewport === vp);
-          if (src) units.push({ section, viewport: vp, url: src.url, fold2Url: src.fold2Url, primaryViewport: order[0] });
+          if (src) units.push({ section, viewport: vp, url: src.url, fold2Url: src.fold2Url, primaryViewport: order[0], elements: src.elements });
         }
       }
       // A unit is "done" once it has an after url OR a recorded error (so a
@@ -661,7 +722,7 @@ serve(async (req) => {
       const referenceAfterUrl =
         next.viewport !== next.primaryViewport ? afterUrlFor(next.section, next.primaryViewport) : undefined;
       try {
-        await generateOne(sb, auditId, clientId, next.section, apiKey, next.viewport, next.url, referenceAfterUrl, next.fold2Url);
+        await generateOne(sb, auditId, clientId, next.section, apiKey, next.viewport, next.url, referenceAfterUrl, next.fold2Url, next.elements);
       } catch (e) {
         // Record the error on this viewport so the chain advances instead of
         // retrying the same unit forever.

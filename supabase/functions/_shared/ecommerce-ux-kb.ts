@@ -31,7 +31,10 @@ export const GENERAL_LAYOUT_RULES = [
   "ON A PHONE, PRODUCT GRIDS ARE ONE COLUMN. Any grid of product cards in a mobile screenshot must be a single column, ONE product card per row, full width. Never draw a two-across (or tighter) grid of products on a phone: the cards end up too small to read the name, price, and rating. On desktop a multi-column grid is correct.",
   "NEVER change, rewrite, relabel, restyle, move, hide, resize, or remove the location bar under the header that shows 'Growing Zone' and 'Planting in' (you might also think of it as the location bar, personalization bar, or zip/location detector). It is an automatic zip-code-based widget; reproduce it EXACTLY as in the original screenshot, in the same position (including the word 'n/a'). Do not turn it into a prompt like 'Enter your zip', do not add copy to it.",
   "Every element must look finished and real: aligned, evenly padded, no empty icon slots, no placeholder or label text.",
-].join(" ");
+  // One rule per line. These used to be space-joined into a single paragraph
+  // thousands of characters long, where a specific constraint (photo shape,
+  // cart anchoring) was just another clause in the middle of a wall of text.
+].map((rule) => `  - ${rule}`).join("\n");
 
 // Guardrails for the FINDINGS agent so it doesn't fight standard conventions or
 // recommend things the page already has.
@@ -85,5 +88,5 @@ export const LAYOUT_BRIEF: Record<WebPageKind, string> = {
 
 /** Page-specific layout brief plus the general layout rules, for prompt injection. */
 export function layoutGuidance(kind: WebPageKind): string {
-  return `${LAYOUT_BRIEF[kind]} ${GENERAL_LAYOUT_RULES}`;
+  return `${LAYOUT_BRIEF[kind]}\n${GENERAL_LAYOUT_RULES}`;
 }

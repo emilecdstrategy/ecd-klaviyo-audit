@@ -314,8 +314,22 @@ async function runStep(
     // section summary blank). Retry once for whichever piece is missing.
     const needFindings = parsed.findings.length === 0;
     const needIntro = !parsed.intro.trim();
-    if (needFindings || needIntro) {
-      const ask = needFindings && needIntro
+    // A page can pass the "not empty" check and still be nearly empty on ONE
+    // device, because the report shows a single viewport at a time. Three
+    // findings all tagged desktop leaves the mobile reader looking at one.
+    const countFor = (vp: "desktop" | "mobile") =>
+      parsed.findings.filter((f) => f.viewport === vp || f.viewport === "both").length;
+    const thinViewport: "desktop" | "mobile" | null = needFindings
+      ? null
+      : countFor("mobile") < 2
+        ? "mobile"
+        : countFor("desktop") < 2
+          ? "desktop"
+          : null;
+    if (needFindings || needIntro || thinViewport) {
+      const ask = thinViewport && !needIntro
+        ? `Your audit of the ${step.label} only produced ${countFor(thinViewport)} finding(s) that apply to ${thinViewport}. The report shows one device at a time, so that page looks almost empty to a ${thinViewport} reader. Look again at the ${thinViewport} screenshot specifically and return your existing findings PLUS at least two more that genuinely apply to ${thinViewport}, each tagged "${thinViewport}" (or "both" when it truly affects both), and each with a recommendation. Do not pad: only real, visible issues.`
+        : needFindings && needIntro
         ? `You returned no findings and no intro for the ${step.label}. This page rendered normally and every storefront page has concrete issues worth raising. Write the intro (2-3 sentences summarising this page) AND at least 3 specific, visible findings, each with a recommendation.`
         : needFindings
           ? `You returned no findings for the ${step.label}, but this page rendered normally and every storefront page has concrete UX and conversion issues. Look again and identify at least 3 specific, visible issues, each with a recommendation, plus a few strengths.`
@@ -331,7 +345,14 @@ async function runStep(
         // Only take what was actually missing, so a retry cannot throw away good
         // findings from the first pass.
         if (needFindings && retryParsed.findings.length > 0) parsed = retryParsed;
-        else if (needIntro && retryParsed.intro.trim()) parsed = { ...parsed, intro: retryParsed.intro };
+        else if (thinViewport) {
+          // Keep the better-covered pass. The retry was asked to return the old
+          // findings plus more, but if it came back thinner, the first pass wins.
+          const before = parsed.findings.filter((f) => f.viewport === thinViewport || f.viewport === "both").length;
+          const after = retryParsed.findings.filter((f) => f.viewport === thinViewport || f.viewport === "both").length;
+          if (after > before) parsed = { ...retryParsed, intro: retryParsed.intro.trim() ? retryParsed.intro : parsed.intro };
+          if (needIntro && !parsed.intro.trim() && retryParsed.intro.trim()) parsed = { ...parsed, intro: retryParsed.intro };
+        } else if (needIntro && retryParsed.intro.trim()) parsed = { ...parsed, intro: retryParsed.intro };
       }
     }
     // Enforce the memory in code: the prompt asks the model not to repeat, but it
