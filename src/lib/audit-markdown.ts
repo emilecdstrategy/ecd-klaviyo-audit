@@ -129,6 +129,13 @@ export function markdownToEditorHtml(md: string): string {
         const tag = `h${Math.min(block.level, 3)}`;
         return `<${tag}>${inlineMdToHtml(block.text)}</${tag}>`;
       }
+      if (block.type === 'table') {
+        const head = block.header.map(cell => `<th>${inlineMdToHtml(cell)}</th>`).join('');
+        const body = block.rows
+          .map(row => `<tr>${row.map(cell => `<td>${inlineMdToHtml(cell)}</td>`).join('')}</tr>`)
+          .join('');
+        return `<table><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+      }
       return `<div>${inlineMdToHtml(block.text)}</div>`;
     })
     .join('');
@@ -216,6 +223,21 @@ export function htmlToMd(html: string): string {
     },
   );
 
+  // Tables back to pipe markdown, before the generic tag stripping below would
+  // flatten them into a run of bare words.
+  md = md.replace(/<table[^>]*>([\s\S]*?)<\/table>/gi, (_, table: string) => {
+    const rows = [...table.matchAll(/<tr[^>]*>([\s\S]*?)<\/tr>/gi)].map(rowMatch =>
+      [...rowMatch[1].matchAll(/<(?:td|th)[^>]*>([\s\S]*?)<\/(?:td|th)>/gi)].map(cell =>
+        inlineHtmlToMd(cell[1]).replace(/\s+/g, ' ').replace(/\|/g, '\\|').trim(),
+      ),
+    );
+    if (!rows.length) return '';
+    const width = Math.max(...rows.map(r => r.length));
+    const line = (cells: string[]) => `| ${Array.from({ length: width }, (_, i) => cells[i] ?? '').join(' | ')} |`;
+    const [header, ...body] = rows;
+    return `\n${line(header)}\n| ${Array(width).fill('---').join(' | ')} |\n${body.map(line).join('\n')}\n`;
+  });
+
   md = md.replace(
     /<ul[^>]*>([\s\S]*?)<\/ul>/gi,
     (_, inner: string) =>
@@ -268,9 +290,26 @@ export function htmlToMd(html: string): string {
 export type RichAuditBlock =
   | { type: 'paragraph'; text: string }
   | { type: 'heading'; level: number; text: string }
-  | { type: 'list'; ordered: boolean; items: string[] };
+  | { type: 'list'; ordered: boolean; items: string[] }
+  | { type: 'table'; header: string[]; rows: string[][] };
 
-/** Split markdown into headings (`#`), bullet lists (`- `), numbered lists (`1. `), and paragraphs. */
+/** `| a | b |` -> ['a', 'b'], tolerating missing outer pipes. */
+function splitTableRow(line: string): string[] {
+  return line
+    .replace(/^\s*\|/, '')
+    .replace(/\|\s*$/, '')
+    .split('|')
+    .map(cell => cell.trim());
+}
+
+/** The `| --- | :--: |` separator that marks the line above as a header row. */
+function isTableSeparator(line: string): boolean {
+  if (!line.includes('-')) return false;
+  const cells = splitTableRow(line);
+  return cells.length > 0 && cells.every(cell => /^:?-{1,}:?$/.test(cell));
+}
+
+/** Split markdown into headings (`#`), bullet lists (`- `), numbered lists (`1. `), pipe tables, and paragraphs. */
 export function parseRichAuditBlocks(text: string): RichAuditBlock[] {
   const blocks: RichAuditBlock[] = [];
   let listItems: string[] | null = null;
@@ -283,10 +322,32 @@ export function parseRichAuditBlocks(text: string): RichAuditBlock[] {
     }
   };
 
-  for (const rawLine of text.split('\n')) {
+  const lines = text.split('\n');
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
     const line = rawLine.trim();
     if (!line) {
       flushList();
+      continue;
+    }
+
+    // A pipe table: a header row, a `| --- |` separator, then body rows. Without
+    // this the raw pipes render as ordinary paragraphs, one per line.
+    if (line.includes('|') && i + 1 < lines.length && isTableSeparator(lines[i + 1].trim())) {
+      flushList();
+      const header = splitTableRow(line);
+      const rows: string[][] = [];
+      let j = i + 2;
+      for (; j < lines.length; j++) {
+        const rowLine = lines[j].trim();
+        if (!rowLine || !rowLine.includes('|')) break;
+        const cells = splitTableRow(rowLine);
+        // Pad or trim so every row matches the header width.
+        while (cells.length < header.length) cells.push('');
+        rows.push(cells.slice(0, header.length));
+      }
+      blocks.push({ type: 'table', header, rows });
+      i = j - 1;
       continue;
     }
 

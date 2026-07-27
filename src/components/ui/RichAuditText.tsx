@@ -134,6 +134,40 @@ export function RichAuditContent({
             <ul key={`list-${blockIndex}`} className={cls}>{items}</ul>
           );
         }
+        if (block.type === 'table') {
+          // Pipe tables used to fall through to the paragraph branch and render as
+          // a stack of "| cell | cell |" lines. Scrolls on narrow screens so a wide
+          // table never widens the page.
+          return (
+            <div
+              key={`table-${blockIndex}`}
+              className={['-mx-1 overflow-x-auto px-1', blockIndex > 0 ? 'mt-3' : ''].filter(Boolean).join(' ')}
+            >
+              <table className="w-full border-collapse text-left text-[13px]">
+                <thead>
+                  <tr className="border-b border-gray-300">
+                    {block.header.map((cell, cellIndex) => (
+                      <th key={cellIndex} className="px-3 py-2 font-semibold text-gray-900">
+                        {renderInlineMarkdown(cell, entityLookup, autoTagEntities, highlightsEnabled)}
+                      </th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {block.rows.map((row, rowIndex) => (
+                    <tr key={rowIndex} className="border-b border-gray-100 last:border-0">
+                      {row.map((cell, cellIndex) => (
+                        <td key={cellIndex} className="px-3 py-2 align-top text-gray-600">
+                          {renderInlineMarkdown(cell, entityLookup, autoTagEntities, highlightsEnabled)}
+                        </td>
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+        }
         if (block.type === 'heading') {
           const level = Math.min(block.level, 3);
           const spacing = blockIndex > 0 ? 'mt-4' : '';
