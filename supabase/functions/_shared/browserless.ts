@@ -329,10 +329,29 @@ export default async ({ page, context }) => {
     elements = await page.evaluate(() => {
       const vw = window.innerWidth, vh = window.innerHeight;
       const sel = 'h1,h2,h3,h4,button,a,nav,header,[role="button"],img,input,select,textarea,[class*="cart" i],[class*="hero" i],[class*="cta" i],[class*="banner" i],[class*="search" i],[class*="review" i],[class*="price" i],[class*="badge" i]';
-      const nodes = Array.from(document.querySelectorAll(sel));
+      // Pass 2: short text chips built from plain divs and spans. Themes
+      // routinely build category pills, tabs and badges out of non-semantic
+      // markup, which pass 1 cannot see by tag or class. Only the innermost
+      // node holding the text is taken, so a wrapper does not shadow the chip.
+      const chips = [];
+      const textNodes = Array.from(document.querySelectorAll("div,span,li,p"));
+      for (const el of textNodes) {
+        const t = ((el.innerText || "").replace(/\\s+/g, " ")).trim();
+        if (!t || t.length > 40) continue;
+        if (/[:]$/.test(t)) continue; // "Growing Zone:" and other label stubs
+        let shadowed = false;
+        for (const c of Array.from(el.children)) {
+          if (((c.innerText || "").replace(/\\s+/g, " ")).trim() === t) { shadowed = true; break; }
+        }
+        if (!shadowed) chips.push(el);
+      }
+      const tagged = Array.from(document.querySelectorAll(sel));
+      const nodes = tagged.concat(chips);
       const seen = [];
       const out = [];
-      for (const el of nodes) {
+      for (let ni = 0; ni < nodes.length; ni++) {
+        const el = nodes[ni];
+        const isChip = ni >= tagged.length;
         const r = el.getBoundingClientRect();
         if (r.bottom <= 0 || r.top >= vh) continue;
         const cs = getComputedStyle(el);
@@ -352,13 +371,18 @@ export default async ({ page, context }) => {
         text = text.slice(0, 60);
         if (!text && tag === "img") text = "image";
         out.push({
-          tag, text,
+          tag, text, chip: isChip,
           x: +(left / vw * 100).toFixed(2), y: +(top / vh * 100).toFixed(2),
           w: +(w / vw * 100).toFixed(2), h: +(h / vh * 100).toFixed(2),
         });
       }
-      out.sort((a, b) => (b.w * b.h) - (a.w * a.h));
-      return out.slice(0, 60)
+      // Cap each pass separately. A single area-sorted cap would shed exactly
+      // the small text chips pass 2 exists to catch, since they are the
+      // smallest things on the page.
+      const byArea = (a, b) => (b.w * b.h) - (a.w * a.h);
+      const kept = out.filter((e) => !e.chip).sort(byArea).slice(0, 60)
+        .concat(out.filter((e) => e.chip).sort(byArea).slice(0, 30));
+      return kept
         .sort((a, b) => (a.y - b.y) || (a.x - b.x))
         .map((e, i) => ({ id: "el_" + (i + 1), label: e.tag + (e.text ? ": " + e.text : ""), x: e.x, y: e.y, w: e.w, h: e.h }));
     });
@@ -478,7 +502,7 @@ export async function captureWithBrowserless(input: {
     if (!payload?.screenshot) return { ok: false, error: "browserless_no_screenshot" };
     const png = b64ToBytes(payload.screenshot);
     if (png.byteLength < 5000) return { ok: false, error: "browserless_blank_page" };
-    const elements = Array.isArray(payload.elements) ? payload.elements.slice(0, 60) : [];
+    const elements = Array.isArray(payload.elements) ? payload.elements.slice(0, 90) : [];
     let png2: Uint8Array | null = null;
     if (payload.screenshot2) {
       const b = b64ToBytes(payload.screenshot2);

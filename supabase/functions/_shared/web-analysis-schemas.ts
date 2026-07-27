@@ -275,7 +275,7 @@ export function coercePageAudit(
 
     // Resolve one raw highlight entry (from `highlights[]` or the legacy single
     // `highlight`) into a stored WebHighlight, preferring the real element box.
-    const resolveHighlight = (raw: unknown): WebHighlight | null => {
+    const resolveHighlight = (raw: unknown, lenient = false): WebHighlight | null => {
       const hl = (raw ?? {}) as Record<string, unknown>;
       if (!hl || typeof hl !== "object") return null;
       const ref = String(hl.image_ref ?? "");
@@ -299,7 +299,13 @@ export function coercePageAudit(
       // A box hugging the bottom edge of the crop is almost always a coordinate
       // guess at content that continues below the shot. Pinning there points at
       // nothing, so drop the pin rather than show it in the wrong place.
-      if (box.y >= 92 && !el) return null;
+      if (box.y >= 92 && !el && !lenient) return null;
+      // Lenient pass: slide a bottom-hugging box up so the whole pin sits in the
+      // frame. It is an approximation of where the model was pointing, but a
+      // roughly placed pin beats no pin at all.
+      if (lenient && !el && box.y + box.h > 100) {
+        box = { ...box, h: Math.min(box.h, 12), y: Math.max(0, 100 - Math.min(box.h, 12)) };
+      }
       return {
         snapshot_id: snapshotId,
         x: box.x,
@@ -323,6 +329,18 @@ export function coercePageAudit(
       if (resolved && !seenSnap.has(resolved.snapshot_id)) {
         seenSnap.add(resolved.snapshot_id);
         highlights.push(resolved);
+      }
+    }
+    // Dropping every pin leaves a finding with nothing to point at, which reads
+    // as a bug in the report. If the strict pass rejected them all, keep the
+    // model's own boxes, pulled back inside the frame so they stay visible.
+    if (!highlights.length) {
+      for (const raw of rawHls) {
+        const resolved = resolveHighlight(raw, true);
+        if (resolved && !seenSnap.has(resolved.snapshot_id)) {
+          seenSnap.add(resolved.snapshot_id);
+          highlights.push(resolved);
+        }
       }
     }
 
