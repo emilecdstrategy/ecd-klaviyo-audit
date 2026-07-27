@@ -41,7 +41,7 @@ export default function ContractOverrideModal({
 
   return (
     <Modal open={open} onClose={onClose} title={`Edit ${name} for this proposal`}>
-      <div className="space-y-4">
+      <div className="space-y-4 p-5">
         <p className="text-sm text-gray-500">
           This changes the wording for this proposal only. The shared version in Settings stays as it is, and every
           other proposal keeps using it.
