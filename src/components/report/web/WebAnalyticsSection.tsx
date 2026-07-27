@@ -17,7 +17,16 @@ const NUMERIC_METRICS: Array<{ key: string; label: string }> = [
   { key: 'returning_customer_rate', label: 'Returning Rate' },
 ];
 
-export default function WebAnalyticsSection({ section, rollup }: { section: AuditSection; rollup: OrdersRollup | null }) {
+export default function WebAnalyticsSection({
+  section,
+  rollup,
+  hideTitle = false,
+}: {
+  section: AuditSection;
+  rollup: OrdersRollup | null;
+  /** The report frame already renders a numbered section heading. */
+  hideTitle?: boolean;
+}) {
   const { editMode, updateSectionField, updateSectionDetailValue } = useReportEdit();
   const detail = useMemo(() => parseWebAnalyticsDetail(section.section_details), [section.section_details]);
   const metrics = detail?.metrics ?? [];
@@ -54,9 +63,9 @@ export default function WebAnalyticsSection({ section, rollup }: { section: Audi
   };
 
   return (
-    <section className="rounded-xl bg-white p-6 card-shadow">
-      <h2 className="text-lg font-semibold text-gray-900">Data &amp; Analytics</h2>
-      <p className="mt-0.5 text-xs text-gray-400">Last 30 days vs the prior 30 days</p>
+    <section className="rounded-2xl bg-white p-6 card-shadow sm:p-7">
+      {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">Data &amp; Analytics</h2>}
+      <p className={`text-xs text-gray-400${hideTitle ? '' : ' mt-0.5'}`}>Last 30 days vs the prior 30 days</p>
       {(editMode || section.summary_text) && (
         <div className="mt-1.5 text-sm leading-relaxed text-gray-600">
           <EditablePlainText

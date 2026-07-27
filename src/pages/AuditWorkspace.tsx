@@ -613,7 +613,9 @@ export default function AuditWorkspace() {
                 </Suspense>
               </div>
             ) : (
-              <div className="mx-auto w-full max-w-[77rem]">
+              // Full width: the report owns its own max-width so its sticky
+              // section nav can span the pane like the Klaviyo report's does.
+              <div className="w-full">
                 {!webBundle && <SkeletonAuditWorkspace />}
                 {webBundle && (
                   <Suspense fallback={<SkeletonAuditWorkspace />}>

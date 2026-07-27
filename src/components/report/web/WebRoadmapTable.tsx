@@ -12,7 +12,16 @@ const PRIORITY_STYLES: Record<WebRoadmapRow['priority'], string> = {
 };
 const PRIORITY_ORDER: Record<WebRoadmapRow['priority'], number> = { high: 0, medium: 1, low: 2 };
 
-export default function WebRoadmapTable({ section, title }: { section: AuditSection; title: string }) {
+export default function WebRoadmapTable({
+  section,
+  title,
+  hideTitle = false,
+}: {
+  section: AuditSection;
+  title: string;
+  /** The report frame already renders a numbered section heading. */
+  hideTitle?: boolean;
+}) {
   const { editMode, updateSectionField, updateSectionDetailValue } = useReportEdit();
   const rows = useMemo(() => parseWebRoadmap(section.section_details), [section.section_details]);
 
@@ -31,8 +40,8 @@ export default function WebRoadmapTable({ section, title }: { section: AuditSect
     ]);
 
   return (
-    <section className="rounded-xl bg-white p-6 card-shadow">
-      <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+    <section className="rounded-2xl bg-white p-6 card-shadow sm:p-7">
+      {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">{title}</h2>}
       {(editMode || section.summary_text) && (
         <div className="mt-1.5 text-sm leading-relaxed text-gray-600">
           <EditablePlainText

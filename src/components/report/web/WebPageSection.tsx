@@ -13,10 +13,14 @@ export default function WebPageSection({
   section,
   title,
   snapshots,
+  hideTitle = false,
 }: {
   section: AuditSection;
   title: string;
   snapshots: WebPageSnapshot[];
+  /** The report frame already renders a numbered section heading; skip the
+   * card's own so the title is not printed twice. */
+  hideTitle?: boolean;
 }) {
   const { editMode, updateSectionField, updateSectionDetailValue, flushSaves } = useReportEdit();
   const detail = useMemo(() => parseWebSectionDetail(section.section_details), [section.section_details]);
@@ -149,8 +153,8 @@ export default function WebPageSection({
   };
 
   return (
-    <section className="rounded-xl bg-white p-6 card-shadow">
-      <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
+    <section className="rounded-2xl bg-white p-6 card-shadow sm:p-7">
+      {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">{title}</h2>}
       {(editMode || section.summary_text) && (
         <div className="mt-1.5 text-sm leading-relaxed text-gray-600">
           <EditablePlainText

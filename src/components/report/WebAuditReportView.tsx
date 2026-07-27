@@ -1,3 +1,4 @@
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Globe } from 'lucide-react';
 import type { Audit, AuditSection, Client, ShopifyDataSnapshot, WebPageSnapshot, WebPageType } from '../../lib/types';
 import { type OrdersRollup } from '../../lib/web-report-details';
@@ -29,16 +30,48 @@ function isHidden(section: AuditSection | undefined): boolean {
   return inner?.hidden === true;
 }
 
+/** Numbered section frame, matching the Klaviyo report's section language so a
+ * client moving between the two reports sees one house style. */
+function WebSectionShell({
+  id,
+  number,
+  label,
+  setRef,
+  children,
+}: {
+  id: string;
+  number: string;
+  label: string;
+  setRef: (id: string, el: HTMLElement | null) => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <section id={id} ref={el => setRef(id, el)} className="scroll-mt-24">
+      <div className="mb-6 flex min-w-0 items-center gap-4">
+        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-primary text-sm font-bold text-white tabular-nums shadow-sm shadow-brand-primary/25">
+          {number}
+        </span>
+        <div className="min-w-0">
+          <p className="text-[10px] font-semibold uppercase tracking-[0.18em] text-brand-primary/80">
+            Section {number}
+          </p>
+          <h2 className="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">{label}</h2>
+        </div>
+      </div>
+      {children}
+    </section>
+  );
+}
+
 /** Intro block for the web_overview section (executive summary only; page-level
  * strengths live on each page's "What works"). */
 function OverviewBlock({ section, companyName }: { section: AuditSection; companyName: string }) {
   const { editMode, updateSectionField } = useReportEdit();
 
   return (
-    <section className="rounded-xl bg-white p-6 card-shadow">
-      <h2 className="text-lg font-semibold text-gray-900">Overview</h2>
+    <div className="rounded-2xl bg-white p-6 card-shadow sm:p-7">
       {(editMode || section.summary_text) && (
-        <div className="mt-1.5 text-sm leading-relaxed text-gray-600">
+        <div className="text-[15px] leading-relaxed text-gray-600">
           <EditablePlainText
             value={section.summary_text ?? ''}
             onSave={(v) => updateSectionField(section.section_key, 'summary_text', v)}
@@ -46,7 +79,7 @@ function OverviewBlock({ section, companyName }: { section: AuditSection; compan
           />
         </div>
       )}
-    </section>
+    </div>
   );
 }
 
@@ -61,44 +94,166 @@ export default function WebAuditReportView({ data }: { data: WebAuditReportViewD
   const rollup =
     (shopifySnapshots.find((s) => s.snapshot_kind === 'orders_rollup')?.computed as OrdersRollup | undefined) ?? null;
 
+  // Only sections that actually render get a nav entry, so the nav never points
+  // at an anchor that is not on the page.
+  const navItems = useMemo(() => {
+    const items: Array<{ id: string; label: string }> = [];
+    if (overview && !isHidden(overview)) items.push({ id: 'web_overview', label: 'Overview' });
+    for (const { key, title, page_type } of PAGE_SECTIONS) {
+      const section = byKey.get(key);
+      if (!section || isHidden(section)) continue;
+      if (!pageSnapshots.some((s) => s.page_type === page_type)) continue;
+      items.push({ id: key, label: title });
+    }
+    if (performance && !isHidden(performance)) items.push({ id: 'web_performance', label: 'Performance' });
+    if (roadmap && !isHidden(roadmap)) items.push({ id: 'web_revenue_summary', label: 'Roadmap' });
+    return items;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [sections, pageSnapshots]);
+
+  const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
+  const setRef = (id: string, el: HTMLElement | null) => { sectionRefs.current[id] = el; };
+  const [activeSection, setActiveSection] = useState<string>(navItems[0]?.id ?? '');
+  const [scrollProgress, setScrollProgress] = useState(0);
+
+  useEffect(() => {
+    const onScroll = () => {
+      const doc = document.documentElement;
+      const max = doc.scrollHeight - doc.clientHeight;
+      const pct = max > 0 ? (doc.scrollTop / max) * 100 : 0;
+      setScrollProgress(Math.max(0, Math.min(100, pct)));
+    };
+    onScroll();
+    window.addEventListener('scroll', onScroll, { passive: true });
+    window.addEventListener('resize', onScroll);
+    return () => {
+      window.removeEventListener('scroll', onScroll);
+      window.removeEventListener('resize', onScroll);
+    };
+  }, []);
+
+  useEffect(() => {
+    const observers: IntersectionObserver[] = [];
+    navItems.forEach(({ id }) => {
+      const el = sectionRefs.current[id];
+      if (!el) return;
+      const observer = new IntersectionObserver(
+        ([entry]) => { if (entry.isIntersecting) setActiveSection(id); },
+        { rootMargin: '-20% 0px -70% 0px' },
+      );
+      observer.observe(el);
+      observers.push(observer);
+    });
+    return () => observers.forEach(o => o.disconnect());
+  }, [navItems]);
+
+  let sectionNumber = 0;
+  const nextNumber = () => String(++sectionNumber).padStart(2, '0');
+
   return (
-    <div className="mx-auto max-w-[77rem] space-y-8 px-6 py-10">
-      {/* Hero */}
-      <div className="rounded-2xl gradient-bg px-8 py-10 text-white">
-        <div className="mb-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-white/70">
-          <Globe className="h-4 w-4" />
-          Website Audit
-        </div>
-        <h1 className="text-2xl font-bold sm:text-3xl">{client.company_name}</h1>
-        {client.website_url && (
-          <a href={client.website_url} target="_blank" rel="noopener noreferrer" className="mt-1 inline-block text-sm text-white/80 hover:text-white hover:underline">
-            {client.website_url}
-          </a>
-        )}
-      </div>
-
-      {overview && !isHidden(overview) && <OverviewBlock section={overview} companyName={client.company_name} />}
-
-      {PAGE_SECTIONS.map(({ key, title, page_type }) => {
-        const section = byKey.get(key);
-        if (!section || isHidden(section)) return null;
-        return (
-          <WebPageSection
-            key={key}
-            section={section}
-            title={title}
-            snapshots={pageSnapshots.filter((s) => s.page_type === page_type)}
+    <div>
+      {navItems.length > 1 && (
+        <div className="sticky top-0 z-40 bg-white">
+          <div className="border-b border-gray-100">
+            <div className="mx-auto max-w-[77rem] px-6">
+              <nav className="flex overflow-x-auto">
+                {navItems.map(item => (
+                  <a
+                    key={item.id}
+                    href={`#${item.id}`}
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setActiveSection(item.id);
+                      const el = sectionRefs.current[item.id] ?? document.getElementById(item.id);
+                      if (!el) return;
+                      const top = el.getBoundingClientRect().top + window.scrollY - 72;
+                      window.scrollTo({ top, behavior: 'smooth' });
+                    }}
+                    className={`whitespace-nowrap border-b-2 px-4 py-3.5 text-xs font-semibold transition-colors ${
+                      activeSection === item.id
+                        ? 'border-brand-primary text-brand-primary'
+                        : 'border-transparent text-gray-500 hover:text-gray-800'
+                    }`}
+                  >
+                    {item.label}
+                  </a>
+                ))}
+              </nav>
+            </div>
+          </div>
+          {/* Reading-progress line, below the nav's divider so it never overlaps
+              the active tab's underline. */}
+          <div
+            className="h-0.5 bg-brand-primary transition-[width] duration-150 ease-out"
+            style={{ width: `${scrollProgress}%` }}
+            aria-hidden
           />
-        );
-      })}
+        </div>
+      )}
 
-      {performance && !isHidden(performance) && <WebAnalyticsSection section={performance} rollup={rollup} />}
+      <div className="mx-auto max-w-[77rem] space-y-14 px-6 py-10">
+        {/* Hero */}
+        <div className="relative overflow-hidden rounded-2xl gradient-bg px-8 py-12 text-white sm:px-10 sm:py-14">
+          <div
+            className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-2xl"
+            aria-hidden
+          />
+          <div className="relative">
+            <div className="mb-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">
+              <Globe className="h-4 w-4" />
+              Website Audit
+            </div>
+            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{client.company_name}</h1>
+            {client.website_url && (
+              <a
+                href={client.website_url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="mt-2 inline-block text-sm text-white/80 transition-colors hover:text-white hover:underline"
+              >
+                {client.website_url}
+              </a>
+            )}
+            <p className="mt-6 text-xs text-white/60">
+              Prepared {new Date(audit.created_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+            </p>
+          </div>
+        </div>
 
-      {roadmap && !isHidden(roadmap) && <WebRoadmapTable section={roadmap} title="Prioritized Roadmap" />}
+        {overview && !isHidden(overview) && (
+          <WebSectionShell id="web_overview" number={nextNumber()} label="Overview" setRef={setRef}>
+            <OverviewBlock section={overview} companyName={client.company_name} />
+          </WebSectionShell>
+        )}
 
-      <p className="text-center text-[11px] text-gray-400">
-        {audit.title} · {new Date(audit.created_at).toLocaleDateString()}
-      </p>
+        {PAGE_SECTIONS.map(({ key, title, page_type }) => {
+          const section = byKey.get(key);
+          if (!section || isHidden(section)) return null;
+          const snapshots = pageSnapshots.filter((s) => s.page_type === page_type);
+          if (!snapshots.length) return null;
+          return (
+            <WebSectionShell key={key} id={key} number={nextNumber()} label={title} setRef={setRef}>
+              <WebPageSection section={section} title={title} snapshots={snapshots} hideTitle />
+            </WebSectionShell>
+          );
+        })}
+
+        {performance && !isHidden(performance) && (
+          <WebSectionShell id="web_performance" number={nextNumber()} label="Performance" setRef={setRef}>
+            <WebAnalyticsSection section={performance} rollup={rollup} hideTitle />
+          </WebSectionShell>
+        )}
+
+        {roadmap && !isHidden(roadmap) && (
+          <WebSectionShell id="web_revenue_summary" number={nextNumber()} label="Prioritized Roadmap" setRef={setRef}>
+            <WebRoadmapTable section={roadmap} title="Prioritized Roadmap" hideTitle />
+          </WebSectionShell>
+        )}
+
+        <p className="text-center text-[11px] text-gray-400">
+          {audit.title} · {new Date(audit.created_at).toLocaleDateString()}
+        </p>
+      </div>
     </div>
   );
 }
