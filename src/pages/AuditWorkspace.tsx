@@ -89,6 +89,8 @@ export default function AuditWorkspace() {
   const [reportBundle, setReportBundle] = useState<AuditReportBundle | null>(null);
   const [webBundle, setWebBundle] = useState<WebAuditReportBundle | null>(null);
   const [webGenerating, setWebGenerating] = useState(false);
+  /** Set when a previous capture was abandoned part-way (tab closed or refreshed). */
+  const [stalledCapture, setStalledCapture] = useState<{ done: number; total: number } | null>(null);
   // Web audits: true while the "after" concept images are still generating. The
   // report is held back behind a finalizing screen until they finish.
   const [webAftersPending, setWebAftersPending] = useState(false);
@@ -167,6 +169,15 @@ export default function AuditWorkspace() {
           setAnalysisInProgress(false);
           const webStatus = await fetchWebAuditPipelineStatus(id);
           if (cancelled) return;
+          // A capture whose driving tab was closed leaves rows half-done with
+          // nothing running. Showing the progress screen would spin forever, so
+          // fall through to the pre-run screen and say what happened there.
+          if (webStatus.stalled) {
+            setWebGenerating(false);
+            setStalledCapture(webStatus.captured ?? null);
+            return;
+          }
+          setStalledCapture(null);
           if (webStatus.exists && !webStatus.complete) {
             setWebGenerating(true);
             return;
@@ -561,6 +572,14 @@ export default function AuditWorkspace() {
                     Use the assistant to capture the client context, then run the audit when you're ready.
                   </p>
                   {error && <div className="mt-3 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">{error}</div>}
+                  {stalledCapture && (
+                    <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+                      <strong>The last run was interrupted</strong> after {stalledCapture.done} of{' '}
+                      {stalledCapture.total} screenshots. Capturing runs in this tab, so closing or refreshing it
+                      stops the run. Start it again to pick up from those {stalledCapture.done}, and keep the tab
+                      open until it finishes.
+                    </div>
+                  )}
                   <button
                     type="button"
                     onClick={runDraft}

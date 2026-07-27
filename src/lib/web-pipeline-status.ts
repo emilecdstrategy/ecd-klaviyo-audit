@@ -52,7 +52,7 @@ const TOTAL_ANALYSIS_STEPS = WEB_STEP_LABELS.length;
 const TOTAL_STEPS = TOTAL_ANALYSIS_STEPS + 1;
 const AFTERS_STEP_INDEX = TOTAL_ANALYSIS_STEPS;
 
-export type WebPipelinePhase = 'analysis' | 'afters';
+export type WebPipelinePhase = 'capture' | 'analysis' | 'afters';
 
 export type WebPipelineStatus = {
   exists: boolean;
@@ -65,7 +65,38 @@ export type WebPipelineStatus = {
   progress: number;
   label: string;
   phase: WebPipelinePhase;
+  /** A capture that was started but has gone quiet, because the tab driving it
+   * was closed or refreshed. Re-running resumes from the shots it already got. */
+  stalled?: boolean;
+  captured?: { done: number; total: number };
 };
+
+/** The capture loop runs in the browser, so "is it still going?" can only be
+ * answered by whether rows are still being touched. Captures land about once a
+ * minute, so a gap this long means the tab driving it is gone. */
+const CAPTURE_STALE_MS = 4 * 60 * 1000;
+
+/** Capture progress straight from the snapshot rows, which is the only record of
+ * this phase that survives a page reload. */
+async function fetchCaptureProgress(auditId: string): Promise<
+  { total: number; done: number; lastTouchedMs: number | null } | null
+> {
+  const { data } = await supabase
+    .from('web_page_snapshots')
+    .select('status, fetched_at')
+    .eq('audit_id', auditId);
+  const rows = data ?? [];
+  if (rows.length === 0) return null;
+  const done = rows.filter(r => r.status === 'success' || r.status === 'failed').length;
+  const times = rows
+    .map(r => (r.fetched_at ? new Date(r.fetched_at).getTime() : 0))
+    .filter(t => t > 0);
+  return {
+    total: rows.length,
+    done,
+    lastTouchedMs: times.length > 0 ? Math.max(...times) : null,
+  };
+}
 
 export async function fetchWebAuditPipelineStatus(auditId: string): Promise<WebPipelineStatus> {
   const [{ data }, { data: auditRow }] = await Promise.all([
@@ -82,6 +113,27 @@ export async function fetchWebAuditPipelineStatus(auditId: string): Promise<WebP
   ]);
 
   if (!data) {
+    // No analysis job yet. That is either a run that never started, or one still
+    // in the capture phase, which has no server-side job of its own. Snapshot
+    // rows are the only trace capture leaves, so read progress from them.
+    const capture = await fetchCaptureProgress(auditId);
+    if (capture && capture.done < capture.total) {
+      const quietFor = capture.lastTouchedMs ? Date.now() - capture.lastTouchedMs : Infinity;
+      const stalled = quietFor > CAPTURE_STALE_MS;
+      return {
+        exists: true,
+        isGenerating: !stalled,
+        failed: false,
+        complete: false,
+        error: null,
+        stepIndex: 2,
+        progress: Math.round((capture.done / Math.max(capture.total, 1)) * 30),
+        label: `${WEB_CAPTURE_STEP_LABELS[2]}, ${capture.done}/${capture.total} done`,
+        phase: 'capture',
+        stalled,
+        captured: { done: capture.done, total: capture.total },
+      };
+    }
     return { exists: false, isGenerating: false, failed: false, complete: false, error: null, stepIndex: 0, progress: 0, label: '', phase: 'analysis' };
   }
 

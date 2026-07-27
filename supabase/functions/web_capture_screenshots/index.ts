@@ -185,6 +185,7 @@ async function seed(
   auditId: string,
   clientId: string,
   input: { homepage?: string; product?: string; collection?: string; cart?: string },
+  reset = false,
 ) {
   const homepage = normalizeUrl(input.homepage);
   if (!homepage) return { error: "Invalid or missing homepage URL" };
@@ -249,12 +250,55 @@ async function seed(
     }),
   );
 
+  // Resume rather than start over. The capture loop is driven from the browser,
+  // so a refresh or a closed tab abandons a run part-way; re-running used to
+  // delete every row and recapture all 8 pages, paying for work already done.
+  // A shot is reusable only if it succeeded AND still points at the same URL,
+  // so a re-detected product or collection page is always recaptured.
+  let kept = 0;
+  if (!reset) {
+    const { data: existing } = await sb
+      .from("web_page_snapshots")
+      .select("id, page_type, viewport, variant, url, status")
+      .eq("audit_id", auditId);
+    const reusable = new Set(
+      (existing ?? [])
+        .filter((r) => r.status === "success")
+        .filter((r) => rows.some((n) =>
+          n.page_type === r.page_type && n.viewport === r.viewport && n.variant === r.variant && n.url === r.url
+        ))
+        .map((r) => `${r.page_type}|${r.viewport}|${r.variant}`),
+    );
+    kept = reusable.size;
+    if (kept > 0) {
+      const staleIds = (existing ?? [])
+        .filter((r) => !(r.status === "success" && reusable.has(`${r.page_type}|${r.viewport}|${r.variant}`)))
+        .map((r) => r.id);
+      if (staleIds.length > 0) await sb.from("web_page_snapshots").delete().in("id", staleIds);
+      const missing = rows.filter((n) => !reusable.has(`${n.page_type}|${n.viewport}|${n.variant}`));
+      if (missing.length > 0) {
+        const { error: insErr } = await sb.from("web_page_snapshots").insert(missing);
+        if (insErr) throw insErr;
+      }
+      return {
+        total: rows.length,
+        reused: kept,
+        resolved: {
+          product: product ?? null,
+          collection: collection ?? null,
+          detected: { product: Boolean(product), collection: Boolean(collection) },
+        },
+      };
+    }
+  }
+
   await sb.from("web_page_snapshots").delete().eq("audit_id", auditId);
   const { error: insErr } = await sb.from("web_page_snapshots").insert(rows);
   if (insErr) throw insErr;
 
   return {
     total: rows.length,
+    reused: 0,
     resolved: {
       product: product ?? null,
       collection: collection ?? null,
@@ -512,6 +556,8 @@ serve(async (req) => {
       audit_id?: string;
       client_id?: string;
       pages?: { homepage?: string; product?: string; collection?: string; cart?: string };
+      /** Force a full recapture instead of reusing screenshots that succeeded. */
+      reset?: boolean;
     };
     const auditId = (input.audit_id ?? "").trim();
     const clientId = (input.client_id ?? "").trim();
@@ -523,7 +569,7 @@ serve(async (req) => {
     const sb = assertServiceClient();
 
     if (action === "seed") {
-      const result = await seed(sb, auditId, clientId, input.pages ?? {});
+      const result = await seed(sb, auditId, clientId, input.pages ?? {}, input.reset === true);
       if ("error" in result) {
         return json({ ok: false, error: { code: "bad_request", message: result.error }, correlationId }, { status: 400 });
       }
