@@ -402,6 +402,24 @@ const VERIFY_TOOL: LlmTool = {
   },
 };
 
+type VerifyResult = { ok: boolean; feedback: string; defects: string[]; missing: string[] };
+
+/** Defects about the PHOTOS themselves (reshaped, cropped, zoomed, removed).
+ * These are the ones that make an image look broken to a client rather than
+ * merely unfinished, so they are weighted far above a skipped fix. */
+function isPhotoDefect(defect: string): boolean {
+  return /crop|aspect|stretch|squash|zoom|re-?cent|framing|sliced|cut off|taller|wider|squar|shape|thumbnail|missing.*photo|photo.*missing/i
+    .test(defect);
+}
+
+/** Lower is better. A photo defect outweighs every skipped fix, because the
+ * fixes still appear as text in the report while a mangled photo does not. */
+function verifyScore(v: VerifyResult): number {
+  const photo = v.defects.filter(isPhotoDefect).length;
+  const other = v.defects.length - photo;
+  return photo * 100 + other * 10 + v.missing.length;
+}
+
 /** Check the generated "after" against the fixes it was supposed to apply. The
  * image model often produces a pretty screenshot that quietly skips a structural
  * change (reflowing a nav to one row) or an addition (a notify-me button), so we
@@ -412,8 +430,8 @@ async function verifyAfterImage(
   afterUrl: string,
   recommendations: string[],
   viewport: Viewport,
-): Promise<{ ok: boolean; feedback: string }> {
-  if (recommendations.length === 0) return { ok: true, feedback: "" };
+): Promise<VerifyResult> {
+  if (recommendations.length === 0) return { ok: true, feedback: "", defects: [], missing: [] };
   try {
     const llm = createLlmClient("anthropic", { model: VERIFY_MODEL });
     const fixes = recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n");
@@ -434,18 +452,18 @@ async function verifyAfterImage(
       tools: [VERIFY_TOOL],
       toolChoice: { type: "tool", name: "record_after_check" },
     });
-    if (turn.kind !== "tool_call") return { ok: true, feedback: "" };
+    if (turn.kind !== "tool_call") return { ok: true, feedback: "", defects: [], missing: [] };
     const out = (turn.input ?? {}) as { all_applied?: unknown; unapplied_fixes?: unknown; defects?: unknown };
     const missing = Array.isArray(out.unapplied_fixes) ? out.unapplied_fixes.map(String).filter(Boolean) : [];
     const defects = Array.isArray(out.defects) ? out.defects.map(String).filter(Boolean) : [];
-    if (out.all_applied === true && defects.length === 0) return { ok: true, feedback: "" };
-    if (missing.length === 0 && defects.length === 0) return { ok: true, feedback: "" };
+    if (out.all_applied === true && defects.length === 0) return { ok: true, feedback: "", defects: [], missing: [] };
+    if (missing.length === 0 && defects.length === 0) return { ok: true, feedback: "", defects: [], missing: [] };
     const parts: string[] = [];
     if (missing.length > 0) parts.push(`These required fixes were NOT applied in your previous attempt, you MUST make each one clearly visible this time:\n${missing.map((m, i) => `${i + 1}. ${m}`).join("\n")}`);
     if (defects.length > 0) parts.push(`Your previous attempt also introduced these defects, which you MUST avoid:\n${defects.map((d, i) => `${i + 1}. ${d}`).join("\n")}`);
-    return { ok: false, feedback: parts.join("\n\n") };
+    return { ok: false, feedback: parts.join("\n\n"), defects, missing };
   } catch {
-    return { ok: true, feedback: "" };
+    return { ok: true, feedback: "", defects: [], missing: [] };
   }
 }
 
@@ -564,10 +582,53 @@ async function generateOne(
   const check = await verifyAfterImage(sourceUrl, bustedUrl, recommendations, viewport);
   if (!check.ok) {
     try {
-      const retryPrompt = `${basePrompt}\n\nIMPORTANT, THIS IS A SECOND ATTEMPT. ${check.feedback}\n\nProduce the corrected screenshot with every fix above clearly visible and no duplicated or leftover elements.`;
-      const retried = await geminiEditImage(srcPng, retryPrompt, apiKey, refPng, belowPng);
+      const photoTrouble = check.defects.some(isPhotoDefect);
+      // Mangled photos are a symptom of asking for too much at once: the model
+      // reflows the whole page to fit every fix and rescales the imagery on the
+      // way. So the corrective attempt asks for LESS, not the same again. The
+      // dropped fixes still appear as text in the report.
+      const retryFixes = photoTrouble ? recommendations.slice(0, 2) : recommendations;
+      const retryBase = photoTrouble
+        ? buildEditPrompt(
+          meta.label,
+          retryFixes,
+          false,
+          viewport,
+          meta.page_type as WebPageKind,
+          skippedWidgetFix,
+          Boolean(belowPng),
+          photoShapeNote(sourceElements, pngSize(srcPng)),
+        )
+        : basePrompt;
+      const lead = photoTrouble
+        ? `IMPORTANT, THIS IS A SECOND ATTEMPT AND YOUR LAST ONE DAMAGED THE IMAGERY. ${check.feedback}\n\nThis time, treat every photograph as untouchable: copy each one across at the same shape, the same framing, and the same size as the original. Apply only the small number of fixes listed above, and if a fix cannot be done without rescaling or re-cropping a photo, leave that fix out entirely and keep the photo intact.`
+        : `IMPORTANT, THIS IS A SECOND ATTEMPT. ${check.feedback}\n\nProduce the corrected screenshot with every fix above clearly visible and no duplicated or leftover elements.`;
+      const retried = await geminiEditImage(
+        srcPng,
+        `${retryBase}\n\n${lead}`,
+        apiKey,
+        // The sibling reference tempts the model to re-lay-out the page, which is
+        // how photos get rescaled. Drop it when photos are the problem.
+        photoTrouble ? undefined : refPng,
+        belowPng,
+      );
       // Never let a corrective attempt regress the device shape.
-      if (!wrongShape(srcPng, retried)) bustedUrl = await store(retried);
+      if (!wrongShape(srcPng, retried)) {
+        const retryUrl = await store(retried);
+        // Grade the retry too. It used to be accepted blind, so a second attempt
+        // that still cropped the photos shipped anyway, sometimes worse than the
+        // first. Keep whichever attempt scores better and re-store if needed.
+        const recheck = await verifyAfterImage(sourceUrl, retryUrl, retryFixes, viewport);
+        // When photos were the problem, the retry has to actually fix the photos
+        // to win. Comparing total scores would let it win just for having been
+        // asked to apply fewer fixes, which lowers the "missing" count for free.
+        const photoBefore = check.defects.filter(isPhotoDefect).length;
+        const photoAfter = recheck.defects.filter(isPhotoDefect).length;
+        const accept = photoTrouble
+          ? photoAfter < photoBefore
+          : verifyScore(recheck) <= verifyScore(check);
+        bustedUrl = accept ? retryUrl : await store(edited);
+      }
     } catch {
       // Retry failed outright: the first attempt is already stored, keep it.
     }
