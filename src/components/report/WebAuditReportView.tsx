@@ -131,8 +131,10 @@ export default function WebAuditReportView({
       items.push({ id: key, label: title });
     }
     if (performance && !isHidden(performance)) items.push({ id: 'web_performance', label: 'Performance' });
-    if (roadmap && !isHidden(roadmap)) items.push({ id: 'web_revenue_summary', label: 'Roadmap' });
+    // Before the roadmap: the demo is context for what is being recommended,
+    // and the roadmap reads as the closing summary.
     if (demoKind) items.push({ id: 'web_agent_demo', label: demoLabel });
+    if (roadmap && !isHidden(roadmap)) items.push({ id: 'web_revenue_summary', label: 'Roadmap' });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sections, pageSnapshots, demoKind, demoLabel]);
@@ -270,12 +272,6 @@ export default function WebAuditReportView({
           </WebSectionShell>
         )}
 
-        {roadmap && !isHidden(roadmap) && (
-          <WebSectionShell id="web_revenue_summary" number={nextNumber()} label="Prioritized Roadmap" setRef={setRef}>
-            <WebRoadmapTable section={roadmap} title="Prioritized Roadmap" hideTitle />
-          </WebSectionShell>
-        )}
-
         {demoKind && (
           <WebSectionShell
             id="web_agent_demo"
@@ -284,6 +280,12 @@ export default function WebAuditReportView({
             setRef={setRef}
           >
             <WebAgentDemoSection kind={demoKind} websiteUrl={client.website_url} />
+          </WebSectionShell>
+        )}
+
+        {roadmap && !isHidden(roadmap) && (
+          <WebSectionShell id="web_revenue_summary" number={nextNumber()} label="Prioritized Roadmap" setRef={setRef}>
+            <WebRoadmapTable section={roadmap} title="Prioritized Roadmap" hideTitle />
           </WebSectionShell>
         )}
 

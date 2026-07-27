@@ -96,7 +96,7 @@ export default function WebAgentDemoSection({
             <ExternalLink className="h-3.5 w-3.5" aria-hidden />
           </a>
         </div>
-        <div className="relative h-[34rem] overflow-hidden rounded-xl border border-gray-200 bg-white">
+        <div className="relative h-[38rem] overflow-hidden rounded-xl border border-gray-200 bg-white sm:h-[46rem]">
           {!loaded && (
             <div className="absolute inset-0 flex items-center justify-center text-xs text-gray-400">
               Loading the live demo…
