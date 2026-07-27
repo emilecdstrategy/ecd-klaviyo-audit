@@ -66,7 +66,18 @@ const TOOLS: LlmTool[] = [
           type: "array",
           minItems: 2,
           maxItems: 4,
-          items: { type: "object", properties: { label: { type: "string" }, value: { type: "string" } }, required: ["label", "value"] },
+          items: {
+            type: "object",
+            properties: {
+              label: {
+                type: "string",
+                description:
+                  "What the strategist sees AND what gets recorded as their answer. Write it as natural language in sentence case, e.g. 'Live plants' or 'Conversion rate'. NEVER a slug or code (not 'live_plants', not 'CONVERSION').",
+              },
+              value: { type: "string", description: "Machine value. Safe to repeat the label." },
+            },
+            required: ["label", "value"],
+          },
         },
         multi_select: { type: "boolean" },
       },
@@ -130,6 +141,7 @@ function buildSystem(snapshot: Snapshot): string {
 - If the user says there was no call or has nothing to share, ask one or two brief chip questions to capture the essentials (${essentialsHint}), then propose_context.
 
 - NEVER ASK THE SAME QUESTION TWICE. Your earlier questions appear in your own messages, with the chips you offered listed as "(Options offered: ...)". Whatever the user replied after that IS their answer, even if it is one word like "mix" or "both", and even if it does not exactly match a chip. Accept it, move on, and never apologise for how a previous question was worded or offer to "ask it properly this time". At most two questions total, then call propose_context with whatever you have.
+- Do not repeat your question in the chat text. The question field is rendered on its own, so asking it in both places prints it twice.
 - A vague answer is still an answer. If the user says "both" or "a mix", record exactly that and stop probing.
 
 RULES:

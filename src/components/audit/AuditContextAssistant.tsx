@@ -18,6 +18,11 @@ type ChatMessage = {
   applied?: boolean;
 };
 
+/** Loose comparison for "did the assistant already say this?" checks. */
+function normalizeForCompare(text: string): string {
+  return text.toLowerCase().replace(/[^a-z0-9 ]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
 const GREETING =
   "Hi! Paste the Fireflies link (or a Google Doc link) for the call and I'll pull the transcript, or just tell me about the client. Then I'll draft the background and the focus areas for this audit.";
 
@@ -130,7 +135,16 @@ export default function AuditContextAssistant({
       let content = turn.assistant_text || '';
       let historyContent: string | undefined;
       if (turn.question?.question) {
-        content = content ? `${content}\n\n${turn.question.question}` : turn.question.question;
+        // The model often already asks the question in its chat text, so blindly
+        // appending printed it twice ("...main focus for this audit? What's the
+        // main focus for this audit?").
+        const asked = normalizeForCompare(turn.question.question);
+        const alreadyAsked = asked.length > 0 && normalizeForCompare(content).includes(asked);
+        content = !content
+          ? turn.question.question
+          : alreadyAsked
+            ? content
+            : `${content}\n\n${turn.question.question}`;
         // The chips are UI, not text, so the replayed message must also name the
         // options. Without them the model reads its own turn back as a bare open
         // question, decides it forgot the chips, and asks the very same thing
@@ -190,7 +204,10 @@ export default function AuditContextAssistant({
                         <button
                           key={opt.value}
                           type="button"
-                          onClick={() => { if (isOther) { inputRef.current?.focus(); return; } void send(opt.value); }}
+                          // Send the human label, not the machine value. The
+                          // value is often a slug ("live_plants"), which read
+                          // like a bug sitting in the chat as the user's reply.
+                          onClick={() => { if (isOther) { inputRef.current?.focus(); return; } void send(opt.label || opt.value); }}
                           className="block w-full rounded-lg border border-gray-200 bg-white px-3 py-2 text-left text-sm font-medium text-gray-700 hover:border-brand-primary/40 hover:bg-gray-50"
                         >
                           {opt.label}
