@@ -132,9 +132,16 @@ function buildEditPrompt(
     ? [`- The FINAL image provided is NOT part of your output. It shows the real content that continues immediately BELOW this screenshot, for reference only. Keep your output framed exactly like the FIRST image (same top, same height, same aspect ratio). If your changes free up space at the bottom, fill it by continuing with the REAL next content from that final reference image, cropped naturally as a page would be. NEVER invent placeholder products, names, or prices, and NEVER leave an empty or blank band at the bottom.`]
     : [`- If your changes free up space at the bottom, do NOT invent placeholder products, names, or prices to fill it, and do not leave a blank band: keep the existing sections and let the last one crop naturally at the bottom edge, exactly as the source screenshot does.`];
 
-  const freezeRule = freezeFloatingWidgets
-    ? [`- FLOATING ICONS ARE FROZEN: reproduce every floating widget (chat bubble, rewards or loyalty badge, back-to-top button) EXACTLY as it appears in the source, the same icon in the same corner, each appearing ONCE. Do NOT move them, do NOT resize them, and above all do NOT draw an extra copy anywhere. There must be exactly as many floating icons in your output as in the source, no more.`]
-    : [];
+  // Always frozen. This used to be conditional on a floating-widget fix having
+  // been dropped, but the model duplicates these badges even when no fix
+  // mentions them: a page with one loyalty star came back with two.
+  const freezeRule = [
+    `- FLOATING ICONS ARE FROZEN: reproduce every floating widget (chat bubble, rewards or loyalty badge, back-to-top button) EXACTLY as it appears in the source, the same icon in the same corner, each appearing ONCE. Do NOT move them, do NOT resize them, and above all do NOT draw an extra copy anywhere. There must be exactly as many floating icons in your output as in the source, no more.${
+      freezeFloatingWidgets
+        ? ` A fix asking to move or reposition one of these was deliberately withheld from the list above, so there is nothing for you to change about them at all.`
+        : ``
+    }`,
+  ];
 
   const common = [
     `Design rules:`,
@@ -164,6 +171,7 @@ function buildEditPrompt(
     `3. Never remove or shrink the main product photo, and never replace it with thumbnails.`,
     `4. A slide-out cart stays exactly where it is: on desktop, pinned to the right edge with the page still visible behind it. Never centre it and never blank out the page behind it.`,
     `5. Nothing may get taller than it is in the source. A cart drawer, a header, or a line of text that fits one row must still fit one row.`,
+    `6. COUNT THE FLOATING BADGES. Every floating widget (chat bubble, loyalty or rewards star, back-to-top) appears EXACTLY ONCE, in the same corner as the source. Before you finish, count them: two loyalty stars, or a chat bubble in two corners, is a broken image.`,
   ].join("\n");
 
   if (hasReference) {
@@ -388,7 +396,7 @@ const VERIFY_TOOL: LlmTool = {
         type: "array",
         items: { type: "string" },
         description:
-          "Visual defects the edit introduced: duplicated text or elements, an element left behind in its old place after a move, overlapping or colliding elements, unreadable text over a photo, empty icon slots, or misspellings. ALSO report each of these as a defect: (a) IMG_2 is in the WRONG DEVICE LAYOUT, i.e. IMG_1 is a narrow phone screenshot but IMG_2 is a wide multi-column desktop layout, or the reverse; (b) the main product photo from IMG_1 is missing, shrunk to a thumbnail, or replaced by a row of thumbnails; (c) product images changed shape, for example square cards in IMG_1 becoming taller or wider in IMG_2, or a photo cropped or stretched; (d) IMG_2 looks more crowded than IMG_1, with smaller text or tighter spacing; (e) any photo is framed differently from IMG_1, i.e. zoomed in, re-centred, or with part of the product sliced off at an edge; (f) IMG_1 shows a cart drawer pinned to the right edge with the page visible behind it but IMG_2 centres the cart, turns it into a modal, or blanks out the page behind it; (g) IMG_2's cart drawer is taller than IMG_1's, or a line that fitted on one row in IMG_1 now wraps onto two. All of these are serious.",
+          "Visual defects the edit introduced: duplicated text or elements, an element left behind in its old place after a move, overlapping or colliding elements, unreadable text over a photo, empty icon slots, or misspellings. ALSO report each of these as a defect: (a) IMG_2 is in the WRONG DEVICE LAYOUT, i.e. IMG_1 is a narrow phone screenshot but IMG_2 is a wide multi-column desktop layout, or the reverse; (b) the main product photo from IMG_1 is missing, shrunk to a thumbnail, or replaced by a row of thumbnails; (c) product images changed shape, for example square cards in IMG_1 becoming taller or wider in IMG_2, or a photo cropped or stretched; (d) IMG_2 looks more crowded than IMG_1, with smaller text or tighter spacing; (e) any photo is framed differently from IMG_1, i.e. zoomed in, re-centred, or with part of the product sliced off at an edge; (f) IMG_1 shows a cart drawer pinned to the right edge with the page visible behind it but IMG_2 centres the cart, turns it into a modal, or blanks out the page behind it; (g) IMG_2's cart drawer is taller than IMG_1's, or a line that fitted on one row in IMG_1 now wraps onto two; (h) a floating widget is DUPLICATED, i.e. a chat bubble, loyalty or rewards star, or back-to-top button that appears once in IMG_1 appears twice or more in IMG_2, or has moved to a different corner. Count the floating badges in each image and compare the totals. All of these are serious.",
       },
     },
   },
