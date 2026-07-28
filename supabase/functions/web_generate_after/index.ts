@@ -2,8 +2,19 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getSecret } from "../_shared/app-secrets.ts";
-import { layoutGuidance, type WebPageKind } from "../_shared/ecommerce-ux-kb.ts";
-import { createLlmClient, type LlmMessage, type LlmTool } from "../_shared/llm-adapter.ts";
+import { type WebPageKind } from "../_shared/ecommerce-ux-kb.ts";
+// The prompt, the Gemini call, and the vision QA live in _shared so the model
+// bake-off script exercises candidate models with the EXACT production pieces.
+import {
+  buildEditPrompt,
+  geminiEditImage,
+  photoShapeNote,
+  pngSize,
+  wrongShape,
+  type CapturedEl,
+  type Viewport,
+} from "../_shared/after-image-prompt.ts";
+import { isPhotoDefect, verifyAfterImage, verifyScore } from "../_shared/after-image-verify.ts";
 
 // Generates an "after" concept image for a web-audit page section by editing the
 // real above-the-fold screenshot in place with Google's Gemini image model
@@ -20,8 +31,6 @@ import { createLlmClient, type LlmMessage, type LlmTool } from "../_shared/llm-a
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const GEMINI_IMAGE_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
-// Vision model that grades the generated "after" against the fixes it should show.
-const VERIFY_MODEL = "claude-sonnet-5";
 const STORAGE_BUCKET = "audit-assets";
 
 const corsHeaders: Record<string, string> = {
@@ -45,8 +54,6 @@ function assertServiceClient() {
   });
 }
 
-type Viewport = "desktop" | "mobile";
-
 // Page sections that get an "after" (screenshot-backed). Analytics/overview/
 // roadmap have no page shot, so they are excluded.
 const PAGE_SECTIONS: Array<{ key: string; page_type: string; label: string }> = [
@@ -60,194 +67,6 @@ function asRecord(v: unknown): Record<string, unknown> {
   return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, unknown>) : {};
 }
 
-function bytesToBase64(bytes: Uint8Array): string {
-  let binary = "";
-  const chunk = 0x8000;
-  for (let i = 0; i < bytes.length; i += chunk) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
-  }
-  return btoa(binary);
-}
-
-/** Read a PNG's pixel dimensions straight out of the IHDR chunk (width and
- * height are big-endian uint32 at byte offsets 16 and 20). Lets us check the
- * generated image's SHAPE deterministically instead of trusting the model to
- * honour "keep the same aspect ratio". */
-function pngSize(bytes: Uint8Array): { w: number; h: number } | null {
-  if (bytes.length < 24) return null;
-  // PNG signature
-  if (bytes[0] !== 0x89 || bytes[1] !== 0x50 || bytes[2] !== 0x4e || bytes[3] !== 0x47) return null;
-  const read32 = (o: number) => ((bytes[o] << 24) | (bytes[o + 1] << 16) | (bytes[o + 2] << 8) | bytes[o + 3]) >>> 0;
-  const w = read32(16);
-  const h = read32(20);
-  if (!w || !h) return null;
-  return { w, h };
-}
-
-/** Is the generated image the wrong SHAPE for the device? A phone screenshot is
- * portrait and a desktop one is landscape; the image model sometimes returns a
- * wide desktop-looking layout for a mobile source, which is unusable. */
-function wrongShape(source: Uint8Array, generated: Uint8Array): boolean {
-  const a = pngSize(source);
-  const b = pngSize(generated);
-  if (!a || !b) return false; // can't tell, don't block
-  const srcRatio = a.w / a.h;
-  const genRatio = b.w / b.h;
-  // Orientation flip (portrait source -> landscape output, or the reverse).
-  if (srcRatio < 1 && genRatio >= 1) return true;
-  if (srcRatio > 1 && genRatio <= 1) return true;
-  // Same orientation but a very different shape (more than ~45% off) also reads
-  // as broken next to the original.
-  return Math.abs(genRatio - srcRatio) / srcRatio > 0.45;
-}
-
-function base64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const out = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) out[i] = binary.charCodeAt(i);
-  return out;
-}
-
-function buildEditPrompt(
-  label: string,
-  recommendations: string[],
-  hasReference: boolean,
-  viewport: Viewport,
-  pageKind: WebPageKind,
-  freezeFloatingWidgets = false,
-  hasBelowFold = false,
-  photoShape: string | null = null,
-): string {
-  const fixes = recommendations
-    .map((r, i) => `${i + 1}. ${r}`)
-    .join("\n");
-
-  const deviceRules = viewport === "mobile"
-    ? `This is the MOBILE view. Follow native mobile UX conventions strictly: keep the primary navigation collapsed inside the hamburger menu, NEVER expand it into a horizontal row or list of text links. Stack content vertically in a single column, and that includes any product grid: exactly ONE product card per row, full width, never two side by side. Make every tap target large and well spaced (at least 44x44px). Keep the key content and one call-to-action within thumb reach. Never shrink, crowd, or create tiny clickable elements.`
-    : `This is the DESKTOP view. Use standard desktop conventions: a horizontal top navigation and multi-column layouts are fine.`;
-
-  // Knowing the real next section stops the two classic failures: an empty band
-  // at the bottom, and invented filler products with made-up names and prices.
-  const belowFoldRule = hasBelowFold
-    ? [`- The FINAL image provided is NOT part of your output. It shows the real content that continues immediately BELOW this screenshot, for reference only. Keep your output framed exactly like the FIRST image (same top, same height, same aspect ratio). If your changes free up space at the bottom, fill it by continuing with the REAL next content from that final reference image, cropped naturally as a page would be. NEVER invent placeholder products, names, or prices, and NEVER leave an empty or blank band at the bottom.`]
-    : [`- If your changes free up space at the bottom, do NOT invent placeholder products, names, or prices to fill it, and do not leave a blank band: keep the existing sections and let the last one crop naturally at the bottom edge, exactly as the source screenshot does.`];
-
-  // Always frozen. This used to be conditional on a floating-widget fix having
-  // been dropped, but the model duplicates these badges even when no fix
-  // mentions them: a page with one loyalty star came back with two.
-  const freezeRule = [
-    `- FLOATING ICONS ARE FROZEN: reproduce every floating widget (chat bubble, rewards or loyalty badge, back-to-top button) EXACTLY as it appears in the source, the same icon in the same corner, each appearing ONCE. Do NOT move them, do NOT resize them, and above all do NOT draw an extra copy anywhere. There must be exactly as many floating icons in your output as in the source, no more.${
-      freezeFloatingWidgets
-        ? ` A fix asking to move or reposition one of these was deliberately withheld from the list above, so there is nothing for you to change about them at all.`
-        : ``
-    }`,
-  ];
-
-  const common = [
-    `Design rules:`,
-    ...belowFoldRule,
-    ...freezeRule,
-    `- LAYOUT (follow these standard e-commerce patterns exactly): ${layoutGuidance(pageKind)}`,
-    `- ${deviceRules}`,
-    `- Use EXACTLY ONE primary call-to-action in the hero. Never create duplicate or competing CTA buttons (e.g. do not show both "Shop Now" and "Shop the Bundle").`,
-    `- Keep all existing real text and numbers from the source (headlines, prices, phone numbers, product names) unless a fix changes them.`,
-    `- If a fix calls for a new element such as a badge, star rating, or trust signal, DEPICT it as a real graphic (actual stars, an actual badge). NEVER write the element's name or a description as literal text on the page (no "Bestseller Badge", "hero image", "CTA button", "trust badge" text).`,
-    `- READABILITY IS CRITICAL: any text placed over a photo must be easy to read. Add a dark gradient or semi-transparent scrim behind the text (or place the text on a solid color panel) so it has strong contrast. Never leave light text sitting on a busy or light photo where it is hard to read.`,
-    `- Every button, pill, chip, or element must look FINISHED and real: text centered and aligned, consistent padding, no empty icon boxes, no blank slots, no missing or broken icons. If you cannot render a clean icon, use text only, do not leave an empty space where an icon would go.`,
-    `- Keep all text crisp, correctly spelled, and legible. Do not add annotations, numbered markers, callouts, arrows, borders, captions, or watermarks, and never render any of these instructions into the image.`,
-    `- OUTPUT FRAMING: match the source screenshot's aspect ratio, width, and vertical extent as closely as you can. Show the same span of the page from top to bottom. Do not zoom in, do not crop content away, and do not return a shorter or squarer image than the source: the result is displayed side by side with the original, so a different shape looks broken.`,
-    `- Output only the clean, polished, production-quality redesigned screenshot, as if it were a real live page.`,
-  ].join("\n");
-
-  // Repeated last, on purpose. These are the failures that make an image
-  // unusable rather than merely imperfect, and they were getting lost inside the
-  // long rule list above.
-  const hardConstraints = [
-    `ABSOLUTE CONSTRAINTS. Breaking any of these makes the image unusable, no matter how good the rest is:`,
-    photoShape
-      ? `1. PHOTO SHAPE IS FIXED. ${photoShape} Reproduce every product photo at that exact shape. Do not make them taller, wider, or squarer.`
-      : `1. PHOTO SHAPE IS FIXED. Every product photo keeps the exact aspect ratio it has in the source. If the grid cards are square, every card in your output is square.`,
-    `2. PHOTO FRAMING IS FIXED. Never crop, zoom, or re-centre a photo. The same amount of the product stays in shot with the same margins. If you need vertical space, take it from padding, gaps, or headings, never from inside an image.`,
-    `3. Never remove or shrink the main product photo, and never replace it with thumbnails.`,
-    `4. A slide-out cart stays exactly where it is: on desktop, pinned to the right edge with the page still visible behind it. Never centre it and never blank out the page behind it.`,
-    `5. Nothing may get taller than it is in the source. A cart drawer, a header, or a line of text that fits one row must still fit one row.`,
-    `6. COUNT THE FLOATING BADGES. Every floating widget (chat bubble, loyalty or rewards star, back-to-top) appears EXACTLY ONCE, in the same corner as the source. Before you finish, count them: two loyalty stars, or a chat bubble in two corners, is a broken image.`,
-  ].join("\n");
-
-  if (hasReference) {
-    // Mirror mode: image 1 is the current screenshot for THIS viewport, image 2
-    // is the already-approved redesign for the OTHER viewport. Match the CONTENT
-    // decisions but rebuild the STRUCTURE natively for this device.
-    return [
-      `The FIRST image is a real screenshot of the ${label} of an e-commerce store.`,
-      `The SECOND image is the approved "after" redesign of the SAME page on the OTHER device.`,
-      viewport === "mobile"
-        ? `MANDATORY OUTPUT SHAPE: your image must be a TALL, NARROW SINGLE-COLUMN PHONE screenshot matching the FIRST image's aspect ratio and width. The SECOND image is a wide desktop layout: do NOT copy its shape, column count, or navigation. Copying the desktop layout onto the phone is the single worst mistake you can make here.`
-        : `MANDATORY OUTPUT SHAPE: your image must be a WIDE DESKTOP screenshot matching the FIRST image's aspect ratio. The SECOND image is a narrow phone layout: do NOT copy its shape or its collapsed mobile navigation.`,
-      `Match the SECOND image's CONTENT and messaging decisions: the same new headline and body copy, the same offer, and the same primary call-to-action wording. But rebuild the STRUCTURE natively for THIS device using the rules below. Do NOT copy the other device's navigation style, column count, or layout (in particular, never turn a mobile menu into a desktop-style horizontal nav).`,
-      `On top of matching the reference, you MUST actually apply these ${viewport}-specific fixes (make the change clearly visible, e.g. real added spacing, larger tap targets, a repositioned or added element):`,
-      fixes || "Improve visual hierarchy, spacing, and clarity of the primary call to action.",
-      `Keep the brand's real logo, product photos, color palette, and typography intact so it clearly reads as the same store.`,
-      common,
-      hardConstraints,
-    ].join("\n\n");
-  }
-
-  return [
-    `This image is a real screenshot of the ${label} of an e-commerce store.`,
-    `Produce an improved "after" redesign of THIS EXACT page as a realistic screenshot of the same website.`,
-    `Keep the brand's real logo, product photos, color palette, and typography intact so it clearly reads as the same store. Keep the same overall page structure and aspect ratio; change only what the fixes below require.`,
-    `Apply these specific conversion and UX fixes:`,
-    fixes || "Improve visual hierarchy, clarity of the primary call to action, and overall polish.",
-    common,
-    hardConstraints,
-  ].join("\n\n");
-}
-
-// Calls Gemini image editing: source screenshot in, edited screenshot out. When a
-// reference image is supplied (the sibling viewport's approved "after"), it is
-// sent as a second image so the model mirrors the same changes across viewports.
-async function geminiEditImage(
-  sourcePng: Uint8Array,
-  prompt: string,
-  apiKey: string,
-  referencePng?: Uint8Array,
-  belowFoldPng?: Uint8Array,
-): Promise<Uint8Array> {
-  const url =
-    `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_IMAGE_MODEL}:generateContent?key=${apiKey}`;
-  const requestParts: Array<Record<string, unknown>> = [
-    { inlineData: { mimeType: "image/png", data: bytesToBase64(sourcePng) } },
-  ];
-  if (referencePng) requestParts.push({ inlineData: { mimeType: "image/png", data: bytesToBase64(referencePng) } });
-  // The below-the-fold context image always goes LAST so its position in the
-  // prompt text ("the FINAL image shows what continues below") stays stable.
-  if (belowFoldPng) requestParts.push({ inlineData: { mimeType: "image/png", data: bytesToBase64(belowFoldPng) } });
-  requestParts.push({ text: prompt });
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts: requestParts }],
-      generationConfig: { responseModalities: ["IMAGE"], temperature: 0.4 },
-    }),
-  });
-  if (!res.ok) {
-    const detail = (await res.text().catch(() => "")).slice(0, 400);
-    throw new Error(`gemini_http_${res.status}: ${detail}`);
-  }
-  const data = await res.json().catch(() => null) as {
-    candidates?: Array<{ content?: { parts?: Array<Record<string, unknown>> } }>;
-  } | null;
-  const parts = data?.candidates?.[0]?.content?.parts ?? [];
-  for (const part of parts) {
-    const inline = (part.inlineData ?? part.inline_data) as { data?: string; mimeType?: string } | undefined;
-    if (inline?.data) return base64ToBytes(inline.data);
-  }
-  throw new Error("gemini_no_image_returned");
-}
-
-type CapturedEl = { label?: string; w?: number; h?: number };
 type ViewportSource = {
   viewport: Viewport;
   url: string;
@@ -255,33 +74,6 @@ type ViewportSource = {
   fold2Url?: string | null;
   elements?: CapturedEl[];
 };
-
-/** Describe the shape of the repeated product photos, measured from the real DOM
- * boxes captured with the screenshot. Telling the model "these are square" beats
- * telling it "do not change the aspect ratio", which it has ignored repeatedly. */
-function photoShapeNote(elements: CapturedEl[] | undefined, png: { w: number; h: number } | null): string | null {
-  if (!png || png.w <= 0 || png.h <= 0) return null;
-  // Cards only: wide enough to be a product photo rather than a logo or icon.
-  const cards = (elements ?? []).filter(
-    (e) => typeof e.label === "string" && /^img\b/i.test(e.label) && (e.w ?? 0) >= 20 && (e.h ?? 0) >= 4,
-  );
-  if (cards.length < 2) return null;
-  const ratios = cards
-    .map((e) => ((e.w as number) / 100 * png.w) / ((e.h as number) / 100 * png.h))
-    .filter((r) => Number.isFinite(r) && r > 0.1 && r < 10)
-    .sort((a, b) => a - b);
-  if (ratios.length < 2) return null;
-  const median = ratios[Math.floor(ratios.length / 2)];
-  // Only speak up when the photos agree with each other, so a page of mixed
-  // shapes does not get told they are all one shape.
-  const consistent = ratios.every((r) => Math.abs(r - median) / median <= 0.15);
-  if (!consistent) return null;
-  if (Math.abs(median - 1) <= 0.06) {
-    return "The product photos in the source are SQUARE (1:1).";
-  }
-  const wide = Math.round(median * 100) / 100;
-  return `The product photos in the source are ${median > 1 ? "landscape" : "portrait"}, about ${wide} wide for every 1 tall.`;
-}
 
 // One source screenshot per viewport for a page (above-the-fold variant preferred).
 async function listViewportSources(sb: SupabaseClient, auditId: string, pageType: string): Promise<ViewportSource[]> {
@@ -374,99 +166,6 @@ function recommendationsFor(
     .filter(Boolean) as string[];
 }
 
-const VERIFY_TOOL: LlmTool = {
-  name: "record_after_check",
-  description:
-    "Report whether the redesigned screenshot actually applied every requested fix, and whether the edit introduced any visual defects.",
-  input_schema: {
-    type: "object",
-    required: ["all_applied", "unapplied_fixes", "defects"],
-    properties: {
-      all_applied: {
-        type: "boolean",
-        description: "true ONLY if every requested fix is clearly and completely visible in the second image",
-      },
-      unapplied_fixes: {
-        type: "array",
-        items: { type: "string" },
-        description:
-          "One short entry per requested fix that is NOT visibly applied, naming what is still wrong. Be strict: if a fix said to fit a row onto one line and it still wraps to two, or said to add an element and it is not visible, it is NOT applied.",
-      },
-      defects: {
-        type: "array",
-        items: { type: "string" },
-        description:
-          "Visual defects the edit introduced: duplicated text or elements, an element left behind in its old place after a move, overlapping or colliding elements, unreadable text over a photo, empty icon slots, or misspellings. ALSO report each of these as a defect: (a) IMG_2 is in the WRONG DEVICE LAYOUT, i.e. IMG_1 is a narrow phone screenshot but IMG_2 is a wide multi-column desktop layout, or the reverse; (b) the main product photo from IMG_1 is missing, shrunk to a thumbnail, or replaced by a row of thumbnails; (c) product images changed shape, for example square cards in IMG_1 becoming taller or wider in IMG_2, or a photo cropped or stretched; (d) IMG_2 looks more crowded than IMG_1, with smaller text or tighter spacing; (e) any photo is framed differently from IMG_1, i.e. zoomed in, re-centred, or with part of the product sliced off at an edge; (f) IMG_1 shows a cart drawer pinned to the right edge with the page visible behind it but IMG_2 centres the cart, turns it into a modal, or blanks out the page behind it; (g) IMG_2's cart drawer is taller than IMG_1's, or a line that fitted on one row in IMG_1 now wraps onto two; (h) a floating widget is DUPLICATED, i.e. a chat bubble, loyalty or rewards star, or back-to-top button that appears once in IMG_1 appears twice or more in IMG_2, or has moved to a different corner. Count the floating badges in each image and compare the totals. All of these are serious.",
-      },
-    },
-  },
-};
-
-type VerifyResult = { ok: boolean; feedback: string; defects: string[]; missing: string[] };
-
-/** Defects about the PHOTOS themselves (reshaped, cropped, zoomed, removed).
- * These are the ones that make an image look broken to a client rather than
- * merely unfinished, so they are weighted far above a skipped fix. */
-function isPhotoDefect(defect: string): boolean {
-  return /crop|aspect|stretch|squash|zoom|re-?cent|framing|sliced|cut off|taller|wider|squar|shape|thumbnail|missing.*photo|photo.*missing/i
-    .test(defect);
-}
-
-/** Lower is better. A photo defect outweighs every skipped fix, because the
- * fixes still appear as text in the report while a mangled photo does not. */
-function verifyScore(v: VerifyResult): number {
-  const photo = v.defects.filter(isPhotoDefect).length;
-  const other = v.defects.length - photo;
-  return photo * 100 + other * 10 + v.missing.length;
-}
-
-/** Check the generated "after" against the fixes it was supposed to apply. The
- * image model often produces a pretty screenshot that quietly skips a structural
- * change (reflowing a nav to one row) or an addition (a notify-me button), so we
- * grade the result and feed the misses back for one corrective attempt. Never
- * throws: if the check itself fails we accept the image as-is. */
-async function verifyAfterImage(
-  beforeUrl: string,
-  afterUrl: string,
-  recommendations: string[],
-  viewport: Viewport,
-): Promise<VerifyResult> {
-  if (recommendations.length === 0) return { ok: true, feedback: "", defects: [], missing: [] };
-  try {
-    const llm = createLlmClient("anthropic", { model: VERIFY_MODEL });
-    const fixes = recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n");
-    const messages: LlmMessage[] = [{
-      role: "user_images",
-      text:
-        `IMG_1 is the ORIGINAL ${viewport} screenshot. IMG_2 is an AI redesign of it that was supposed to apply these fixes:\n\n${fixes}\n\n` +
-        `Compare the two images and judge STRICTLY whether each fix is genuinely visible in IMG_2. A fix that was only partially done does not count as applied. Also report any defect the edit introduced, especially duplicated text or elements, or an element that was supposed to move but is still in its old position. Call record_after_check exactly once.`,
-      images: [
-        { url: beforeUrl, label: "IMG_1: original" },
-        { url: afterUrl, label: "IMG_2: redesign to grade" },
-      ],
-    }];
-    const turn = await llm.runTurn({
-      system:
-        "You are a meticulous design QA reviewer. You compare a redesigned screenshot against the original and the list of fixes it was meant to apply, and you report honestly and strictly what was not done. Never give the benefit of the doubt.",
-      messages,
-      tools: [VERIFY_TOOL],
-      toolChoice: { type: "tool", name: "record_after_check" },
-    });
-    if (turn.kind !== "tool_call") return { ok: true, feedback: "", defects: [], missing: [] };
-    const out = (turn.input ?? {}) as { all_applied?: unknown; unapplied_fixes?: unknown; defects?: unknown };
-    const missing = Array.isArray(out.unapplied_fixes) ? out.unapplied_fixes.map(String).filter(Boolean) : [];
-    const defects = Array.isArray(out.defects) ? out.defects.map(String).filter(Boolean) : [];
-    if (out.all_applied === true && defects.length === 0) return { ok: true, feedback: "", defects: [], missing: [] };
-    if (missing.length === 0 && defects.length === 0) return { ok: true, feedback: "", defects: [], missing: [] };
-    const parts: string[] = [];
-    if (missing.length > 0) parts.push(`These required fixes were NOT applied in your previous attempt, you MUST make each one clearly visible this time:\n${missing.map((m, i) => `${i + 1}. ${m}`).join("\n")}`);
-    if (defects.length > 0) parts.push(`Your previous attempt also introduced these defects, which you MUST avoid:\n${defects.map((d, i) => `${i + 1}. ${d}`).join("\n")}`);
-    return { ok: false, feedback: parts.join("\n\n"), defects, missing };
-  } catch {
-    return { ok: true, feedback: "", defects: [], missing: [] };
-  }
-}
-
 // Generates + stores the "after" for one specific (section, viewport). When
 // referenceAfterUrl is set (the sibling viewport's approved after), the model
 // mirrors those same changes so the concepts stay consistent across devices.
@@ -536,23 +235,34 @@ async function generateOne(
   );
 
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
-  const store = async (bytes: Uint8Array): Promise<string> => {
+  // Retries are judged at a scratch path and only promoted if they win, so a
+  // rejected retry is never, even briefly, the live image at the canonical URL.
+  const candidatePath = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}_candidate.png`;
+  const storeAt = async (objectPath: string, bytes: Uint8Array): Promise<string> => {
     const { error: uploadErr } = await sb.storage
       .from(STORAGE_BUCKET)
-      .upload(path, bytes, { contentType: "image/png", upsert: true });
+      .upload(objectPath, bytes, { contentType: "image/png", upsert: true });
     if (uploadErr) throw new Error(`upload_failed: ${uploadErr.message}`);
-    const { data: pub } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+    const { data: pub } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(objectPath);
     const publicUrl = pub?.publicUrl ?? null;
     if (!publicUrl) throw new Error("no_public_url");
     // Cache-bust so a regenerate shows the new image immediately (same path).
     return `${publicUrl}?v=${Date.now()}`;
   };
+  const store = (bytes: Uint8Array) => storeAt(path, bytes);
 
   const shapeNote = viewport === "mobile"
     ? "Your previous attempt came back in the WRONG SHAPE: it was a wide desktop-style layout, but this is a PHONE screenshot. Output a tall, narrow, single-column phone image with the same aspect ratio as the source."
     : "Your previous attempt came back in the WRONG SHAPE. Output a wide desktop image with the same aspect ratio as the source.";
 
-  let edited = await geminiEditImage(srcPng, basePrompt, apiKey, refPng, belowPng);
+  const gemini = (prompt: string, referencePng?: Uint8Array) =>
+    geminiEditImage(srcPng, prompt, apiKey, {
+      model: GEMINI_IMAGE_MODEL,
+      referencePng,
+      belowFoldPng: belowPng,
+    }).then((candidates) => candidates[0]);
+
+  let edited = await gemini(basePrompt, refPng);
 
   // Deterministic shape gate BEFORE anything else: a mobile source that comes
   // back landscape is unusable, and no amount of prompting reliably prevents it.
@@ -560,7 +270,7 @@ async function generateOne(
   // to copy the other device's layout in the first place.
   if (wrongShape(srcPng, edited)) {
     try {
-      const reshot = await geminiEditImage(srcPng, `${basePrompt}\n\n${shapeNote}`, apiKey, undefined, belowPng);
+      const reshot = await gemini(`${basePrompt}\n\n${shapeNote}`, undefined);
       if (!wrongShape(srcPng, reshot)) edited = reshot;
       else {
         // Still the wrong device shape. Storing it would show a desktop layout
@@ -583,16 +293,25 @@ async function generateOne(
   if (!check.ok) {
     try {
       const photoTrouble = check.defects.some(isPhotoDefect);
-      // Mangled photos are a symptom of asking for too much at once: the model
-      // reflows the whole page to fit every fix and rescales the imagery on the
-      // way. So the corrective attempt asks for LESS, not the same again. The
-      // dropped fixes still appear as text in the report.
-      const retryFixes = photoTrouble ? recommendations.slice(0, 2) : recommendations;
-      const retryBase = photoTrouble
+      // The retry never repeats the first prompt verbatim: same prompt, same
+      // model, same temperature just reproduces the first failure.
+      // - Photo trouble: mangled photos are a symptom of asking for too much at
+      //   once, so ask for LESS (top two fixes) and re-anchor on the photos.
+      // - Missing fixes only: re-ask for ONLY what was missed, framed as small
+      //   surgical edits to an otherwise-final page. The full-list retry kept
+      //   skipping the same small additions (a star rating line) it skipped the
+      //   first time.
+      const focusedOnMissing = !photoTrouble && check.missing.length > 0;
+      const retryFixes = photoTrouble
+        ? recommendations.slice(0, 2)
+        : focusedOnMissing
+          ? check.missing
+          : recommendations;
+      const retryBase = photoTrouble || focusedOnMissing
         ? buildEditPrompt(
           meta.label,
           retryFixes,
-          false,
+          !photoTrouble && Boolean(refPng),
           viewport,
           meta.page_type as WebPageKind,
           skippedWidgetFix,
@@ -602,23 +321,24 @@ async function generateOne(
         : basePrompt;
       const lead = photoTrouble
         ? `IMPORTANT, THIS IS A SECOND ATTEMPT AND YOUR LAST ONE DAMAGED THE IMAGERY. ${check.feedback}\n\nThis time, treat every photograph as untouchable: copy each one across at the same shape, the same framing, and the same size as the original. Apply only the small number of fixes listed above, and if a fix cannot be done without rescaling or re-cropping a photo, leave that fix out entirely and keep the photo intact.`
-        : `IMPORTANT, THIS IS A SECOND ATTEMPT. ${check.feedback}\n\nProduce the corrected screenshot with every fix above clearly visible and no duplicated or leftover elements.`;
-      const retried = await geminiEditImage(
-        srcPng,
+        : focusedOnMissing
+          ? `IMPORTANT, THIS IS A SECOND ATTEMPT. Your previous attempt was good EXCEPT that the small number of fixes listed above were not visible in it. Treat the page as already final: make ONLY those additions or changes, clearly visible, and change NOTHING else anywhere on the page.`
+          : `IMPORTANT, THIS IS A SECOND ATTEMPT. ${check.feedback}\n\nProduce the corrected screenshot with every fix above clearly visible and no duplicated or leftover elements.`;
+      const retried = await gemini(
         `${retryBase}\n\n${lead}`,
-        apiKey,
         // The sibling reference tempts the model to re-lay-out the page, which is
         // how photos get rescaled. Drop it when photos are the problem.
         photoTrouble ? undefined : refPng,
-        belowPng,
       );
       // Never let a corrective attempt regress the device shape.
       if (!wrongShape(srcPng, retried)) {
-        const retryUrl = await store(retried);
+        // Judge the retry at the scratch path; the canonical image is untouched
+        // until the retry has actually won.
+        const candidateUrl = await storeAt(candidatePath, retried);
         // Grade the retry too. It used to be accepted blind, so a second attempt
         // that still cropped the photos shipped anyway, sometimes worse than the
-        // first. Keep whichever attempt scores better and re-store if needed.
-        const recheck = await verifyAfterImage(sourceUrl, retryUrl, retryFixes, viewport);
+        // first.
+        const recheck = await verifyAfterImage(sourceUrl, candidateUrl, retryFixes, viewport);
         // When photos were the problem, the retry has to actually fix the photos
         // to win. Comparing total scores would let it win just for having been
         // asked to apply fewer fixes, which lowers the "missing" count for free.
@@ -627,7 +347,9 @@ async function generateOne(
         const accept = photoTrouble
           ? photoAfter < photoBefore
           : verifyScore(recheck) <= verifyScore(check);
-        bustedUrl = accept ? retryUrl : await store(edited);
+        if (accept) bustedUrl = await store(retried);
+        // Scratch object is transient either way; ignore cleanup failures.
+        await sb.storage.from(STORAGE_BUCKET).remove([candidatePath]).catch(() => {});
       }
     } catch {
       // Retry failed outright: the first attempt is already stored, keep it.
