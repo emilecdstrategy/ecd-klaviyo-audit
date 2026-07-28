@@ -18,10 +18,16 @@ serve(async (req) => {
       proposal_id?: string;
       typed_name?: string;
       signature_image?: string;
+      /** Team member the signature belongs to. Defaults to the caller. */
+      signer_user_id?: string;
+      /** Replace an existing agency signature (only while the client has not signed). */
+      replace?: boolean;
     };
     const proposalId = (body.proposal_id ?? "").trim();
     const typedName = (body.typed_name ?? "").trim();
     const signatureImage = body.signature_image ?? "";
+    const signerUserId = (body.signer_user_id ?? "").trim() || userId;
+    const replace = body.replace === true;
 
     if (!proposalId || !typedName) {
       return proposalJson({ ok: false, error: { code: "bad_request", message: "Missing proposal_id or typed_name" }, correlationId }, { status: 400 });
@@ -40,22 +46,37 @@ serve(async (req) => {
     if (!proposal) {
       return proposalJson({ ok: false, error: { code: "not_found" }, correlationId }, { status: 404 });
     }
-    if (!proposal.client_signed_at) {
-      return proposalJson({ ok: false, error: { code: "client_not_signed", message: "The client has not signed yet" }, correlationId }, { status: 409 });
-    }
-    if (proposal.countersigned_at) {
+    // The agency now signs BEFORE the proposal goes out, so a client receives an
+    // already-executed contract and only has to add their own name. Waiting for
+    // the client first is no longer required.
+    if (proposal.countersigned_at && !replace) {
       return proposalJson({ ok: false, error: { code: "already_countersigned" }, correlationId }, { status: 409 });
     }
+    // Swapping the signer is fine while the deal is still open, but once the
+    // client has signed, the executed document must stop changing underneath them.
+    if (replace && proposal.client_signed_at) {
+      return proposalJson(
+        { ok: false, error: { code: "client_already_signed", message: "The client has signed; the signature can no longer be changed" }, correlationId },
+        { status: 409 },
+      );
+    }
 
-    const { data: userRow } = await sb.from("profiles").select("email, name").eq("id", userId).maybeSingle();
+    const { data: signerRow } = await sb.from("profiles").select("email, name").eq("id", signerUserId).maybeSingle();
+    if (!signerRow) {
+      return proposalJson({ ok: false, error: { code: "bad_request", message: "Unknown signer" }, correlationId }, { status: 400 });
+    }
     const signedAt = new Date().toISOString();
+
+    if (replace) {
+      await sb.from("proposal_signatures").delete().eq("proposal_id", proposalId).eq("role", "agency");
+    }
 
     const { error: sigError } = await sb.from("proposal_signatures").insert({
       proposal_id: proposalId,
       role: "agency",
       signer_name: typedName,
-      signer_email: (userRow as { email?: string } | null)?.email ?? "",
-      signer_user_id: userId,
+      signer_email: (signerRow as { email?: string } | null)?.email ?? "",
+      signer_user_id: signerUserId,
       signature_image: signatureImage,
       typed_name: typedName,
       ip_address: (req.headers.get("x-forwarded-for") ?? "").split(",")[0].trim(),
@@ -80,7 +101,14 @@ serve(async (req) => {
       event_type: "countersigned",
       actor: "admin",
       actor_user_id: userId,
-      metadata: { typed_name: typedName },
+      // Who the signature is FOR versus who applied it: when one admin signs on
+      // behalf of another, the trail has to keep both.
+      metadata: {
+        typed_name: typedName,
+        signer_user_id: signerUserId,
+        on_behalf_of: signerUserId !== userId ? (signerRow as { name?: string } | null)?.name ?? null : null,
+        replaced: replace || undefined,
+      },
     });
 
     return proposalJson({ ok: true, signed_at: signedAt, correlationId });

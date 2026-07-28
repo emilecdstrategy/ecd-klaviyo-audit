@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { attachActorNames } from './actor-names';
 import { publicProposalOrigin } from './public-origin';
+import { resolveSignatureImage } from './signature-image';
 import type {
   ContractDocument,
   Proposal,
@@ -191,6 +192,14 @@ export async function createProposal(
   if (error) throw error;
   const proposal = mapProposalRow(data);
   await recordProposalEvent(proposal.id, 'created', options.aiAssisted ? { via: 'ai_assistant' } : {});
+  // Sign it on the agency's side straight away so the client receives an
+  // already-executed contract. Non-fatal: an unsigned draft is still usable and
+  // the detail page offers to sign it.
+  try {
+    await autoSignNewProposal(proposal.id);
+  } catch (e) {
+    console.error('Could not auto-sign the new proposal', e);
+  }
   return proposal;
 }
 
@@ -471,10 +480,61 @@ export async function countersignProposal(input: {
   proposal_id: string;
   typed_name: string;
   signature_image: string;
+  /** Team member the signature belongs to. Defaults to the caller. */
+  signer_user_id?: string;
+  /** Replace an existing agency signature (rejected once the client has signed). */
+  replace?: boolean;
 }): Promise<void> {
   const { data, error } = await supabase.functions.invoke('proposal_countersign', { body: input });
   if (error) throw error;
   if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to countersign');
+}
+
+export type StaffSigner = { id: string; name: string; email: string; signature_image: string | null };
+
+/** Team members who can be named as the agency signer on a proposal. */
+export async function listStaffSigners(): Promise<StaffSigner[]> {
+  const { data, error } = await supabase
+    .from('profiles')
+    .select('id, name, email, signature_image')
+    .order('name');
+  if (error) throw error;
+  return (data ?? []).map(r => ({
+    id: String(r.id),
+    name: String(r.name ?? ''),
+    email: String(r.email ?? ''),
+    signature_image: (r.signature_image as string | null) ?? null,
+  }));
+}
+
+/** Store the signed-in user's handwritten signature for reuse on future proposals. */
+export async function saveMySignature(signatureImage: string | null): Promise<void> {
+  const { data: userData } = await supabase.auth.getUser();
+  const userId = userData?.user?.id;
+  if (!userId) throw new Error('Not signed in');
+  const { error } = await supabase.from('profiles').update({ signature_image: signatureImage }).eq('id', userId);
+  if (error) throw error;
+}
+
+/** The team member proposals are signed by unless someone picks another. */
+export const DEFAULT_SIGNER_EMAIL = 'zak@ecdigitalstrategy.com';
+
+/** Sign a freshly created proposal on the agency's behalf so it goes out already
+ * executed. Best effort: a proposal that fails to sign is still a valid draft,
+ * and the signature block on the detail page offers to sign it. Never emails. */
+export async function autoSignNewProposal(proposalId: string): Promise<void> {
+  const signers = await listStaffSigners();
+  const signer =
+    signers.find(s => s.email.toLowerCase() === DEFAULT_SIGNER_EMAIL) ?? signers[0];
+  if (!signer) return;
+  const image = resolveSignatureImage(signer);
+  if (!image) return;
+  await countersignProposal({
+    proposal_id: proposalId,
+    typed_name: signer.name,
+    signature_image: image,
+    signer_user_id: signer.id,
+  });
 }
 
 export async function sendProposalEmail(input: {

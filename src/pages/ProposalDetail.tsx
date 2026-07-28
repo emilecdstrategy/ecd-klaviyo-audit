@@ -42,6 +42,7 @@ import {
 import { buildTemplateInputFromProposal } from '../lib/proposal-convert';
 import { deriveProposalStatus } from '../lib/proposal-status';
 import { publicProposalOrigin } from '../lib/public-origin';
+import AgencySignatureCard from '../components/proposal/AgencySignatureCard';
 
 export default function ProposalDetail() {
   const { id } = useParams<{ id: string }>();
@@ -109,6 +110,7 @@ export default function ProposalDetail() {
   const isClosed = proposal.status === 'won' || proposal.status === 'lost';
   const needsCountersign = isSigned && !proposal.countersigned_at;
   const clientSignatures = signatures.filter(s => s.role === 'client');
+  const agencySignature = signatures.find(s => s.role === 'agency') ?? null;
   const hasSecondSigner = Boolean(proposal.recipient2_email);
   const requiredSigners = hasSecondSigner ? 2 : 1;
   // The signer roster freezes as soon as ANY client signature exists (DB-enforced too).
@@ -797,6 +799,13 @@ export default function ProposalDetail() {
                   Countersign
                 </button>
               )}
+              <AgencySignatureCard
+                proposalId={proposal.id}
+                signature={agencySignature}
+                clientHasSigned={isSigned}
+                currentUserId={user?.id ?? null}
+                onChanged={reload}
+              />
               <button
                 type="button"
                 disabled={linkBusy}
