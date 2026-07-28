@@ -3,6 +3,7 @@ import { Receipt, ArrowUp, ArrowDown, Trash2, Plus, ChevronDown, BadgePercent, X
 import { cn } from '../../lib/utils';
 import { addOnHasCustomerAgentDemo, nameHasCustomerAgentDemo, customerAgentDemoUrlOrDefault } from '../../lib/customer-agent-demo';
 import DemoPopupModal, { type DemoPopupState } from '../ui/DemoPopupModal';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import { MenuPriceRow, SummaryTotalRow } from './PriceRows';
 import ProposalPlainText from './edit/ProposalPlainText';
 import ProposalCurrency from './edit/ProposalCurrency';
@@ -185,18 +186,21 @@ function DiscountEditor({ proposal }: { proposal: Proposal }) {
         aria-label="Discount value"
         className="w-20 rounded-md border border-gray-200 bg-white px-2.5 py-1.5 text-right text-xs tabular-nums focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
       />
-      <select
+      <Select
         value={proposal.discount_applies_to}
-        onChange={e =>
-          updateDiscount({ discount_applies_to: e.target.value as Proposal['discount_applies_to'] })
+        onValueChange={value =>
+          updateDiscount({ discount_applies_to: value as Proposal['discount_applies_to'] })
         }
-        aria-label="Discount applies to"
-        className="rounded-md border border-gray-200 bg-white px-2 py-1.5 text-xs focus:border-brand-primary focus:outline-none"
       >
-        <option value="one_time">One-time</option>
-        <option value="monthly">Monthly</option>
-        <option value="both">Both</option>
-      </select>
+        <SelectTrigger className="h-8 w-[7.5rem] text-xs" aria-label="Discount applies to">
+          <SelectValue />
+        </SelectTrigger>
+        <SelectContent>
+          <SelectItem value="one_time"><SelectItemText>One-time</SelectItemText></SelectItem>
+          <SelectItem value="monthly"><SelectItemText>Monthly</SelectItemText></SelectItem>
+          <SelectItem value="both"><SelectItemText>Both</SelectItemText></SelectItem>
+        </SelectContent>
+      </Select>
       <button
         type="button"
         onClick={() => {
