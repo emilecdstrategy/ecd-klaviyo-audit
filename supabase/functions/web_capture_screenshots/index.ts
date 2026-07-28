@@ -33,6 +33,30 @@ function assertServiceClient() {
   });
 }
 
+/** Fire off another edge function without waiting for it to finish. The request
+ * only has to be accepted; the short race keeps this invocation from being held
+ * open by the next one's whole run. Mirrors chainAuto in web_generate_after. */
+async function kick(fn: string, body: Record<string, unknown>) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
+  try {
+    await Promise.race([
+      fetch(`${SUPABASE_URL}/functions/v1/${fn}`, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+        },
+        body: JSON.stringify(body),
+      }),
+      new Promise((resolve) => setTimeout(resolve, 2500)),
+    ]);
+  } catch {
+    // Best effort. A dropped link stalls the chain, which the workspace reports
+    // as an interrupted run and a re-run resumes from the shots already taken.
+  }
+}
+
 async function authorize(req: Request) {
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (token && isServiceRoleAuthorization(token)) return;
@@ -552,12 +576,14 @@ serve(async (req) => {
     await authorize(req);
 
     const input = (await req.json()) as {
-      action?: "seed" | "capture_one";
+      action?: "seed" | "capture_one" | "run";
       audit_id?: string;
       client_id?: string;
       pages?: { homepage?: string; product?: string; collection?: string; cart?: string };
       /** Force a full recapture instead of reusing screenshots that succeeded. */
       reset?: boolean;
+      /** Chain depth, set only by the function re-invoking itself. */
+      depth?: number;
     };
     const auditId = (input.audit_id ?? "").trim();
     const clientId = (input.client_id ?? "").trim();
@@ -576,8 +602,30 @@ serve(async (req) => {
       return json({ ok: true, correlationId, ...result }, { status: 200 });
     }
 
-    // capture_one
+    // capture_one, or "run": the same single capture, but the server carries the
+    // sequence forward itself instead of relying on the browser to ask again.
+    // That is what makes closing the tab safe.
     const { processed, remaining } = await captureOne(sb, auditId, clientId);
+    if (action === "run") {
+      // Per-row attempt budgets already bound the work (a row ends as success or
+      // error), so this is a backstop against a bug in those budgets rather than
+      // the primary limit: 8 rows at ~6 passes each is well under the cap.
+      const depth = Number(input.depth ?? 0);
+      if (remaining > 0 && depth < 80) {
+        await kick("web_capture_screenshots", {
+          action: "run",
+          audit_id: auditId,
+          client_id: clientId,
+          depth: depth + 1,
+        });
+      } else if (remaining > 0) {
+        console.error(`capture chain hit the depth cap for audit ${auditId} with ${remaining} pending`);
+      } else {
+        // Capture finished: hand off to analysis so the whole pipeline runs
+        // server-side. web_finalize_analysis self-chains through its own steps.
+        await kick("web_finalize_analysis", { audit_id: auditId });
+      }
+    }
     return json({ ok: true, correlationId, processed, remaining, done: remaining === 0 }, { status: 200 });
   } catch (e) {
     return json(

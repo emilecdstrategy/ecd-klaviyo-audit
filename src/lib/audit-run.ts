@@ -5,7 +5,7 @@
 import { supabase } from './supabase';
 import { updateAudit } from './db';
 import { nudgeProfileScan, waitForServerAuditAnalysis } from './audit-pipeline-status';
-import { startWebAnalysis } from './web-pipeline-status';
+
 import type { Audit } from './types';
 
 export type RunProgress = (progress: number, stage: string) => void;
@@ -223,27 +223,36 @@ export async function runWebAudit(
   const total = Number(seedData.total) || 0;
 
   progress(45, 'Capturing website screenshots (desktop & mobile)…');
+  // Hand the sequence to the server. It captures one page, then invokes itself
+  // for the next, and starts the analysis when the last one lands. The loop
+  // below only watches, so closing this tab no longer abandons the run.
+  const { error: startErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
+    body: { action: 'run', audit_id: auditId, client_id: clientId },
+  });
+  if (startErr) throw new Error(`Screenshot capture failed to start: ${startErr.message}`);
+
+  const countPending = async (): Promise<number> => {
+    const { count } = await supabase
+      .from('web_page_snapshots')
+      .select('id', { count: 'exact', head: true })
+      .eq('audit_id', auditId)
+      .eq('status', 'pending');
+    return count ?? 0;
+  };
+
+  // Display only. Bounded so a dead chain stops the spinner rather than spinning
+  // forever; the workspace then reports the run as interrupted.
   let remaining = total;
-  // Extra headroom: rows can be requeued for Browserless retries (storefront
-  // IP rate-limits need several passes to clear), so allow many passes.
-  let safety = total * 8 + 16;
-  while (remaining > 0 && safety-- > 0) {
-    const { data: capData, error: capErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
-      body: { action: 'capture_one', audit_id: auditId, client_id: clientId },
-    });
-    if (capErr || !capData?.ok) { await new Promise(r => setTimeout(r, 3500)); continue; }
-    remaining = Number.isFinite(capData.remaining) ? Number(capData.remaining) : remaining;
+  const deadline = Date.now() + 20 * 60 * 1000;
+  while (remaining > 0 && Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 4000));
+    remaining = await countPending();
     const done = Math.max(0, total - remaining);
     progress(Math.min(95, 45 + Math.round((done / Math.max(total, 1)) * 50)), `Capturing screenshots… ${done}/${total} done`);
-    if (capData.done) break;
-    // A requeue means the storefront rate-limited the capture; give its window
-    // extra time to clear before hammering it again.
-    await new Promise(r => setTimeout(r, capData.requeued ? 10000 : 3500));
   }
 
-  progress(97, 'Starting AI analysis…');
-  try {
-    await startWebAnalysis(auditId);
-  } catch { /* non-fatal: workspace can resume/retry */ }
+  // The server starts the analysis itself once capture completes, so there is
+  // nothing to kick off here.
+  progress(97, remaining > 0 ? 'Still capturing in the background…' : 'Starting AI analysis…');
   progress(100, 'Done');
 }
