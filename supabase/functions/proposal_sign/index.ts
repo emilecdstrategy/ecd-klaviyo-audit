@@ -164,6 +164,11 @@ serve(async (req) => {
       const proposalUrl = origin ? `${origin}/proposals/${proposal.id}` : null;
       const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
       const signerLink = `<a href="mailto:${escapeHtml(signerEmail)}" style="color:#4b3afe;text-decoration:underline;">${escapeHtml(signerEmail)}</a>`;
+      // Proposals are signed for ECD at creation, so by the time the client
+      // signs there is usually nothing left to countersign: the contract is
+      // fully executed. Only proposals from before auto-signing (or where the
+      // auto-sign failed) still need the countersign call to action.
+      const alreadyCountersigned = Boolean(proposal.countersigned_at);
       await sendEmail({
         to: teamEmails,
         from: resolveFromAddress(settings.email),
@@ -178,14 +183,18 @@ serve(async (req) => {
             ? [
               `${proposalReferenceLink(origin, proposal)} was just signed by ${signerLink} and marked won.`,
               `Totals: ${money(totals.oneTimeTotal)} one-time plus ${money(totals.monthlyTotal)}/mo.`,
-              ...(proposalUrl ? [] : [`Next step: countersign it from the proposal page.`]),
+              ...(alreadyCountersigned
+                ? [`ECD's signature was already on it, so the contract is now fully executed. Nothing left to do.`]
+                : proposalUrl
+                  ? []
+                  : [`Next step: countersign it from the proposal page.`]),
             ]
             : [
               `${proposalReferenceLink(origin, proposal)} was just signed by ${signerLink}.`,
               `Waiting on the remaining signer before the proposal is marked won.`,
               `Totals: ${money(totals.oneTimeTotal)} one-time plus ${money(totals.monthlyTotal)}/mo.`,
             ],
-          ctaLabel: complete && proposalUrl ? "Countersign now" : undefined,
+          ctaLabel: complete && proposalUrl ? (alreadyCountersigned ? "View the signed proposal" : "Countersign now") : undefined,
           ctaUrl: complete && proposalUrl ? proposalUrl : undefined,
           logoUrl: origin ? `${origin}/favicon.png` : undefined,
         }),
