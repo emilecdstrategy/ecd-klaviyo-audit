@@ -28,16 +28,29 @@ function escapeXml(text: string): string {
     .replace(/"/g, '&quot;');
 }
 
-/** Render a name as a signature SVG data URL, or null when there is no name. */
+/** Every signature is drawn in the same box, so a short name and a long one
+ * occupy the same space in the acceptance block and line up with each other. */
+const WIDTH = 360;
+const PADDING = 16;
+
+/** Render a name as a signature SVG data URL, or null when there is no name.
+ *
+ * textLength pins the text to an exact width, so it cannot spill past the edge
+ * of the box the way a guessed width does: script faces vary enough between
+ * machines that no character-count estimate holds. lengthAdjust spreads the
+ * difference across spacing and glyphs, which is what keeps a short name from
+ * looking stretched. */
 export function generateSignatureImage(name: string): string | null {
   const text = (name || '').trim();
   if (!text) return null;
-  // Script faces run about half the font size per character; the padding keeps
-  // descenders and flourishes inside the box.
-  const width = Math.max(180, Math.round(text.length * FONT_SIZE * 0.52) + 40);
+  // Short names should not be blown up to the full width; long ones are reined
+  // in to it. The cap is what guarantees the text always fits.
+  const natural = Math.round(text.length * FONT_SIZE * 0.52);
+  const textWidth = Math.min(WIDTH - PADDING * 2, Math.max(120, natural));
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${HEIGHT}" viewBox="0 0 ${width} ${HEIGHT}">` +
-    `<text x="${width / 2}" y="${HEIGHT / 2}" dominant-baseline="middle" text-anchor="middle" ` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="${WIDTH}" height="${HEIGHT}" viewBox="0 0 ${WIDTH} ${HEIGHT}">` +
+    `<text x="${WIDTH / 2}" y="${HEIGHT / 2}" dominant-baseline="middle" text-anchor="middle" ` +
+    `textLength="${textWidth}" lengthAdjust="spacingAndGlyphs" ` +
     `font-family="${SCRIPT_STACK}" font-style="italic" font-size="${FONT_SIZE}" fill="#1a1a2e">` +
     `${escapeXml(text)}</text></svg>`;
   return `data:image/svg+xml;base64,${toBase64(svg)}`;

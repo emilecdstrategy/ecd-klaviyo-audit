@@ -10,6 +10,7 @@ import {
 import { resolveSignatureImage } from '../../lib/signature-image';
 import type { ProposalSignature } from '../../lib/types';
 import SignaturePad, { type SignaturePadHandle } from './SignaturePad';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import { useRef } from 'react';
 
 /** Who signed for ECD, with the option to sign as someone else. Proposals are
@@ -116,20 +117,19 @@ export default function AgencySignatureCard({
         </p>
       ) : (
         <div className="mt-3 space-y-2">
-          <label className="block text-[11px] font-medium text-gray-500" htmlFor="agency-signer">
-            Sign as
-          </label>
-          <select
-            id="agency-signer"
-            value={selectedId}
-            onChange={e => setSelectedId(e.target.value)}
-            disabled={busy}
-            className="w-full rounded-lg border border-gray-200 px-2.5 py-1.5 text-sm text-gray-700 focus:border-brand-primary focus:outline-none disabled:opacity-50"
-          >
-            {signers.map(s => (
-              <option key={s.id} value={s.id}>{s.name || s.email}</option>
-            ))}
-          </select>
+          <p className="text-[11px] font-medium text-gray-500">Sign as</p>
+          <Select value={selectedId} onValueChange={setSelectedId} disabled={busy}>
+            <SelectTrigger className="h-9 text-sm">
+              <SelectValue placeholder="Choose a signer" />
+            </SelectTrigger>
+            <SelectContent>
+              {signers.map(s => (
+                <SelectItem key={s.id} value={s.id}>
+                  <SelectItemText>{s.name || s.email}</SelectItemText>
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           {drawing && (
             <div>
