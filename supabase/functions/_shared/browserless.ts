@@ -435,6 +435,10 @@ export async function captureWithBrowserless(input: {
   cartAdd?: { variantId?: string | null; productUrl?: string | null };
   /** Also capture the next viewport down, as context for the "after" generator. */
   secondFold?: boolean;
+  /** Which proxy pool to use, when BROWSERLESS_PROXY=auto lets the caller tier
+   * them. Datacenter costs a third of residential per MB; residential is the
+   * fallback for storefronts that block datacenter traffic. */
+  proxyTier?: "datacenter" | "residential";
 }): Promise<BrowserlessResult> {
   const token = (Deno.env.get("BROWSERLESS_TOKEN") ?? "").trim();
   if (!token) return { ok: false, error: "browserless_token_missing" };
@@ -444,11 +448,16 @@ export async function captureWithBrowserless(input: {
   // like blockAds/blockConsentModals are for /screenshot and 400 here). Cookie
   // banners + chat widgets are removed in-code by the sweep() in FUNCTION_CODE.
   const qs = new URLSearchParams({ token });
-  // Route through Browserless residential proxies when enabled. Shopify
-  // storefronts rate-limit/block datacenter IPs (the 429 "local_rate_limited"
-  // page); a residential IP looks like a normal shopper and gets served.
-  // BROWSERLESS_PROXY=residential turns it on; sticky keeps one IP per capture.
-  const proxy = (Deno.env.get("BROWSERLESS_PROXY") ?? "").trim();
+  // Route through Browserless proxies when enabled. Shopify storefronts
+  // rate-limit/block datacenter IPs (the 429 "local_rate_limited" page); a
+  // residential IP looks like a normal shopper and gets served, but costs 3x
+  // per MB. BROWSERLESS_PROXY values:
+  //   residential | datacenter - that pool for every capture
+  //   auto - the caller picks per capture via proxyTier (datacenter first,
+  //          residential for carts and for retries after a block); with no
+  //          tier given, auto falls back to residential, the safe pool.
+  const envProxy = (Deno.env.get("BROWSERLESS_PROXY") ?? "").trim();
+  const proxy = envProxy === "auto" ? (input.proxyTier ?? "residential") : envProxy;
   if (proxy) {
     qs.set("proxy", proxy);
     qs.set("proxySticky", "true");

@@ -375,6 +375,8 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   let captureError = "";
   let browserlessError = ""; // kept separate so the fallback's error doesn't hide it
   let usedBrowserless = false;
+  // Which proxy pool this pass went through (recorded for cost verification).
+  let proxyTierUsed: "datacenter" | "residential" | null = null;
   let cartCount: number | null = null;
 
   // When Browserless is configured it handles every capture (full-page and
@@ -400,6 +402,18 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
     };
   }
   if (browserlessEnabled()) {
+    // Proxy tiering (BROWSERLESS_PROXY=auto): first try the cheap datacenter
+    // pool, and fall back to residential on any retry pass, since the usual
+    // reason a pass failed is the storefront disliking the traffic. Carts are
+    // always residential: the add-to-cart flow is the most bot-sensitive thing
+    // we do and already the flakiest.
+    const rawForTier = ((row as { raw?: Record<string, unknown> }).raw ?? {}) as Record<string, unknown>;
+    const isRetryPass =
+      Number(rawForTier.bl_attempts ?? 0) > 0 ||
+      Number(rawForTier.capture_attempts ?? 0) > 0 ||
+      Number(rawForTier.cart_attempts ?? 0) > 0;
+    const proxyTier: "datacenter" | "residential" = isCart || isRetryPass ? "residential" : "datacenter";
+    proxyTierUsed = proxyTier;
     const blInput = {
       url: row.url,
       viewport: row.viewport as "desktop" | "mobile",
@@ -408,6 +422,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       withElements: isViewport,
       secondFold: isViewport && !isCart,
       cartAdd,
+      proxyTier,
     };
     // One attempt per invocation — retries happen across requeue passes below,
     // so a single capture_one never risks the edge runtime's wall-clock limit.
@@ -529,7 +544,10 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       const withCart = row.page_type === "cart" && cartCount !== null
         ? { ...baseRaw, cart_count: cartCount }
         : baseRaw;
-      const raw = fold2Url ? { ...withCart, fold2_url: fold2Url } : withCart;
+      const withFold = fold2Url ? { ...withCart, fold2_url: fold2Url } : withCart;
+      // Which proxy pool served this capture, so the datacenter-vs-residential
+      // savings are verifiable from the rows rather than guessed.
+      const raw = proxyTierUsed && usedBrowserless ? { ...withFold, proxy_tier: proxyTierUsed } : withFold;
       await sb.from("web_page_snapshots").update({
         status: "success",
         screenshot_path: path,
