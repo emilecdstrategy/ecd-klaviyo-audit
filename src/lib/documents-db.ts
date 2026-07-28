@@ -1,6 +1,8 @@
 import { supabase } from './supabase';
 import { attachActorNames } from './actor-names';
 import { publicDocumentOrigin } from './public-origin';
+import { resolveSignatureImage } from './signature-image';
+import { listStaffSigners, DEFAULT_SIGNER_EMAIL } from './proposals-db';
 import type {
   Document,
   DocumentEvent,
@@ -109,7 +111,38 @@ export async function createDocument(
   if (error) throw error;
   const doc = mapDocumentRow(data);
   await recordDocumentEvent(doc.id, 'created', options.aiAssisted ? { via: 'ai_assistant' } : {}).catch(() => {});
+  // Same as proposals: when the document carries a sender signature, apply it at
+  // creation so it goes out already signed on our side. Best effort, never emails.
+  if (doc.sender_signature_enabled) {
+    try {
+      await autoSignDocumentAsSender(doc.id);
+    } catch (e) {
+      console.error('Could not auto-sign the new document', e);
+    }
+  }
   return doc;
+}
+
+/** Sign a new document for the agency, defaulting to the same signer proposals use. */
+export async function autoSignDocumentAsSender(documentId: string): Promise<void> {
+  const signers = await listStaffSigners();
+  const signer = signers.find(s => s.email.toLowerCase() === DEFAULT_SIGNER_EMAIL) ?? signers[0];
+  if (!signer) return;
+  const image = resolveSignatureImage(signer);
+  if (!image) return;
+  const { error } = await supabase.from('document_signatures').upsert(
+    {
+      document_id: documentId,
+      signer_role: 'sender',
+      signer_name: signer.name,
+      signer_email: signer.email,
+      signature_image: image,
+      typed_name: signer.name,
+      signed_at: new Date().toISOString(),
+    },
+    { onConflict: 'document_id,signer_role' },
+  );
+  if (error) throw error;
 }
 
 export async function updateDocument(

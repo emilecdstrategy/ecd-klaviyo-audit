@@ -32,7 +32,10 @@ serve(async (req) => {
     if (!proposalId || !typedName) {
       return proposalJson({ ok: false, error: { code: "bad_request", message: "Missing proposal_id or typed_name" }, correlationId }, { status: 400 });
     }
-    if (!signatureImage.startsWith("data:image/png;base64,") || signatureImage.length > MAX_SIGNATURE_LENGTH) {
+    // PNG for a drawn signature, SVG for one generated from the signer's name.
+    const isSignatureImage = signatureImage.startsWith("data:image/png;base64,") ||
+      signatureImage.startsWith("data:image/svg+xml;base64,");
+    if (!isSignatureImage || signatureImage.length > MAX_SIGNATURE_LENGTH) {
       return proposalJson({ ok: false, error: { code: "bad_request", message: "Please draw your signature" }, correlationId }, { status: 400 });
     }
 
