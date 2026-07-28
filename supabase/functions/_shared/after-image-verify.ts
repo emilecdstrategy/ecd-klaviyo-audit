@@ -41,7 +41,11 @@ export type VerifyResult = { ok: boolean; feedback: string; defects: string[]; m
  * These are the ones that make an image look broken to a client rather than
  * merely unfinished, so they are weighted far above a skipped fix. */
 export function isPhotoDefect(defect: string): boolean {
-  return /crop|aspect|stretch|squash|zoom|re-?cent|framing|sliced|cut off|taller|wider|squar|shape|thumbnail|missing.*photo|photo.*missing/i
+  // The bare word "thumbnail" once matched a verdict about a duplicated badge
+  // "near the product thumbnails", which routed the retry into fewer-fixes mode
+  // and cost two perfectly good fixes. Only the photo-REPLACED-by-thumbnails
+  // failure is photo damage; a thumbnail merely being mentioned is not.
+  return /crop|aspect|stretch|squash|zoom|re-?cent|framing|sliced|cut off|taller|wider|squar|shape|replaced by.{0,20}thumbnails?|missing.*photo|photo.*missing/i
     .test(defect);
 }
 

@@ -262,6 +262,7 @@ async function generateOne(
       belowFoldPng: belowPng,
     }).then((candidates) => candidates[0]);
 
+  const startedAt = Date.now();
   let edited = await gemini(basePrompt, refPng);
 
   // Deterministic shape gate BEFORE anything else: a mobile source that comes
@@ -290,6 +291,16 @@ async function generateOne(
   // function's wall clock. The retry gets a strictly more specific prompt, so if
   // it succeeds we keep it; if the retry itself fails we keep the first attempt.
   const check = await verifyAfterImage(sourceUrl, bustedUrl, recommendations, viewport);
+  // Persisted with the image so a bad result can be diagnosed from the DB:
+  // did the judge miss the problem, or see it and ship the lesser evil anyway?
+  const verify: Record<string, unknown> = {
+    attempt1: { missing: check.missing, defects: check.defects },
+    retry_ran: false,
+    published: "attempt1",
+  };
+  // The bytes and verdict of whatever is currently published, for the polish pass.
+  let finalBytes = edited;
+  let finalVerdict = check;
   if (!check.ok) {
     try {
       const photoTrouble = check.defects.some(isPhotoDefect);
@@ -338,16 +349,30 @@ async function generateOne(
         // Grade the retry too. It used to be accepted blind, so a second attempt
         // that still cropped the photos shipped anyway, sometimes worse than the
         // first.
-        const recheck = await verifyAfterImage(sourceUrl, candidateUrl, retryFixes, viewport);
+        // Grade the retry against the FULL fix list, not just what it was asked
+        // to do. A fewer-fixes retry that silently drops fixes the first attempt
+        // had must lose points for them, or "asked for less" wins for free.
+        const recheck = await verifyAfterImage(sourceUrl, candidateUrl, recommendations, viewport);
+        verify.retry_ran = true;
+        verify.retry_mode = photoTrouble ? "fewer_fixes" : focusedOnMissing ? "missing_only" : "full";
+        verify.retry = { missing: recheck.missing, defects: recheck.defects };
         // When photos were the problem, the retry has to actually fix the photos
         // to win. Comparing total scores would let it win just for having been
         // asked to apply fewer fixes, which lowers the "missing" count for free.
         const photoBefore = check.defects.filter(isPhotoDefect).length;
         const photoAfter = recheck.defects.filter(isPhotoDefect).length;
+        // In photo mode the retry must actually heal the photos AND not lose
+        // more elsewhere (both verdicts are graded against the full fix list,
+        // so dropped fixes now count against it).
         const accept = photoTrouble
-          ? photoAfter < photoBefore
+          ? photoAfter < photoBefore && verifyScore(recheck) <= verifyScore(check)
           : verifyScore(recheck) <= verifyScore(check);
-        if (accept) bustedUrl = await store(retried);
+        if (accept) {
+          bustedUrl = await store(retried);
+          verify.published = "retry";
+          finalBytes = retried;
+          finalVerdict = recheck;
+        }
         // Scratch object is transient either way; ignore cleanup failures.
         await sb.storage.from(STORAGE_BUCKET).remove([candidatePath]).catch(() => {});
       }
@@ -356,10 +381,55 @@ async function generateOne(
     }
   }
 
+  // Final polish. Whatever won can still be missing small fixes, because
+  // fewer-fixes mode sacrifices the tail of the list by design; the star-rating
+  // line lost this way three times in a row on one store. Editing the
+  // near-final AFTER itself ("the page is final, add only this, change nothing
+  // else") is the most reliable operation the image model does, so spend one
+  // more generation when something is missing and the wall clock allows it.
+  const dupWidget = finalVerdict.defects.some(
+    (d) => /duplicat/i.test(d) && /widget|bubble|badge|icon/i.test(d),
+  );
+  if ((finalVerdict.missing.length > 0 || dupWidget) && Date.now() - startedAt < 90_000) {
+    try {
+      const polishFixes = [
+        ...finalVerdict.missing,
+        ...(dupWidget
+          ? [
+            "Remove the duplicated floating widgets: each floating element (chat bubble, loyalty or rewards badge, back-to-top button) must appear exactly ONCE, in one corner.",
+          ]
+          : []),
+      ];
+      const polishPrompt = [
+        `This image is a nearly finished redesign of the ${meta.label} of an e-commerce store. Treat it as FINAL.`,
+        `Make ONLY these small corrections, each clearly visible, and change NOTHING else anywhere on the page:`,
+        polishFixes.map((r, i) => `${i + 1}. ${r}`).join("\n"),
+        `Keep every photograph, heading, button, and layout region exactly as it is. Do not re-lay-out anything. Output the full corrected screenshot at the same size and aspect ratio.`,
+      ].join("\n\n");
+      const polished = (await geminiEditImage(finalBytes, polishPrompt, apiKey, { model: GEMINI_IMAGE_MODEL }))[0];
+      if (!wrongShape(srcPng, polished)) {
+        const polishUrl = await storeAt(candidatePath, polished);
+        const pcheck = await verifyAfterImage(sourceUrl, polishUrl, recommendations, viewport);
+        verify.polish_ran = true;
+        verify.polish = { missing: pcheck.missing, defects: pcheck.defects };
+        // Promote only a strict improvement: photos no worse, total score lower.
+        const photosNotWorse =
+          pcheck.defects.filter(isPhotoDefect).length <= finalVerdict.defects.filter(isPhotoDefect).length;
+        if (photosNotWorse && verifyScore(pcheck) < verifyScore(finalVerdict)) {
+          bustedUrl = await store(polished);
+          verify.published = "polish";
+        }
+        await sb.storage.from(STORAGE_BUCKET).remove([candidatePath]).catch(() => {});
+      }
+    } catch {
+      // Best effort: the published image is already the best of the earlier attempts.
+    }
+  }
+
   const details = asRecord(section.section_details);
   const webOut = asRecord(details.web);
   const afterImages = asRecord(webOut.after_images);
-  afterImages[viewport] = { url: bustedUrl, generated_at: new Date().toISOString() };
+  afterImages[viewport] = { url: bustedUrl, generated_at: new Date().toISOString(), verify };
   webOut.after_images = afterImages;
   details.web = webOut;
   await sb.from("audit_sections").update({ section_details: details }).eq("id", section.id);
