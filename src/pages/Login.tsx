@@ -3,6 +3,7 @@ import { useLocation } from 'react-router-dom';
 import { ArrowRight, Mail } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import ReportBrandMark from '../components/report/ReportBrandMark';
+import DevSignIn from '../components/auth/DevSignIn';
 
 export default function Login() {
   const { sendMagicLink, authError } = useAuth();
@@ -91,6 +92,8 @@ export default function Login() {
                 {loading ? 'Sending link...' : 'Send magic link'}
                 <ArrowRight className="w-4 h-4" />
               </button>
+
+              {import.meta.env.DEV && <DevSignIn />}
             </form>
           )}
         </div>

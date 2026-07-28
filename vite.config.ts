@@ -1,9 +1,12 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
+import { devLoginPlugin } from './vite-dev-login';
 
 // https://vitejs.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  // devLoginPlugin is apply:'serve', so it exists on the dev server only and is
+  // not part of any production build.
+  plugins: [react(), devLoginPlugin()],
   optimizeDeps: {
     exclude: ['lucide-react'],
   },
