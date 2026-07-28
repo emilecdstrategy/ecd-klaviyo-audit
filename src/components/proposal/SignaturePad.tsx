@@ -44,8 +44,16 @@ type SignaturePadProps = {
 const INK_COLOR = '#1f2937';
 const LINE_WIDTH = 2.5;
 
-/** Single handwriting font used for typed signatures (declared in index.html). */
-const TYPE_FONT = { key: 'great-vibes', family: "'Great Vibes'", stack: "'Great Vibes', cursive", size: 48 };
+/** Single handwriting face for typed signatures. The same stack the generated
+ * agency signatures use (signature-image.ts), so both sides of the acceptance
+ * block are written in one hand. Great Vibes was retired for that reason: a
+ * client signature in one script next to ECD's in another read as mismatched. */
+const TYPE_FONT = {
+  key: 'script',
+  family: "'Segoe Script'",
+  stack: "'Segoe Script', 'Brush Script MT', 'Snell Roundhand', 'Apple Chancery', cursive",
+  size: 40,
+};
 
 function drawStrokes(ctx: CanvasRenderingContext2D, strokes: Point[][], dpr: number) {
   ctx.save();

@@ -4,6 +4,8 @@ interface KPICardProps {
   label: string;
   value: string | number;
   change?: string;
+  /** Small neutral context line under the value (e.g. "3 proposals"). */
+  sub?: string;
   icon: LucideIcon;
   accent?: 'primary' | 'secondary' | 'success' | 'warning';
 }
@@ -15,13 +17,14 @@ const accentStyles = {
   warning: 'bg-amber-50 text-amber-600',
 };
 
-export default function KPICard({ label, value, change, icon: Icon, accent = 'primary' }: KPICardProps) {
+export default function KPICard({ label, value, change, sub, icon: Icon, accent = 'primary' }: KPICardProps) {
   return (
     <div className="bg-white rounded-xl p-5 card-shadow hover:card-shadow-hover transition-shadow duration-200">
       <div className="flex items-start justify-between">
-        <div>
+        <div className="min-w-0">
           <p className="text-sm text-gray-500 font-medium">{label}</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1">{value}</p>
+          <p className="text-2xl font-bold text-gray-900 mt-1 truncate tabular-nums">{value}</p>
+          {sub && <p className="text-xs text-gray-400 font-medium mt-1 truncate">{sub}</p>}
           {change && (
             <p className="text-xs text-emerald-600 font-medium mt-1">{change}</p>
           )}

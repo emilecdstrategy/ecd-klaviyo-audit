@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { FileSignature, Send, Eye, Trophy, XCircle, Percent } from 'lucide-react';
+import { Eye, Hourglass, Trophy, XCircle, Percent, CircleDollarSign } from 'lucide-react';
 import KPICard from '../ui/KPICard';
 import MonthlyBarChart from '../ui/MonthlyBarChart';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
@@ -48,20 +48,26 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
   const [period, setPeriod] = useState<string>('6');
   const [chartMode, setChartMode] = useState<'count' | 'value'>('count');
   const statuses = proposals.map(p => deriveProposalStatus(p));
-  const sentCount = proposals.filter(p => p.sent_at).length;
-  const viewedCount = proposals.filter(p => p.first_viewed_at).length;
   const wonCount = statuses.filter(s => s === 'won').length;
-  const lostCount = statuses.filter(s => s === 'lost').length;
+  // Expired proposals are auto-marked lost by an hourly job; the derived
+  // 'expired' state only exists in the gap before it runs, so it counts as
+  // lost here rather than silently dropping out of every bucket.
+  const lostCount = statuses.filter(s => s === 'lost' || s === 'expired').length;
   const decided = wonCount + lostCount;
   const winRate = decided > 0 ? Math.round((wonCount / decided) * 100) : null;
 
-  const openValue = proposals.filter(isProposalOpen).reduce((sum, p) => sum + proposalValue(p), 0);
-  const wonValue = proposals
-    .filter((_p, i) => statuses[i] === 'won')
-    .reduce((sum, p) => sum + proposalValue(p), 0);
-  const lostValue = proposals
-    .filter((_p, i) => statuses[i] === 'lost')
-    .reduce((sum, p) => sum + proposalValue(p), 0);
+  const sumValue = (keep: (p: Proposal, i: number) => boolean) =>
+    proposals.reduce((sum, p, i) => (keep(p, i) ? sum + proposalValue(p) : sum), 0);
+
+  const openProposals = proposals.filter(isProposalOpen);
+  const openValue = sumValue(p => isProposalOpen(p));
+  // The subset of the open pipeline the client has actually looked at: the
+  // deals to chase, as opposed to ones still sitting unread in an inbox.
+  const awaitingCount = proposals.filter(p => isProposalOpen(p) && Boolean(p.first_viewed_at)).length;
+  const awaitingValue = sumValue(p => isProposalOpen(p) && Boolean(p.first_viewed_at));
+  const wonValue = sumValue((_p, i) => statuses[i] === 'won');
+  const lostValue = sumValue((_p, i) => statuses[i] === 'lost' || statuses[i] === 'expired');
+  const avgWonValue = wonCount > 0 ? wonValue / wonCount : null;
 
   const monthCount = useMemo(() => {
     if (period !== 'all') return Number(period);
@@ -93,17 +99,51 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
 
   return (
     <div className="mb-6 space-y-4">
+      {/* Money first: the headline on every card is dollars (or a rate), with
+          the count as context underneath. Counts alone hid the thing that
+          matters about a pipeline, which is what it is worth. */}
       <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
-        <KPICard label="Total" value={proposals.length} icon={FileSignature} accent="primary" />
-        <KPICard label="Sent" value={sentCount} icon={Send} accent="primary" />
-        <KPICard label="Viewed" value={viewedCount} icon={Eye} accent="warning" />
-        <KPICard label="Won" value={wonCount} icon={Trophy} accent="success" />
-        <KPICard label="Lost" value={lostCount} icon={XCircle} accent="warning" />
+        <KPICard
+          label="Open pipeline"
+          value={formatCurrency(openValue)}
+          sub={`${openProposals.length} open proposal${openProposals.length === 1 ? '' : 's'}`}
+          icon={Hourglass}
+          accent="primary"
+        />
+        <KPICard
+          label="Awaiting decision"
+          value={formatCurrency(awaitingValue)}
+          sub={`${awaitingCount} viewed, not signed`}
+          icon={Eye}
+          accent="warning"
+        />
+        <KPICard
+          label="Won"
+          value={formatCurrency(wonValue)}
+          sub={`${wonCount} proposal${wonCount === 1 ? '' : 's'}`}
+          icon={Trophy}
+          accent="success"
+        />
+        <KPICard
+          label="Lost"
+          value={formatCurrency(lostValue)}
+          sub={`${lostCount} incl. expired`}
+          icon={XCircle}
+          accent="warning"
+        />
         <KPICard
           label="Win rate"
           value={winRate === null ? '—' : `${winRate}%`}
+          sub={decided > 0 ? `won ${wonCount} of ${decided} decided` : 'no decisions yet'}
           icon={Percent}
           accent="secondary"
+        />
+        <KPICard
+          label="Avg won deal"
+          value={avgWonValue === null ? '—' : formatCurrency(avgWonValue)}
+          sub={wonCount > 0 ? `across ${wonCount} win${wonCount === 1 ? '' : 's'}` : 'no wins yet'}
+          icon={CircleDollarSign}
+          accent="success"
         />
       </div>
 
