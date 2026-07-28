@@ -22,7 +22,7 @@ export async function readVoiceProfile(
   settingsColumn: "proposal_settings" | "document_settings",
 ): Promise<string> {
   const { data } = await sb.from("platform_settings").select(settingsColumn).eq("id", "default").maybeSingle();
-  const settings = (data?.[settingsColumn] ?? {}) as { voice_profile?: unknown };
+  const settings = ((data as Record<string, unknown> | null)?.[settingsColumn] ?? {}) as { voice_profile?: unknown };
   return typeof settings.voice_profile === "string" ? settings.voice_profile.trim() : "";
 }
 

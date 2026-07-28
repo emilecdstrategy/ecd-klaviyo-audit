@@ -1,11 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
-import { Check, Loader2, Mic, Send, Sparkles } from 'lucide-react';
+import { Check, Loader2, Mic, Paperclip, Send, Sparkles, X } from 'lucide-react';
 import {
   sendAuditContextMessage,
   type AuditContextDraft,
   type AuditContextQuestion,
   type AuditContextSnapshot,
 } from '../../lib/audit-context-agent';
+import type { ProposalAgentAttachment } from '../../lib/types';
+import { imagesFromClipboard, isImageFile, uploadChatImage, MAX_CHAT_IMAGES_PER_MESSAGE } from '../../lib/chat-image-upload';
 
 type ChatMessage = {
   id: string;
@@ -13,6 +15,7 @@ type ChatMessage = {
   content: string;
   /** What is replayed to the model, when it must carry more than the bubble shows. */
   historyContent?: string;
+  images?: ProposalAgentAttachment[];
   question?: AuditContextQuestion;
   context?: AuditContextDraft;
   applied?: boolean;
@@ -112,21 +115,52 @@ export default function AuditContextAssistant({
     try { rec.start(); } catch { setListening(false); }
   };
 
+  // Screenshots attached to the next message (uploaded immediately; the chat is
+  // ephemeral but the files must be URLs for the model to see them).
+  type PendingImage = { id: string; name: string; status: 'uploading' | 'ready'; attachment?: ProposalAgentAttachment };
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const readyImages = pendingImages.filter(p => p.status === 'ready' && p.attachment).map(p => p.attachment!);
+
+  const addImages = async (files: File[]) => {
+    markInteracted();
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    for (const file of files.filter(isImageFile).slice(0, MAX_CHAT_IMAGES_PER_MESSAGE)) {
+      const id = `img_${Math.random().toString(36).slice(2, 9)}`;
+      setPendingImages(prev =>
+        prev.length >= MAX_CHAT_IMAGES_PER_MESSAGE ? prev : [...prev, { id, name: file.name, status: 'uploading' }],
+      );
+      try {
+        const attachment = await uploadChatImage(file, 'audit-context');
+        setPendingImages(prev => prev.map(p => (p.id === id ? { ...p, status: 'ready', attachment } : p)));
+      } catch (e) {
+        setPendingImages(prev => prev.filter(p => p.id !== id));
+        setError(e instanceof Error ? e.message : 'The image could not be uploaded.');
+      }
+    }
+  };
+
   const send = async (text: string) => {
-    const trimmed = text.trim();
+    const images = readyImages;
+    const trimmed = text.trim() || (images.length > 0 ? 'Please look at the attached image(s).' : '');
     if (!trimmed || sending) return;
     markInteracted();
     if (listening) stopDictation();
     setError('');
-    const userMsg: ChatMessage = { id: `u${Date.now()}`, role: 'user', content: trimmed };
+    const userMsg: ChatMessage = { id: `u${Date.now()}`, role: 'user', content: trimmed, images };
     const nextMsgs = [...messages, userMsg];
     setMessages(nextMsgs);
     setInput('');
+    setPendingImages([]);
     setSending(true);
     try {
       const history = nextMsgs
         .filter(m => m.content)
-        .map(m => ({ role: m.role, content: m.historyContent ?? m.content }));
+        .map(m => ({
+          role: m.role,
+          content: m.historyContent ?? m.content,
+          images: m.images?.map(a => ({ url: a.url, name: a.name })),
+        }));
       const turn = await sendAuditContextMessage({ messages: history, snapshot: getSnapshot() });
       if (turn.fetched_notes && onTranscript) onTranscript(turn.fetched_notes);
       // Include the question text in the stored content so it is replayed to the
@@ -188,7 +222,14 @@ export default function AuditContextAssistant({
         {messages.map(m => (
           <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : ''}>
             {m.role === 'user' ? (
-              <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-brand-primary px-3 py-1.5 text-sm text-white [overflow-wrap:anywhere]">{m.content}</div>
+              <div className="flex max-w-[85%] flex-col items-end gap-1.5">
+                {(m.images ?? []).map((a, i) => (
+                  <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" title={a.name} className="block">
+                    <img src={a.url} alt={a.name} className="max-h-36 max-w-full rounded-xl border border-brand-primary/20 object-contain" />
+                  </a>
+                ))}
+                <div className="whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-brand-primary px-3 py-1.5 text-sm text-white [overflow-wrap:anywhere]">{m.content}</div>
+              </div>
             ) : (
               <div className="max-w-[92%]">
                 {m.content && <p className="text-sm leading-relaxed text-gray-700">{m.content}</p>}
@@ -235,17 +276,59 @@ export default function AuditContextAssistant({
         {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
       </div>
 
-      <form onSubmit={e => { e.preventDefault(); void send(input); }} className="flex items-end gap-2 border-t border-gray-100 p-2.5">
+      <form onSubmit={e => { e.preventDefault(); void send(input); }} className="border-t border-gray-100 p-2.5">
+        {pendingImages.length > 0 && (
+          <div className="mb-2 flex flex-wrap gap-1.5">
+            {pendingImages.map(p => (
+              <span key={p.id} className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600">
+                {p.status === 'uploading' ? (
+                  <Loader2 className="h-3 w-3 shrink-0 animate-spin text-gray-400" />
+                ) : (
+                  <img src={p.attachment!.url} alt="" className="h-6 w-6 shrink-0 rounded object-cover" />
+                )}
+                <span className="max-w-[140px] truncate" title={p.name}>{p.name}</span>
+                <button
+                  type="button"
+                  onClick={() => setPendingImages(prev => prev.filter(x => x.id !== p.id))}
+                  className="text-gray-300 hover:text-red-500"
+                  aria-label={`Remove ${p.name}`}
+                >
+                  <X className="h-3 w-3" />
+                </button>
+              </span>
+            ))}
+          </div>
+        )}
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/png,image/jpeg,image/webp,image/gif"
+          multiple
+          className="hidden"
+          onChange={e => void addImages(Array.from(e.target.files ?? []))}
+        />
+        <div className="flex items-end gap-2">
         <textarea
           ref={inputRef}
           value={input}
           onChange={e => setInput(e.target.value)}
           onFocus={markInteracted}
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
+          onPaste={e => { const images = imagesFromClipboard(e); if (images.length > 0) { e.preventDefault(); void addImages(images); } }}
           rows={1}
           placeholder={awaitingChoice ? 'Pick an option above, or type your own…' : listening ? 'Listening…' : 'Paste a link, type, or use the mic…'}
           className="max-h-28 flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none disabled:bg-gray-50"
         />
+        <button
+          type="button"
+          onClick={() => { markInteracted(); fileInputRef.current?.click(); }}
+          disabled={sending}
+          className="rounded-lg border border-gray-200 p-2 text-gray-500 transition-colors hover:bg-gray-50 disabled:opacity-40"
+          aria-label="Attach a screenshot"
+          title="Attach a screenshot (or paste one with Ctrl+V)"
+        >
+          <Paperclip className="h-4 w-4" />
+        </button>
         {voiceSupported && (
           <button
             type="button"
@@ -262,12 +345,13 @@ export default function AuditContextAssistant({
         )}
         <button
           type="submit"
-          disabled={!input.trim() || sending}
+          disabled={(!input.trim() && readyImages.length === 0) || sending}
           className="rounded-lg bg-brand-primary p-2 text-white hover:bg-brand-primary-dark disabled:opacity-40"
           aria-label="Send"
         >
           <Send className="h-4 w-4" />
         </button>
+        </div>
       </form>
     </div>
   );

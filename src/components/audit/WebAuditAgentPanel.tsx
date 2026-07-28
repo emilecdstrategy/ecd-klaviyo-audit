@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { Sparkles, Send, X, Loader2, Check, Wand2, RefreshCw } from 'lucide-react';
+import { Sparkles, Send, X, Loader2, Check, Wand2, RefreshCw, Paperclip } from 'lucide-react';
+import type { ProposalAgentAttachment } from '../../lib/types';
+import { imagesFromClipboard, isImageFile, uploadChatImage, MAX_CHAT_IMAGES_PER_MESSAGE } from '../../lib/chat-image-upload';
 import type { AuditSection } from '../../lib/types';
 import { parseWebSectionDetail } from '../../lib/web-report-details';
 import { updateAuditSection } from '../../lib/db';
@@ -27,6 +29,7 @@ type ChatMessage = {
   regenerate?: WebAuditRegenerate;
   applied?: boolean;
   busy?: string; // status text while applying (empty = not busy)
+  attachments?: ProposalAgentAttachment[];
 };
 
 const PRESETS = [
@@ -57,6 +60,29 @@ export default function WebAuditAgentPanel({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const scrollRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  // Screenshots attached to the next message: uploaded as soon as they're
+  // picked or pasted, shown as thumbnails above the composer until sent.
+  type PendingImage = { id: string; name: string; status: 'uploading' | 'ready'; attachment?: ProposalAgentAttachment };
+  const [pendingImages, setPendingImages] = useState<PendingImage[]>([]);
+  const readyImages = pendingImages.filter(p => p.status === 'ready' && p.attachment).map(p => p.attachment!);
+
+  const addImages = async (files: File[]) => {
+    if (fileInputRef.current) fileInputRef.current.value = '';
+    for (const file of files.filter(isImageFile).slice(0, MAX_CHAT_IMAGES_PER_MESSAGE)) {
+      const id = `img_${Math.random().toString(36).slice(2, 9)}`;
+      setPendingImages(prev =>
+        prev.length >= MAX_CHAT_IMAGES_PER_MESSAGE ? prev : [...prev, { id, name: file.name, status: 'uploading' }],
+      );
+      try {
+        const attachment = await uploadChatImage(file, `web-audit-agent/${auditId}`);
+        setPendingImages(prev => prev.map(p => (p.id === id ? { ...p, status: 'ready', attachment } : p)));
+      } catch (e) {
+        setPendingImages(prev => prev.filter(p => p.id !== id));
+        setError(e instanceof Error ? e.message : 'The image could not be uploaded.');
+      }
+    }
+  };
   // Keep the latest sections for apply, even across reloads, without stale closures.
   const sectionsRef = useRef(sections);
   sectionsRef.current = sections;
@@ -82,6 +108,7 @@ export default function WebAuditAgentPanel({
           edits: r.payload?.edits,
           regenerate: r.payload?.regenerate,
           applied: r.applied,
+          attachments: Array.isArray(r.attachments) ? r.attachments : undefined,
         })));
       })
       .catch(() => {});
@@ -92,16 +119,28 @@ export default function WebAuditAgentPanel({
     setMessages(prev => prev.map(m => (m.id === id ? { ...m, ...patch } : m)));
 
   const send = async (text: string) => {
-    const trimmed = text.trim();
+    const images = readyImages;
+    const trimmed = text.trim() || (images.length > 0 ? 'Please look at the attached screenshot(s).' : '');
     if (!trimmed || sending) return;
     setError('');
-    const history = messages.filter(m => m.id !== 'greeting' && m.content).map(m => ({ role: m.role, content: m.content }));
-    const userMsg: ChatMessage = { id: `u${Date.now()}`, role: 'user', content: trimmed };
+    // Replayed history is text-only, so name the screenshots inline: the model
+    // keeps the thread of what earlier turns were pointing at.
+    const history = messages
+      .filter(m => m.id !== 'greeting' && m.content)
+      .map(m => ({
+        role: m.role,
+        content:
+          m.attachments?.length
+            ? `${m.content}\n[Attached screenshot(s): ${m.attachments.map(a => a.name).join(', ')}]`
+            : m.content,
+      }));
+    const userMsg: ChatMessage = { id: `u${Date.now()}`, role: 'user', content: trimmed, attachments: images };
     setMessages(prev => [...prev, userMsg]);
     setInput('');
+    setPendingImages([]);
     setSending(true);
     try {
-      const res = await sendWebAuditAgentMessage({ auditId, message: trimmed, history });
+      const res = await sendWebAuditAgentMessage({ auditId, message: trimmed, history, images });
       let content = res.assistant_text || '';
       if (res.question?.question) content = content ? `${content}\n\n${res.question.question}` : res.question.question;
       if (!content && res.edits) content = res.edits.summary;
@@ -109,7 +148,7 @@ export default function WebAuditAgentPanel({
       // Persist the turn (best effort); use the DB id so apply-marking sticks.
       let assistantId = `a${Date.now()}`;
       try {
-        await insertWebAuditAgentMessage({ auditId, role: 'user', content: trimmed });
+        await insertWebAuditAgentMessage({ auditId, role: 'user', content: trimmed, attachments: images });
         assistantId = await insertWebAuditAgentMessage({
           auditId,
           role: 'assistant',
@@ -206,7 +245,16 @@ export default function WebAuditAgentPanel({
           {messages.map(m => (
             <div key={m.id} className={m.role === 'user' ? 'flex justify-end' : ''}>
               {m.role === 'user' ? (
-                <div className="max-w-[85%] whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-brand-primary px-3 py-1.5 text-sm text-white [overflow-wrap:anywhere]">{m.content}</div>
+                <div className="flex max-w-[85%] flex-col items-end gap-1.5">
+                  {(m.attachments ?? []).map((a, i) => (
+                    <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" title={a.name} className="block">
+                      <img src={a.url} alt={a.name} className="max-h-36 max-w-full rounded-xl border border-brand-primary/20 object-contain" />
+                    </a>
+                  ))}
+                  {m.content && (
+                    <div className="whitespace-pre-wrap break-words rounded-2xl rounded-br-md bg-brand-primary px-3 py-1.5 text-sm text-white [overflow-wrap:anywhere]">{m.content}</div>
+                  )}
+                </div>
               ) : (
                 <div className="max-w-[92%]">
                   {m.content && <p className="whitespace-pre-wrap text-sm leading-relaxed text-gray-700">{m.content}</p>}
@@ -276,18 +324,61 @@ export default function WebAuditAgentPanel({
           {error && <p className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
         </div>
 
-        <form onSubmit={e => { e.preventDefault(); void send(input); }} className="flex items-end gap-2 border-t border-gray-100 p-2.5">
-          <textarea
-            value={input}
-            onChange={e => setInput(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
-            rows={1}
-            placeholder={awaitingChoice ? 'Pick an option above, or type…' : 'Tell me what to adjust…'}
-            className="max-h-28 flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none"
+        <form onSubmit={e => { e.preventDefault(); void send(input); }} className="border-t border-gray-100 p-2.5">
+          {pendingImages.length > 0 && (
+            <div className="mb-2 flex flex-wrap gap-1.5">
+              {pendingImages.map(p => (
+                <span key={p.id} className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600">
+                  {p.status === 'uploading' ? (
+                    <Loader2 className="h-3 w-3 shrink-0 animate-spin text-gray-400" />
+                  ) : (
+                    <img src={p.attachment!.url} alt="" className="h-6 w-6 shrink-0 rounded object-cover" />
+                  )}
+                  <span className="max-w-[140px] truncate" title={p.name}>{p.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setPendingImages(prev => prev.filter(x => x.id !== p.id))}
+                    className="text-gray-300 hover:text-red-500"
+                    aria-label={`Remove ${p.name}`}
+                  >
+                    <X className="h-3 w-3" />
+                  </button>
+                </span>
+              ))}
+            </div>
+          )}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/png,image/jpeg,image/webp,image/gif"
+            multiple
+            className="hidden"
+            onChange={e => void addImages(Array.from(e.target.files ?? []))}
           />
-          <button type="submit" disabled={!input.trim() || sending} className="rounded-lg bg-brand-primary p-2 text-white hover:bg-brand-primary-dark disabled:opacity-40" aria-label="Send">
-            <Send className="h-4 w-4" />
-          </button>
+          <div className="flex items-end gap-2">
+            <textarea
+              value={input}
+              onChange={e => setInput(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
+              onPaste={e => { const images = imagesFromClipboard(e); if (images.length > 0) { e.preventDefault(); void addImages(images); } }}
+              rows={1}
+              placeholder={awaitingChoice ? 'Pick an option above, or type…' : 'Tell me what to adjust…'}
+              className="max-h-28 flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none"
+            />
+            <button
+              type="button"
+              onClick={() => fileInputRef.current?.click()}
+              disabled={sending}
+              className="rounded-lg p-2 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
+              aria-label="Attach a screenshot"
+              title="Attach a screenshot (or paste one with Ctrl+V)"
+            >
+              <Paperclip className="h-4 w-4" />
+            </button>
+            <button type="submit" disabled={(!input.trim() && readyImages.length === 0) || sending} className="rounded-lg bg-brand-primary p-2 text-white hover:bg-brand-primary-dark disabled:opacity-40" aria-label="Send">
+              <Send className="h-4 w-4" />
+            </button>
+          </div>
         </form>
       </div>
     </>

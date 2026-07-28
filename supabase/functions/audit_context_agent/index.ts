@@ -173,7 +173,12 @@ serve(async (req) => {
 
   try {
     const body = (await req.json().catch(() => ({}))) as {
-      messages?: Array<{ role: "user" | "assistant"; content: string }>;
+      messages?: Array<{
+        role: "user" | "assistant";
+        content: string;
+        /** Screenshots attached to this message (public URLs). */
+        images?: Array<{ url?: string; name?: string }>;
+      }>;
       snapshot?: Snapshot;
       provider?: string;
     };
@@ -182,8 +187,17 @@ serve(async (req) => {
 
     const system = buildSystem(body.snapshot ?? {});
     const messages: LlmMessage[] = history
-      .filter((m) => (m.content ?? "").trim())
-      .map((m) => (m.role === "assistant" ? { role: "assistant", text: m.content } : { role: "user", text: m.content }));
+      .filter((m) => (m.content ?? "").trim() || (m.images ?? []).length > 0)
+      .map((m) => {
+        if (m.role === "assistant") return { role: "assistant", text: m.content } as LlmMessage;
+        const images = (Array.isArray(m.images) ? m.images : [])
+          .filter((i) => i && typeof i.url === "string" && i.url)
+          .slice(0, 4)
+          .map((i) => ({ url: i.url as string, label: i.name ? `Attached image: ${i.name}` : undefined }));
+        return images.length > 0
+          ? ({ role: "user_images", text: m.content || "Please look at the attached image(s).", images } as LlmMessage)
+          : ({ role: "user", text: m.content } as LlmMessage);
+      });
 
     const llm = createLlmClient(body.provider);
     let assistantText = "";

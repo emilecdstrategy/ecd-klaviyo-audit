@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { isImageFile, uploadChatImage } from './chat-image-upload';
 import { createDocument, updateDocument, recordDocumentEvent } from './documents-db';
 import { publicDocumentOrigin } from './public-origin';
 import type { Document, ProposalAgentAttachment } from './types';
@@ -64,7 +65,8 @@ export async function uploadDocumentAgentFile(
   file: File,
   conversationId: string | null,
 ): Promise<ProposalAgentAttachment> {
-  if (file.type !== 'application/pdf') throw new Error('Only PDF files are supported right now.');
+  if (isImageFile(file)) return uploadChatImage(file, `document-agent/${conversationId ?? 'new'}`);
+  if (file.type !== 'application/pdf') throw new Error('Only PDF files and images are supported right now.');
   if (file.size > MAX_DOC_ATTACHMENT_BYTES) throw new Error('That PDF is too large. Please keep it under 20 MB.');
   const safeName = file.name.replace(/[^a-zA-Z0-9._-]/g, '_').slice(-80) || 'document.pdf';
   const path = `document-agent/${conversationId ?? 'new'}/${crypto.randomUUID()}-${safeName}`;

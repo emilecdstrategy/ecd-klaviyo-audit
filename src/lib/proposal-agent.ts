@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { isImageFile, uploadChatImage } from './chat-image-upload';
 import {
   createProposal,
   createProposalLineItems,
@@ -192,8 +193,13 @@ export async function uploadProposalAgentFile(
   file: File,
   conversationId: string | null,
 ): Promise<ProposalAgentAttachment> {
+  // Images (screenshots, mostly) go through the shared image path, which
+  // downscales before uploading.
+  if (isImageFile(file)) {
+    return uploadChatImage(file, `proposal-agent/${conversationId ?? 'new'}`);
+  }
   if (file.type !== 'application/pdf') {
-    throw new Error('Only PDF files are supported right now.');
+    throw new Error('Only PDF files and images are supported right now.');
   }
   if (file.size > MAX_AGENT_ATTACHMENT_BYTES) {
     throw new Error('That PDF is too large. Please keep it under 20 MB.');

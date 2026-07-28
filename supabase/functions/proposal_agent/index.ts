@@ -1,6 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { assertServiceRoleClient, requireStaffUserId } from "../_shared/auth.ts";
 import { createLlmClient, type LlmMessage } from "../_shared/llm-adapter.ts";
+import { attachmentTurn } from "../_shared/chat-attachments.ts";
 import { fetchGoogleDoc } from "../_shared/fetch-google-doc.ts";
 import { fetchFirefliesTranscript } from "../_shared/fetch-fireflies-transcript.ts";
 import { buildSystemPrompt, type AgentSnapshot } from "./prompt.ts";
@@ -52,26 +53,12 @@ type MessageRow = {
 
 const ATTACH_FALLBACK_TEXT = "Please review the attached file(s) and use them as source material.";
 
-function attachmentsToDocuments(atts: AgentAttachment[]) {
-  return atts
-    .filter((a) => a?.url)
-    .map((a) => ({ url: a.url, media_type: a.media_type || "application/pdf", name: a.name }));
-}
-
 function historyToLlmMessages(rows: MessageRow[]): LlmMessage[] {
   const out: LlmMessage[] = [];
   for (const row of rows) {
     if (row.role === "user") {
       const atts = Array.isArray(row.attachments) ? row.attachments : [];
-      if (atts.length > 0) {
-        out.push({
-          role: "user_docs",
-          text: row.content || ATTACH_FALLBACK_TEXT,
-          documents: attachmentsToDocuments(atts),
-        });
-      } else {
-        out.push({ role: "user", text: row.content });
-      }
+      out.push(...attachmentTurn(row.content, atts, ATTACH_FALLBACK_TEXT));
     } else if (row.role === "assistant") {
       // Use only the stored assistant text. Do NOT append bracketed recaps of
       // the question/draft/edits payload: the model was echoing those notes
@@ -220,15 +207,7 @@ serve(async (req) => {
     const priorRows =
       rows.length > 0 && rows[rows.length - 1].role === "user" ? rows.slice(0, -1) : rows;
     const messages: LlmMessage[] = historyToLlmMessages(priorRows);
-    if (attachments.length > 0) {
-      messages.push({
-        role: "user_docs",
-        text: message || ATTACH_FALLBACK_TEXT,
-        documents: attachmentsToDocuments(attachments),
-      });
-    } else {
-      messages.push({ role: "user", text: message });
-    }
+    messages.push(...attachmentTurn(message, attachments, ATTACH_FALLBACK_TEXT));
 
     // --- Agent loop ----------------------------------------------------------
     let assistantText = "";

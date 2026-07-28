@@ -7,6 +7,7 @@ import { formatCurrency } from '../../../lib/revenue-calculator';
 import { RichAuditContent } from '../../ui/RichAuditText';
 import { useProposalAgent, type AgentChatMessage, type ConversationSummary } from './ProposalAgentContext';
 import { uploadProposalAgentFile } from '../../../lib/proposal-agent';
+import { imagesFromClipboard, isImageAttachment } from '../../../lib/chat-image-upload';
 import type {
   AgentQuestion,
   ProposalDraftPayload,
@@ -387,19 +388,29 @@ function MessageBubble({
           <p className="mb-0.5 pr-1 text-[11px] font-medium text-gray-400">{message.actorName}</p>
         )}
         <div className={cn('flex max-w-[85%] flex-col items-end gap-1.5', message.pending && 'opacity-70')}>
-          {attachments.map((att, i) => (
-            <a
-              key={i}
-              href={att.url}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="flex max-w-full items-center gap-2 rounded-xl border border-brand-primary/30 bg-brand-primary/5 px-3 py-2 text-xs font-medium text-brand-primary hover:bg-brand-primary/10"
-              title={att.name}
-            >
-              <FileText className="h-4 w-4 shrink-0" />
-              <span className="truncate">{att.name}</span>
-            </a>
-          ))}
+          {attachments.map((att, i) =>
+            isImageAttachment(att) ? (
+              <a key={i} href={att.url} target="_blank" rel="noopener noreferrer" title={att.name} className="block">
+                <img
+                  src={att.url}
+                  alt={att.name}
+                  className="max-h-40 max-w-full rounded-xl border border-brand-primary/20 object-contain"
+                />
+              </a>
+            ) : (
+              <a
+                key={i}
+                href={att.url}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="flex max-w-full items-center gap-2 rounded-xl border border-brand-primary/30 bg-brand-primary/5 px-3 py-2 text-xs font-medium text-brand-primary hover:bg-brand-primary/10"
+                title={att.name}
+              >
+                <FileText className="h-4 w-4 shrink-0" />
+                <span className="truncate">{att.name}</span>
+              </a>
+            ),
+          )}
           {message.content && (
             <div className="rounded-2xl rounded-br-md bg-brand-primary px-3.5 py-2 text-sm text-white">
               <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
@@ -631,9 +642,9 @@ export default function ProposalAgentPanel({
   // append the result to whatever is already in the composer for review/edit.
   const showToast = useToast();
 
-  // File attachments (PDFs): upload as soon as they're picked so they're ready
-  // to send; each becomes a chip above the composer.
-  const onFilesSelected = async (fileList: FileList | null) => {
+  // File attachments (PDFs and images): upload as soon as they're picked so
+  // they're ready to send; each becomes a chip above the composer.
+  const onFilesSelected = async (fileList: FileList | File[] | null) => {
     const files = fileList ? Array.from(fileList) : [];
     if (fileInputRef.current) fileInputRef.current.value = '';
     for (const file of files) {
@@ -771,6 +782,12 @@ export default function ProposalAgentPanel({
               >
                 {p.status === 'uploading' ? (
                   <Loader2 className="h-3 w-3 shrink-0 animate-spin text-gray-400" />
+                ) : p.attachment && isImageAttachment(p.attachment) ? (
+                  <img
+                    src={p.attachment.url}
+                    alt=""
+                    className="h-6 w-6 shrink-0 rounded object-cover"
+                  />
                 ) : (
                   <FileText className="h-3 w-3 shrink-0 text-brand-primary" />
                 )}
@@ -790,7 +807,7 @@ export default function ProposalAgentPanel({
         <input
           ref={fileInputRef}
           type="file"
-          accept="application/pdf"
+          accept="application/pdf,image/png,image/jpeg,image/webp,image/gif"
           multiple
           className="hidden"
           onChange={e => void onFilesSelected(e.target.files)}
@@ -812,6 +829,13 @@ export default function ProposalAgentPanel({
                 submit();
               }
             }}
+            onPaste={e => {
+              const images = imagesFromClipboard(e);
+              if (images.length > 0) {
+                e.preventDefault();
+                void onFilesSelected(images);
+              }
+            }}
             rows={2}
             placeholder={
               awaitingChoice
@@ -829,8 +853,8 @@ export default function ProposalAgentPanel({
             onClick={() => fileInputRef.current?.click()}
             disabled={sending || awaitingChoice}
             className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40"
-            aria-label="Attach a PDF"
-            title="Attach a PDF (pitch deck, brief)"
+            aria-label="Attach a PDF or image"
+            title="Attach a PDF or an image (or paste a screenshot with Ctrl+V)"
           >
             <Paperclip className="h-3.5 w-3.5" />
           </button>

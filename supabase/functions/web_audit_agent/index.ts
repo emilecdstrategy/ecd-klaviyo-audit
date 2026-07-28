@@ -116,7 +116,13 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false, error: { code: "method_not_allowed" } }, { status: 405 });
 
-  let body: { audit_id?: string; message?: string; history?: Array<{ role: string; content: string }> };
+  let body: {
+    audit_id?: string;
+    message?: string;
+    history?: Array<{ role: string; content: string }>;
+    /** Screenshots the strategist attached to THIS message (public URLs). */
+    images?: Array<{ url?: string; name?: string }>;
+  };
   try {
     body = await req.json();
   } catch {
@@ -183,6 +189,14 @@ serve(async (req) => {
     for (const h of (body.history ?? []).slice(-10)) {
       if (h.role === "user" || h.role === "assistant") messages.push({ role: h.role, text: String(h.content ?? "").slice(0, 4000) });
     }
+    // Screenshots the strategist attached to this message ride alongside the
+    // grounding shots, clearly labelled as theirs so the model can tell "what
+    // the strategist is pointing at" apart from "what the pages look like".
+    const userImages = (Array.isArray(body.images) ? body.images : [])
+      .filter((i) => i && typeof i.url === "string" && i.url)
+      .slice(0, 4)
+      .map((i) => ({ url: i.url as string, label: `Screenshot attached by the strategist${i.name ? `: ${i.name}` : ""}` }));
+    images.push(...userImages);
     const taskText = `Current audit sections and their findings:\n\n${sectionsDigest}\n\n${contextText ? contextText + "\n\n" : ""}Strategist's request:\n${message}`;
     messages.push(images.length ? { role: "user_images", text: taskText, images } : { role: "user", text: taskText });
 

@@ -33,7 +33,12 @@ export type AuditContextTurn = {
 };
 
 export async function sendAuditContextMessage(input: {
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+    /** Screenshots attached to this message (public URLs). */
+    images?: Array<{ url: string; name?: string }>;
+  }>;
   snapshot: AuditContextSnapshot;
 }): Promise<AuditContextTurn> {
   const { data, error } = await supabase.functions.invoke('audit_context_agent', {

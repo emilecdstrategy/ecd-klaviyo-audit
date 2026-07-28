@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import type { WebFinding } from './web-report-details';
+import type { ProposalAgentAttachment } from './types';
 
 export type WebAuditAgentQuestion = { question: string; options: string[] };
 
@@ -40,12 +41,13 @@ export type WebAuditAgentMessageRow = {
   content: string;
   payload: { question?: WebAuditAgentQuestion; edits?: WebAuditEditSet; regenerate?: WebAuditRegenerate } | null;
   applied: boolean;
+  attachments?: ProposalAgentAttachment[] | null;
 };
 
 export async function listWebAuditAgentMessages(auditId: string): Promise<WebAuditAgentMessageRow[]> {
   const { data, error } = await supabase
     .from('web_audit_agent_messages')
-    .select('id, role, content, payload, applied')
+    .select('id, role, content, payload, applied, attachments')
     .eq('audit_id', auditId)
     .order('created_at', { ascending: true });
   if (error) throw error;
@@ -57,10 +59,11 @@ export async function insertWebAuditAgentMessage(input: {
   role: 'user' | 'assistant';
   content: string;
   payload?: WebAuditAgentMessageRow['payload'];
+  attachments?: ProposalAgentAttachment[];
 }): Promise<string> {
   const { data, error } = await supabase
     .from('web_audit_agent_messages')
-    .insert({ audit_id: input.auditId, role: input.role, content: input.content, payload: input.payload ?? null })
+    .insert({ audit_id: input.auditId, role: input.role, content: input.content, payload: input.payload ?? null, attachments: input.attachments ?? [] })
     .select('id')
     .single();
   if (error) throw error;
@@ -76,9 +79,15 @@ export async function sendWebAuditAgentMessage(input: {
   auditId: string;
   message: string;
   history: Array<{ role: 'user' | 'assistant'; content: string }>;
+  images?: ProposalAgentAttachment[];
 }): Promise<WebAuditAgentResponse> {
   const { data, error } = await supabase.functions.invoke<WebAuditAgentResponse>('web_audit_agent', {
-    body: { audit_id: input.auditId, message: input.message, history: input.history },
+    body: {
+      audit_id: input.auditId,
+      message: input.message,
+      history: input.history,
+      images: (input.images ?? []).map(a => ({ url: a.url, name: a.name })),
+    },
   });
   if (error) throw new Error(error.message || 'The assistant request failed.');
   if (!data?.ok) throw new Error(data?.error?.message || 'The assistant could not complete that request.');

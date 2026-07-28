@@ -5,6 +5,7 @@ import { useAudioTranscription } from '../../../hooks/useAudioTranscription';
 import { useToast } from '../../ui/Toast';
 import { RichAuditContent } from '../../ui/RichAuditText';
 import { uploadDocumentAgentFile, type DocDraftPayload, type DocEditPayload } from '../../../lib/document-agent';
+import { imagesFromClipboard, isImageAttachment } from '../../../lib/chat-image-upload';
 import type { ProposalAgentAttachment } from '../../../lib/types';
 import { useDocumentAgent, type DocAgentChatMessage, type ConversationSummary } from './DocumentAgentContext';
 
@@ -159,12 +160,18 @@ function MessageBubble({ message, isLast, onAnswer }: { message: DocAgentChatMes
       <div className="flex flex-col items-end px-4 py-1.5">
         {message.actorName && <p className="mb-0.5 pr-1 text-[11px] font-medium text-gray-400">{message.actorName}</p>}
         <div className={cn('flex max-w-[85%] flex-col items-end gap-1.5', message.pending && 'opacity-70')}>
-          {atts.map((a, i) => (
-            <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="flex max-w-full items-center gap-2 rounded-xl border border-brand-primary/30 bg-brand-primary/5 px-3 py-2 text-xs font-medium text-brand-primary hover:bg-brand-primary/10" title={a.name}>
-              <FileText className="h-4 w-4 shrink-0" />
-              <span className="truncate">{a.name}</span>
-            </a>
-          ))}
+          {atts.map((a, i) =>
+            isImageAttachment(a) ? (
+              <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" title={a.name} className="block">
+                <img src={a.url} alt={a.name} className="max-h-40 max-w-full rounded-xl border border-brand-primary/20 object-contain" />
+              </a>
+            ) : (
+              <a key={i} href={a.url} target="_blank" rel="noopener noreferrer" className="flex max-w-full items-center gap-2 rounded-xl border border-brand-primary/30 bg-brand-primary/5 px-3 py-2 text-xs font-medium text-brand-primary hover:bg-brand-primary/10" title={a.name}>
+                <FileText className="h-4 w-4 shrink-0" />
+                <span className="truncate">{a.name}</span>
+              </a>
+            ),
+          )}
           {message.content && (
             <div className="rounded-2xl rounded-br-md bg-brand-primary px-3.5 py-2 text-sm text-white">
               <p className="whitespace-pre-wrap break-words [overflow-wrap:anywhere]">{message.content}</p>
@@ -305,7 +312,7 @@ export default function DocumentAgentPanel() {
     setPending([]);
   };
 
-  const onFilesSelected = async (fileList: FileList | null) => {
+  const onFilesSelected = async (fileList: FileList | File[] | null) => {
     const files = fileList ? Array.from(fileList) : [];
     if (fileInputRef.current) fileInputRef.current.value = '';
     for (const file of files) {
@@ -381,14 +388,14 @@ export default function DocumentAgentPanel() {
           <div className="mb-2 flex flex-wrap gap-1.5">
             {pending.map(p => (
               <span key={p.id} className="flex items-center gap-1.5 rounded-lg border border-gray-200 bg-gray-50 px-2 py-1 text-xs font-medium text-gray-600">
-                {p.status === 'uploading' ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-gray-400" /> : <FileText className="h-3 w-3 shrink-0 text-brand-primary" />}
+                {p.status === 'uploading' ? <Loader2 className="h-3 w-3 shrink-0 animate-spin text-gray-400" /> : p.attachment && isImageAttachment(p.attachment) ? <img src={p.attachment.url} alt="" className="h-6 w-6 shrink-0 rounded object-cover" /> : <FileText className="h-3 w-3 shrink-0 text-brand-primary" />}
                 <span className="max-w-[160px] truncate" title={p.name}>{p.name}</span>
                 <button type="button" onClick={() => removePending(p.id)} className="text-gray-300 hover:text-red-500" aria-label={`Remove ${p.name}`}><X className="h-3 w-3" /></button>
               </span>
             ))}
           </div>
         )}
-        <input ref={fileInputRef} type="file" accept="application/pdf" multiple className="hidden" onChange={e => void onFilesSelected(e.target.files)} />
+        <input ref={fileInputRef} type="file" accept="application/pdf,image/png,image/jpeg,image/webp,image/gif" multiple className="hidden" onChange={e => void onFilesSelected(e.target.files)} />
         <div className={cn('flex items-end gap-2 rounded-xl border border-gray-200 bg-white px-3 py-2 focus-within:border-brand-primary/50', awaitingChoice && 'opacity-50')}>
           <textarea
             ref={inputRef}
@@ -396,11 +403,12 @@ export default function DocumentAgentPanel() {
             disabled={awaitingChoice}
             onChange={e => setInput(e.target.value)}
             onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); } }}
+            onPaste={e => { const images = imagesFromClipboard(e); if (images.length > 0) { e.preventDefault(); void onFilesSelected(images); } }}
             rows={2}
             placeholder={awaitingChoice ? 'Pick an option above…' : voiceStatus === 'recording' ? 'Recording… click the square to stop' : voiceStatus === 'transcribing' ? 'Transcribing…' : 'Message the assistant…'}
             className="max-h-[200px] min-h-[3rem] flex-1 resize-none bg-transparent text-sm leading-relaxed text-gray-900 outline-none placeholder:text-gray-400 disabled:cursor-not-allowed"
           />
-          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || awaitingChoice} className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40" aria-label="Attach a PDF" title="Attach a PDF"><Paperclip className="h-3.5 w-3.5" /></button>
+          <button type="button" onClick={() => fileInputRef.current?.click()} disabled={sending || awaitingChoice} className="rounded-lg p-1.5 text-gray-400 transition-colors hover:bg-gray-100 hover:text-gray-600 disabled:opacity-40" aria-label="Attach a PDF or image" title="Attach a PDF or an image (or paste a screenshot with Ctrl+V)"><Paperclip className="h-3.5 w-3.5" /></button>
           {voiceSupported && (
             <button type="button" onClick={toggleRecording} disabled={sending || awaitingChoice || voiceStatus === 'transcribing'} className={cn('rounded-lg p-1.5 transition-colors disabled:opacity-40', voiceStatus === 'recording' ? 'animate-pulse bg-red-500 text-white hover:bg-red-600' : 'text-gray-400 hover:bg-gray-100 hover:text-gray-600')} aria-label="Voice input">
               {voiceStatus === 'recording' ? <Square className="h-3.5 w-3.5" /> : voiceStatus === 'transcribing' ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Mic className="h-3.5 w-3.5" />}
