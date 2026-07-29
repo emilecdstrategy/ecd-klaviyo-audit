@@ -24,7 +24,7 @@ export default function XeroInvoiceCard({
     } catch (e) {
       const message = e instanceof Error ? e.message : 'Could not create the invoice';
       // "not connected" is a setup state, not a failure worth alarming about.
-      toast(message.includes('not connected') ? 'Connect Xero first, under Proposals > Settings.' : message);
+      toast(message.includes('not connected') ? 'Connect Xero first, under Settings > API Connection.' : message);
     } finally {
       setBusy(false);
     }

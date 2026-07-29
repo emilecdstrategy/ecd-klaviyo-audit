@@ -7,7 +7,6 @@ import ProposalList from '../components/proposal/ProposalList';
 import ProposalKPIs from '../components/proposal/ProposalKPIs';
 import ProposalTemplatesPanel from '../components/proposal/ProposalTemplatesPanel';
 import ContractDocsPanel from '../components/proposal/ContractDocsPanel';
-import XeroSettingsPanel from '../components/proposal/XeroSettingsPanel';
 import ProposalSettingsPanel from '../components/proposal/ProposalSettingsPanel';
 import ClientPickerModal from '../components/proposal/agent/ClientPickerModal';
 import { SkeletonTable } from '../components/ui/Skeleton';
@@ -188,12 +187,7 @@ export default function Proposals() {
         )}
         {tab === 'templates' && <ProposalTemplatesPanel />}
         {tab === 'contracts' && <ContractDocsPanel />}
-        {tab === 'settings' && (
-          <div className="space-y-4">
-            <ProposalSettingsPanel />
-            <XeroSettingsPanel />
-          </div>
-        )}
+        {tab === 'settings' && <ProposalSettingsPanel />}
       </div>
     </div>
     </ProposalAgentLayout>

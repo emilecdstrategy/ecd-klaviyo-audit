@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   Users,
   Key,
@@ -34,6 +35,7 @@ import {
   uploadRevenueOpportunityImage,
 } from '../lib/db';
 import type { CatalogAuditType, RevenueOpportunityTemplate } from '../lib/types';
+import XeroSettingsPanel from '../components/proposal/XeroSettingsPanel';
 
 const TABS = [
   { id: 'users', label: 'Users', icon: Users },
@@ -53,7 +55,16 @@ type AdminUserRow = {
 };
 
 export default function AdminArea() {
-  const [tab, setTab] = useState('users');
+  // Tab lives in the URL so external redirects can land on it (the Xero OAuth
+  // callback returns to ?tab=settings), and so a refresh keeps your place.
+  const [searchParams, setSearchParams] = useSearchParams();
+  const tabParam = searchParams.get('tab') ?? '';
+  const tab = TABS.some(t => t.id === tabParam) ? tabParam : 'users';
+  const setTab = (next: string) => {
+    const params = new URLSearchParams(searchParams);
+    params.set('tab', next);
+    setSearchParams(params, { replace: true });
+  };
   const { hasRole } = useAuth();
 
   if (!hasRole('admin')) {
@@ -1351,48 +1362,57 @@ function HubSpotSyncCard() {
 
 function SettingsTab() {
   return (
-    <div className="space-y-6 max-w-2xl animate-slide-up">
-      <ApiKeyCard
-        provider="openai"
-        title="OpenAI Integration"
-        description="Configure your OpenAI API key to enable AI-powered audit analysis. This key is stored securely and used only for generating audit findings."
-        placeholder="sk-..."
-        savedMessage="Saved. Edge Functions will use this key for AI analysis."
-      />
+    // Two columns from lg up: the cards are short and independent, so a single
+    // narrow column made this page much longer to scan than it needed to be.
+    // items-start stops a tall card stretching its neighbour.
+    <div className="animate-slide-up grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+      <div className="space-y-6">
+        <ApiKeyCard
+          provider="openai"
+          title="OpenAI Integration"
+          description="Configure your OpenAI API key to enable AI-powered audit analysis. This key is stored securely and used only for generating audit findings."
+          placeholder="sk-..."
+          savedMessage="Saved. Edge Functions will use this key for AI analysis."
+        />
 
-      <ApiKeyCard
-        provider="anthropic"
-        title="Anthropic (Claude) Integration"
-        description="Configure your Anthropic API key to power the AI proposal assistant. Create one at console.anthropic.com. This key is stored securely and used server-side only."
-        placeholder="sk-ant-..."
-        savedMessage="Saved. The proposal assistant will use this key."
-      />
+        <ApiKeyCard
+          provider="anthropic"
+          title="Anthropic (Claude) Integration"
+          description="Configure your Anthropic API key to power the AI proposal assistant. Create one at console.anthropic.com. This key is stored securely and used server-side only."
+          placeholder="sk-ant-..."
+          savedMessage="Saved. The proposal assistant will use this key."
+        />
 
-      <ApiKeyCard
-        provider="gemini"
-        title="Google Gemini (Image) Integration"
-        description="Configure a Google Gemini API key to generate 'after' concept images on web audits (the AI edits the real screenshot to show the recommended fixes). Create one at aistudio.google.com, Get API key. Stored securely and used server-side only."
-        placeholder="Gemini API key"
-        savedMessage="Saved. Web audits will use this key to generate 'after' concept images."
-      />
+        <ApiKeyCard
+          provider="gemini"
+          title="Google Gemini (Image) Integration"
+          description="Configure a Google Gemini API key to generate 'after' concept images on web audits (the AI edits the real screenshot to show the recommended fixes). Create one at aistudio.google.com, Get API key. Stored securely and used server-side only."
+          placeholder="Gemini API key"
+          savedMessage="Saved. Web audits will use this key to generate 'after' concept images."
+        />
+      </div>
 
-      <ApiKeyCard
-        provider="hubspot"
-        title="HubSpot Integration"
-        description="Connect HubSpot with a Private App access token to auto-create clients from new HubSpot companies. In HubSpot: Settings, Integrations, Private Apps, create an app with the crm.objects.companies.read and crm.objects.contacts.read scopes, then paste the token here."
-        placeholder="pat-..."
-        savedMessage="Saved. Run Sync now below to import your HubSpot companies."
-      />
+      <div className="space-y-6">
+        <XeroSettingsPanel />
 
-      <ApiKeyCard
-        provider="fireflies"
-        title="Fireflies Integration"
-        description="Add a Fireflies API key so the proposal assistant can read meeting transcripts from a Fireflies link. In Fireflies: Settings, Developer, copy your API key, then paste it here. Stored securely and used server-side only."
-        placeholder="Fireflies API key"
-        savedMessage="Saved. Paste a Fireflies link into the proposal assistant and it will read the transcript."
-      />
+        <ApiKeyCard
+          provider="hubspot"
+          title="HubSpot Integration"
+          description="Connect HubSpot with a Private App access token to auto-create clients from new HubSpot companies. In HubSpot: Settings, Integrations, Private Apps, create an app with the crm.objects.companies.read and crm.objects.contacts.read scopes, then paste the token here."
+          placeholder="pat-..."
+          savedMessage="Saved. Run Sync now below to import your HubSpot companies."
+        />
 
-      <HubSpotSyncCard />
+        <ApiKeyCard
+          provider="fireflies"
+          title="Fireflies Integration"
+          description="Add a Fireflies API key so the proposal assistant can read meeting transcripts from a Fireflies link. In Fireflies: Settings, Developer, copy your API key, then paste it here. Stored securely and used server-side only."
+          placeholder="Fireflies API key"
+          savedMessage="Saved. Paste a Fireflies link into the proposal assistant and it will read the transcript."
+        />
+
+        <HubSpotSyncCard />
+      </div>
 
       {SHOW_ADMIN_SETTINGS_PLACEHOLDERS && (
         <>

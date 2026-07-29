@@ -11,13 +11,13 @@ const APP_URL = (Deno.env.get("APP_URL") ?? "").replace(/\/$/, "");
 
 function redirect(status: "connected" | "error", detail?: string, tenant?: string) {
   const base = APP_URL || "https://audit.ecdigitalstrategy.com";
-  // The Xero panel lives on the proposals Settings tab; there is no /settings route.
+  // The Xero panel lives on the admin API Connection tab (/admin?tab=settings).
   const qs = new URLSearchParams({ tab: "settings", xero: status });
   if (detail) qs.set("xero_detail", detail.slice(0, 200));
   if (tenant) qs.set("xero_org", tenant.slice(0, 120));
   return new Response(null, {
     status: 302,
-    headers: { location: `${base}/proposals?${qs.toString()}` },
+    headers: { location: `${base}/admin?${qs.toString()}` },
   });
 }
 
