@@ -48,6 +48,8 @@ export type XeroConnectionRow = {
   access_token_iv: string | null;
   access_token_expires_at: string | null;
   sales_account_code: string | null;
+  /** Where recurring lines post, unless a service overrides it. */
+  mrr_account_code: string | null;
   tax_type: string | null;
   last_refreshed_at: string | null;
   last_error: string | null;

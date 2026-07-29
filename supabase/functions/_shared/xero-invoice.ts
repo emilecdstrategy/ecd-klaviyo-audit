@@ -1,5 +1,12 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { loadConnection, xeroApi } from "./xero.ts";
+import {
+  type AccountDefaults,
+  describeUnmapped,
+  type Resolved,
+  resolveAccountCode,
+  type RevenueAccountRow,
+} from "./xero-accounts.ts";
 
 /**
  * Creates the DRAFT sales invoice for a signed proposal.
@@ -7,9 +14,11 @@ import { loadConnection, xeroApi } from "./xero.ts";
  * DRAFT is deliberate: Xero never emails a draft, so nothing reaches the client
  * until someone approves and sends it from Xero.
  *
- * Only ONE-TIME fees are invoiced. Monthly retainers are recurring billing and
- * belong in a Xero repeating invoice; billing 12 months up front here would be
- * wrong, so any monthly items are noted on the invoice instead.
+ * Both one-time fees and the first month of any retainer are invoiced, each line
+ * coded to its own revenue account: one-time to the service's sales account,
+ * recurring to the MRR account. If any line cannot be coded, NO invoice is
+ * created and the reason names the offending lines, because a miscoded line is
+ * worse than a missing draft when the whole point is per-account reporting.
  */
 
 type LineItem = {
@@ -17,6 +26,7 @@ type LineItem = {
   description: string | null;
   one_time_price: number | string | null;
   monthly_price: number | string | null;
+  xero_service_key: string | null;
   display_order: number | null;
 };
 
@@ -39,25 +49,27 @@ const num = (v: unknown): number | null => {
   return Number.isFinite(n) ? n : null;
 };
 
-/** Proportional share of a one-time discount for a single line, so the invoice
- * total matches the proposal total exactly even after rounding. */
-function discountedLines(proposal: ProposalRow, items: LineItem[]) {
-  const oneTime = items
-    .filter((i) => num(i.one_time_price) !== null)
-    .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
-  const subtotal = oneTime.reduce((s, i) => s + (num(i.one_time_price) ?? 0), 0);
-
-  const appliesTo = proposal.discount_applies_to ?? "one_time";
-  const applies = appliesTo === "one_time" || appliesTo === "both";
-  const type = proposal.discount_type ?? "none";
-  const value = num(proposal.discount_value) ?? 0;
-  let discount = 0;
-  if (applies && value > 0) {
-    if (type === "percent") discount = subtotal * (Math.min(value, 100) / 100);
-    else if (type === "amount") discount = Math.min(value, subtotal);
-  }
-  return { oneTime, subtotal, discount };
+/** Mirrors computeProposalTotals in src/lib/proposal-pricing.ts. The discount is
+ * per bucket, and a 'fixed' discount applies its full value to EACH bucket it
+ * covers, so the invoice total matches what the client saw on the proposal. */
+function bucketDiscount(
+  subtotal: number,
+  type: string | null,
+  value: number,
+  applies: boolean,
+): number {
+  if (!applies || type === "none" || !type || value <= 0 || subtotal <= 0) return 0;
+  if (type === "fixed") return Math.min(value, subtotal);
+  if (type === "percent") return (subtotal * Math.min(Math.max(value, 0), 100)) / 100;
+  return 0;
 }
+
+type PreparedLine = {
+  description: string;
+  gross: number;
+  kind: "one_time" | "monthly";
+  accountCode: string;
+};
 
 export async function createDraftInvoiceForProposal(
   sb: SupabaseClient,
@@ -77,46 +89,106 @@ export async function createDraftInvoiceForProposal(
 
   const { data: itemRows } = await sb
     .from("proposal_line_items")
-    .select("name, description, one_time_price, monthly_price, display_order")
+    .select("name, description, one_time_price, monthly_price, xero_service_key, display_order")
     .eq("proposal_id", proposalId);
-  const items = (itemRows ?? []) as LineItem[];
+  const items = ((itemRows ?? []) as LineItem[])
+    .sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0));
 
-  const { oneTime, subtotal, discount } = discountedLines(proposal, items);
-  if (oneTime.length === 0 || subtotal <= 0) {
-    return { ok: false, error: "no_one_time_fees" };
-  }
-  if (discount >= subtotal) {
+  const oneTimeSubtotal = items.reduce((s, i) => s + (num(i.one_time_price) ?? 0), 0);
+  const monthlySubtotal = items.reduce((s, i) => s + (num(i.monthly_price) ?? 0), 0);
+  if (oneTimeSubtotal <= 0 && monthlySubtotal <= 0) return { ok: false, error: "no_billable_fees" };
+
+  const dType = proposal.discount_type ?? "none";
+  const dValue = num(proposal.discount_value) ?? 0;
+  const appliesTo = proposal.discount_applies_to ?? "one_time";
+  const oneTimeDiscount = bucketDiscount(
+    oneTimeSubtotal,
+    dType,
+    dValue,
+    appliesTo === "one_time" || appliesTo === "both",
+  );
+  const monthlyDiscount = bucketDiscount(
+    monthlySubtotal,
+    dType,
+    dValue,
+    appliesTo === "monthly" || appliesTo === "both",
+  );
+  if (
+    oneTimeDiscount >= oneTimeSubtotal && monthlyDiscount >= monthlySubtotal
+  ) {
     // A 100% discount would post a zero invoice, which is never intended.
     return { ok: false, error: "fully_discounted" };
   }
 
   const conn = await loadConnection(sb);
-  const accountCode = conn?.sales_account_code || undefined;
-  const taxType = conn?.tax_type || undefined;
+  const defaults: AccountDefaults = {
+    mrrAccountCode: conn?.mrr_account_code ?? null,
+    salesAccountCode: conn?.sales_account_code ?? null,
+  };
+  const { data: mappingRows } = await sb
+    .from("xero_revenue_accounts")
+    .select("service_key, name, one_time_account_code, monthly_account_code");
+  const mapping = (mappingRows ?? []) as RevenueAccountRow[];
 
-  const ratio = subtotal > 0 ? (subtotal - discount) / subtotal : 1;
-  const lineItems = oneTime.map((i) => {
-    const gross = num(i.one_time_price) ?? 0;
-    return {
-      Description: [i.name, i.description?.trim()].filter(Boolean).join(" - ").slice(0, 4000),
-      Quantity: 1,
-      // Xero recomputes totals from UnitAmount, so the discount is folded into
-      // the unit price proportionally rather than sent as a separate field.
-      UnitAmount: Math.round(gross * ratio * 100) / 100,
-      ...(accountCode ? { AccountCode: accountCode } : {}),
-      ...(taxType ? { TaxType: taxType } : {}),
-    };
-  });
+  // Resolve every line's account BEFORE building anything, so a single unmapped
+  // line stops the whole invoice instead of posting a partial one.
+  const failures: Extract<Resolved, { ok: false }>[] = [];
+  const prepared: PreparedLine[] = [];
+  const ratio = (subtotal: number, discount: number) => (subtotal > 0 ? (subtotal - discount) / subtotal : 1);
+  const oneTimeRatio = ratio(oneTimeSubtotal, oneTimeDiscount);
+  const monthlyRatio = ratio(monthlySubtotal, monthlyDiscount);
 
-  const monthly = items.filter((i) => (num(i.monthly_price) ?? 0) > 0);
-  const reference = proposal.proposal_number ? `ECD-${String(proposal.proposal_number).padStart(4, "0")}` : proposal.title;
+  for (const item of items) {
+    const label = item.name?.trim() || "Untitled line";
+    const detail = [label, item.description?.trim()].filter(Boolean).join(" - ").slice(0, 4000);
+    for (const kind of ["one_time", "monthly"] as const) {
+      const gross = num(kind === "one_time" ? item.one_time_price : item.monthly_price) ?? 0;
+      if (gross <= 0) continue;
+      const resolved = resolveAccountCode(
+        { label, serviceKey: item.xero_service_key, kind },
+        mapping,
+        defaults,
+      );
+      if (!resolved.ok) {
+        failures.push(resolved);
+        continue;
+      }
+      prepared.push({
+        description: kind === "monthly" ? `${detail} (first month)`.slice(0, 4000) : detail,
+        gross: gross * (kind === "one_time" ? oneTimeRatio : monthlyRatio),
+        kind,
+        accountCode: resolved.accountCode,
+      });
+    }
+  }
+
+  if (failures.length > 0) return { ok: false, error: describeUnmapped(failures) };
+  if (prepared.length === 0) return { ok: false, error: "no_billable_fees" };
+
+  const lineItems = prepared.map((p) => ({
+    Description: p.description,
+    Quantity: 1,
+    // Xero recomputes totals from UnitAmount, so the discount is folded into the
+    // unit price proportionally rather than sent as a separate field.
+    UnitAmount: Math.round(p.gross * 100) / 100,
+    AccountCode: p.accountCode,
+    ...(conn?.tax_type ? { TaxType: conn.tax_type } : {}),
+  }));
+
+  const reference = proposal.proposal_number
+    ? `ECD-${String(proposal.proposal_number).padStart(4, "0")}`
+    : proposal.title;
+  const totalDiscount = oneTimeDiscount + monthlyDiscount;
+  const recurring = prepared.filter((p) => p.kind === "monthly");
   const notes = [
     `Created automatically from signed proposal ${reference}.`,
-    discount > 0
-      ? `A ${proposal.discount_label || "discount"} of ${discount.toFixed(2)} was applied proportionally across the lines.`
+    totalDiscount > 0
+      ? `A ${proposal.discount_label || "discount"} of ${
+        totalDiscount.toFixed(2)
+      } was applied proportionally across the lines.`
       : "",
-    monthly.length > 0
-      ? `NOT INVOICED HERE: ${monthly.map((m) => `${m.name} (${num(m.monthly_price)}/mo)`).join("; ")}. Set these up as a Xero repeating invoice.`
+    recurring.length > 0
+      ? `Includes the FIRST MONTH of ${recurring.length} recurring item(s). Set up a Xero repeating invoice for the months after this one.`
       : "",
   ].filter(Boolean).join(" ");
 

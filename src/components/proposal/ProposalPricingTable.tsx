@@ -17,6 +17,7 @@ import {
 } from '../../lib/proposal-pricing';
 import { formatCurrency } from '../../lib/revenue-calculator';
 import { listRevenueOpportunityTemplates } from '../../lib/db';
+import { listXeroServiceAccounts, type XeroServiceAccount } from '../../lib/xero';
 import type {
   Proposal,
   ProposalLineItem,
@@ -37,6 +38,52 @@ function catalogToTemplateItem(t: RevenueOpportunityTemplate): ProposalTemplateL
     image_url: t.image_url ?? null,
     display_order: 0,
   };
+}
+
+/** Which revenue account this line's money lands in. Only shown when the line
+ * actually has a price, and only when service mapping has been configured, so it
+ * stays out of the way for anyone not using Xero. */
+function LineItemRevenueCategory({
+  item,
+  onChange,
+}: {
+  item: ProposalLineItem;
+  onChange: (key: string) => void;
+}) {
+  const [services, setServices] = useState<XeroServiceAccount[] | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    listXeroServiceAccounts()
+      .then(rows => { if (!cancelled) setServices(rows); })
+      .catch(() => { if (!cancelled) setServices([]); });
+    return () => { cancelled = true; };
+  }, []);
+
+  if (!services || services.length === 0 || !lineItemHasPricing(item)) return null;
+  const current = item.xero_service_key ?? '';
+  const needsOneTime = Number(item.one_time_price ?? 0) > 0;
+
+  return (
+    <div className="mt-3 flex flex-wrap items-center gap-2 border-t border-gray-100 pt-3 print:hidden">
+      <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Revenue account</span>
+      <div className="w-52">
+        <Select value={current} onValueChange={onChange}>
+          <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Choose a service" /></SelectTrigger>
+          <SelectContent>
+            {services.map(sv => (
+              <SelectItem key={sv.service_key} value={sv.service_key}>
+                <SelectItemText>{sv.name}</SelectItemText>
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      {!current && needsOneTime && (
+        <span className="text-[11px] text-amber-600">Needed before a Xero invoice can be created</span>
+      )}
+    </div>
+  );
 }
 
 function EditableLineItemRow({
@@ -119,6 +166,8 @@ function EditableLineItemRow({
           <span className="text-[11px] text-amber-600">No pricing (hidden from the pricing table)</span>
         )}
       </div>
+
+      <LineItemRevenueCategory item={item} onChange={key => updateLineItem(item.id, { xero_service_key: key })} />
     </div>
   );
 }

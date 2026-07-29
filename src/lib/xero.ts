@@ -6,6 +6,8 @@ export type XeroStatus = {
   credentials_configured: boolean;
   tenant_name: string | null;
   sales_account_code: string | null;
+  /** Where recurring lines post, for every service without its own override. */
+  mrr_account_code: string | null;
   tax_type: string | null;
   last_refreshed_at: string | null;
   last_error: string | null;
@@ -14,6 +16,17 @@ export type XeroStatus = {
 };
 
 export type XeroAccount = { code: string; name: string; taxType: string };
+
+/** One service family and the revenue accounts its money posts to. One-time work
+ * goes to one_time_account_code; recurring goes to monthly_account_code when set,
+ * otherwise to the shared MRR account. */
+export type XeroServiceAccount = {
+  service_key: string;
+  name: string;
+  one_time_account_code: string | null;
+  monthly_account_code: string | null;
+  display_order: number;
+};
 
 async function call<T>(body: Record<string, unknown>): Promise<T> {
   const { data, error } = await supabase.functions.invoke<any>('xero_admin', { body });
@@ -37,8 +50,23 @@ export async function listXeroRevenueAccounts(): Promise<XeroAccount[]> {
   return accounts;
 }
 
-export function saveXeroSettings(input: { account_code?: string; tax_type?: string }): Promise<unknown> {
+export function saveXeroSettings(
+  input: { account_code?: string; mrr_account_code?: string; tax_type?: string },
+): Promise<unknown> {
   return call({ action: 'save_settings', ...input });
+}
+
+export async function listXeroServiceAccounts(): Promise<XeroServiceAccount[]> {
+  const { services } = await call<{ services: XeroServiceAccount[] }>({ action: 'services' });
+  return services;
+}
+
+export function saveXeroServiceAccounts(services: XeroServiceAccount[]): Promise<unknown> {
+  return call({ action: 'save_services', services });
+}
+
+export function deleteXeroServiceAccount(serviceKey: string): Promise<unknown> {
+  return call({ action: 'delete_service', delete_service_key: serviceKey });
 }
 
 export function disconnectXero(): Promise<unknown> {

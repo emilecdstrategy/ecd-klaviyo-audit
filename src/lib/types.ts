@@ -424,6 +424,12 @@ export interface ProposalLineItem {
   monthly_price: number | null;
   monthly_label: string | null;
   image_url: string | null;
+  /** Revenue category for Xero coding (xero_revenue_accounts.service_key). One-time
+   * money posts to that service's sales account, recurring to the MRR account.
+   * Null blocks the draft invoice rather than risking a miscoded line.
+   * Optional because template line items stored as JSONB before this existed
+   * have no such key. */
+  xero_service_key?: string | null;
   display_order: number;
   created_at: string;
 }

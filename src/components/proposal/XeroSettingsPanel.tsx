@@ -3,6 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { Check, ExternalLink, Link2, Loader2, RefreshCw, Unlink } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import { useToast } from '../ui/Toast';
+import XeroServiceAccountsEditor from './XeroServiceAccountsEditor';
 import {
   disconnectXero,
   getXeroStatus,
@@ -80,11 +81,16 @@ export default function XeroSettingsPanel() {
     }
   };
 
-  const chooseAccount = async (code: string) => {
+  const chooseAccount = async (field: 'account_code' | 'mrr_account_code', code: string) => {
     setBusy('save');
     try {
       const picked = accounts.find(a => a.code === code);
-      await saveXeroSettings({ account_code: code, tax_type: picked?.taxType });
+      // Send both codes every time: a partial upsert would null the other one.
+      await saveXeroSettings({
+        account_code: field === 'account_code' ? code : (status?.sales_account_code ?? ''),
+        mrr_account_code: field === 'mrr_account_code' ? code : (status?.mrr_account_code ?? ''),
+        tax_type: picked?.taxType ?? status?.tax_type ?? undefined,
+      });
       await reload();
       toast('Saved');
     } catch (e) {
@@ -104,8 +110,9 @@ export default function XeroSettingsPanel() {
         <div>
           <h3 className="text-sm font-semibold text-gray-900">Xero</h3>
           <p className="mt-0.5 text-sm text-gray-500">
-            When a client signs, a <strong>draft</strong> invoice is created in Xero for the one-time fees. Draft means
-            Xero never emails the client: you approve and send it yourself.
+            When a client signs, a <strong>draft</strong> invoice is created in Xero covering the one-time fees plus the
+            first month of any retainer, with each line coded to its own revenue account. Draft means Xero never emails
+            the client: you approve and send it yourself.
           </p>
         </div>
         {status?.connected ? (
@@ -140,29 +147,55 @@ export default function XeroSettingsPanel() {
 
       {status?.connected && (
         <div className="mt-4 space-y-3">
-          <div>
-            <label className="text-[11px] font-medium text-gray-500">Post sales to this revenue account</label>
-            <div className="mt-1 max-w-sm">
-              <Select
-                value={status.sales_account_code ?? ''}
-                onValueChange={code => void chooseAccount(code)}
-                disabled={busy !== null || accounts.length === 0}
-              >
-                <SelectTrigger className="h-9 text-sm">
-                  <SelectValue placeholder={accounts.length ? 'Choose an account' : 'Loading accounts…'} />
-                </SelectTrigger>
-                <SelectContent>
-                  {accounts.map(a => (
-                    <SelectItem key={a.code} value={a.code}>
-                      <SelectItemText>{a.code} - {a.name}</SelectItemText>
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div>
+              <label className="text-[11px] font-medium text-gray-500">MRR account (all recurring lines)</label>
+              <div className="mt-1">
+                <Select
+                  value={status.mrr_account_code ?? ''}
+                  onValueChange={code => void chooseAccount('mrr_account_code', code)}
+                  disabled={busy !== null || accounts.length === 0}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder={accounts.length ? 'Choose an account' : 'Loading accounts…'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map(a => (
+                      <SelectItem key={a.code} value={a.code}>
+                        <SelectItemText>{a.code} - {a.name}</SelectItemText>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="mt-1 text-[11px] text-gray-400">
+                Every retainer posts here unless a service below overrides it.
+              </p>
             </div>
-            <p className="mt-1 text-[11px] text-gray-400">
-              Leave unset to let Xero apply its own default. Only revenue accounts are listed.
-            </p>
+            <div>
+              <label className="text-[11px] font-medium text-gray-500">Fallback one-time account</label>
+              <div className="mt-1">
+                <Select
+                  value={status.sales_account_code ?? ''}
+                  onValueChange={code => void chooseAccount('account_code', code)}
+                  disabled={busy !== null || accounts.length === 0}
+                >
+                  <SelectTrigger className="h-9 text-sm">
+                    <SelectValue placeholder={accounts.length ? 'Choose an account' : 'Loading accounts…'} />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {accounts.map(a => (
+                      <SelectItem key={a.code} value={a.code}>
+                        <SelectItemText>{a.code} - {a.name}</SelectItemText>
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="mt-1 text-[11px] text-gray-400">
+                Used only when a service has no one-time account of its own.
+              </p>
+            </div>
           </div>
           {status.last_refreshed_at && (
             <p className="flex items-center gap-1.5 text-[11px] text-gray-400">
@@ -172,6 +205,10 @@ export default function XeroSettingsPanel() {
           )}
         </div>
       )}
+
+      <div className="mt-4">
+        <XeroServiceAccountsEditor accounts={accounts} />
+      </div>
 
       <div className="mt-4 flex flex-wrap items-center gap-2">
         {status?.connected ? (

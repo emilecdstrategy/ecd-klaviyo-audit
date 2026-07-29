@@ -34,7 +34,20 @@ serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false, error: { code: "method_not_allowed" } }, { status: 405 });
 
-  const body = (await req.json().catch(() => ({}))) as { action?: string; account_code?: string; tax_type?: string };
+  const body = (await req.json().catch(() => ({}))) as {
+    action?: string;
+    account_code?: string;
+    tax_type?: string;
+    mrr_account_code?: string;
+    services?: Array<{
+      service_key?: string;
+      name?: string;
+      one_time_account_code?: string | null;
+      monthly_account_code?: string | null;
+      display_order?: number;
+    }>;
+    delete_service_key?: string;
+  };
   const action = body.action ?? "status";
   const sb = serviceClient();
 
@@ -78,6 +91,7 @@ serve(async (req) => {
         credentials_configured: credentialsConfigured,
         tenant_name: row?.tenant_name ?? null,
         sales_account_code: row?.sales_account_code ?? null,
+        mrr_account_code: row?.mrr_account_code ?? null,
         tax_type: row?.tax_type ?? null,
         last_refreshed_at: row?.last_refreshed_at ?? null,
         last_error: row?.last_error ?? null,
@@ -112,8 +126,49 @@ serve(async (req) => {
         .upsert({
           id: "default",
           sales_account_code: body.account_code?.trim() || null,
+          mrr_account_code: body.mrr_account_code?.trim() || null,
           tax_type: body.tax_type?.trim() || null,
         });
+      if (error) throw error;
+      return json({ ok: true });
+    }
+
+    // Per-service revenue coding: one-time work posts to the service's sales
+    // account, recurring to the MRR account. Read is separate from status so the
+    // proposal editor can list services without touching connection state.
+    if (action === "services") {
+      const { data, error } = await sb
+        .from("xero_revenue_accounts")
+        .select("service_key, name, one_time_account_code, monthly_account_code, display_order")
+        .order("display_order")
+        .order("name");
+      if (error) throw error;
+      return json({ ok: true, services: data ?? [] });
+    }
+
+    if (action === "save_services") {
+      const rows = (body.services ?? [])
+        .map((s, i) => ({
+          service_key: (s.service_key ?? "").trim().toLowerCase().replace(/[^a-z0-9_]+/g, "_"),
+          name: (s.name ?? "").trim(),
+          one_time_account_code: (s.one_time_account_code ?? "")?.toString().trim() || null,
+          monthly_account_code: (s.monthly_account_code ?? "")?.toString().trim() || null,
+          display_order: Number.isFinite(s.display_order) ? Number(s.display_order) : i * 10,
+          updated_at: new Date().toISOString(),
+        }))
+        .filter((s) => s.service_key && s.name);
+      if (rows.length === 0) return json({ ok: false, error: { code: "bad_request", message: "No valid services" } });
+      const { error } = await sb.from("xero_revenue_accounts").upsert(rows, { onConflict: "service_key" });
+      if (error) throw error;
+      return json({ ok: true, saved: rows.length });
+    }
+
+    if (action === "delete_service") {
+      const key = (body.delete_service_key ?? "").trim();
+      if (!key) return json({ ok: false, error: { code: "bad_request", message: "Missing service key" } });
+      // Proposal lines keep their key even if the mapping row goes, so invoicing
+      // blocks with "no account configured" rather than silently recoding them.
+      const { error } = await sb.from("xero_revenue_accounts").delete().eq("service_key", key);
       if (error) throw error;
       return json({ ok: true });
     }
