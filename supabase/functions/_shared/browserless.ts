@@ -14,8 +14,18 @@
 
 export type CapturedElement = { id: string; label: string; x: number; y: number; w: number; h: number };
 export type BrowserlessResult =
-  | { ok: true; png: Uint8Array; png2?: Uint8Array | null; elements: CapturedElement[]; cartCount?: number | null }
-  | { ok: false; error: string };
+  | {
+    ok: true;
+    png: Uint8Array;
+    png2?: Uint8Array | null;
+    elements: CapturedElement[];
+    cartCount?: number | null;
+    /** The proxy pool that actually served this capture ("" for none). Recorded
+     * per snapshot so the datacenter-vs-residential spend is auditable rather
+     * than assumed from BROWSERLESS_PROXY. */
+    proxyUsed?: string;
+  }
+  | { ok: false; error: string; proxyUsed?: string };
 
 const DIMENSIONS = {
   desktop: { width: 1440, height: 900 },
@@ -491,7 +501,7 @@ export async function captureWithBrowserless(input: {
     });
     const rawText = await res.text().catch(() => "");
     if (!res.ok) {
-      return { ok: false, error: `browserless_http_${res.status}${rawText ? `: ${rawText.slice(0, 140)}` : ""}` };
+      return { ok: false, error: `browserless_http_${res.status}${rawText ? `: ${rawText.slice(0, 140)}` : ""}`, proxyUsed: proxy };
     }
     let parsed: unknown = null;
     try {
@@ -507,22 +517,22 @@ export async function captureWithBrowserless(input: {
       | null;
     // In-page detection (storefront rate-limit / bot-block page) reports a
     // structured error instead of a screenshot.
-    if (payload?.error) return { ok: false, error: String(payload.error) };
-    if (!payload?.screenshot) return { ok: false, error: "browserless_no_screenshot" };
+    if (payload?.error) return { ok: false, error: String(payload.error), proxyUsed: proxy };
+    if (!payload?.screenshot) return { ok: false, error: "browserless_no_screenshot", proxyUsed: proxy };
     const png = b64ToBytes(payload.screenshot);
-    if (png.byteLength < 5000) return { ok: false, error: "browserless_blank_page" };
+    if (png.byteLength < 5000) return { ok: false, error: "browserless_blank_page", proxyUsed: proxy };
     const elements = Array.isArray(payload.elements) ? payload.elements.slice(0, 90) : [];
     let png2: Uint8Array | null = null;
     if (payload.screenshot2) {
       const b = b64ToBytes(payload.screenshot2);
       if (b.byteLength >= 5000) png2 = b;
     }
-    return { ok: true, png, png2, elements, cartCount: payload.cartCount ?? null };
+    return { ok: true, png, png2, elements, cartCount: payload.cartCount ?? null, proxyUsed: proxy };
   } catch (e) {
     const msg = e instanceof Error && (e.name === "AbortError" || /abort/i.test(e.message))
       ? "browserless_timeout"
       : (e instanceof Error ? e.message : "browserless_failed");
-    return { ok: false, error: msg };
+    return { ok: false, error: msg, proxyUsed: proxy };
   } finally {
     clearTimeout(timer);
   }

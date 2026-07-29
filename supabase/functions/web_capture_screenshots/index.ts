@@ -377,6 +377,11 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   let usedBrowserless = false;
   // Which proxy pool this pass went through (recorded for cost verification).
   let proxyTierUsed: "datacenter" | "residential" | null = null;
+  // What Browserless was actually told to use. This differs from proxyTierUsed
+  // when BROWSERLESS_PROXY pins a single pool instead of being set to "auto",
+  // which is the difference between the tiering saving money and only looking
+  // like it does.
+  let proxyUsed: string | null = null;
   let cartCount: number | null = null;
 
   // When Browserless is configured it handles every capture (full-page and
@@ -427,6 +432,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
     // One attempt per invocation — retries happen across requeue passes below,
     // so a single capture_one never risks the edge runtime's wall-clock limit.
     const bl = await captureWithBrowserless(blInput);
+    proxyUsed = bl.proxyUsed ?? null;
     if (bl.ok) {
       png = bl.png;
       pngFold2 = bl.png2 ?? null;
@@ -547,7 +553,9 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       const withFold = fold2Url ? { ...withCart, fold2_url: fold2Url } : withCart;
       // Which proxy pool served this capture, so the datacenter-vs-residential
       // savings are verifiable from the rows rather than guessed.
-      const raw = proxyTierUsed && usedBrowserless ? { ...withFold, proxy_tier: proxyTierUsed } : withFold;
+      const raw = proxyTierUsed && usedBrowserless
+        ? { ...withFold, proxy_tier: proxyTierUsed, proxy_used: proxyUsed ?? "none" }
+        : withFold;
       await sb.from("web_page_snapshots").update({
         status: "success",
         screenshot_path: path,
