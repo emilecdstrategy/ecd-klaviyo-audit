@@ -43,6 +43,7 @@ import { buildTemplateInputFromProposal } from '../lib/proposal-convert';
 import { deriveProposalStatus } from '../lib/proposal-status';
 import { publicProposalOrigin } from '../lib/public-origin';
 import AgencySignatureCard from '../components/proposal/AgencySignatureCard';
+import XeroInvoiceCard from '../components/proposal/XeroInvoiceCard';
 
 export default function ProposalDetail() {
   const { id } = useParams<{ id: string }>();
@@ -806,6 +807,8 @@ export default function ProposalDetail() {
                 currentUserId={user?.id ?? null}
                 onChanged={reload}
               />
+              {/* Only meaningful once signed: that is when the draft is created. */}
+              {isSigned && <XeroInvoiceCard proposal={proposal} onChanged={reload} />}
               <button
                 type="button"
                 disabled={linkBusy}

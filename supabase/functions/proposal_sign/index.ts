@@ -148,6 +148,29 @@ serve(async (req) => {
         : []),
     ]);
 
+    // Xero draft invoice (best effort, fire and forget). Only once the deal is
+    // fully signed, and never awaited: a slow or broken Xero must not delay or
+    // fail a client's signature. Failures land on proposals.xero_invoice_error
+    // and can be retried from the proposal page.
+    if (complete) {
+      const fnUrl = (Deno.env.get("SUPABASE_URL") ?? "").replace(/\/$/, "");
+      const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
+      if (fnUrl && serviceKey) {
+        Promise.race([
+          fetch(`${fnUrl}/functions/v1/xero_create_invoice`, {
+            method: "POST",
+            headers: {
+              "content-type": "application/json",
+              authorization: `Bearer ${serviceKey}`,
+              apikey: serviceKey,
+            },
+            body: JSON.stringify({ proposal_id: proposal.id }),
+          }),
+          new Promise((resolve) => setTimeout(resolve, 2500)),
+        ]).catch(() => {});
+      }
+    }
+
     // Team notification (best effort; signing already succeeded).
     const { data: settingsRow } = await sb
       .from("platform_settings")

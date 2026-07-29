@@ -398,6 +398,11 @@ export interface Proposal {
   won_at: string | null;
   lost_at: string | null;
   lost_reason: string | null;
+  /** Xero draft invoice created when the client signed (see lib/xero.ts). */
+  xero_invoice_id?: string | null;
+  xero_invoice_number?: string | null;
+  xero_invoiced_at?: string | null;
+  xero_invoice_error?: string | null;
   created_by: string | null;
   created_at: string;
   updated_at: string;

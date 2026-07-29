@@ -11,6 +11,8 @@ const ENV_OVERRIDES: Record<string, string> = {
   hubspot_private_app_token: "HUBSPOT_PRIVATE_APP_TOKEN",
   fireflies_api_key: "FIREFLIES_API_KEY",
   gemini_api_key: "GEMINI_API_KEY",
+  xero_client_id: "XERO_CLIENT_ID",
+  xero_client_secret: "XERO_CLIENT_SECRET",
 };
 
 function b64decode(b64: string) {
