@@ -1364,9 +1364,11 @@ function SettingsTab() {
   return (
     // Two columns from lg up: the cards are short and independent, so a single
     // narrow column made this page much longer to scan than it needed to be.
-    // items-start stops a tall card stretching its neighbour.
+    // The cards are direct grid children rather than two column stacks, so they
+    // fill left to right across each row; stacks would read top-down per column
+    // and leave the left side short. items-start stops a tall card stretching
+    // its neighbour.
     <div className="animate-slide-up grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
-      <div className="space-y-6">
         <ApiKeyCard
           provider="openai"
           title="OpenAI Integration"
@@ -1390,9 +1392,7 @@ function SettingsTab() {
           placeholder="Gemini API key"
           savedMessage="Saved. Web audits will use this key to generate 'after' concept images."
         />
-      </div>
 
-      <div className="space-y-6">
         <XeroSettingsPanel />
 
         <ApiKeyCard
@@ -1412,7 +1412,6 @@ function SettingsTab() {
         />
 
         <HubSpotSyncCard />
-      </div>
 
       {SHOW_ADMIN_SETTINGS_PLACEHOLDERS && (
         <>
