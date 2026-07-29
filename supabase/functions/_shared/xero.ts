@@ -20,13 +20,20 @@ const TOKEN_URL = "https://identity.xero.com/connect/token";
 const CONNECTIONS_URL = "https://api.xero.com/connections";
 const API_BASE = "https://api.xero.com/api.xro/2.0";
 
-/** accounting.settings is needed to read the chart of accounts for the account picker. */
+// Granular scopes, because that is what this Xero app is configured with:
+// accounting.invoices covers creating the draft ACCREC invoice (the older,
+// broader accounting.transactions is not enabled and gets rejected as
+// invalid_scope), accounting.contacts finds or creates the client, and
+// accounting.settings.read reads the chart of accounts for the account picker.
+// Do not add app.connections: it exists only for Custom Connections apps and a
+// standard app gets access_denied ("Requested wrong apps scopes") for asking.
+// The /connections endpoint works with any valid token regardless.
 export const XERO_SCOPES = [
   "openid",
   "profile",
   "email",
   "offline_access",
-  "accounting.transactions",
+  "accounting.invoices",
   "accounting.contacts",
   "accounting.settings.read",
 ].join(" ");
