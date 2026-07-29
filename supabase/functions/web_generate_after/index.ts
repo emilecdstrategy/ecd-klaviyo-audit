@@ -15,6 +15,7 @@ import {
   type Viewport,
 } from "../_shared/after-image-prompt.ts";
 import { isPhotoDefect, verifyAfterImage, verifyScore } from "../_shared/after-image-verify.ts";
+import { autoPublishAudit } from "../_shared/auto-publish.ts";
 
 // Generates an "after" concept image for a web-audit page section by editing the
 // real above-the-fold screenshot in place with Google's Gemini image model
@@ -494,6 +495,7 @@ serve(async (req) => {
   if (!apiKey) {
     // Afters can't run without a key; don't leave the report gated on them.
     try { await assertServiceClient().from("audits").update({ web_afters_ready: true }).eq("id", auditId); } catch { /* non-fatal */ }
+    await autoPublishAudit(assertServiceClient(), auditId);
     return json({ ok: false, error: { code: "not_configured", message: "Image generation is not configured. Add a Gemini API key in Settings." }, correlationId }, { status: 200 });
   }
 
@@ -577,6 +579,7 @@ serve(async (req) => {
       if (!next) {
         // All after images done (success or recorded error): let the report show.
         try { await sb.from("audits").update({ web_afters_ready: true }).eq("id", auditId); } catch { /* non-fatal */ }
+        await autoPublishAudit(sb, auditId);
         return json({ ok: true, correlationId, status: "complete" });
       }
 
@@ -601,6 +604,7 @@ serve(async (req) => {
       else {
         // Last unit just finished: reveal the report.
         try { await sb.from("audits").update({ web_afters_ready: true }).eq("id", auditId); } catch { /* non-fatal */ }
+        await autoPublishAudit(sb, auditId);
       }
       return json({ ok: true, correlationId, status: remaining ? "in_progress" : "complete", section: next.section.section_key, viewport: next.viewport });
     }

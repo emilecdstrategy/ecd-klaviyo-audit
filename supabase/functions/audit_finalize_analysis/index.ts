@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { persistAuditAnalysisResults } from "../_shared/audit-analysis-persist.ts";
+import { autoPublishAudit } from "../_shared/auto-publish.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -420,6 +421,7 @@ async function runPipeline(
         status: "complete",
         updated_at: new Date().toISOString(),
       }).eq("audit_id", auditId);
+      await autoPublishAudit(sb, auditId);
       return json({ ok: true, correlationId, status: "complete" });
     }
   }
@@ -535,6 +537,8 @@ async function runPipeline(
         error_message: null,
         updated_at: new Date().toISOString(),
       }).eq("audit_id", auditId);
+      // The analysis is the whole Klaviyo pipeline, so this is "done".
+      await autoPublishAudit(sb, auditId);
       return json({ ok: true, correlationId, status: "complete", step: stepIndex });
     }
 
