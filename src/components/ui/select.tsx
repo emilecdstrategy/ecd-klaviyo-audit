@@ -1,6 +1,6 @@
 import * as React from 'react';
 import * as SelectPrimitive from '@radix-ui/react-select';
-import { Check, ChevronDown } from 'lucide-react';
+import { Check, ChevronDown, ChevronUp } from 'lucide-react';
 import { cn } from '../../lib/utils';
 
 export const Select = SelectPrimitive.Root;
@@ -32,20 +32,36 @@ SelectTrigger.displayName = SelectPrimitive.Trigger.displayName;
 export const SelectContent = React.forwardRef<
   React.ElementRef<typeof SelectPrimitive.Content>,
   React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
->(({ className, children, position = 'popper', ...props }, ref) => (
+>(({ className, children, position = 'popper', sideOffset = 4, ...props }, ref) => (
   <SelectPrimitive.Portal>
     <SelectPrimitive.Content
       ref={ref}
       position={position}
+      sideOffset={sideOffset}
+      // Without a max height, a long list (a Xero chart of accounts, a client
+      // list) renders at full length and runs off the bottom of the screen with
+      // nothing to scroll. Radix measures the space between the trigger and the
+      // viewport edge and exposes it as --radix-select-content-available-height,
+      // so the list stops there and scrolls instead.
       className={cn(
-        'z-50 min-w-[8rem] overflow-hidden rounded-xl border border-gray-100 bg-white shadow-lg',
+        'z-50 min-w-[8rem] max-h-[var(--radix-select-content-available-height)] overflow-hidden',
+        'rounded-xl border border-gray-100 bg-white shadow-lg',
+        // Never narrower than the trigger, and never wider than the screen, so a
+        // long option label wraps inside the menu instead of overflowing sideways.
+        'w-[max(var(--radix-select-trigger-width),8rem)] max-w-[calc(100vw-2rem)]',
         className,
       )}
       {...props}
     >
-      <SelectPrimitive.Viewport className="p-1">
+      <SelectPrimitive.ScrollUpButton className="flex h-6 cursor-default items-center justify-center bg-white text-gray-400">
+        <ChevronUp className="h-4 w-4" />
+      </SelectPrimitive.ScrollUpButton>
+      <SelectPrimitive.Viewport className="max-h-[var(--radix-select-content-available-height)] overflow-y-auto p-1">
         {children}
       </SelectPrimitive.Viewport>
+      <SelectPrimitive.ScrollDownButton className="flex h-6 cursor-default items-center justify-center bg-white text-gray-400">
+        <ChevronDown className="h-4 w-4" />
+      </SelectPrimitive.ScrollDownButton>
     </SelectPrimitive.Content>
   </SelectPrimitive.Portal>
 ));
