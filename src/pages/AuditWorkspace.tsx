@@ -440,6 +440,30 @@ export default function AuditWorkspace() {
     } catch { /* non-fatal */ }
   };
 
+  // One definition, placed either in the top bar (web audits) or in the bottom
+  // publish bar (Klaviyo audits), so the two never drift apart.
+  const createProposalButton = client && canSeeProposalsBeta(user?.email) ? (
+    <button
+      type="button"
+      disabled={creatingProposal}
+      onClick={async () => {
+        if (!client || creatingProposal) return;
+        setCreatingProposal(true);
+        try {
+          const proposal = await createProposalFromAudit(audit, client);
+          navigate(`/proposals/${proposal.id}/edit`);
+        } catch (e) {
+          toast(e instanceof Error ? e.message : 'Failed to create proposal');
+          setCreatingProposal(false);
+        }
+      }}
+      className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
+    >
+      <FileSignature className="h-4 w-4" />
+      {creatingProposal ? 'Creating…' : 'Create Proposal'}
+    </button>
+  ) : null;
+
   return (
     <ReportEditProvider
       editMode
@@ -464,27 +488,9 @@ export default function AuditWorkspace() {
                 <History className="w-4 h-4" />
                 Activity
               </button>
-              {client && canSeeProposalsBeta(user?.email) ? (
-                <button
-                  type="button"
-                  disabled={creatingProposal}
-                  onClick={async () => {
-                    if (!client || creatingProposal) return;
-                    setCreatingProposal(true);
-                    try {
-                      const proposal = await createProposalFromAudit(audit, client);
-                      navigate(`/proposals/${proposal.id}/edit`);
-                    } catch (e) {
-                      toast(e instanceof Error ? e.message : 'Failed to create proposal');
-                      setCreatingProposal(false);
-                    }
-                  }}
-                  className="flex items-center gap-2 px-4 py-2 border border-gray-200 bg-white text-gray-700 text-sm font-medium rounded-lg hover:bg-gray-50 transition-colors disabled:opacity-50"
-                >
-                  <FileSignature className="w-4 h-4" />
-                  {creatingProposal ? 'Creating…' : 'Create Proposal'}
-                </button>
-              ) : null}
+              {/* Klaviyo audits show this in the bottom publish bar instead,
+                  next to the other things you do once editing is finished. */}
+              {audit.audit_type === 'web' ? createProposalButton : null}
               {audit.audit_type === 'web' && !webGenerating && webBundle && (
                 <button
                   type="button"
@@ -689,6 +695,7 @@ export default function AuditWorkspace() {
           onStatusChange={handleStatusChange}
           publishDisabled={audit.audit_method === 'api' && audit.status !== 'published' && Boolean(publishBlockedReason)}
           publishDisabledReason={publishBlockedReason || undefined}
+          extraAction={audit.audit_type === 'web' ? undefined : createProposalButton}
         />
 
         {emailDesignDrawerOpen && (

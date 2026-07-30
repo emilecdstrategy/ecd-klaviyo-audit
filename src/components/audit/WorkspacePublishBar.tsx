@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Copy, Check, ExternalLink } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import type { Audit } from '../../lib/types';
@@ -17,6 +17,7 @@ export default function WorkspacePublishBar({
   onStatusChange,
   publishDisabled,
   publishDisabledReason,
+  extraAction,
 }: {
   audit: Audit;
   shareToken: string | null;
@@ -24,6 +25,9 @@ export default function WorkspacePublishBar({
   onStatusChange: (status: Audit['status']) => void;
   publishDisabled?: boolean;
   publishDisabledReason?: string;
+  /** Rendered at the start of the action cluster, left of Status. Used for
+   * Create Proposal, which belongs with the other end-of-editing actions. */
+  extraAction?: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
   const shareUrl = shareToken ? `${window.location.origin}/report/${shareToken}` : '';
@@ -109,6 +113,8 @@ export default function WorkspacePublishBar({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-3 sm:justify-end">
+          {extraAction}
+
           {statusControl}
 
           {!isPublished && (
