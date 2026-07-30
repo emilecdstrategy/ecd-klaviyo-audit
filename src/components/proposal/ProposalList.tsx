@@ -75,7 +75,6 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
   const [menuPos, setMenuPos] = useState<{ top?: number; bottom?: number; right: number } | null>(null);
   const menuRef = useRef<HTMLDivElement>(null);
   const [sendProposal, setSendProposal] = useState<Proposal | null>(null);
-  const [draftLinkProposal, setDraftLinkProposal] = useState<Proposal | null>(null);
   const [linkBusyId, setLinkBusyId] = useState<string | null>(null);
   const [actionTarget, setActionTarget] = useState<{ proposal: Proposal; action: 'won' | 'lost' } | null>(null);
   const [lostReason, setLostReason] = useState('');
@@ -118,13 +117,14 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
       const updated = proposal.public_token ? proposal : await markProposalSent(proposal);
       const url = `${publicProposalOrigin()}/proposal/${updated.public_token}`;
       await navigator.clipboard.writeText(url);
-      toast(proposal.public_token ? 'Link copied.' : 'Link copied. The proposal is now live.');
+      toast(
+        proposal.public_token ? 'Link copied.' : 'Link copied. The countdown starts when the client opens it.',
+      );
       if (!proposal.public_token) patch(updated);
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Failed to copy link');
     } finally {
       setLinkBusyId(null);
-      setDraftLinkProposal(null);
     }
   };
 
@@ -231,38 +231,6 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
           }}
         />
       )}
-
-      <Modal
-        open={Boolean(draftLinkProposal)}
-        title="Share this draft?"
-        onClose={() => (linkBusyId ? undefined : setDraftLinkProposal(null))}
-        className="max-w-lg"
-      >
-        <div className="p-5">
-          <p className="text-sm text-gray-700">
-            Copying the link makes this proposal live: it gets a public URL, the contract text is locked in,
-            the validity window starts, and the status changes to <strong>Sent</strong>.
-          </p>
-          <div className="mt-5 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              disabled={Boolean(linkBusyId)}
-              onClick={() => setDraftLinkProposal(null)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={Boolean(linkBusyId)}
-              onClick={() => draftLinkProposal && copyLink(draftLinkProposal)}
-              className="rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {linkBusyId ? 'Working…' : 'Go live & copy link'}
-            </button>
-          </div>
-        </div>
-      </Modal>
 
       <Modal
         open={Boolean(actionTarget)}
@@ -465,14 +433,12 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
             <button
               type="button"
               disabled={linkBusyId === menuAnchor.proposal.id}
+              // No confirmation: copying a link is not a commitment any more,
+              // because the validity window only starts when the client opens it.
               onClick={() => {
                 const p = menuAnchor.proposal;
                 setMenuAnchor(null);
-                if (!p.public_token && p.status === 'draft') {
-                  setDraftLinkProposal(p);
-                } else {
-                  copyLink(p);
-                }
+                copyLink(p);
               }}
               className="flex w-full items-center gap-2.5 px-3.5 py-2 text-left text-sm text-gray-700 hover:bg-gray-50 disabled:opacity-50"
             >

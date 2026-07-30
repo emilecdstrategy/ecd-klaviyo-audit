@@ -331,15 +331,15 @@ function generatePublicToken(): string {
 
 /**
  * Ensure a proposal is shareable: generates the public token, freezes the
- * contract snapshot, sets valid_until, and flips draft -> sent. Refreshes the
- * contract snapshot on every call while the proposal is unsigned so contract
- * edits reach clients who have not signed yet.
+ * contract snapshot, and flips draft -> sent. Refreshes the contract snapshot on
+ * every call while the proposal is unsigned so contract edits reach clients who
+ * have not signed yet. The validity clock is NOT started here; see valid_until
+ * in proposal_public, which starts it on the client's first view.
  */
 export async function markProposalSent(proposal: Proposal): Promise<Proposal> {
   if (proposal.client_signed_at) return proposal;
 
-  const [settings, contractDocs, signatures] = await Promise.all([
-    getProposalSettings(),
+  const [contractDocs, signatures] = await Promise.all([
     listContractDocuments(),
     listProposalSignatures(proposal.id),
   ]);
@@ -360,15 +360,13 @@ export async function markProposalSent(proposal: Proposal): Promise<Proposal> {
       version_updated_at: doc.updated_at,
     }));
 
-  const validDays = settings.defaults.valid_days || 30;
-  const validUntil =
-    proposal.valid_until ??
-    new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-
+  // valid_until is deliberately NOT set here. The validity window starts when
+  // the client actually opens the proposal (proposal_public sets it on the first
+  // external view), not when we copy the link, since a link can sit unsent for
+  // days. A null valid_until also keeps the hourly expiry job away from it.
   const wasDraft = proposal.status === 'draft';
   const updates: Record<string, unknown> = {
     public_token: proposal.public_token ?? generatePublicToken(),
-    valid_until: validUntil,
     updated_at: new Date().toISOString(),
   };
   if (!hasClientSignature) {

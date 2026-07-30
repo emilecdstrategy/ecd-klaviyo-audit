@@ -59,7 +59,6 @@ export default function ProposalDetail() {
   const [actionError, setActionError] = useState('');
   const [linkBusy, setLinkBusy] = useState(false);
   const [sendOpen, setSendOpen] = useState(false);
-  const [confirmDraftLink, setConfirmDraftLink] = useState(false);
   const [countersignOpen, setCountersignOpen] = useState(false);
   const [countersignName, setCountersignName] = useState('');
   const [countersignBusy, setCountersignBusy] = useState(false);
@@ -160,13 +159,12 @@ export default function ProposalDetail() {
       const updated = proposal.public_token ? proposal : await markProposalSent(proposal);
       const url = `${publicProposalOrigin()}/proposal/${updated.public_token}`;
       await navigator.clipboard.writeText(url);
-      toast('Link copied. The proposal is now live.');
+      toast('Link copied. The countdown starts when the client opens it.');
       if (!proposal.public_token) await reload();
     } catch (e) {
       toast(e instanceof Error ? e.message : 'Failed to copy link');
     } finally {
       setLinkBusy(false);
-      setConfirmDraftLink(false);
     }
   };
 
@@ -339,38 +337,6 @@ export default function ProposalDetail() {
               }`}
             >
               {acting ? 'Working…' : confirmAction === 'won' ? 'Mark won' : confirmAction === 'lost' ? 'Mark lost' : 'Reopen'}
-            </button>
-          </div>
-        </div>
-      </Modal>
-
-      <Modal
-        open={confirmDraftLink}
-        title="Share this draft?"
-        onClose={() => (linkBusy ? undefined : setConfirmDraftLink(false))}
-        className="max-w-lg"
-      >
-        <div className="p-5">
-          <p className="text-sm text-gray-700">
-            Copying the link makes this proposal live: it gets a public URL, the contract text is locked in,
-            the validity window starts, and the status changes to <strong>Sent</strong>.
-          </p>
-          <div className="mt-5 flex items-center justify-end gap-2">
-            <button
-              type="button"
-              disabled={linkBusy}
-              onClick={() => setConfirmDraftLink(false)}
-              className="rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              type="button"
-              disabled={linkBusy}
-              onClick={copyLink}
-              className="rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90 disabled:opacity-50"
-            >
-              {linkBusy ? 'Working…' : 'Go live & copy link'}
             </button>
           </div>
         </div>
@@ -812,10 +778,9 @@ export default function ProposalDetail() {
               <button
                 type="button"
                 disabled={linkBusy}
-                onClick={() => {
-                  if (!proposal.public_token && proposal.status === 'draft') setConfirmDraftLink(true);
-                  else copyLink();
-                }}
+                // No confirmation: copying a link is not a commitment any more,
+                // because the validity window only starts when the client opens it.
+                onClick={copyLink}
                 className="flex w-full items-center justify-center gap-2 rounded-lg border border-gray-200 px-4 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50 disabled:opacity-50"
               >
                 <Link2 className="h-3.5 w-3.5" />

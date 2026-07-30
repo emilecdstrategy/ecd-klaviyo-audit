@@ -1,6 +1,7 @@
 // Send (or resend) a proposal to the client. Staff-only. Handles the full
 // go-live transition server-side: token generation, contract snapshot,
-// validity window, draft -> sent. Email delivery is optional: without
+// draft -> sent. The validity window is NOT started here; it starts when the
+// client first opens the proposal. Email delivery is optional: without
 // SMTP_USER/SMTP_PASS configured the transition still happens and the link
 // is returned for the sender to copy.
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
@@ -84,15 +85,15 @@ serve(async (req) => {
     const signer2Email = recipient2Email || (proposal.recipient2_email ?? "");
     const signer2Name = recipient2Name || (proposal.recipient2_name ?? "");
     const token2 = signer2Email ? (proposal.public_token2 ?? generateToken()) : null;
+    // valid_until is NOT set at send time. The validity window starts when the
+    // client first opens the proposal (proposal_public), so an email sitting
+    // unopened in an inbox does not burn the window. Same rule as a copied link.
     const validDays = settings.defaults?.valid_days || 30;
-    const validUntil = proposal.valid_until ??
-      new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
     const wasDraft = proposal.status === "draft";
     const now = new Date().toISOString();
 
     const updates: Record<string, unknown> = {
       public_token: token,
-      valid_until: validUntil,
       recipient_email: recipientEmail,
       updated_at: now,
     };
@@ -155,7 +156,7 @@ serve(async (req) => {
       ...(message ? [message] : []),
       `Please review the proposal we prepared for ${companyName}. You can read and sign it directly from the link below.`,
       ...(recipients.length > 1 ? [`This link is personal to you; each signer receives their own signing link.`] : []),
-      ...(validUntil ? [`This proposal is valid until ${validUntil}.`] : []),
+      `This proposal is valid for ${validDays} days from the day you first open it.`,
     ];
 
     const emailResults: Array<{ email: string; status: string; id?: string; reason?: string }> = [];
@@ -173,7 +174,7 @@ serve(async (req) => {
             ...(message ? [escapeHtml(message)] : []),
             `Please review the proposal we prepared for ${escapeHtml(companyName)}. You can read and sign it directly from the link below.`,
             ...(recipients.length > 1 ? [`This link is personal to you; each signer receives their own signing link.`] : []),
-            ...(validUntil ? [`This proposal is valid until ${validUntil}.`] : []),
+            `This proposal is valid for ${validDays} days from the day you first open it.`,
           ],
           ctaLabel: "View & sign proposal",
           ctaUrl: `${cleanOrigin}/proposal/${recipient.token}`,

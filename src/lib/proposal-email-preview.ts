@@ -48,9 +48,10 @@ export function emailShellHtml(options: {
 </html>`;
 }
 
-function defaultValidUntil(): string {
-  return new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
-}
+/** Days the proposal stays open once the client first views it. Mirrors the
+ * default in proposal_send_email; the window starts at first view, so the email
+ * states a length rather than a date. */
+const DEFAULT_VALID_DAYS = 30;
 
 export function buildProposalEmailPreview(options: {
   recipientName: string;
@@ -65,7 +66,9 @@ export function buildProposalEmailPreview(options: {
     `Hi${firstName ? ` ${escapeHtml(firstName)}` : ''},`,
     ...(message.trim() ? [escapeHtml(message.trim())] : []),
     `Please review the proposal we prepared for ${escapeHtml(companyName)}. You can read and sign it directly from the link below.`,
-    `This proposal is valid until ${validUntil || defaultValidUntil()}.`,
+    validUntil
+      ? `This proposal is valid until ${validUntil}.`
+      : `This proposal is valid for ${DEFAULT_VALID_DAYS} days from the day you first open it.`,
   ];
 
   return {

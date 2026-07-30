@@ -87,17 +87,34 @@ serve(async (req) => {
         });
       }
     } else if (!isStaffView && !isScanner) {
+      // The validity window starts NOW, on the client's first real view, rather
+      // than when we copied the link or sent the email. Internal views and link
+      // scanners are excluded above, so neither can start the clock early.
+      const { data: validitySettingsRow } = await sb
+        .from("platform_settings")
+        .select("proposal_settings")
+        .eq("id", "default")
+        .maybeSingle();
+      const validDays =
+        ((validitySettingsRow?.proposal_settings ?? {}) as { defaults?: { valid_days?: number } })
+          .defaults?.valid_days || 30;
+      const validUntil = proposal.valid_until ??
+        new Date(Date.now() + validDays * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+
       // Race-safe first-view transition: only one concurrent request wins the
       // sent -> viewed update (M4 hangs the team notification off this winner).
       const { data: transitioned } = await sb
         .from("proposals")
-        .update({ status: "viewed", first_viewed_at: new Date().toISOString() })
+        .update({ status: "viewed", first_viewed_at: new Date().toISOString(), valid_until: validUntil })
         .eq("id", proposal.id)
         .eq("status", "sent")
         .select("id");
       const firstView = Boolean(transitioned && transitioned.length > 0);
       if (firstView) {
         proposal.status = "viewed";
+        // Reflect it in this very response: the client is reading the page that
+        // shows "valid until", and it was null a moment ago.
+        proposal.valid_until = validUntil;
       }
 
       await sb.from("proposal_events").insert({
