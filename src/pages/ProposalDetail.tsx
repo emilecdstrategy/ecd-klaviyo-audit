@@ -44,6 +44,7 @@ import { deriveProposalStatus } from '../lib/proposal-status';
 import { publicProposalOrigin } from '../lib/public-origin';
 import AgencySignatureCard from '../components/proposal/AgencySignatureCard';
 import XeroInvoiceCard from '../components/proposal/XeroInvoiceCard';
+import ProposalExpiryRow from '../components/proposal/ProposalExpiryRow';
 
 export default function ProposalDetail() {
   const { id } = useParams<{ id: string }>();
@@ -693,11 +694,15 @@ export default function ProposalDetail() {
                   <dd className="text-gray-700">{new Date(proposal.first_viewed_at).toLocaleDateString()}</dd>
                 </div>
               )}
-              {proposal.valid_until && (
-                <div className="flex justify-between">
-                  <dt className="text-gray-400">Valid until</dt>
-                  <dd className={displayStatus === 'expired' ? 'font-medium text-amber-600' : 'text-gray-700'}>
-                    {new Date(`${proposal.valid_until}T12:00:00`).toLocaleDateString()}
+              {!isClosed && (
+                <div className="flex items-start justify-between gap-2">
+                  <dt className="text-gray-400">Expires</dt>
+                  <dd className="text-right">
+                    <ProposalExpiryRow
+                      proposal={proposal}
+                      validDays={settings?.defaults?.valid_days || 30}
+                      onExtended={() => void reload()}
+                    />
                   </dd>
                 </div>
               )}

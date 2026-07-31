@@ -24,11 +24,19 @@ import SendProposalModal from './SendProposalModal';
 import {
   deleteProposal,
   getProposal,
+  getProposalSettings,
   markProposalLost,
   markProposalSent,
   markProposalWon,
 } from '../../lib/proposals-db';
-import { deriveProposalStatus, PROPOSAL_STATUS_LABELS } from '../../lib/proposal-status';
+import {
+  deriveProposalStatus,
+  describeProposalExpiry,
+  PROPOSAL_STATUS_LABELS,
+  proposalExpiryLabel,
+  proposalExpiryTooltip,
+} from '../../lib/proposal-status';
+import HoverTooltip from '../ui/HoverTooltip';
 import { computeProposalTotals, formatProposalTotal, proposalDiscountFromRow } from '../../lib/proposal-pricing';
 import { formatCurrency } from '../../lib/revenue-calculator';
 import { publicProposalOrigin } from '../../lib/public-origin';
@@ -56,6 +64,30 @@ function proposalValueSummary(proposal: Proposal): string {
   return parts.length ? parts.join(' + ') : '—';
 }
 
+/** Countdown to expiry, with the exact end-of-day date in a branded tooltip.
+ * valid_until is a DATE, so there is no time of day to show. */
+function ProposalExpiryCell({ proposal, validDays }: { proposal: Proposal; validDays: number }) {
+  const expiry = describeProposalExpiry(proposal);
+  const label = proposalExpiryLabel(expiry);
+  const tone =
+    expiry.state === 'expired'
+      ? 'text-red-600'
+      : expiry.state === 'active' && expiry.daysLeft <= 3
+      ? 'text-amber-600'
+      : expiry.state === 'not_started'
+      ? 'text-gray-400'
+      : 'text-gray-600';
+  return (
+    <HoverTooltip
+      align="start"
+      label={label}
+      description={proposalExpiryTooltip(expiry, validDays)}
+    >
+      <span className={`cursor-default whitespace-nowrap text-xs font-medium ${tone}`}>{label}</span>
+    </HoverTooltip>
+  );
+}
+
 type ProposalListProps = {
   proposals: Proposal[];
   onDeleted: (id: string) => void;
@@ -80,6 +112,15 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
   const [lostReason, setLostReason] = useState('');
   const [acting, setActing] = useState(false);
   const [actionError, setActionError] = useState('');
+  const [validDays, setValidDays] = useState(30);
+
+  useEffect(() => {
+    let cancelled = false;
+    getProposalSettings()
+      .then(s => { if (!cancelled) setValidDays(s.defaults.valid_days || 30); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const patch = (updated: Proposal) => onUpdated?.(updated);
 
@@ -337,6 +378,7 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Client</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Value</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Status</th>
+                <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Expires</th>
                 <th className="text-left text-xs font-medium text-gray-500 uppercase tracking-wide px-6 py-3">Updated</th>
                 <th className="px-6 py-3"></th>
               </tr>
@@ -373,6 +415,9 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
                     </td>
                     <td className="px-6 py-4">
                       <StatusBadge status={displayStatus} />
+                    </td>
+                    <td className="px-6 py-4">
+                      <ProposalExpiryCell proposal={proposal} validDays={validDays} />
                     </td>
                     <td className="px-6 py-4 text-xs text-gray-400">
                       {new Date(proposal.updated_at).toLocaleDateString()}

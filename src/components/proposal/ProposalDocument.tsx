@@ -202,6 +202,23 @@ export default function ProposalDocument({
         />
       )}
 
+      {/* State the deadline where the client signs. The email promises a window
+          but the proposal itself never repeated it. Only once the clock has
+          started (first view), and never after signing. */}
+      {!isTemplate && proposal.valid_until && !proposal.client_signed_at && (
+        <p className="mt-8 text-center text-sm text-gray-500">
+          This proposal is valid until{' '}
+          <span className="font-semibold text-gray-700">
+            {new Date(`${proposal.valid_until}T12:00:00`).toLocaleDateString(undefined, {
+              day: 'numeric',
+              month: 'long',
+              year: 'numeric',
+            })}
+          </span>
+          .
+        </p>
+      )}
+
       {!isTemplate && (
         <ProposalSignatureSection
           clientSlots={clientSlots}

@@ -211,6 +211,13 @@ export default function ProposalSettingsPanel() {
               }
               className={inputClass}
             />
+            {/* The rule, written down, because it was previously only implied by
+                the code: one global window, started by the client's first view. */}
+            <p className="mt-1.5 text-[11px] leading-relaxed text-gray-400">
+              Applies to every proposal. The countdown starts when the client first opens it, not when you send the
+              link, and runs to the end of that day. Proposals that reach the date are marked lost automatically. You
+              can override the date on an individual proposal from its page.
+            </p>
           </div>
           <div className="sm:col-span-2">
             <label className="mb-1 block text-xs font-medium text-gray-500">
