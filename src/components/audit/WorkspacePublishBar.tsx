@@ -25,8 +25,8 @@ export default function WorkspacePublishBar({
   onStatusChange: (status: Audit['status']) => void;
   publishDisabled?: boolean;
   publishDisabledReason?: string;
-  /** Rendered at the start of the action cluster, left of Status. Used for
-   * Create Proposal, which belongs with the other end-of-editing actions. */
+  /** Rendered last in the action cluster, after Status and Publish report. Used
+   * for Create Proposal, which belongs with the other end-of-editing actions. */
   extraAction?: ReactNode;
 }) {
   const [copied, setCopied] = useState(false);
@@ -113,8 +113,6 @@ export default function WorkspacePublishBar({
         </div>
 
         <div className="flex shrink-0 flex-wrap items-center gap-3 sm:justify-end">
-          {extraAction}
-
           {statusControl}
 
           {!isPublished && (
@@ -128,6 +126,8 @@ export default function WorkspacePublishBar({
               Publish report
             </button>
           )}
+
+          {extraAction}
         </div>
       </div>
       {publishDisabled && publishDisabledReason && !isPublished && (

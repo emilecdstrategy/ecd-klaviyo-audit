@@ -26,7 +26,6 @@ export default function KPICard({ label, value, change, sub, icon: Icon, accent 
           {/* Never truncate the number. "$77,..." hides the magnitude, which is
               the one thing the card exists to show, so it wraps instead. */}
           <p className="text-2xl font-bold text-gray-900 mt-1 break-words tabular-nums">{value}</p>
-          {sub && <p className="text-xs text-gray-400 font-medium mt-1" title={sub}>{sub}</p>}
           {change && (
             <p className="text-xs text-emerald-600 font-medium mt-1">{change}</p>
           )}
@@ -35,6 +34,14 @@ export default function KPICard({ label, value, change, sub, icon: Icon, accent 
           <Icon className="w-5 h-5" />
         </div>
       </div>
+      {/* Below the icon row, not beside it: the context line gets the card's full
+          width so it fits on one line instead of being squeezed into the narrow
+          column left of the icon. */}
+      {sub && (
+        <p className="mt-1 truncate whitespace-nowrap text-xs font-medium text-gray-400" title={sub}>
+          {sub}
+        </p>
+      )}
     </div>
   );
 }
