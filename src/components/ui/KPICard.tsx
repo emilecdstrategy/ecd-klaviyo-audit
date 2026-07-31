@@ -20,16 +20,18 @@ const accentStyles = {
 export default function KPICard({ label, value, change, sub, icon: Icon, accent = 'primary' }: KPICardProps) {
   return (
     <div className="bg-white rounded-xl p-5 card-shadow hover:card-shadow-hover transition-shadow duration-200">
-      <div className="flex items-start justify-between">
+      <div className="flex items-start justify-between gap-3">
         <div className="min-w-0">
           <p className="text-sm text-gray-500 font-medium">{label}</p>
-          <p className="text-2xl font-bold text-gray-900 mt-1 truncate tabular-nums">{value}</p>
-          {sub && <p className="text-xs text-gray-400 font-medium mt-1 truncate">{sub}</p>}
+          {/* Never truncate the number. "$77,..." hides the magnitude, which is
+              the one thing the card exists to show, so it wraps instead. */}
+          <p className="text-2xl font-bold text-gray-900 mt-1 break-words tabular-nums">{value}</p>
+          {sub && <p className="text-xs text-gray-400 font-medium mt-1" title={sub}>{sub}</p>}
           {change && (
             <p className="text-xs text-emerald-600 font-medium mt-1">{change}</p>
           )}
         </div>
-        <div className={`w-10 h-10 rounded-lg flex items-center justify-center ${accentStyles[accent]}`}>
+        <div className={`w-10 h-10 shrink-0 rounded-lg flex items-center justify-center ${accentStyles[accent]}`}>
           <Icon className="w-5 h-5" />
         </div>
       </div>

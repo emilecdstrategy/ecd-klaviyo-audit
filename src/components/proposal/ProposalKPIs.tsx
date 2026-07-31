@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Eye, Hourglass, Trophy, XCircle, Percent, CircleDollarSign } from 'lucide-react';
+import { Eye, Hourglass, Trophy, XCircle, Percent } from 'lucide-react';
 import KPICard from '../ui/KPICard';
 import MonthlyBarChart from '../ui/MonthlyBarChart';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
@@ -102,7 +102,7 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
       {/* Money first: the headline on every card is dollars (or a rate), with
           the count as context underneath. Counts alone hid the thing that
           matters about a pipeline, which is what it is worth. */}
-      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-6">
+      <div className="grid grid-cols-2 gap-4 md:grid-cols-3 xl:grid-cols-5">
         <KPICard
           label="Open pipeline"
           value={formatCurrency(openValue)}
@@ -120,7 +120,13 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
         <KPICard
           label="Won"
           value={formatCurrency(wonValue)}
-          sub={`${wonCount} proposal${wonCount === 1 ? '' : 's'}`}
+          // Average deal size rides along here rather than taking a sixth card:
+          // it only means anything next to the total it is an average of.
+          sub={
+            avgWonValue === null
+              ? 'no wins yet'
+              : `${wonCount} proposal${wonCount === 1 ? '' : 's'} · ${formatCurrency(avgWonValue)} avg`
+          }
           icon={Trophy}
           accent="success"
         />
@@ -137,13 +143,6 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
           sub={decided > 0 ? `won ${wonCount} of ${decided} decided` : 'no decisions yet'}
           icon={Percent}
           accent="secondary"
-        />
-        <KPICard
-          label="Avg won deal"
-          value={avgWonValue === null ? '—' : formatCurrency(avgWonValue)}
-          sub={wonCount > 0 ? `across ${wonCount} win${wonCount === 1 ? '' : 's'}` : 'no wins yet'}
-          icon={CircleDollarSign}
-          accent="success"
         />
       </div>
 
