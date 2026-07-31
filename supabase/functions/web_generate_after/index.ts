@@ -427,10 +427,25 @@ async function generateOne(
     }
   }
 
+  // What the judge still could not see in the image we are publishing. Some
+  // recommendations are structural (moving a bar into a menu) and the model will
+  // not do them however precisely it is asked, so after every pass has run this
+  // gets recorded rather than quietly published as if it were applied.
+  const publishedVariant = String(verify.published ?? "attempt1");
+  const publishedVerdict = asRecord(verify[publishedVariant]);
+  const unapplied = Array.isArray(publishedVerdict.missing) ? (publishedVerdict.missing as string[]) : [];
+
   const details = asRecord(section.section_details);
   const webOut = asRecord(details.web);
   const afterImages = asRecord(webOut.after_images);
-  afterImages[viewport] = { url: bustedUrl, generated_at: new Date().toISOString(), verify };
+  afterImages[viewport] = {
+    url: bustedUrl,
+    generated_at: new Date().toISOString(),
+    verify,
+    unapplied,
+    applied_count: Math.max(0, recommendations.length - unapplied.length),
+    total_count: recommendations.length,
+  };
   webOut.after_images = afterImages;
   details.web = webOut;
   await sb.from("audit_sections").update({ section_details: details }).eq("id", section.id);
@@ -575,6 +590,16 @@ serve(async (req) => {
         const e = asRecord(entry);
         return (typeof e.url === "string" && e.url.length > 0) || e.error != null;
       };
+      // Gemini sometimes returns no image at all for one call. That is transient,
+      // but recording it as a terminal error left a page with no after image and
+      // nothing to retry it. Give a unit MAX_UNIT_ATTEMPTS goes before the error
+      // becomes terminal; the attempt counter lives on the entry so it survives
+      // the self-chaining hops.
+      const MAX_UNIT_ATTEMPTS = 3;
+      const attemptsFor = (u: Unit) => {
+        const entry = asRecord(asRecord(asRecord(u.section.section_details).web).after_images)[u.viewport];
+        return Number(asRecord(entry).attempts ?? 0);
+      };
       const next = units.find((u) => !isDone(u));
       if (!next) {
         // All after images done (success or recorded error): let the report show.
@@ -588,16 +613,29 @@ serve(async (req) => {
       try {
         await generateOne(sb, auditId, clientId, next.section, apiKey, next.viewport, next.url, referenceAfterUrl, next.fold2Url, next.elements);
       } catch (e) {
-        // Record the error on this viewport so the chain advances instead of
-        // retrying the same unit forever.
+        // Count the attempt. Only the LAST one records a terminal error, so a
+        // one-off "no image returned" gets retried on the next chained hop
+        // instead of leaving the page permanently without an after image.
+        const attempts = attemptsFor(next) + 1;
+        const message = String(e instanceof Error ? e.message : e).slice(0, 200);
+        const terminal = attempts >= MAX_UNIT_ATTEMPTS;
         const details = asRecord(next.section.section_details);
         const webOut = asRecord(details.web);
         const afterImages = asRecord(webOut.after_images);
-        afterImages[next.viewport] = { url: null, error: String(e instanceof Error ? e.message : e).slice(0, 200), generated_at: new Date().toISOString() };
+        afterImages[next.viewport] = {
+          url: null,
+          attempts,
+          last_error: message,
+          // Setting `error` is what marks the unit done, so hold it back until
+          // the attempts are used up.
+          ...(terminal ? { error: message } : {}),
+          generated_at: new Date().toISOString(),
+        };
         webOut.after_images = afterImages;
         details.web = webOut;
         await sb.from("audit_sections").update({ section_details: details }).eq("id", next.section.id);
         next.section.section_details = details;
+        console.error("after-image attempt failed", next.section.section_key, next.viewport, attempts, message);
       }
       const remaining = units.some((u) => !isDone(u));
       if (remaining) await chainAuto(auditId);

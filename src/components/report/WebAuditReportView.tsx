@@ -108,7 +108,9 @@ export default function WebAuditReportView({
     if (hasAgent) return 'agent';
     if (hasHelpdesk) return 'helpdesk';
     return null;
-  }, [audit.report_layout]);
+    // audit.layout, not audit.report_layout: the latter does not exist on Audit,
+    // so the memo never recomputed and toggling an add-on left the section stale.
+  }, [audit.layout]);
 
   const demoLabel = demoKind === 'helpdesk' ? 'Helpdesk' : demoKind === 'both' ? 'Agent & Helpdesk' : 'Customer Agent';
 
