@@ -2,6 +2,9 @@ import { useEffect, useState } from 'react';
 import { Loader2, Plus, Save, Trash2 } from 'lucide-react';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import { useToast } from '../ui/Toast';
+import { listRevenueOpportunityTemplates } from '../../lib/db';
+import XeroLineItemMapping from './XeroLineItemMapping';
+import type { RevenueOpportunityTemplate } from '../../lib/types';
 import {
   deleteXeroServiceAccount,
   listXeroServiceAccounts,
@@ -60,19 +63,31 @@ const slugify = (name: string) => name.trim().toLowerCase().replace(/[^a-z0-9]+/
  * the shared MRR account, unless a service needs its own, which is what the
  * second column is for.
  */
-export default function XeroServiceAccountsEditor({ accounts }: { accounts: XeroAccount[] }) {
+export default function XeroServiceAccountsEditor({
+  accounts,
+  mrrAccountCode,
+}: {
+  accounts: XeroAccount[];
+  /** Shown as the resolved monthly account for buckets without an override. */
+  mrrAccountCode: string | null;
+}) {
   const toast = useToast();
   const [rows, setRows] = useState<XeroServiceAccount[]>([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [dirty, setDirty] = useState(false);
+  const [catalog, setCatalog] = useState<RevenueOpportunityTemplate[]>([]);
 
   useEffect(() => {
     listXeroServiceAccounts()
       .then(setRows)
       .catch(() => setRows([]))
       .finally(() => setLoading(false));
+    // Best effort: the row still works without the catalog, it just cannot show
+    // which services feed the bucket.
+    listRevenueOpportunityTemplates().then(setCatalog).catch(() => {});
   }, []);
+
 
   const patch = (index: number, next: Partial<XeroServiceAccount>) => {
     setRows(prev => prev.map((r, i) => (i === index ? { ...r, ...next } : r)));
@@ -143,9 +158,12 @@ export default function XeroServiceAccountsEditor({ accounts }: { accounts: Xero
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div>
           <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-500">Revenue accounts by service</h4>
-          <p className="mt-0.5 text-[11px] text-gray-400">
-            One-time work posts to the service account. Retainers post to the MRR account above, unless a service sets
-            its own.
+          {/* Say plainly where the link to real services is made, because this
+              screen only holds the buckets and their codes. */}
+          <p className="mt-0.5 max-w-2xl text-[11px] leading-relaxed text-gray-400">
+            A bucket is a name plus the accounts its money posts to: one-time work to the one-time account, retainers
+            to the MRR account above unless the bucket sets its own. Assign your line items to buckets in the table
+            below, and a proposal line created from that service is coded automatically.
           </p>
         </div>
         <div className="flex items-center gap-2">
@@ -174,19 +192,21 @@ export default function XeroServiceAccountsEditor({ accounts }: { accounts: Xero
       ) : (
         <div className="mt-3 space-y-2">
           <div className="hidden gap-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 sm:grid sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-            <span>Service</span>
+            <span>Bucket name</span>
             <span>One-time account</span>
             <span>Monthly account</span>
             <span />
           </div>
           {rows.map((row, i) => (
             <div key={row.service_key || `new-${i}`} className="grid gap-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
-              <input
-                value={row.name}
-                onChange={e => patch(i, { name: e.target.value })}
-                placeholder="Klaviyo"
-                className="h-9 rounded-lg border border-gray-200 px-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/20"
-              />
+              <div className="min-w-0">
+                <input
+                  value={row.name}
+                  onChange={e => patch(i, { name: e.target.value })}
+                  placeholder="Klaviyo"
+                  className="h-9 w-full rounded-lg border border-gray-200 px-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/20"
+                />
+              </div>
               <AccountPicker
                 value={row.one_time_account_code ?? ''}
                 accounts={accounts}
@@ -211,6 +231,15 @@ export default function XeroServiceAccountsEditor({ accounts }: { accounts: Xero
           ))}
         </div>
       )}
+
+      <XeroLineItemMapping
+        templates={catalog}
+        services={rows.filter(r => r.service_key)}
+        mrrAccountCode={mrrAccountCode}
+        onChanged={(slug, key) =>
+          setCatalog(prev => prev.map(t => (t.slug === slug ? { ...t, xero_service_key: key } : t)))
+        }
+      />
     </div>
   );
 }
