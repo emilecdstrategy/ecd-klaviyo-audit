@@ -36,12 +36,16 @@ import {
 } from '../lib/db';
 import type { CatalogAuditType, RevenueOpportunityTemplate } from '../lib/types';
 import XeroSettingsPanel from '../components/proposal/XeroSettingsPanel';
+import { listXeroServiceAccounts, type XeroServiceAccount } from '../lib/xero';
 
 const TABS = [
   { id: 'users', label: 'Users', icon: Users },
   { id: 'revenue_opportunities', label: 'Line Item Catalog', icon: TrendingUp },
   { id: 'settings', label: 'API Connection', icon: Key },
 ];
+
+/** Radix Select reserves the empty string, so "unset" needs its own token. */
+const NO_XERO_SERVICE = '__none__';
 
 /** Flip to true to show the Audit Templates & Export Options placeholder cards in Settings again. */
 const SHOW_ADMIN_SETTINGS_PLACEHOLDERS = false;
@@ -461,6 +465,46 @@ function AppliesToChecks({ value, onChange }: { value: CatalogAuditType; onChang
   );
 }
 
+/** Assigns a catalog service to a Xero revenue bucket. Uses the shared branded
+ * Select, and degrades to a clear hint when no buckets exist yet. */
+function XeroServicePicker({
+  value,
+  services,
+  onChange,
+}: {
+  value: string;
+  services: XeroServiceAccount[];
+  onChange: (key: string) => void;
+}) {
+  if (services.length === 0) {
+    return (
+      <p className="rounded-lg border border-dashed border-gray-200 bg-gray-50 px-3 py-2 text-[11px] text-gray-500">
+        No revenue accounts yet. Add them under <span className="font-medium">API Connection &gt; Xero</span> first.
+      </p>
+    );
+  }
+  return (
+    <Select value={value || NO_XERO_SERVICE} onValueChange={v => onChange(v === NO_XERO_SERVICE ? '' : v)}>
+      <SelectTrigger className="h-10 text-sm">
+        <SelectValue placeholder="Choose a revenue account" />
+      </SelectTrigger>
+      <SelectContent>
+        <SelectItem value={NO_XERO_SERVICE}>
+          <SelectItemText>Not set (pick per proposal)</SelectItemText>
+        </SelectItem>
+        {services.map(sv => (
+          <SelectItem key={sv.service_key} value={sv.service_key}>
+            <SelectItemText>
+              {sv.name}
+              {sv.one_time_account_code ? ` · one-time ${sv.one_time_account_code}` : ''}
+            </SelectItemText>
+          </SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  );
+}
+
 function RevenueOpportunitiesTab() {
   const [entries, setEntries] = useState<RevenueOpportunityTemplate[]>([]);
   const [loading, setLoading] = useState(true);
@@ -473,6 +517,17 @@ function RevenueOpportunitiesTab() {
   const [uploadingImageId, setUploadingImageId] = useState<string | null>(null);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  // The Xero revenue buckets, so each service can be assigned one here rather
+  // than on every proposal line.
+  const [xeroServices, setXeroServices] = useState<XeroServiceAccount[]>([]);
+
+  useEffect(() => {
+    let cancelled = false;
+    listXeroServiceAccounts()
+      .then(rows => { if (!cancelled) setXeroServices(rows); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, []);
 
   const toggleExpanded = (id: string) => {
     setExpandedIds(prev => {
@@ -564,6 +619,7 @@ function RevenueOpportunitiesTab() {
         default_revenue_monthly: 0,
         image_url: entry.image_url ?? null,
         details_url: entry.details_url?.trim() || null,
+        xero_service_key: entry.xero_service_key || null,
         display_order: Number(entry.display_order || 0),
         is_active: Boolean(entry.is_active),
       });
@@ -1011,6 +1067,20 @@ function RevenueOpportunitiesTab() {
                         className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                       />
                       <p className="mt-1 text-[11px] text-gray-400">Powers the &quot;View more details&quot; button on the report card (opens in a new tab).</p>
+                    </div>
+                    <div>
+                      <label className="block text-xs font-medium text-gray-500 mb-1">Xero revenue account</label>
+                      <XeroServicePicker
+                        value={entry.xero_service_key ?? ''}
+                        services={xeroServices}
+                        onChange={key => setEntries(prev => prev.map(pp => (
+                          pp.id === entry.id ? { ...pp, xero_service_key: key || null } : pp
+                        )))}
+                      />
+                      <p className="mt-1 text-[11px] text-gray-400">
+                        Proposal lines added from this service are coded here automatically. One-time money posts to the
+                        service account, retainers to the MRR account. Still overridable on an individual proposal.
+                      </p>
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>

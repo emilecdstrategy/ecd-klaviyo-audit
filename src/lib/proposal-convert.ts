@@ -1,4 +1,5 @@
 import { getAddOnItemsFromLayout } from './addon-highlight';
+import { listRevenueOpportunityTemplates } from './db';
 import { addOnHasPricing } from './addon-pricing';
 import { isAddOnInvestmentIncluded } from './investment-summary';
 import { resolveRevenueOpportunityContent } from './revenue-opportunity-content';
@@ -24,6 +25,8 @@ import type {
  */
 export function auditAddOnsToLineItems(
   layout: unknown,
+  /** template_slug -> Xero revenue bucket, from the line item catalog. */
+  serviceKeyBySlug: Map<string, string | null> = new Map(),
 ): Omit<CreateProposalLineItemInput, 'proposal_id'>[] {
   const items = getAddOnItemsFromLayout(layout)
     .filter(item => isAddOnInvestmentIncluded(item) && addOnHasPricing(item))
@@ -31,6 +34,9 @@ export function auditAddOnsToLineItems(
 
   return items.map((item: RevenueOpportunityAddOnItem, index) => ({
     template_slug: item.template_slug || null,
+    // Coded from the catalog so the Xero draft invoice works without anyone
+    // re-picking the account on every line.
+    xero_service_key: serviceKeyBySlug.get(item.template_slug ?? '') ?? null,
     name: item.name,
     description: item.description ?? '',
     content: resolveRevenueOpportunityContent(item),
@@ -66,7 +72,16 @@ export async function createProposalFromAudit(audit: Audit, client: Client): Pro
     recipient_email: '',
   });
 
-  const lineItems = auditAddOnsToLineItems(audit.layout).map(item => ({
+  // Best effort: if the catalog cannot be read, lines are simply uncoded and the
+  // per-line picker is still there. Never block creating the proposal for it.
+  const serviceKeyBySlug = new Map<string, string | null>();
+  try {
+    for (const t of await listRevenueOpportunityTemplates()) {
+      if (t.xero_service_key) serviceKeyBySlug.set(t.slug, t.xero_service_key);
+    }
+  } catch { /* leave lines uncoded */ }
+
+  const lineItems = auditAddOnsToLineItems(audit.layout, serviceKeyBySlug).map(item => ({
     ...item,
     proposal_id: proposal.id,
   }));

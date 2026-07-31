@@ -83,6 +83,10 @@ export interface RevenueOpportunityTemplate {
   image_url?: string | null;
   /** Optional link to full service docs or slides (opens in a new tab). */
   details_url?: string | null;
+  /** Default Xero revenue bucket for lines created from this template
+   * (xero_revenue_accounts.service_key). Copied onto the proposal line, where it
+   * can still be overridden. */
+  xero_service_key?: string | null;
   display_order: number;
   is_active: boolean;
   created_at: string;

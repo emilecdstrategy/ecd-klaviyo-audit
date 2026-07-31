@@ -36,6 +36,9 @@ function catalogToTemplateItem(t: RevenueOpportunityTemplate): ProposalTemplateL
     monthly_price: t.monthly_price ?? null,
     monthly_label: t.monthly_label ?? null,
     image_url: t.image_url ?? null,
+    // Carry the catalog's Xero bucket onto the line, so a line added from the
+    // catalog is already coded and only freehand lines need a manual pick.
+    xero_service_key: t.xero_service_key ?? null,
     display_order: 0,
   };
 }
