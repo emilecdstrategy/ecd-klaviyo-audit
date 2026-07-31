@@ -20,6 +20,9 @@ import {
   parseSectionKeyFindings,
   serializeSectionKeyFindings,
 } from '../../../lib/section-key-findings';
+// Executive-summary findings (plain string arrays), NOT the per-section
+// key-findings above, which take a SectionKeyFindings object instead.
+import { getExecutiveFindingsForEdit, normalizeWorkspaceKeyFindings } from '../../../lib/findings-normalize';
 import type { SectionKeyFindings } from '../../../lib/types';
 import { repairEntityMarkers } from '../../../lib/entity-tags';
 import { normalizeImageScale } from '../../../lib/report-image-scale';

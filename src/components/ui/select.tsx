@@ -21,9 +21,12 @@ export const SelectTrigger = React.forwardRef<
     )}
     {...props}
   >
-    {children}
+    {/* The selected label is arbitrary length (a Xero account name runs long),
+        so it is clipped to one line here. min-w-0 is what actually lets it
+        shrink inside the flex row; without it the text pushes out of the box. */}
+    <span className="min-w-0 flex-1 truncate whitespace-nowrap text-left">{children}</span>
     <SelectPrimitive.Icon asChild>
-      <ChevronDown className="h-4 w-4 opacity-50" />
+      <ChevronDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
     </SelectPrimitive.Icon>
   </SelectPrimitive.Trigger>
 ));

@@ -373,7 +373,6 @@ export function ProposalEditProvider({
       moveLineItem,
       updateDiscount,
       toggleContract,
-    setContractOverride,
       setContractOverride,
     };
   }, [
@@ -631,8 +630,11 @@ export function TemplateEditProvider({
       moveLineItem,
       updateDiscount,
       toggleContract,
-    setContractOverride,
-      setContractOverride,
+      // A template has default_contracts only, with no per-proposal override map
+      // to write into, so this is a no-op here. It must still be provided:
+      // ProposalDocument reads it unconditionally, and leaving it undefined threw
+      // a ReferenceError that rendered the whole template editor blank.
+      setContractOverride: noop,
     };
   }, [
     mode,
@@ -648,7 +650,6 @@ export function TemplateEditProvider({
     moveLineItem,
     updateDiscount,
     toggleContract,
-    setContractOverride,
   ]);
 
   return <ProposalEditContext.Provider value={value}>{children}</ProposalEditContext.Provider>;
