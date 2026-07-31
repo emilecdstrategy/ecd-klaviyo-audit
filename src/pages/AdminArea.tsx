@@ -1369,6 +1369,12 @@ function SettingsTab() {
     // and leave the left side short. items-start stops a tall card stretching
     // its neighbour.
     <div className="animate-slide-up grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+        {/* Full width and first: the revenue-account mapping is a four-column
+            table, so it needs the room the short API-key cards do not. */}
+        <div className="lg:col-span-2">
+          <XeroSettingsPanel />
+        </div>
+
         <ApiKeyCard
           provider="openai"
           title="OpenAI Integration"
@@ -1392,8 +1398,6 @@ function SettingsTab() {
           placeholder="Gemini API key"
           savedMessage="Saved. Web audits will use this key to generate 'after' concept images."
         />
-
-        <XeroSettingsPanel />
 
         <ApiKeyCard
           provider="hubspot"
