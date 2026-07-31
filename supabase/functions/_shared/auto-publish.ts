@@ -23,7 +23,7 @@ export async function autoPublishAudit(
   try {
     const { data: audit, error } = await sb
       .from("audits")
-      .select("id, status, published_at, public_share_token")
+      .select("id, status, published_at, public_share_token, executive_summary")
       .eq("id", auditId)
       .maybeSingle();
     if (error) throw error;
@@ -33,14 +33,30 @@ export async function autoPublishAudit(
       return { published: false, reason: `status_${audit.status}` };
     }
 
-    // The report is empty without sections, and a published-but-empty audit is
-    // worse than an unpublished one. This mirrors the client-side guard.
+    // Sections exist from creation, so their presence proves nothing. Require
+    // real generated content, mirroring publishAudit on the client: a
+    // published-but-empty audit serves a blank public report.
     const { data: sections } = await sb
       .from("audit_sections")
-      .select("id")
-      .eq("audit_id", auditId)
-      .limit(1);
+      .select("section_key, summary_text, human_edited_findings, key_findings")
+      .eq("audit_id", auditId);
     if ((sections ?? []).length === 0) return { published: false, reason: "no_sections" };
+
+    const hasContent = Boolean((audit.executive_summary ?? "").trim()) ||
+      (sections ?? []).some((s) => {
+        const row = s as {
+          section_key?: string;
+          summary_text?: string | null;
+          human_edited_findings?: string | null;
+          key_findings?: { items?: unknown[] } | null;
+        };
+        // revenue_summary is computed, not generated, so it never counts as content.
+        if (row.section_key === "revenue_summary") return false;
+        const items = row.key_findings?.items ?? [];
+        if (items.some((i) => String(i ?? "").trim())) return true;
+        return Boolean((row.summary_text ?? "").trim() || (row.human_edited_findings ?? "").trim());
+      });
+    if (!hasContent) return { published: false, reason: "no_content" };
 
     const { error: upErr } = await sb
       .from("audits")

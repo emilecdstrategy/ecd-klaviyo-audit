@@ -619,9 +619,11 @@ export default function AuditWorkspace() {
                 </div>
               </div>
 
-              {/* Right: docked context assistant. Height tracks the viewport (so
-                  the input stays visible when zoomed) but caps at 600px. */}
-              <div className="relative h-[min(600px,calc(100dvh-13rem))] min-h-[360px] lg:sticky lg:top-6">
+              {/* Right: docked context assistant. Height tracks the viewport so
+                  the input stays visible when zoomed. The 12rem reserve covers
+                  the top bar, the sticky publish bar and the sticky offset; the
+                  cap only bites on very tall screens. */}
+              <div className="relative h-[min(900px,calc(100dvh-12rem))] min-h-[420px] lg:sticky lg:top-6">
                 {!assistantTouched && (
                   <div className="pointer-events-none absolute -inset-1 z-10 animate-pulse rounded-2xl ring-4 ring-brand-primary/40" />
                 )}

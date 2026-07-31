@@ -85,6 +85,16 @@ export default function AuditContextAssistant({
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages, sending]);
 
+  // Grow the input with what has been typed, so a long answer stays readable
+  // instead of scrolling inside a one-line box. Capped by max-h in the class,
+  // past which it scrolls.
+  useEffect(() => {
+    const el = inputRef.current;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${el.scrollHeight}px`;
+  }, [input]);
+
   const stopDictation = () => {
     try { recognitionRef.current?.stop(); } catch { /* already stopped */ }
     recognitionRef.current = null;
@@ -316,8 +326,11 @@ export default function AuditContextAssistant({
           onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); void send(input); } }}
           onPaste={e => { const images = imagesFromClipboard(e); if (images.length > 0) { e.preventDefault(); void addImages(images); } }}
           rows={1}
-          placeholder={awaitingChoice ? 'Pick an option above, or type your own…' : listening ? 'Listening…' : 'Paste a link, type, or use the mic…'}
-          className="max-h-28 flex-1 resize-none rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none disabled:bg-gray-50"
+          // Short enough to fit one line in this narrow panel. A wrapping
+          // placeholder overflowed the single-row box and showed a scrollbar on
+          // an empty input.
+          placeholder={awaitingChoice ? 'Pick an option, or type…' : listening ? 'Listening…' : 'Paste a link or type…'}
+          className="max-h-48 min-h-[2.25rem] flex-1 resize-none overflow-y-auto rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none disabled:bg-gray-50"
         />
         <button
           type="button"

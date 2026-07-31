@@ -21,6 +21,7 @@ import { useAuth } from '../contexts/AuthContext';
 import { canUseWebAudits } from '../lib/web-audit-access';
 import { formatCurrency } from '../lib/revenue-calculator';
 import { listAudits, listClients } from '../lib/db';
+import { fetchActiveAuditRuns } from '../lib/audit-pipeline-status';
 import AuditStatusBadge from '../components/ui/AuditStatusBadge';
 import { useEffect } from 'react';
 import type { Audit, Client } from '../lib/types';
@@ -63,6 +64,9 @@ export default function Audits() {
   const [deleteConfirmOpen, setDeleteConfirmOpen] = useState(false);
   const [deletingAudit, setDeletingAudit] = useState<Audit | null>(null);
   const [deleting, setDeleting] = useState(false);
+  // Which audits the server says are mid-run, so a run shows as Generating in
+  // any tab rather than only the one that started it.
+  const [runningIds, setRunningIds] = useState<ReadonlySet<string>>(new Set());
 
   useEffect(() => {
     let cancelled = false;
@@ -74,6 +78,10 @@ export default function Audits() {
         if (cancelled) return;
         setAudits(a);
         setClients(c);
+        // Best effort: a failure here just means no Generating badge.
+        fetchActiveAuditRuns(a.map(x => x.id))
+          .then(ids => { if (!cancelled) setRunningIds(ids); })
+          .catch(() => {});
       } catch (e: unknown) {
         if (cancelled) return;
         setError(e instanceof Error ? e.message : 'Failed to load audits');
@@ -83,6 +91,19 @@ export default function Audits() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  // Refresh the running set while a run is in flight so the badge disappears
+  // when it finishes, without needing a manual reload.
+  useEffect(() => {
+    if (audits.length === 0 || runningIds.size === 0) return;
+    let cancelled = false;
+    const timer = window.setInterval(() => {
+      fetchActiveAuditRuns(audits.map(a => a.id))
+        .then(ids => { if (!cancelled) setRunningIds(ids); })
+        .catch(() => {});
+    }, 15000);
+    return () => { cancelled = true; window.clearInterval(timer); };
+  }, [audits, runningIds.size]);
 
   const clientById = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
 
@@ -320,7 +341,7 @@ export default function Audits() {
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
                           <StatusBadge status={audit.status} />
-                          <AuditStatusBadge audit={audit} />
+                          <AuditStatusBadge audit={audit} runningIds={runningIds} />
                         </div>
                       </td>
                       <td className="px-6 py-4 text-xs text-gray-400">

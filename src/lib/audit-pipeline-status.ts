@@ -406,14 +406,60 @@ export function isAuditGenerationActive(auditId: string): boolean {
   }
 }
 
-/** List-view badge for an audit: 'generating' only while a run is actively in
- * progress (this session), 'unfinished' for an api audit that has no content and
- * isn't running (e.g. a draft left at the context stage), otherwise null. */
+/** List-view badge for an audit: 'generating' while a run is in progress,
+ * 'unfinished' for an api audit that has no content and isn't running (e.g. a
+ * draft left at the context stage), otherwise null.
+ *
+ * runningIds comes from fetchActiveAuditRuns (server truth, any tab). The
+ * sessionStorage check stays as a second signal because it flips instantly when
+ * a run starts, before the job row exists. */
 export function auditListBadge(
   audit: Pick<Audit, 'audit_method' | 'executive_summary' | 'id'>,
+  runningIds?: ReadonlySet<string>,
 ): 'generating' | 'unfinished' | null {
   if (audit.audit_method !== 'api') return null;
   if (audit.executive_summary?.trim()) return null;
-  if (isAuditGenerationActive(audit.id)) return 'generating';
+  if (runningIds?.has(audit.id) || isAuditGenerationActive(audit.id)) return 'generating';
   return 'unfinished';
+}
+
+/**
+ * Which of these audits are actually mid-run, according to the SERVER.
+ *
+ * isAuditGenerationActive only knows about runs started in this browser session,
+ * so a run started in another tab, or simply looked at after a refresh, used to
+ * show as a plain draft. Both pipelines now drive themselves server-side, so the
+ * database is the only honest source.
+ *
+ * Two signals, because a web audit spends its first phase capturing screenshots
+ * before any analysis job row exists:
+ *  - an analysis job that is pending or running
+ *  - a web page snapshot still pending
+ *
+ * One batched query each, so this stays cheap for a list view.
+ */
+export async function fetchActiveAuditRuns(auditIds: string[]): Promise<Set<string>> {
+  const active = new Set<string>();
+  if (auditIds.length === 0) return active;
+
+  const [jobs, snaps] = await Promise.all([
+    supabase
+      .from('audit_analysis_jobs')
+      .select('audit_id, status')
+      .in('audit_id', auditIds)
+      .in('status', ['pending', 'running']),
+    supabase
+      .from('web_page_snapshots')
+      .select('audit_id')
+      .in('audit_id', auditIds)
+      .eq('status', 'pending'),
+  ]);
+
+  for (const row of jobs.data ?? []) {
+    if (row.audit_id) active.add(String(row.audit_id));
+  }
+  for (const row of snaps.data ?? []) {
+    if (row.audit_id) active.add(String(row.audit_id));
+  }
+  return active;
 }

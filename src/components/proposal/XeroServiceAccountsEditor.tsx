@@ -173,14 +173,14 @@ export default function XeroServiceAccountsEditor({ accounts }: { accounts: Xero
         </p>
       ) : (
         <div className="mt-3 space-y-2">
-          <div className="hidden gap-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 sm:grid sm:grid-cols-[1.2fr_1fr_1fr_auto]">
+          <div className="hidden gap-2 px-1 text-[10px] font-semibold uppercase tracking-wide text-gray-400 sm:grid sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
             <span>Service</span>
             <span>One-time account</span>
             <span>Monthly account</span>
             <span />
           </div>
           {rows.map((row, i) => (
-            <div key={row.service_key || `new-${i}`} className="grid gap-2 sm:grid-cols-[1.2fr_1fr_1fr_auto]">
+            <div key={row.service_key || `new-${i}`} className="grid gap-2 sm:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_minmax(0,1fr)_auto]">
               <input
                 value={row.name}
                 onChange={e => patch(i, { name: e.target.value })}

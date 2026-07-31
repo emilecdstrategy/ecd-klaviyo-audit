@@ -4,8 +4,15 @@ import type { Audit } from '../../lib/types';
 
 /** Small list badge: a spinner "Generating" while a run is active, or a static
  * "Unfinished" for an api audit with no content yet (e.g. a parked draft). */
-export default function AuditStatusBadge({ audit }: { audit: Audit }) {
-  const kind = auditListBadge(audit);
+export default function AuditStatusBadge({
+  audit,
+  runningIds,
+}: {
+  audit: Audit;
+  /** Audit ids the server says are mid-run (see fetchActiveAuditRuns). */
+  runningIds?: ReadonlySet<string>;
+}) {
+  const kind = auditListBadge(audit, runningIds);
   if (kind === 'generating') {
     return (
       <span className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2 py-0.5 text-[11px] font-medium text-indigo-700">

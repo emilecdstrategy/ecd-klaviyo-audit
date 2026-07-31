@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { attachActorNames } from './actor-names';
+import { auditHasAnalysisContent } from './audit-pipeline-status';
 import type {
   Audit,
   AuditSection,
@@ -428,11 +429,21 @@ export async function publishAudit(auditId: string): Promise<Audit> {
   const audit = await getAudit(auditId);
   if (!audit) throw new Error('Audit not found');
 
+  // Sections exist from the moment an audit is created, so their presence proves
+  // nothing. Require actual generated content: an audit was once published with
+  // seven blank sections and served an empty public report.
   const { data: sectionRows, error: secErr } = await supabase
-    .from('audit_sections').select('id').eq('audit_id', auditId).limit(1);
+    .from('audit_sections')
+    .select('section_key, summary_text, human_edited_findings, key_findings')
+    .eq('audit_id', auditId);
   if (secErr) throw secErr;
   if ((sectionRows ?? []).length === 0) {
     throw new Error("Can't publish yet: no audit sections found. Run the AI analysis first.");
+  }
+  if (!auditHasAnalysisContent(audit.executive_summary, sectionRows ?? [])) {
+    throw new Error(
+      "Can't publish yet: this audit has no findings. Run the analysis first, or add findings by hand.",
+    );
   }
 
   const token = audit.public_share_token || crypto.randomUUID().replace(/-/g, '').slice(0, 24);
