@@ -239,6 +239,23 @@ async function seed(
   let collection = normalizeUrl(input.collection);
   let variantId: string | undefined;
 
+  // Stay on the pages this audit already looked at. Collection choice is random
+  // per audit, so re-seeding to retry one failed shot used to silently swap the
+  // whole collection page for a different one: the findings, their pin
+  // coordinates and the "after" image all still described the previous page.
+  // Whatever the caller passes explicitly still wins.
+  if (!product || !collection) {
+    const { data: prior } = await sb
+      .from("web_page_snapshots")
+      .select("page_type, url")
+      .eq("audit_id", auditId)
+      .in("page_type", ["product", "collection"]);
+    for (const row of prior ?? []) {
+      if (!product && row.page_type === "product") product = normalizeUrl(row.url);
+      if (!collection && row.page_type === "collection") collection = normalizeUrl(row.url);
+    }
+  }
+
   // Detection precedence: manual input > Shopify Admin > public storefront JSON >
   // homepage HTML regex. Each source fills whatever the previous left unresolved.
   const viaShopify = await detectFromShopify(sb, clientId, origin);
