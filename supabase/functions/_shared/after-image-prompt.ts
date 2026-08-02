@@ -184,6 +184,9 @@ export type GeminiImageOptions = {
   /** Generate several candidates in ONE call; the caller picks between them. */
   candidateCount?: number;
   timeoutMs?: number;
+  /** Sampling temperature (default 0.4). Retries nudge this so a refusal loop
+   * is not replayed with byte-identical odds. */
+  temperature?: number;
 };
 
 /** Calls Gemini image editing: source screenshot in, edited screenshot(s) out.
@@ -206,7 +209,10 @@ export async function geminiEditImage(
   // prompt text ("the FINAL image shows what continues below") stays stable.
   if (opts.belowFoldPng) requestParts.push({ inlineData: { mimeType: "image/png", data: bytesToBase64(opts.belowFoldPng) } });
   requestParts.push({ text: prompt });
-  const generationConfig: Record<string, unknown> = { responseModalities: ["IMAGE"], temperature: 0.4 };
+  const generationConfig: Record<string, unknown> = {
+    responseModalities: ["IMAGE"],
+    temperature: opts.temperature ?? 0.4,
+  };
   if (opts.candidateCount && opts.candidateCount > 1) generationConfig.candidateCount = opts.candidateCount;
   // Bounded like the llm-adapter (110s): an unanswered image call used to hold
   // the edge invocation open until the platform killed it.
@@ -234,9 +240,11 @@ export async function geminiEditImage(
     throw new Error(`gemini_http_${res.status}: ${detail}`);
   }
   const data = await res.json().catch(() => null) as {
-    candidates?: Array<{ content?: { parts?: Array<Record<string, unknown>> } }>;
+    candidates?: Array<{ finishReason?: string; content?: { parts?: Array<Record<string, unknown>> } }>;
+    promptFeedback?: { blockReason?: string };
   } | null;
   const out: Uint8Array[] = [];
+  let refusalText = "";
   for (const candidate of data?.candidates ?? []) {
     for (const part of candidate?.content?.parts ?? []) {
       const inline = (part.inlineData ?? part.inline_data) as { data?: string; mimeType?: string } | undefined;
@@ -244,8 +252,24 @@ export async function geminiEditImage(
         out.push(base64ToBytes(inline.data));
         break;
       }
+      // When Gemini declines to draw, it usually says so in a text part.
+      if (!refusalText && typeof part.text === "string" && part.text.trim()) {
+        refusalText = part.text.trim().slice(0, 160);
+      }
     }
   }
-  if (out.length === 0) throw new Error("gemini_no_image_returned");
+  if (out.length === 0) {
+    // Say WHY there was no image. The bare "gemini_no_image_returned" hid
+    // whether this was a safety block (never retryable), a truncation, or the
+    // model just chatting instead of drawing (retryable), so every failure got
+    // treated the same blind way.
+    const finish = data?.candidates?.map((c) => c.finishReason).filter(Boolean).join(",") || "none";
+    const block = data?.promptFeedback?.blockReason ?? "";
+    throw new Error(
+      `gemini_no_image_returned (finish=${finish}${block ? ` block=${block}` : ""}${
+        refusalText ? ` said="${refusalText}"` : ""
+      })`,
+    );
+  }
   return out;
 }

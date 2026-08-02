@@ -282,20 +282,25 @@ async function generateOne(
     let lastErr: unknown;
     for (let attempt = 1; attempt <= 3; attempt++) {
       try {
+        // Replaying the identical request replays the identical odds, so each
+        // attempt changes something: attempt 2 raises the temperature, attempt 3
+        // also drops the below-fold context image so the request is lighter and
+        // the model has one less reason to answer in prose about it.
         const candidates = await geminiEditImage(srcPng, prompt, apiKey, {
           model: GEMINI_IMAGE_MODEL,
           referencePng,
-          belowFoldPng: belowPng,
+          belowFoldPng: attempt < 3 ? belowPng : undefined,
+          temperature: attempt === 1 ? 0.4 : 0.7,
         });
         if (candidates[0]) return candidates[0];
-        lastErr = new Error("gemini_no_image_returned");
+        lastErr = new Error("gemini_no_image_returned (finish=none)");
       } catch (e) {
         lastErr = e;
-        // A timeout or a refusal will not fix itself on an immediate retry.
+        // Only bail on failures a retry cannot change: hard blocks and infra.
         const msg = e instanceof Error ? e.message : String(e);
-        if (/timeout|abort|safety|blocked|api_key|quota/i.test(msg)) throw e;
+        if (/timeout|abort|block=|safety|prohibited|api_key|quota/i.test(msg)) throw e;
       }
-      console.warn(`after-image: gemini attempt ${attempt} produced no image, retrying`);
+      console.warn(`after-image: gemini attempt ${attempt} produced no image (${String(lastErr).slice(0, 120)}), retrying`);
     }
     throw lastErr instanceof Error ? lastErr : new Error("gemini_no_image_returned");
   };
