@@ -349,23 +349,24 @@ async function generateOne(
       const photoTrouble = check.defects.some(isPhotoDefect);
       // The retry never repeats the first prompt verbatim: same prompt, same
       // model, same temperature just reproduces the first failure.
-      // - Photo trouble: mangled photos are a symptom of asking for too much at
-      //   once, so ask for LESS (top two fixes) and re-anchor on the photos.
+      // - Photo trouble: keep EVERY fix and add an absolute photo lock naming
+      //   the exact photos that were damaged. The old fewer-fixes mode asked
+      //   for less to protect the photos, and it did the opposite: on the case
+      //   that motivated it, the retry deleted the product photo and the
+      //   thumbnail gallery outright, while honestly applying 1 of 3 fixes.
+      //   Sacrificing fixes bought nothing; the accept guard below is what
+      //   actually protects the published image.
       // - Missing fixes only: re-ask for ONLY what was missed, framed as small
       //   surgical edits to an otherwise-final page. The full-list retry kept
       //   skipping the same small additions (a star rating line) it skipped the
       //   first time.
       const focusedOnMissing = !photoTrouble && check.missing.length > 0;
-      const retryFixes = photoTrouble
-        ? recommendations.slice(0, 2)
-        : focusedOnMissing
-          ? check.missing
-          : recommendations;
-      const retryBase = photoTrouble || focusedOnMissing
+      const retryFixes = focusedOnMissing ? check.missing : recommendations;
+      const retryBase = focusedOnMissing
         ? buildEditPrompt(
           meta.label,
           retryFixes,
-          !photoTrouble && Boolean(refPng),
+          Boolean(refPng),
           viewport,
           meta.page_type as WebPageKind,
           skippedWidgetFix,
@@ -374,16 +375,15 @@ async function generateOne(
         )
         : basePrompt;
       const lead = photoTrouble
-        ? `IMPORTANT, THIS IS A SECOND ATTEMPT AND YOUR LAST ONE DAMAGED THE IMAGERY. ${check.feedback}\n\nThis time, treat every photograph as untouchable: copy each one across at the same shape, the same framing, and the same size as the original. Apply only the small number of fixes listed above, and if a fix cannot be done without rescaling or re-cropping a photo, leave that fix out entirely and keep the photo intact.`
+        ? `IMPORTANT, THIS IS A SECOND ATTEMPT AND YOUR LAST ONE DAMAGED THE IMAGERY. ${check.feedback}\n\nThis time, every photograph is ABSOLUTELY UNTOUCHABLE: copy each one across pixel-faithful, at the same shape, the same crop, the same framing and the same proportions as the original. Never zoom, re-centre, reshape or remove a photo, and never let one be sliced by an edge. Apply ALL of the fixes listed above by taking space from padding, headings and spacing only, never from inside a photograph. A fix is only done right if every photo survives it unchanged.`
         : focusedOnMissing
           ? `IMPORTANT, THIS IS A SECOND ATTEMPT. Your previous attempt was good EXCEPT that the small number of fixes listed above were not visible in it. Treat the page as already final: make ONLY those additions or changes, clearly visible, and change NOTHING else anywhere on the page.`
           : `IMPORTANT, THIS IS A SECOND ATTEMPT. ${check.feedback}\n\nProduce the corrected screenshot with every fix above clearly visible and no duplicated or leftover elements.`;
-      const retried = await gemini(
-        `${retryBase}\n\n${lead}`,
-        // The sibling reference tempts the model to re-lay-out the page, which is
-        // how photos get rescaled. Drop it when photos are the problem.
-        photoTrouble ? undefined : refPng,
-      );
+      // The reference stays even in photo mode: it is what keeps the two
+      // viewports showing the same redesign, and the run that dropped it is the
+      // one whose retry deleted the photos. The photo lock in the lead, plus the
+      // accept guard, are the protections that actually held.
+      const retried = await gemini(`${retryBase}\n\n${lead}`, refPng);
       // Never let a corrective attempt regress the device shape.
       if (!wrongShape(srcPng, retried)) {
         // Judge the retry at the scratch path; the canonical image is untouched
@@ -397,16 +397,14 @@ async function generateOne(
         // had must lose points for them, or "asked for less" wins for free.
         const recheck = await gradeWithPhotoCheck(sourceUrl, candidateUrl, recommendations, viewport);
         verify.retry_ran = true;
-        verify.retry_mode = photoTrouble ? "fewer_fixes" : focusedOnMissing ? "missing_only" : "full";
+        verify.retry_mode = photoTrouble ? "photo_lock" : focusedOnMissing ? "missing_only" : "full";
         verify.retry = { missing: recheck.missing, defects: recheck.defects };
-        // When photos were the problem, the retry has to actually fix the photos
-        // to win. Comparing total scores would let it win just for having been
-        // asked to apply fewer fixes, which lowers the "missing" count for free.
+        // When photos were the problem, the retry has to actually heal the
+        // photos to win, not merely tie on the overall score. Both verdicts are
+        // graded against the full fix list, so any fix the retry drops counts
+        // against it.
         const photoBefore = check.defects.filter(isPhotoDefect).length;
         const photoAfter = recheck.defects.filter(isPhotoDefect).length;
-        // In photo mode the retry must actually heal the photos AND not lose
-        // more elsewhere (both verdicts are graded against the full fix list,
-        // so dropped fixes now count against it).
         const accept = photoTrouble
           ? photoAfter < photoBefore && verifyScore(recheck) <= verifyScore(check)
           : verifyScore(recheck) <= verifyScore(check);
