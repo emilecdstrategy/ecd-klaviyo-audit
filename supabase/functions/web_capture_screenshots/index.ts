@@ -336,9 +336,45 @@ async function seed(
     }
   }
 
-  await sb.from("web_page_snapshots").delete().eq("audit_id", auditId);
-  const { error: insErr } = await sb.from("web_page_snapshots").insert(rows);
-  if (insErr) throw insErr;
+  // Rebuild the row set WITHOUT changing ids. Findings pin their highlights to a
+  // snapshot_id, so deleting and reinserting orphaned every pin on the report:
+  // the coordinates survived, the anchor did not, and the "before" screenshots
+  // came back bare. Reset the existing rows in place, add only what is genuinely
+  // new, and drop only what is no longer targeted.
+  const { data: current } = await sb
+    .from("web_page_snapshots")
+    .select("id, page_type, viewport, variant")
+    .eq("audit_id", auditId);
+  const keyOf = (r: { page_type: string; viewport: string; variant: string }) =>
+    `${r.page_type}|${r.viewport}|${r.variant}`;
+  const existingByKey = new Map((current ?? []).map((r) => [keyOf(r), r.id]));
+
+  const toInsert = rows.filter((r) => !existingByKey.has(keyOf(r)));
+  for (const row of rows) {
+    const id = existingByKey.get(keyOf(row));
+    if (!id) continue;
+    const { error: updErr } = await sb
+      .from("web_page_snapshots")
+      .update({
+        url: row.url,
+        status: "pending",
+        raw: row.raw,
+        screenshot_url: null,
+        screenshot_path: null,
+        elements: null,
+        error_message: null,
+        fetched_at: null,
+      })
+      .eq("id", id);
+    if (updErr) throw updErr;
+  }
+  if (toInsert.length > 0) {
+    const { error: insErr } = await sb.from("web_page_snapshots").insert(toInsert);
+    if (insErr) throw insErr;
+  }
+  const wantedKeys = new Set(rows.map(keyOf));
+  const removeIds = (current ?? []).filter((r) => !wantedKeys.has(keyOf(r))).map((r) => r.id);
+  if (removeIds.length > 0) await sb.from("web_page_snapshots").delete().in("id", removeIds);
 
   return {
     total: rows.length,
