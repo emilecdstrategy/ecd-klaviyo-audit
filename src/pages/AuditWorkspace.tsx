@@ -580,10 +580,10 @@ export default function AuditWorkspace() {
                   {error && <div className="mt-3 rounded-lg bg-red-50 px-4 py-2.5 text-sm text-red-600">{error}</div>}
                   {stalledCapture && (
                     <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-                      <strong>The last run was interrupted</strong> after {stalledCapture.done} of{' '}
-                      {stalledCapture.total} screenshots. Capturing runs in this tab, so closing or refreshing it
-                      stops the run. Start it again to pick up from those {stalledCapture.done}, and keep the tab
-                      open until it finishes.
+                      <strong>The last run stalled</strong> after {stalledCapture.done} of{' '}
+                      {stalledCapture.total} screenshots. Click the button below to resume from those{' '}
+                      {stalledCapture.done}; the run continues on the server, so you can close this tab once it has
+                      started.
                     </div>
                   )}
                   <button

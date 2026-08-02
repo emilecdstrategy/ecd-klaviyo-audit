@@ -645,6 +645,11 @@ serve(async (req) => {
       if ("error" in result) {
         return json({ ok: false, error: { code: "bad_request", message: result.error }, correlationId }, { status: 400 });
       }
+      // Start the capture chain HERE, not from the browser. The client used to
+      // send seed and then a second "run" call, and closing the tab in that gap
+      // left the rows seeded with no chain running: 0 of 8, forever. Once the
+      // seed request reaches the server, the run no longer needs the tab at all.
+      await kick("web_capture_screenshots", { action: "run", audit_id: auditId, client_id: clientId });
       return json({ ok: true, correlationId, ...result }, { status: 200 });
     }
 

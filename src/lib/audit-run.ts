@@ -223,13 +223,12 @@ export async function runWebAudit(
   const total = Number(seedData.total) || 0;
 
   progress(45, 'Capturing website screenshots (desktop & mobile)…');
-  // Hand the sequence to the server. It captures one page, then invokes itself
-  // for the next, and starts the analysis when the last one lands. The loop
-  // below only watches, so closing this tab no longer abandons the run.
-  const { error: startErr } = await supabase.functions.invoke<any>('web_capture_screenshots', {
-    body: { action: 'run', audit_id: auditId, client_id: clientId },
-  });
-  if (startErr) throw new Error(`Screenshot capture failed to start: ${startErr.message}`);
+  // The seed call above also started the server-side capture chain: the server
+  // captures one page, invokes itself for the next, and hands off to the
+  // analysis when the last one lands. The loop below only watches. There used
+  // to be a second "run" invocation here, and closing the tab between the two
+  // calls left the rows seeded with no chain running (0 of N, forever), so the
+  // browser now has no part in starting the run at all.
 
   const countPending = async (): Promise<number> => {
     const { count } = await supabase
