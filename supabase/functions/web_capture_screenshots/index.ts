@@ -119,14 +119,37 @@ async function detectFromShopify(
   } catch { /* ignore */ }
   try {
     const [custom, smart] = await Promise.all([
-      shopifyRest(creds.shopDomain, creds.token, "/custom_collections.json?limit=5&fields=handle"),
-      shopifyRest(creds.shopDomain, creds.token, "/smart_collections.json?limit=5&fields=handle"),
+      shopifyRest(creds.shopDomain, creds.token, "/custom_collections.json?limit=100&fields=handle,products_count"),
+      shopifyRest(creds.shopDomain, creds.token, "/smart_collections.json?limit=100&fields=handle,products_count"),
     ]);
-    const handle = (custom.ok ? custom.body?.custom_collections?.find((c: { handle?: string }) => c?.handle)?.handle : null)
-      ?? (smart.ok ? smart.body?.smart_collections?.find((c: { handle?: string }) => c?.handle)?.handle : null);
+    const handle = pickCollectionHandle([
+      ...(custom.ok ? custom.body?.custom_collections ?? [] : []),
+      ...(smart.ok ? smart.body?.smart_collections ?? [] : []),
+    ]);
     if (handle) out.collection = `${origin}/collections/${handle}`;
   } catch { /* ignore */ }
   return out;
+}
+
+/** Handles that are catch-alls or plainly internal rather than a real category a
+ * shopper would browse. "all-excluded-products" got audited because the old
+ * filter only excluded the exact handles "all" and "frontpage". */
+const JUNK_COLLECTION_RE =
+  /^(all|all-products|frontpage)$|excluded|hidden|internal|private|test|temp|archive|do-not|dont-|no-index|noindex|staff|sample/i;
+
+/** Pick a real collection to audit, at random rather than always the first, so
+ * repeat audits of one store show different pages. Collections with products win
+ * over empty ones; an unknown count is treated as fine. */
+function pickCollectionHandle(
+  cols: Array<{ handle?: string; products_count?: number }>,
+): string | null {
+  const usable = cols
+    .map((c) => ({ handle: (c.handle ?? "").trim(), count: c.products_count }))
+    .filter((c) => c.handle && !JUNK_COLLECTION_RE.test(c.handle));
+  if (usable.length === 0) return null;
+  const withProducts = usable.filter((c) => c.count === undefined || (c.count ?? 0) > 0);
+  const pool = withProducts.length > 0 ? withProducts : usable;
+  return pool[Math.floor(Math.random() * pool.length)].handle;
 }
 
 // Public storefront JSON, available on virtually every Shopify store without an
@@ -171,11 +194,8 @@ async function detectFromStorefront(
       const body = (await res.json().catch(() => null)) as {
         collections?: Array<{ handle?: string; products_count?: number }>;
       } | null;
-      const cols = (body?.collections ?? []).filter((c) => c?.handle);
-      // Skip generic catch-all collections when a more specific one exists.
-      const specific = cols.filter((c) => !["frontpage", "all"].includes((c.handle ?? "").toLowerCase()));
-      const chosen = (specific.length ? specific : cols)[0];
-      if (chosen?.handle) out.collection = `${origin}/collections/${chosen.handle}`;
+      const handle = pickCollectionHandle(body?.collections ?? []);
+      if (handle) out.collection = `${origin}/collections/${handle}`;
     }
   } catch { /* ignore */ }
 
