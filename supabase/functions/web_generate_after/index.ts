@@ -227,7 +227,11 @@ async function generateOne(
   // written highest-impact first, so the top few are the ones worth depicting;
   // the rest still appear as text in the report. A phone screen holds less, so
   // its budget is tighter.
-  const MAX_FIXES = viewport === "mobile" ? 4 : 5;
+  // Raised from 4/5: anything past the cap is never sent to the model, so a
+  // page with six findings silently lost the tail every time. The cap exists
+  // only to stop one prompt asking for so much that the model starts reflowing
+  // the page (which is how photos got rescaled), so it is generous, not tight.
+  const MAX_FIXES = viewport === "mobile" ? 6 : 7;
   const recommendations = applicable.slice(0, MAX_FIXES);
   // Everything past the cap is never sent to the model, so it can never appear.
   // Record it rather than letting the counts imply it was done.
@@ -269,12 +273,32 @@ async function generateOne(
     ? "Your previous attempt came back in the WRONG SHAPE: it was a wide desktop-style layout, but this is a PHONE screenshot. Output a tall, narrow, single-column phone image with the same aspect ratio as the source."
     : "Your previous attempt came back in the WRONG SHAPE. Output a wide desktop image with the same aspect ratio as the source.";
 
-  const gemini = (prompt: string, referencePng?: Uint8Array) =>
-    geminiEditImage(srcPng, prompt, apiKey, {
-      model: GEMINI_IMAGE_MODEL,
-      referencePng,
-      belowFoldPng: belowPng,
-    }).then((candidates) => candidates[0]);
+  // Gemini intermittently answers with text and no image for the same input:
+  // two identical calls on the Power Planter product page gave one image and one
+  // gemini_no_image_returned. Left alone that was a coin flip which either 500'd
+  // the whole generation or, inside the corrective retry, silently cancelled it.
+  // Same prompt, one more go, before treating it as a real failure.
+  const gemini = async (prompt: string, referencePng?: Uint8Array) => {
+    let lastErr: unknown;
+    for (let attempt = 1; attempt <= 3; attempt++) {
+      try {
+        const candidates = await geminiEditImage(srcPng, prompt, apiKey, {
+          model: GEMINI_IMAGE_MODEL,
+          referencePng,
+          belowFoldPng: belowPng,
+        });
+        if (candidates[0]) return candidates[0];
+        lastErr = new Error("gemini_no_image_returned");
+      } catch (e) {
+        lastErr = e;
+        // A timeout or a refusal will not fix itself on an immediate retry.
+        const msg = e instanceof Error ? e.message : String(e);
+        if (/timeout|abort|safety|blocked|api_key|quota/i.test(msg)) throw e;
+      }
+      console.warn(`after-image: gemini attempt ${attempt} produced no image, retrying`);
+    }
+    throw lastErr instanceof Error ? lastErr : new Error("gemini_no_image_returned");
+  };
 
   const startedAt = Date.now();
   let edited = await gemini(basePrompt, refPng);
@@ -390,8 +414,11 @@ async function generateOne(
         // Scratch object is transient either way; ignore cleanup failures.
         await sb.storage.from(STORAGE_BUCKET).remove([candidatePath]).catch(() => {});
       }
-    } catch {
+    } catch (e) {
       // Retry failed outright: the first attempt is already stored, keep it.
+      // Record WHY, because a bare catch here made "the verifier caught the
+      // crop but nothing was retried" impossible to diagnose from the row.
+      verify.retry_error = (e instanceof Error ? e.message : String(e)).slice(0, 200);
     }
   }
 
