@@ -147,6 +147,19 @@ function isFloatingWidgetRepositionFix(text: string): boolean {
   return FLOATING_WIDGET_FIX_RE.test(text) && REPOSITION_RE.test(text);
 }
 
+// Fixes that call for photography the store has not given us. The model cannot
+// honour these honestly: asked to "add a lifestyle photo showing the plant in a
+// garden bed", it invented a garden scene and wedged it between the star rating
+// and the buy button, which is both fabricated imagery and a layout no
+// storefront uses. The finding still reads perfectly well as advice, so it stays
+// in the report and only leaves the image prompt.
+const NEW_PHOTOGRAPHY_FIX_RE =
+  /(lifestyle|in-?context|in-?situ|scale|styled|environment|room|garden|real[- ]world)\s+(photo|image|shot|picture)|add(ing)?\s+(a|an|another|a second|more)\s+(photo|image|picture|shot)|show(ing)?\s+the\s+product\s+(in use|in a|being used)|second\s+(product\s+)?(photo|image)/i;
+
+function needsNewPhotography(text: string): boolean {
+  return NEW_PHOTOGRAPHY_FIX_RE.test(text);
+}
+
 function recommendationsFor(
   section: { section_details: Record<string, unknown> | null },
   viewport: Viewport,
@@ -219,8 +232,11 @@ async function generateOne(
   const allRecommendations = recommendationsFor(section, viewport);
   // Drop floating-widget repositioning fixes: the model reliably duplicates the
   // widget instead of moving it. Everything else is still applied.
-  const applicable = allRecommendations.filter((r) => !isFloatingWidgetRepositionFix(r));
-  const skippedWidgetFix = applicable.length !== allRecommendations.length;
+  const applicable = allRecommendations.filter((r) =>
+    !isFloatingWidgetRepositionFix(r) && !needsNewPhotography(r)
+  );
+  const skippedWidgetFix = allRecommendations.some(isFloatingWidgetRepositionFix);
+  const skippedPhotoFix = allRecommendations.some(needsNewPhotography);
   // Cap how many fixes one image tries to show. Asking for every fix at once
   // makes the model shrink type and cram blocks together, which reads as a
   // cluttered page and undercuts the very point of the concept. Findings are
@@ -250,6 +266,7 @@ async function generateOne(
     skippedWidgetFix,
     Boolean(belowPng),
     photoShapeNote(sourceElements, pngSize(srcPng)),
+    skippedPhotoFix,
   );
 
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
@@ -372,6 +389,7 @@ async function generateOne(
           skippedWidgetFix,
           Boolean(belowPng),
           photoShapeNote(sourceElements, pngSize(srcPng)),
+    skippedPhotoFix,
         )
         : basePrompt;
       const lead = photoTrouble

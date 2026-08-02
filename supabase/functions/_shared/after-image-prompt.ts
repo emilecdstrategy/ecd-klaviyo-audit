@@ -90,6 +90,8 @@ export function buildEditPrompt(
   freezeFloatingWidgets = false,
   hasBelowFold = false,
   photoShape: string | null = null,
+  /** A fix needing photography we do not have was withheld from the list. */
+  withheldPhotoFix = false,
 ): string {
   const fixes = recommendations
     .map((r, i) => `${i + 1}. ${r}`)
@@ -116,10 +118,23 @@ export function buildEditPrompt(
     }`,
   ];
 
+  // The photo SET is fixed, not just each photo's framing. Asked to add a
+  // lifestyle shot, the model invented a garden scene and placed it between the
+  // star rating and the buy button: fabricated imagery in a layout no storefront
+  // uses. Adding a photo is never a valid edit.
+  const photoSetRule = [
+    `- THE SET OF PHOTOS IS FIXED. Your output must contain exactly the same photographs as the source, the same number of them, in the same places. NEVER add a new photo, a lifestyle shot, an in-context or scale image, a second product view, or any extra imagery, and never insert a picture between the title, rating, price and buy area. If you cannot show a fix without adding a photograph, skip that fix entirely and leave the page as it is.${
+      withheldPhotoFix
+        ? ` A fix asking for new photography was deliberately withheld from the list above, so there is nothing about the imagery for you to add.`
+        : ``
+    }`,
+  ];
+
   const common = [
     `Design rules:`,
     ...belowFoldRule,
     ...freezeRule,
+    ...photoSetRule,
     `- LAYOUT (follow these standard e-commerce patterns exactly): ${layoutGuidance(pageKind)}`,
     `- ${deviceRules}`,
     `- Use EXACTLY ONE primary call-to-action in the hero. Never create duplicate or competing CTA buttons (e.g. do not show both "Shop Now" and "Shop the Bundle").`,
