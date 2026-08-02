@@ -23,7 +23,7 @@ export const VERIFY_TOOL: LlmTool = {
         type: "array",
         items: { type: "string" },
         description:
-          "One short entry per requested fix that is NOT visibly applied, naming what is still wrong. Be strict: if a fix said to fit a row onto one line and it still wraps to two, or said to add an element and it is not visible, it is NOT applied.",
+          "One short entry per requested fix that is NOT visibly applied, naming what is still wrong. Be strict: if a fix said to fit a row onto one line and it still wraps to two, or said to add an element and it is not visible, it is NOT applied. TWO RULES FOR FIXES THAT REMOVE, FOLD, MERGE, COLLAPSE OR RELOCATE SOMETHING, and they cut both ways. (1) If the element is STILL VISIBLE in IMG_2 where it was in IMG_1, the fix is NOT applied, however plausible it is that a copy was also added elsewhere. A phone-number bar told to fold into the menu or footer, that still sits as its own full-width strip, is NOT applied. (2) If the element is GONE from IMG_2 and the fix said to move it into somewhere you cannot see, such as a closed hamburger menu, a dropdown, or the footer below the fold, treat it as APPLIED. Do not demand visible proof inside a container you cannot open, and do not report it as missing or as a defect merely because you cannot confirm where it went.",
       },
       defects: {
         type: "array",
@@ -76,7 +76,9 @@ export async function verifyAfterImage(
       role: "user_images",
       text:
         `IMG_1 is the ORIGINAL ${viewport} screenshot. IMG_2 is an AI redesign of it that was supposed to apply these fixes:\n\n${fixes}\n\n` +
-        `Compare the two images and judge STRICTLY whether each fix is genuinely visible in IMG_2. A fix that was only partially done does not count as applied. Also report any defect the edit introduced, especially duplicated text or elements, or an element that was supposed to move but is still in its old position. Call record_after_check exactly once.`,
+        `Compare the two images and judge STRICTLY whether each fix is genuinely visible in IMG_2. A fix that was only partially done does not count as applied. Also report any defect the edit introduced, especially duplicated text or elements, or an element that was supposed to move but is still in its old position.\n\n` +
+        `For a fix that removes, folds, merges or relocates something, decide it on ONE question: is that element still visible in IMG_2? Still visible means NOT applied. Gone means applied, even when the fix said to tuck it into a closed menu or the footer that you cannot see into. Never mark such a fix missing just because you cannot confirm where the element went.\n\n` +
+        `Call record_after_check exactly once.`,
       images: [
         { url: beforeUrl, label: "IMG_1: original" },
         { url: afterUrl, label: "IMG_2: redesign to grade" },

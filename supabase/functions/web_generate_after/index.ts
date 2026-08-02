@@ -224,6 +224,14 @@ async function generateOne(
   // its budget is tighter.
   const MAX_FIXES = viewport === "mobile" ? 4 : 5;
   const recommendations = applicable.slice(0, MAX_FIXES);
+  // Everything past the cap is never sent to the model, so it can never appear.
+  // Record it rather than letting the counts imply it was done.
+  const notAttempted = applicable.slice(MAX_FIXES);
+  if (notAttempted.length > 0) {
+    console.log(
+      `after-image ${meta.label}/${viewport}: ${notAttempted.length} fix(es) over the ${MAX_FIXES} cap were not attempted`,
+    );
+  }
   const basePrompt = buildEditPrompt(
     meta.label,
     recommendations,
@@ -433,7 +441,10 @@ async function generateOne(
   // gets recorded rather than quietly published as if it were applied.
   const publishedVariant = String(verify.published ?? "attempt1");
   const publishedVerdict = asRecord(verify[publishedVariant]);
-  const unapplied = Array.isArray(publishedVerdict.missing) ? (publishedVerdict.missing as string[]) : [];
+  const graded = Array.isArray(publishedVerdict.missing) ? (publishedVerdict.missing as string[]) : [];
+  // A capped fix is unapplied too, and more definitely so than one the judge
+  // merely could not see.
+  const unapplied = [...graded, ...notAttempted.map((r) => `Not attempted (over the ${MAX_FIXES}-fix limit for this image): ${r}`)];
 
   const details = asRecord(section.section_details);
   const webOut = asRecord(details.web);
@@ -443,8 +454,10 @@ async function generateOne(
     generated_at: new Date().toISOString(),
     verify,
     unapplied,
-    applied_count: Math.max(0, recommendations.length - unapplied.length),
-    total_count: recommendations.length,
+    applied_count: Math.max(0, recommendations.length - graded.length),
+    // Count every applicable fix, not just the ones that fitted the cap, so the
+    // ratio matches what the report shows the client.
+    total_count: applicable.length,
   };
   webOut.after_images = afterImages;
   details.web = webOut;
