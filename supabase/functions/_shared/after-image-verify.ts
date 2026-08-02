@@ -45,16 +45,31 @@ export function isPhotoDefect(defect: string): boolean {
   // "near the product thumbnails", which routed the retry into fewer-fixes mode
   // and cost two perfectly good fixes. Only the photo-REPLACED-by-thumbnails
   // failure is photo damage; a thumbnail merely being mentioned is not.
-  return /crop|aspect|stretch|squash|zoom|re-?cent|framing|sliced|cut off|taller|wider|squar|shape|replaced by.{0,20}thumbnails?|missing.*photo|photo.*missing/i
+  // "Photo geometry changed:" is the dedicated photo pass's own prefix, and
+  // substitution (a different photo entirely) is the worst version of this
+  // failure, so both must match rather than relying on the wording that follows.
+  return /photo geometry|different (photo|image)|substitut|swapped|fabricat|invented|crop|aspect|stretch|squash|zoom|re-?cent|framing|sliced|cut off|taller|wider|squar|shape|replaced by.{0,20}thumbnails?|missing.*photo|photo.*missing/i
+    .test(defect);
+}
+
+/** A photo replaced by different imagery, rather than merely reshaped. This is
+ * the worst outcome the pipeline can produce: it shows a client products that
+ * are not theirs, so it outranks every other defect by an order of magnitude. */
+export function isSubstitutedPhoto(defect: string): boolean {
+  // Allow adjectives between "different" and the noun: the judge writes things
+  // like "a different composite image" and "a different product photo".
+  return /substitut|fabricat|invented|different(\s+\w+){0,3}\s+(photo|image|product|scene|shot|content)/i
     .test(defect);
 }
 
 /** Lower is better. A photo defect outweighs every skipped fix, because the
- * fixes still appear as text in the report while a mangled photo does not. */
+ * fixes still appear as text in the report while a mangled photo does not, and
+ * a SUBSTITUTED photo outweighs a merely reshaped one. */
 export function verifyScore(v: VerifyResult): number {
-  const photo = v.defects.filter(isPhotoDefect).length;
-  const other = v.defects.length - photo;
-  return photo * 100 + other * 10 + v.missing.length;
+  const substituted = v.defects.filter(isSubstitutedPhoto).length;
+  const photo = v.defects.filter((d) => isPhotoDefect(d) && !isSubstitutedPhoto(d)).length;
+  const other = v.defects.length - substituted - photo;
+  return substituted * 1000 + photo * 100 + other * 10 + v.missing.length;
 }
 
 /** Check the generated "after" against the fixes it was supposed to apply. The
@@ -117,7 +132,7 @@ const PHOTO_TOOL = {
         type: "array",
         items: { type: "string" },
         description:
-          "One entry per photograph in IMG_2 whose GEOMETRY differs from IMG_1: a different aspect ratio (a square card that is now taller or wider), a tighter or looser crop, a zoom, a shifted centre point, part of the product sliced off at an edge, or a photo turned into a circle or other new shape. Say which photo and what changed. Empty array if every photo keeps the exact framing and proportions it had.",
+          "One entry per photograph in IMG_2 that is not the identical photograph from IMG_1. Report BOTH kinds of change. (1) SUBSTITUTION, the most serious: the photo shows different content, a different product, a different scene, or looks redrawn or invented. Start those entries with the word SUBSTITUTED. (2) GEOMETRY: a different aspect ratio (a square card now taller or wider), a tighter or looser crop, a zoom, a shifted centre point, part of the product sliced off at an edge, or a photo turned into a circle or other new shape. Say which photo and what changed. Empty array only if every photo is the same photograph at the same framing and proportions.",
       },
     },
   },

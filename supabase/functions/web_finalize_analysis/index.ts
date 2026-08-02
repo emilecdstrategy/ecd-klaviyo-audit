@@ -105,7 +105,7 @@ GUARDRAILS (do not violate these):
 ${FINDINGS_GUARDRAILS}
 
 COVERAGE:
-- Every storefront page that rendered has real, specific opportunities worth flagging. For a page that rendered normally, return at least 3 findings and 2 to 4 strengths, leading with the ones that would move the needle most. Never return an empty audit for a page that rendered.
+- Every storefront page that rendered has real, specific opportunities worth flagging. For a page that rendered normally, return 3 to 6 findings and 2 to 4 strengths, leading with the ones that would move the needle most. Three is a floor, not a target: most pages deserve four or five. Never return an empty audit for a page that rendered.
 
 Call the provided tool exactly once with your result.`;
 
@@ -312,8 +312,18 @@ async function runStep(
     // The model sometimes returns an empty audit for a page that clearly
     // rendered, and it often skips the intro entirely (which left the report's
     // section summary blank). Retry once for whichever piece is missing.
+    const MIN_FINDINGS = 3;
+    const MAX_FINDINGS = 6;
     const needFindings = parsed.findings.length === 0;
+    // A page can clear "not empty" and still be thin: a product page came back
+    // with 2 findings, both tagged "both", so every per-viewport count was 2 and
+    // the thin-viewport retry below never fired even though the page looked bare.
+    const tooFew = !needFindings && parsed.findings.length < MIN_FINDINGS;
     const needIntro = !parsed.intro.trim();
+    // Trim the tail rather than the head: the model is told to lead with the
+    // highest-impact findings, and the after-image cap is 6 anyway, so anything
+    // past this could never be shown in a concept image.
+    if (parsed.findings.length > MAX_FINDINGS) parsed.findings = parsed.findings.slice(0, MAX_FINDINGS);
     // A page can pass the "not empty" check and still be nearly empty on ONE
     // device, because the report shows a single viewport at a time. Three
     // findings all tagged desktop leaves the mobile reader looking at one.
@@ -326,8 +336,10 @@ async function runStep(
         : countFor("desktop") < 2
           ? "desktop"
           : null;
-    if (needFindings || needIntro || thinViewport) {
-      const ask = thinViewport && !needIntro
+    if (needFindings || needIntro || thinViewport || tooFew) {
+      const ask = tooFew && !needIntro
+        ? `Your audit of the ${step.label} produced only ${parsed.findings.length} finding(s). Every storefront page has more than that worth raising. Return your existing findings PLUS enough new ones to reach at least ${MIN_FINDINGS}, and four or five is normal. Each must be a specific, visible issue with a recommendation, tagged with the viewport it applies to. Do not pad with vague advice: only real issues you can point at in the screenshot.`
+        : thinViewport && !needIntro
         ? `Your audit of the ${step.label} only produced ${countFor(thinViewport)} finding(s) that apply to ${thinViewport}. The report shows one device at a time, so that page looks almost empty to a ${thinViewport} reader. Look again at the ${thinViewport} screenshot specifically and return your existing findings PLUS at least two more that genuinely apply to ${thinViewport}, each tagged "${thinViewport}" (or "both" when it truly affects both), and each with a recommendation. Do not pad: only real, visible issues.`
         : needFindings && needIntro
         ? `You returned no findings and no intro for the ${step.label}. This page rendered normally and every storefront page has concrete issues worth raising. Write the intro (2-3 sentences summarising this page) AND at least 3 specific, visible findings, each with a recommendation.`
