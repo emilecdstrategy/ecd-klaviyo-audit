@@ -449,6 +449,11 @@ export async function captureWithBrowserless(input: {
    * them. Datacenter costs a third of residential per MB; residential is the
    * fallback for storefronts that block datacenter traffic. */
   proxyTier?: "datacenter" | "residential";
+  /** Overall time budget. The cart flow chains several navigations (product
+   * page, permalink add, drawer) and over a residential proxy it can be doing
+   * fine at 90s, so carts pass a bigger budget instead of being aborted
+   * mid-flow. */
+  timeoutMs?: number;
 }): Promise<BrowserlessResult> {
   const token = (Deno.env.get("BROWSERLESS_TOKEN") ?? "").trim();
   if (!token) return { ok: false, error: "browserless_token_missing" };
@@ -479,7 +484,7 @@ export async function captureWithBrowserless(input: {
   // Residential proxies add latency, so allow more time when one is in use
   // (must exceed the in-page goto timeout + scroll/settle, and stay under the
   // edge runtime wall-clock limit since it's a single attempt per invocation).
-  const timer = setTimeout(() => ctrl.abort(), proxy ? 90_000 : 45_000);
+  const timer = setTimeout(() => ctrl.abort(), input.timeoutMs ?? (proxy ? 90_000 : 45_000));
   try {
     const res = await fetch(`${base}/function?${qs.toString()}`, {
       method: "POST",

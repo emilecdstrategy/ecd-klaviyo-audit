@@ -448,6 +448,9 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       secondFold: isViewport && !isCart,
       cartAdd,
       proxyTier,
+      // The cart flow chains up to five navigations; 90s aborted it mid-flow on
+      // slower stores even over a healthy residential connection.
+      timeoutMs: isCart ? 150_000 : undefined,
     };
     // One attempt per invocation — retries happen across requeue passes below,
     // so a single capture_one never risks the edge runtime's wall-clock limit.
