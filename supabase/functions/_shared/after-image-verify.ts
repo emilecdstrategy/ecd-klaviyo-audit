@@ -105,3 +105,61 @@ export async function verifyAfterImage(
     return { ok: true, feedback: "", defects: [], missing: [] };
   }
 }
+
+const PHOTO_TOOL = {
+  name: "record_photo_check",
+  description: "Report whether any photograph was altered geometrically.",
+  input_schema: {
+    type: "object" as const,
+    required: ["altered_photos"],
+    properties: {
+      altered_photos: {
+        type: "array",
+        items: { type: "string" },
+        description:
+          "One entry per photograph in IMG_2 whose GEOMETRY differs from IMG_1: a different aspect ratio (a square card that is now taller or wider), a tighter or looser crop, a zoom, a shifted centre point, part of the product sliced off at an edge, or a photo turned into a circle or other new shape. Say which photo and what changed. Empty array if every photo keeps the exact framing and proportions it had.",
+      },
+    },
+  },
+};
+
+/**
+ * A second, single-purpose pass that looks ONLY at photo geometry.
+ *
+ * The main verifier grades every fix AND scans for eight defect classes in one
+ * call, and photo cropping kept slipping through it: a product page came back
+ * with the square hero photo cropped to a wide strip and the verdict recorded
+ * zero defects. One narrow question is far more reliable than a clause inside a
+ * long rubric, and this is the defect the client notices first.
+ */
+export async function verifyPhotoFidelity(beforeUrl: string, afterUrl: string): Promise<string[]> {
+  try {
+    const llm = createLlmClient("anthropic", { model: VERIFY_MODEL });
+    const turn = await llm.runTurn({
+      system:
+        "You are a photo-geometry checker. You do not care about layout, wording, colour, or whether any redesign is good. You compare ONLY the photographs in two screenshots and report any whose shape, crop, framing, or zoom changed.",
+      messages: [{
+        role: "user_images",
+        text:
+          "IMG_1 is the original screenshot. IMG_2 is a redesign of it. Look at every photograph in both.\n\n" +
+          "For each photo, ask: is it the same shape, the same crop, and the same amount of the product in frame? " +
+          "A square product card that is now rectangular is altered. A photo zoomed in so the product fills more of the frame is altered. " +
+          "A photo whose subject is now sliced by an edge is altered. A photo made circular is altered. " +
+          "Repositioning a photo, or changing its overall size while keeping the same proportions and crop, is NOT altered.\n\n" +
+          "Call record_photo_check exactly once.",
+        images: [
+          { url: beforeUrl, label: "IMG_1: original" },
+          { url: afterUrl, label: "IMG_2: redesign" },
+        ],
+      }],
+      tools: [PHOTO_TOOL],
+      toolChoice: { type: "tool", name: "record_photo_check" },
+    });
+    if (turn.kind !== "tool_call") return [];
+    const out = (turn.input ?? {}) as { altered_photos?: unknown };
+    return Array.isArray(out.altered_photos) ? out.altered_photos.map(String).filter(Boolean) : [];
+  } catch {
+    // Never block publishing on the checker itself failing.
+    return [];
+  }
+}

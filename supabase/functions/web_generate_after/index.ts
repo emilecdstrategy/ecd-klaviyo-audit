@@ -14,7 +14,12 @@ import {
   type CapturedEl,
   type Viewport,
 } from "../_shared/after-image-prompt.ts";
-import { isPhotoDefect, verifyAfterImage, verifyScore } from "../_shared/after-image-verify.ts";
+import {
+  isPhotoDefect,
+  verifyAfterImage,
+  verifyPhotoFidelity,
+  verifyScore,
+} from "../_shared/after-image-verify.ts";
 import { autoPublishAudit } from "../_shared/auto-publish.ts";
 
 // Generates an "after" concept image for a web-audit page section by editing the
@@ -299,7 +304,7 @@ async function generateOne(
   // fix or introduced a defect. Capped at one retry to stay inside the edge
   // function's wall clock. The retry gets a strictly more specific prompt, so if
   // it succeeds we keep it; if the retry itself fails we keep the first attempt.
-  const check = await verifyAfterImage(sourceUrl, bustedUrl, recommendations, viewport);
+  const check = await gradeWithPhotoCheck(sourceUrl, bustedUrl, recommendations, viewport);
   // Persisted with the image so a bad result can be diagnosed from the DB:
   // did the judge miss the problem, or see it and ship the lesser evil anyway?
   const verify: Record<string, unknown> = {
@@ -361,7 +366,7 @@ async function generateOne(
         // Grade the retry against the FULL fix list, not just what it was asked
         // to do. A fewer-fixes retry that silently drops fixes the first attempt
         // had must lose points for them, or "asked for less" wins for free.
-        const recheck = await verifyAfterImage(sourceUrl, candidateUrl, recommendations, viewport);
+        const recheck = await gradeWithPhotoCheck(sourceUrl, candidateUrl, recommendations, viewport);
         verify.retry_ran = true;
         verify.retry_mode = photoTrouble ? "fewer_fixes" : focusedOnMissing ? "missing_only" : "full";
         verify.retry = { missing: recheck.missing, defects: recheck.defects };
@@ -418,7 +423,7 @@ async function generateOne(
       const polished = (await geminiEditImage(finalBytes, polishPrompt, apiKey, { model: GEMINI_IMAGE_MODEL }))[0];
       if (!wrongShape(srcPng, polished)) {
         const polishUrl = await storeAt(candidatePath, polished);
-        const pcheck = await verifyAfterImage(sourceUrl, polishUrl, recommendations, viewport);
+        const pcheck = await gradeWithPhotoCheck(sourceUrl, polishUrl, recommendations, viewport);
         verify.polish_ran = true;
         verify.polish = { missing: pcheck.missing, defects: pcheck.defects };
         // Promote only a strict improvement: photos no worse, total score lower.
@@ -485,6 +490,35 @@ async function chainAuto(auditId: string) {
   } catch {
     // best effort
   }
+}
+
+/** Grade a candidate AND run the dedicated photo-geometry pass, merging the two.
+ * Cropping kept surviving the combined rubric, so it gets its own question. */
+async function gradeWithPhotoCheck(
+  sourceUrl: string,
+  candidateUrl: string,
+  recommendations: string[],
+  viewport: Viewport,
+) {
+  const [graded, alteredPhotos] = await Promise.all([
+    verifyAfterImage(sourceUrl, candidateUrl, recommendations, viewport),
+    verifyPhotoFidelity(sourceUrl, candidateUrl),
+  ]);
+  if (alteredPhotos.length === 0) return graded;
+  const extra = alteredPhotos.map((p) => `Photo geometry changed: ${p}`);
+  const defects = [...graded.defects, ...extra];
+  return {
+    ok: false,
+    defects,
+    missing: graded.missing,
+    feedback: [
+      graded.feedback,
+      "Your previous attempt CHANGED THE SHAPE OR CROP of photos, which is never acceptable:\n" +
+      extra.map((d, i) => `${i + 1}. ${d}`).join("\n") +
+      "\nReproduce every photo with the exact framing, crop and proportions it has in the original. " +
+      "Take any space you need from padding or headings, never from inside a photo.",
+    ].filter(Boolean).join("\n\n"),
+  };
 }
 
 serve(async (req) => {
