@@ -21,11 +21,23 @@ import {
   verifyScore,
 } from "../_shared/after-image-verify.ts";
 import { autoPublishAudit } from "../_shared/auto-publish.ts";
+import { isUsableOutline, runHtmlAfter, summarizeEditReport } from "../_shared/html-after.ts";
 
-// Generates an "after" concept image for a web-audit page section by editing the
-// real above-the-fold screenshot in place with Google's Gemini image model
-// (nano-banana). Editing (not generating from scratch) keeps the brand's real
-// logo, colors, fonts, and product photos intact while applying the fixes.
+// Generates an "after" concept image for a web-audit page section.
+//
+// TWO ENGINES, in order:
+//  1. HTML (default). Loads the REAL page in a browser, applies the fixes as
+//     DOM/CSS edits, and re-screenshots it. Nothing is regenerated, so the
+//     client's photographs, fonts, colours and logo are physically incapable of
+//     being cropped, reshaped, substituted or drifting off brand. Fix coverage
+//     and photo integrity are both measured in code, not judged from a picture.
+//  2. Gemini image edit (fallback). Used only when the HTML pass cannot run:
+//     a store that blocks the browser, an unusable DOM outline, or selectors the
+//     author could not resolve. Keeps its hard photo gate, so it still withholds
+//     an image whose photos came back damaged.
+//
+// Which engine produced each image is recorded per viewport, so a result is
+// always attributable rather than assumed.
 //
 // Two modes:
 //  - Single: { audit_id, section_key, viewport? } generates one image and returns
@@ -75,17 +87,24 @@ function asRecord(v: unknown): Record<string, unknown> {
 
 type ViewportSource = {
   viewport: Viewport;
+  /** Public URL of the stored "before" screenshot. */
   url: string;
   cartCount: number;
   fold2Url?: string | null;
   elements?: CapturedEl[];
+  /** The storefront page itself, so the HTML engine can reopen and edit it. */
+  pageUrl?: string | null;
+  /** DOM outline captured in the same page load as the screenshot, when present. */
+  outline?: unknown;
+  /** Cart captures need the variant re-added before the drawer has anything in it. */
+  variantId?: string | null;
 };
 
 // One source screenshot per viewport for a page (above-the-fold variant preferred).
 async function listViewportSources(sb: SupabaseClient, auditId: string, pageType: string): Promise<ViewportSource[]> {
   const { data } = await sb
     .from("web_page_snapshots")
-    .select("viewport, variant, status, screenshot_url, raw, elements")
+    .select("viewport, variant, status, url, screenshot_url, raw, elements")
     .eq("audit_id", auditId)
     .eq("page_type", pageType)
     .eq("status", "success")
@@ -93,6 +112,7 @@ async function listViewportSources(sb: SupabaseClient, auditId: string, pageType
   const rows = (data ?? []) as Array<{
     viewport: string;
     variant: string | null;
+    url: string | null;
     screenshot_url: string;
     raw: Record<string, unknown> | null;
     elements: CapturedEl[] | null;
@@ -110,6 +130,9 @@ async function listViewportSources(sb: SupabaseClient, auditId: string, pageType
       cartCount,
       fold2Url: typeof f2 === "string" && f2.length > 0 ? f2 : null,
       elements: Array.isArray(chosen.elements) ? chosen.elements : [],
+      pageUrl: chosen.url ?? null,
+      outline: chosen.raw?.dom_outline ?? null,
+      variantId: typeof chosen.raw?.variant_id === "string" ? chosen.raw.variant_id : null,
     });
   }
   return out;
@@ -185,6 +208,36 @@ function recommendationsFor(
     .filter(Boolean) as string[];
 }
 
+/** Upload a PNG and return its public URL, cache-busted so a regenerate shows
+ * the new image immediately at the same path. */
+async function uploadPng(sb: SupabaseClient, objectPath: string, bytes: Uint8Array): Promise<string> {
+  const { error: uploadErr } = await sb.storage
+    .from(STORAGE_BUCKET)
+    .upload(objectPath, bytes, { contentType: "image/png", upsert: true });
+  if (uploadErr) throw new Error(`upload_failed: ${uploadErr.message}`);
+  const { data: pub } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(objectPath);
+  const publicUrl = pub?.publicUrl ?? null;
+  if (!publicUrl) throw new Error("no_public_url");
+  return `${publicUrl}?v=${Date.now()}`;
+}
+
+/** Persist one viewport's "after" onto the section row. */
+async function saveAfterImage(
+  sb: SupabaseClient,
+  section: { id: string; section_details: Record<string, unknown> | null },
+  viewport: Viewport,
+  entry: Record<string, unknown>,
+): Promise<void> {
+  const details = asRecord(section.section_details);
+  const web = asRecord(details.web);
+  const images = asRecord(web.after_images);
+  images[viewport] = entry;
+  web.after_images = images;
+  details.web = web;
+  await sb.from("audit_sections").update({ section_details: details }).eq("id", section.id);
+  section.section_details = details; // keep the in-memory row fresh for this invocation
+}
+
 // Generates + stores the "after" for one specific (section, viewport). When
 // referenceAfterUrl is set (the sibling viewport's approved after), the model
 // mirrors those same changes so the concepts stay consistent across devices.
@@ -199,9 +252,87 @@ async function generateOne(
   referenceAfterUrl?: string,
   belowFoldUrl?: string | null,
   sourceElements?: CapturedEl[],
+  htmlSource?: { pageUrl?: string | null; outline?: unknown; variantId?: string | null },
 ): Promise<{ url: string | null; viewport: Viewport }> {
   const meta = PAGE_SECTIONS.find((s) => s.key === section.section_key);
   if (!meta) throw new Error(`section ${section.section_key} is not a page section`);
+
+  const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
+
+  // ---------------------------------------------------------------------------
+  // ENGINE 1: edit the real page. Preferred, because on this path the client's
+  // photographs cannot be damaged and the brand cannot drift: nothing is redrawn.
+  // ---------------------------------------------------------------------------
+  const allRecs = recommendationsFor(section, viewport);
+  // Photography the store never gave us is the one thing a DOM edit still cannot
+  // honestly produce. Floating-widget moves, by contrast, are exactly what this
+  // engine does best (a real DOM move cannot duplicate the widget), so unlike the
+  // image path they are NOT withheld here.
+  const htmlRecs = allRecs.filter((r) => !needsNewPhotography(r)).slice(0, 8);
+  let htmlError: string | null = null;
+  // The cart is the one page whose capture drives a multi-hop add-to-cart flow,
+  // so it can only afford ONE page load per invocation. With a stored outline
+  // that is exactly what it costs; without one the engine would have to probe
+  // first, and two cart flows blew the edge function's 150s ceiling. So the cart
+  // requires the outline its capture now saves, and older audits fall back.
+  const cartNeedsOutline = meta.page_type === "cart" && !isUsableOutline(htmlSource?.outline);
+  if (cartNeedsOutline) htmlError = "cart_without_stored_outline";
+  if (htmlSource?.pageUrl && htmlRecs.length > 0 && !cartNeedsOutline) {
+    try {
+      const run = await runHtmlAfter({
+        pageUrl: htmlSource.pageUrl,
+        pageLabel: meta.label,
+        viewport,
+        recommendations: htmlRecs,
+        outline: htmlSource.outline,
+        // The cart drawer is empty unless something is added first.
+        cartAdd: meta.page_type === "cart" ? { variantId: htmlSource.variantId ?? null } : undefined,
+        proxyTier: meta.page_type === "cart" ? "residential" : undefined,
+        // Leave room inside the edge function's own 150s budget.
+        timeoutMs: meta.page_type === "cart" ? 110_000 : undefined,
+      });
+      if (run.ok) {
+        const summary = summarizeEditReport(run.report, htmlRecs);
+        const publishedUrl = await uploadPng(sb, path, run.png);
+        const skippedPhotography = allRecs.filter(needsNewPhotography);
+        await saveAfterImage(sb, section, viewport, {
+          url: publishedUrl,
+          engine: "html",
+          generated_at: new Date().toISOString(),
+          verify: {
+            engine: "html",
+            // Deterministic, not judged from a picture: the in-page runtime
+            // measured every photo before and after the edits.
+            photos: run.report.photos,
+            ops: run.report.ops,
+            brand: run.report.brand,
+            captures: run.captures,
+          },
+          unapplied: [
+            ...summary.unapplied,
+            ...skippedPhotography.map((r) => `Needs new photography, which a layout edit cannot show: ${r}`),
+          ],
+          applied_count: summary.applied.length,
+          total_count: allRecs.length,
+        });
+        console.log(
+          `after-image ${meta.label}/${viewport}: HTML engine applied ${summary.applied.length}/${htmlRecs.length} fixes, photos unchanged (${run.report.photos?.before ?? "?"})`,
+        );
+        return { url: publishedUrl, viewport };
+      }
+      htmlError = `${run.stage}: ${run.error}`;
+    } catch (e) {
+      htmlError = (e instanceof Error ? e.message : String(e)).slice(0, 200);
+    }
+    console.warn(`after-image ${meta.label}/${viewport}: HTML engine failed (${htmlError}), falling back to the image model`);
+  } else if (!htmlSource?.pageUrl) {
+    htmlError = "no_page_url_on_snapshot";
+  }
+
+  // ---------------------------------------------------------------------------
+  // ENGINE 2 (fallback): regenerate the screenshot with the image model, with the
+  // hard photo gate that withholds an image whose photos came back damaged.
+  // ---------------------------------------------------------------------------
 
   const srcRes = await fetch(sourceUrl);
   if (!srcRes.ok) throw new Error(`fetch_source_${srcRes.status}`);
@@ -229,7 +360,7 @@ async function generateOne(
     }
   }
 
-  const allRecommendations = recommendationsFor(section, viewport);
+  const allRecommendations = allRecs;
   // Drop floating-widget repositioning fixes: the model reliably duplicates the
   // widget instead of moving it. Everything else is still applied.
   const applicable = allRecommendations.filter((r) =>
@@ -269,21 +400,10 @@ async function generateOne(
     skippedPhotoFix,
   );
 
-  const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
   // Retries are judged at a scratch path and only promoted if they win, so a
   // rejected retry is never, even briefly, the live image at the canonical URL.
   const candidatePath = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}_candidate.png`;
-  const storeAt = async (objectPath: string, bytes: Uint8Array): Promise<string> => {
-    const { error: uploadErr } = await sb.storage
-      .from(STORAGE_BUCKET)
-      .upload(objectPath, bytes, { contentType: "image/png", upsert: true });
-    if (uploadErr) throw new Error(`upload_failed: ${uploadErr.message}`);
-    const { data: pub } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(objectPath);
-    const publicUrl = pub?.publicUrl ?? null;
-    if (!publicUrl) throw new Error("no_public_url");
-    // Cache-bust so a regenerate shows the new image immediately (same path).
-    return `${publicUrl}?v=${Date.now()}`;
-  };
+  const storeAt = (objectPath: string, bytes: Uint8Array) => uploadPng(sb, objectPath, bytes);
   const store = (bytes: Uint8Array) => storeAt(path, bytes);
 
   const shapeNote = viewport === "mobile"
@@ -519,6 +639,8 @@ async function generateOne(
     const imagesBlocked = asRecord(webBlocked.after_images);
     imagesBlocked[viewport] = {
       url: null,
+      engine: "gemini_fallback",
+      html_error: htmlError,
       error: "photo_integrity_failed",
       photo_defects: finalPhotoDefects,
       generated_at: new Date().toISOString(),
@@ -538,6 +660,8 @@ async function generateOne(
   const afterImages = asRecord(webOut.after_images);
   afterImages[viewport] = {
     url: bustedUrl,
+    engine: "gemini_fallback",
+    html_error: htmlError,
     generated_at: new Date().toISOString(),
     verify,
     unapplied,
@@ -685,7 +809,10 @@ serve(async (req) => {
       const src = sources.find((s) => s.viewport === targetVp);
       if (!src) return json({ ok: false, error: { code: "no_screenshot", message: "No screenshot for that viewport yet." }, correlationId }, { status: 200 });
       const referenceAfterUrl = targetVp !== primaryVp ? afterUrlFor(section, primaryVp) : undefined;
-      const result = await generateOne(sb, auditId, clientId, section, apiKey, targetVp, src.url, referenceAfterUrl, src.fold2Url, src.elements);
+      const result = await generateOne(
+        sb, auditId, clientId, section, apiKey, targetVp, src.url, referenceAfterUrl, src.fold2Url, src.elements,
+        { pageUrl: src.pageUrl, outline: src.outline, variantId: src.variantId },
+      );
       return json({ ok: true, correlationId, url: result.url, viewport: result.viewport });
     }
 
@@ -700,6 +827,7 @@ serve(async (req) => {
         fold2Url?: string | null;
         primaryViewport: Viewport;
         elements?: CapturedEl[];
+        html?: { pageUrl?: string | null; outline?: unknown; variantId?: string | null };
       };
       const units: Unit[] = [];
       for (const meta of PAGE_SECTIONS) {
@@ -709,7 +837,17 @@ serve(async (req) => {
         const order = orderedViewports(sources, meta.page_type);
         for (const vp of order) {
           const src = sources.find((s) => s.viewport === vp);
-          if (src) units.push({ section, viewport: vp, url: src.url, fold2Url: src.fold2Url, primaryViewport: order[0], elements: src.elements });
+          if (src) {
+            units.push({
+              section,
+              viewport: vp,
+              url: src.url,
+              fold2Url: src.fold2Url,
+              primaryViewport: order[0],
+              elements: src.elements,
+              html: { pageUrl: src.pageUrl, outline: src.outline, variantId: src.variantId },
+            });
+          }
         }
       }
       // A unit is "done" once it has an after url OR a recorded error (so a
@@ -740,7 +878,10 @@ serve(async (req) => {
       const referenceAfterUrl =
         next.viewport !== next.primaryViewport ? afterUrlFor(next.section, next.primaryViewport) : undefined;
       try {
-        await generateOne(sb, auditId, clientId, next.section, apiKey, next.viewport, next.url, referenceAfterUrl, next.fold2Url, next.elements);
+        await generateOne(
+          sb, auditId, clientId, next.section, apiKey, next.viewport, next.url, referenceAfterUrl, next.fold2Url, next.elements,
+          next.html,
+        );
       } catch (e) {
         // Count the attempt. Only the LAST one records a terminal error, so a
         // one-off "no image returned" gets retried on the next chained hop

@@ -98,3 +98,21 @@ export const LAYOUT_BRIEF: Record<WebPageKind, string> = {
 export function layoutGuidance(kind: WebPageKind): string {
   return `${LAYOUT_BRIEF[kind]}\n${GENERAL_LAYOUT_RULES}`;
 }
+
+// Rules for the HTML "after" engine, which EDITS the real page rather than
+// repainting it. Deliberately a different, much shorter list than the image
+// rules: most of those exist to stop a generative model damaging photos or
+// inventing imagery, and on this path that is structurally impossible, so
+// repeating them would only dilute what is left. What remains is the judgement
+// a real page edit still needs.
+export const HTML_AFTER_RULES = [
+  "CALM BEATS COMPLETE. The edited page must look at least as uncluttered as the original. Never shrink type or tighten spacing to fit more in, and never stack several small additions in the same area. If showing every fix would crowd the screen, show the most important ones properly.",
+  "KEEP THE FIRST FOLD LIGHT, ESPECIALLY ON A PHONE. Do not fill the top of the page with added copy. A product page in particular should not gain paragraphs above the buy button: if a description needs taming, clamp it to a few lines instead of expanding it.",
+  "SAY IT ONCE. Never add a line that repeats something already on the page. If the announcement bar already promises free shipping, the hero does not need to.",
+  "EDIT COPY IN PLACE RATHER THAN ADDING TO IT. A vague headline should be rewritten with set_text, not left in place with a second headline added under it. An announcement bar that wraps onto two lines should be shortened, not restyled.",
+  "A CART FIX MUST NEVER COST A ROW. Inside a cart or slide drawer, every change has to fit the existing space: reword a line, or use a compact control on the row that is already there. The drawer must not get taller and the checkout button must stay visible.",
+  "A QUICK ADD BELONGS ON THE ROW IT SERVES. On product cards and cart upsell rows use the compact button variant so the card keeps its height and the photo keeps its shape.",
+  "MOVE, DO NOT DUPLICATE. When something is in the wrong place, move it. Never hide it and add a lookalike somewhere else.",
+  "ONE PRIMARY ACTION PER SCREEN. If a page has several equal-looking buttons, emphasize the one that matters instead of adding another.",
+  "PROMISE ONLY WHAT THE PAGE CAN BACK UP. Ratings, review counts, delivery times and stock claims must come from what the page already shows. Never invent a number.",
+].map((rule) => `- ${rule}`).join("\n");

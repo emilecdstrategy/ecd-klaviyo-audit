@@ -24,6 +24,10 @@ export type BrowserlessResult =
      * per snapshot so the datacenter-vs-residential spend is auditable rather
      * than assumed from BROWSERLESS_PROXY. */
     proxyUsed?: string;
+    /** Return value of `probeScript` (the DOM outline, when asked for). */
+    probe?: unknown;
+    /** Return value of `editScript`: which edits actually landed. */
+    editReport?: unknown;
   }
   | { ok: false; error: string; proxyUsed?: string };
 
@@ -49,7 +53,7 @@ function b64ToBytes(b64: string): Uint8Array {
 // optional cart-drawer click, and (for the viewport shot) element-box collection.
 const FUNCTION_CODE = `
 export default async ({ page, context }) => {
-  const { url, width, height, fullPage, withElements, cartAdd, isMobile, secondFold, editScript } = context;
+  const { url, width, height, fullPage, withElements, cartAdd, isMobile, secondFold, editScript, probeScript } = context;
   if (editScript) {
     // Must be set before navigation; lets our injected edits run on stores
     // whose CSP would otherwise reject evaluated scripts.
@@ -420,10 +424,29 @@ export default async ({ page, context }) => {
   // it. Photos, fonts, colors and the logo are the site's own assets, so brand
   // fidelity is by construction rather than by prompt. A failed script returns
   // an error instead of silently shooting the unedited page.
+  const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+
+  // Read-only probe of the settled page (a DOM outline, for the HTML-after
+  // author). Runs BEFORE any edits so it describes the page as shot, and never
+  // fails a capture: a probe that throws just yields no outline.
+  let probe = null;
+  if (probeScript) {
+    try {
+      probe = await page.evaluate(new AsyncFunction(probeScript));
+    } catch (e) {
+      probe = { error: String(e && e.message || e).slice(0, 200) };
+    }
+  }
+
+  // HTML-after mode: apply DOM/CSS edits to the REAL rendered page, then shoot
+  // it. Photos, fonts, colors and the logo are the site's own assets, so brand
+  // fidelity is by construction rather than by prompt. The script's return value
+  // comes back as editReport, which is how the caller knows each edit actually
+  // landed instead of trusting that it did.
+  let editReport = null;
   if (editScript) {
     try {
-      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
-      await page.evaluate(new AsyncFunction(editScript));
+      editReport = await page.evaluate(new AsyncFunction(editScript));
       await new Promise((r) => setTimeout(r, 700));
     } catch (e) {
       return { data: { error: "edit_script_failed: " + String(e && e.message || e).slice(0, 200) }, type: "application/json" };
@@ -449,7 +472,7 @@ export default async ({ page, context }) => {
       await page.evaluate(() => { window.scrollTo(0, 0); });
     } catch (e) {}
   }
-  return { data: { screenshot, screenshot2, elements, cartCount }, type: "application/json" };
+  return { data: { screenshot, screenshot2, elements, cartCount, probe, editReport }, type: "application/json" };
 };
 `;
 
@@ -473,6 +496,10 @@ export async function captureWithBrowserless(input: {
    * the page is re-shot with the edits applied, so every photo and brand asset
    * stays the site's own. */
   editScript?: string;
+  /** Read-only script evaluated on the settled page BEFORE any edits; its return
+   * value comes back as `probe`. Used to extract the DOM outline the edit
+   * author writes selectors against. */
+  probeScript?: string;
   /** Overall time budget. The cart flow chains several navigations (product
    * page, permalink add, drawer) and over a residential proxy it can be doing
    * fine at 90s, so carts pass a bigger budget instead of being aborted
@@ -525,6 +552,7 @@ export async function captureWithBrowserless(input: {
           isMobile: input.viewport === "mobile",
           secondFold: Boolean(input.secondFold),
           editScript: input.editScript ?? null,
+          probeScript: input.probeScript ?? null,
         },
       }),
       signal: ctrl.signal,
@@ -543,7 +571,15 @@ export async function captureWithBrowserless(input: {
     // real payload is under .data (fall back to the root if that ever changes).
     const wrapper = parsed as { data?: unknown } | null;
     const payload = (wrapper && typeof wrapper.data === "object" ? wrapper.data : wrapper) as
-      | { screenshot?: string; screenshot2?: string | null; elements?: CapturedElement[]; error?: string; cartCount?: number | null }
+      | {
+        screenshot?: string;
+        screenshot2?: string | null;
+        elements?: CapturedElement[];
+        error?: string;
+        cartCount?: number | null;
+        probe?: unknown;
+        editReport?: unknown;
+      }
       | null;
     // In-page detection (storefront rate-limit / bot-block page) reports a
     // structured error instead of a screenshot.
@@ -557,7 +593,16 @@ export async function captureWithBrowserless(input: {
       const b = b64ToBytes(payload.screenshot2);
       if (b.byteLength >= 5000) png2 = b;
     }
-    return { ok: true, png, png2, elements, cartCount: payload.cartCount ?? null, proxyUsed: proxy };
+    return {
+      ok: true,
+      png,
+      png2,
+      elements,
+      cartCount: payload.cartCount ?? null,
+      proxyUsed: proxy,
+      probe: payload.probe ?? null,
+      editReport: payload.editReport ?? null,
+    };
   } catch (e) {
     const msg = e instanceof Error && (e.name === "AbortError" || /abort/i.test(e.message))
       ? "browserless_timeout"

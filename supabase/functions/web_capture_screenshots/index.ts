@@ -3,6 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getScreenshotProvider } from "../_shared/screenshot-provider.ts";
 import { browserlessEnabled, captureWithBrowserless, type CapturedElement } from "../_shared/browserless.ts";
+import { DOM_OUTLINE_PROBE, isUsableOutline } from "../_shared/html-after.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest, exchangeClientCredentials } from "../_shared/shopify-api.ts";
 
@@ -455,6 +456,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   // which is the difference between the tiering saving money and only looking
   // like it does.
   let proxyUsed: string | null = null;
+  let domOutline: unknown = null;
   let cartCount: number | null = null;
 
   // When Browserless is configured it handles every capture (full-page and
@@ -504,6 +506,10 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       // The cart flow chains up to five navigations; 90s aborted it mid-flow on
       // slower stores even over a healthy residential connection.
       timeoutMs: isCart ? 150_000 : undefined,
+      // The DOM outline for the HTML "after" engine. Taken in the SAME page load
+      // as the screenshot, so it describes exactly the page the client sees in
+      // the Before, and it saves the after pass a whole extra page load.
+      probeScript: isViewport ? DOM_OUTLINE_PROBE : undefined,
     };
     // One attempt per invocation — retries happen across requeue passes below,
     // so a single capture_one never risks the edge runtime's wall-clock limit.
@@ -513,6 +519,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       png = bl.png;
       pngFold2 = bl.png2 ?? null;
       elements = bl.elements;
+      if (isUsableOutline(bl.probe)) domOutline = bl.probe;
       usedBrowserless = true;
       if (typeof bl.cartCount === "number") cartCount = bl.cartCount;
     } else {
@@ -627,11 +634,14 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
         ? { ...baseRaw, cart_count: cartCount }
         : baseRaw;
       const withFold = fold2Url ? { ...withCart, fold2_url: fold2Url } : withCart;
+      // Stored per snapshot: the "after" engine reuses it instead of reloading
+      // the page, and it is the record of what the page looked like when shot.
+      const withOutline = domOutline ? { ...withFold, dom_outline: domOutline } : withFold;
       // Which proxy pool served this capture, so the datacenter-vs-residential
       // savings are verifiable from the rows rather than guessed.
       const raw = proxyTierUsed && usedBrowserless
-        ? { ...withFold, proxy_tier: proxyTierUsed, proxy_used: proxyUsed ?? "none" }
-        : withFold;
+        ? { ...withOutline, proxy_tier: proxyTierUsed, proxy_used: proxyUsed ?? "none" }
+        : withOutline;
       await sb.from("web_page_snapshots").update({
         status: "success",
         screenshot_path: path,
