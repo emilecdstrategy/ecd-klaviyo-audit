@@ -1160,19 +1160,22 @@ function applyOpGuarded(op, brand, opts, watch) {
     return result;
   }
 
-  // An element added below the crop is not in the concept image, so the fix is
-  // not demonstrated even though the edit ran. A star rating landed off the shot
-  // this way and read as simply missing. Say so instead of counting it as shown.
+  // An element added below the captured area is not in the concept image, so the
+  // fix is not demonstrated even though the edit ran. A star rating landed off
+  // the shot this way and read as simply missing. The budget is TWO viewports,
+  // not one: the capture takes the first fold plus a second-fold shot, and on a
+  // mobile collection page every product card lives below the first fold, so a
+  // one-viewport rule wrongly voided every per-card quick add.
   if (injected) {
     var fresh = addedNow.filter(function (n) {
       return addedBefore.indexOf(n) === -1 && !n.hasAttribute("data-ecd-scrim");
     });
     var anyOnScreen = fresh.some(function (n) {
       var r = n.getBoundingClientRect();
-      return r.height > 0 && r.width > 0 && r.top < window.innerHeight && r.bottom > 0;
+      return r.height > 0 && r.width > 0 && r.top < window.innerHeight * 2 && r.bottom > 0;
     });
     if (fresh.length > 0 && !anyOnScreen) {
-      result.skipped = (result.skipped || []).concat(["added below the visible fold, so it is not in the image"]);
+      result.skipped = (result.skipped || []).concat(["added below the captured area (two viewports), so it is not in the image"]);
       result.offscreen = true;
       result.applied = false;
     }
