@@ -1,0 +1,254 @@
+// REGRESSION EVAL SET for the "after" image engine.
+//
+// Every case below is a failure that was actually reported, on the page and
+// viewport it happened on, with the fix wording that triggered it. Until now each
+// of those was fixed once, checked by eye, and then nothing stopped the next
+// prompt or pipeline change resurrecting it. This replays them all and scores the
+// result mechanically, so a regression shows up as a number rather than as a
+// complaint weeks later.
+//
+// What it asserts per case, all measured rather than judged from a picture:
+//   - photos:    every photograph identical, count and aspect ratio, before/after
+//   - coverage:  every requested fix served by at least one edit that landed
+//   - no_growth: no edit reverted for making a row taller
+//   - no_overlap:no edit reverted for making existing elements collide
+//   - engine:    the HTML engine ran at all (a fallback to the image model is a
+//                regression in itself, because the image path is where the photo
+//                damage always came from)
+//
+// Usage:
+//   node scripts/after-image-eval.mjs              # every case
+//   node scripts/after-image-eval.mjs collection   # cases whose id matches
+//
+// Costs one or two Browserless page loads plus one Sonnet call per case, so a
+// full run is cents, not dollars. It hits live storefronts, so an occasional
+// navigation timeout is infrastructure, not a regression: rerun the failed case.
+
+import { readFileSync } from 'node:fs';
+
+const PROJECT = 'wuvqwuviwubthmuncuya';
+const FN = `https://${PROJECT}.supabase.co/functions/v1/web_html_after_spike`;
+
+function env() {
+  const out = {};
+  for (const f of ['.env', '.env.supabase']) {
+    try {
+      for (const line of readFileSync(f, 'utf8').split(/\r?\n/)) {
+        const i = line.indexOf('=');
+        if (i > 0 && !line.trim().startsWith('#')) {
+          const k = line.slice(0, i).trim();
+          if (!(k in out)) out[k] = line.slice(i + 1).trim().replace(/^["']|["']$/g, '');
+        }
+      }
+    } catch { /* optional file */ }
+  }
+  return out;
+}
+
+// Each case records the ORIGINAL complaint so a future reader knows what the case
+// is defending, not just what it checks.
+const CASES = [
+  {
+    id: 'collection-grid-crop',
+    complaint:
+      'The collection page kept re-cropping the product photos and turning the phone grid into two columns, reported at least five separate times.',
+    url: 'https://lazyleaf.com/collections/bundles-kits',
+    viewport: 'mobile',
+    label: 'collection page',
+    recommendations: [
+      "Add a short line under 'Bundles & Kits' like 'Save more when you buy tools and gear together' so shoppers know the value of browsing this collection, not just its name.",
+      'Make sure the name, price, and a quick add button sit directly under every product image on the card itself, and consider adding a small star rating too. It lets shoppers compare and buy without opening each product page.',
+      "Add a small 'Add to cart' button that appears on hover on desktop, and a compact button on the card for mobile. This lets shoppers buy straight from the collection grid instead of clicking into every product first.",
+    ],
+  },
+  {
+    id: 'collection-widget-move',
+    complaint:
+      'The chat launcher overlapped the first product photo. The image model duplicated the widget instead of moving it, so these fixes had to be withheld from the image prompt entirely.',
+    url: 'https://lazyleaf.com/collections/bundles-kits',
+    viewport: 'mobile',
+    label: 'collection page',
+    recommendations: [
+      'Move the chat launcher to sit just below the product grid or nudge it up slightly so it no longer overlaps the auger photo. It keeps the first product fully visible while shoppers scroll in.',
+    ],
+  },
+  {
+    id: 'product-crowding',
+    complaint:
+      'The product page after expanded the description into a wall of text and shrank the product photo to make room for it.',
+    url: 'https://lazyleaf.com/products/silver-scimitar-pulmonaria-creekside-champions%E2%84%A2',
+    viewport: 'mobile',
+    label: 'product page',
+    recommendations: [
+      'Keep the description short in the first fold: show a couple of lines with the key benefit and let the rest sit below, so the photo and the buy button stay the focus.',
+      'Put a short trust line under the add-to-cart button covering shipping and returns, so the reassurance is where the decision happens.',
+    ],
+  },
+  {
+    id: 'product-second-photo',
+    complaint:
+      'Asked for a lifestyle photo, the model invented a garden scene that does not exist in the store and wedged it between the rating and the buy button.',
+    url: 'https://lazyleaf.com/products/silver-scimitar-pulmonaria-creekside-champions%E2%84%A2',
+    viewport: 'mobile',
+    label: 'product page',
+    recommendations: [
+      'Show the plant in a real garden setting as a second lifestyle photo so shoppers can judge its size in context.',
+    ],
+    // The engine must NOT satisfy this one by fabricating imagery. Honest
+    // behaviour is to leave it unserved, so coverage is not asserted here.
+    expectUnserved: true,
+  },
+  {
+    id: 'homepage-header-balance',
+    complaint:
+      'Asked to balance a crowded phone header, edits moved the logo and cart into other containers and the search icon ended up sitting on top of the logo.',
+    url: 'https://lazyleaf.com/',
+    viewport: 'mobile',
+    label: 'homepage',
+    recommendations: [
+      'Balance the phone header: keep the menu and search on the left, the logo centred, and the cart on the right, so the icons are not bunched on one side.',
+      "Add a short trust line under the hero button using the store's own review numbers, so first-time visitors see social proof before they scroll.",
+    ],
+    // Header rearrangement is the case the collision guard exists for. A reverted
+    // edit is the CORRECT outcome, so coverage is not asserted; what matters is
+    // that the header does not come back broken.
+    expectUnserved: true,
+  },
+  {
+    id: 'homepage-double-subhead',
+    complaint:
+      'A second subheadline was added directly above the existing one instead of the existing line being rewritten.',
+    url: 'https://lazyleaf.com/',
+    viewport: 'mobile',
+    label: 'homepage',
+    recommendations: [
+      'Rewrite the hero subheadline so it says what the store actually sells and why it is different, instead of a vague line.',
+    ],
+  },
+  {
+    id: 'cart-compact',
+    complaint:
+      'Cart afters grew taller than the original, pushed the checkout button out of view, or turned the desktop drawer into a centred modal.',
+    url: 'https://lazyleaf.com/',
+    viewport: 'mobile',
+    label: 'cart / slide-out cart drawer',
+    cartAdd: { variantId: '51968841711928' },
+    // A cart drawer has no spare vertical space by design, so the engine is
+    // allowed to refuse rather than make it taller.
+    allowRefusal: true,
+    recommendations: [
+      'Add a short reassurance line about easy returns next to the free-shipping progress bar, without making the drawer taller.',
+      "Give each suggestion in the 'You may also like' row a compact add control on its existing row, so an extra item can be added without leaving the cart.",
+    ],
+  },
+];
+
+function assess(c, res) {
+  const checks = [];
+  const add = (name, pass, detail) => checks.push({ name, pass, detail });
+
+  if (!res.ok) {
+    // "all_edits_guarded" means every edit was rolled back by the height or
+    // collision guards, i.e. the engine refused to break the page. On a page
+    // with no room to spare (a cart drawer) that is the correct answer, so it
+    // counts as an honest refusal rather than a regression. Anything else, and
+    // any refusal on a page with room, is a real failure: falling back to the
+    // image model is where all the photo damage came from.
+    if (c.allowRefusal && res.error === 'all_edits_guarded') {
+      add('honest_refusal', true, 'every edit would have broken the layout, so none shipped');
+      return { checks, pass: true };
+    }
+    add('engine', false, `${res.stage}: ${res.error}`);
+    return { checks, pass: false };
+  }
+  add('engine', true, 'HTML engine ran');
+
+  const photos = res.report?.photos ?? {};
+  const photoChanges = photos.changed ?? [];
+  add(
+    'photos',
+    photoChanges.length === 0 && photos.before === photos.after,
+    photoChanges.length ? photoChanges.join(' | ') : `${photos.before} photos, all identical`,
+  );
+
+  const ops = res.report?.ops ?? [];
+  const reverted = (re) => ops.filter((o) => (o.skipped ?? []).some((s) => re.test(s)));
+  const grew = reverted(/taller/i);
+  add('no_growth', grew.length === 0, grew.length ? `${grew.length} edit(s) made a row taller` : 'nothing grew');
+  const collided = reverted(/overlap/i);
+  add(
+    'no_overlap',
+    collided.length === 0,
+    collided.length ? `${collided.length} edit(s) caused a collision` : 'no collisions',
+  );
+
+  if (c.expectUnserved) {
+    // The point of these cases is that the engine refuses rather than fakes it.
+    add('honest_refusal', true, `${res.unapplied.length} fix(es) left unserved, as intended`);
+  } else {
+    add(
+      'coverage',
+      res.unapplied.length === 0,
+      res.unapplied.length ? `unserved: ${res.unapplied.join(' | ').slice(0, 120)}` : 'every fix served',
+    );
+  }
+
+  return { checks, pass: checks.every((k) => k.pass) };
+}
+
+const key = env().SUPABASE_SERVICE_ROLE_KEY;
+if (!key) {
+  console.error('SUPABASE_SERVICE_ROLE_KEY not found in .env / .env.supabase');
+  process.exit(1);
+}
+
+const filter = process.argv[2];
+const cases = filter ? CASES.filter((c) => c.id.includes(filter)) : CASES;
+if (cases.length === 0) {
+  console.error(`no cases match "${filter}"`);
+  process.exit(1);
+}
+
+console.log(`after-image regression eval: ${cases.length} case(s)\n`);
+const results = [];
+for (const c of cases) {
+  process.stdout.write(`  ${c.id.padEnd(26)} `);
+  const t0 = Date.now();
+  let res;
+  try {
+    const r = await fetch(FN, {
+      method: 'POST',
+      headers: { authorization: `Bearer ${key}`, apikey: key, 'content-type': 'application/json' },
+      body: JSON.stringify({
+        case: c.id,
+        url: c.url,
+        viewport: c.viewport,
+        label: c.label,
+        recommendations: c.recommendations,
+        ...(c.cartAdd ? { cartAdd: c.cartAdd } : {}),
+      }),
+    });
+    res = await r.json();
+  } catch (e) {
+    res = { ok: false, stage: 'request', error: String(e?.message ?? e) };
+  }
+  const secs = Math.round((Date.now() - t0) / 1000);
+  const { checks, pass } = assess(c, res);
+  console.log(`${pass ? 'PASS' : 'FAIL'}  ${secs}s`);
+  for (const k of checks) {
+    if (!k.pass || process.env.EVAL_VERBOSE) console.log(`      ${k.pass ? 'ok  ' : 'FAIL'} ${k.name}: ${k.detail}`);
+  }
+  if (res.url) console.log(`      image: ${res.url}`);
+  results.push({ id: c.id, pass, checks, complaint: c.complaint });
+}
+
+const failed = results.filter((r) => !r.pass);
+console.log(`\n${results.length - failed.length}/${results.length} passed`);
+if (failed.length > 0) {
+  console.log('\nRegressed, with the complaint each case defends:');
+  for (const f of failed) {
+    console.log(`  - ${f.id}: ${f.complaint}`);
+    for (const k of f.checks.filter((k) => !k.pass)) console.log(`      ${k.name}: ${k.detail}`);
+  }
+  process.exit(1);
+}

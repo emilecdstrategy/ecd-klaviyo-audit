@@ -721,7 +721,21 @@ function applyOp(op, brand, opts) {
           break;
         }
         var cs = getComputedStyle(el);
-        place(mkLine(op.text, op.style || "benefit", brand, { color: cs.color }), el, pos);
+        var line = mkLine(op.text, op.style || "benefit", brand, { color: cs.color });
+        // A HEADING'S SUPPORTING LINE GOES INSIDE THE HEADING. Hero titles are
+        // usually absolutely positioned and centred inside a banner, so a sibling
+        // <p> "after" the title lands wherever the banner's own layout puts it:
+        // on desktop the line ended up in the banner's bottom-left corner instead
+        // of under the words. Riding inside the heading inherits its position and
+        // alignment on every viewport.
+        if (/^h[1-6]$/i.test(el.tagName) && pos === "after") {
+          line.style.setProperty("text-align", cs.textAlign, "important");
+          line.style.setProperty("letter-spacing", "normal", "important");
+          el.appendChild(line);
+          result.applied = true;
+          break;
+        }
+        place(line, el, pos);
         result.applied = true;
         break;
       }
@@ -771,6 +785,21 @@ function applyOp(op, brand, opts) {
         break;
       }
       case "move": {
+        // A FLOATING WIDGET IS NOT MOVED BY REPARENTING IT. A chat launcher is
+        // position:fixed, so moving its node in the DOM leaves it exactly where it
+        // was on screen: the edit "succeeds" and the overlap it was meant to fix is
+        // still there. What actually moves it is its offset, so nudge it clear of
+        // whatever it is covering.
+        var posNow = getComputedStyle(el).position;
+        if (posNow === "fixed" || posNow === "sticky") {
+          var rNow = el.getBoundingClientRect();
+          var bottomNow = window.innerHeight - rNow.bottom;
+          el.style.setProperty("bottom", Math.round(bottomNow + 96) + "px", "important");
+          el.style.setProperty("top", "auto", "important");
+          result.skipped.push("floating widget nudged clear instead of reparented");
+          result.applied = true;
+          break;
+        }
         var anchors = q(op.target);
         if (anchors.length === 0) { result.error = "move target matched nothing"; return; }
         // A real DOM move. There is exactly one node, so it physically cannot
@@ -1093,10 +1122,21 @@ export async function runHtmlAfter(input: {
       report,
     };
   }
-  // Every single edit missing its target means the selectors were wrong and the
-  // "after" is just an unedited screenshot of the page, which is worse than none.
+  // Nothing landed, so the "after" would be an unedited screenshot of the page:
+  // worse than no image at all. The two ways that happens are worth telling
+  // apart, because only one is a defect. Guards reverting every edit is the
+  // engine correctly refusing to break a page (a tight cart drawer that cannot
+  // take another row); selectors matching nothing is an authoring failure.
   if (!report.ops?.some((r) => r.applied)) {
-    return { ok: false, error: "no_edit_applied", stage: "apply", ops: authored.ops, report };
+    const allGuarded = (report.ops ?? []).length > 0 &&
+      (report.ops ?? []).every((r) => (r.skipped ?? []).some((s) => /reverted|already/i.test(s)));
+    return {
+      ok: false,
+      error: allGuarded ? "all_edits_guarded" : "no_edit_applied",
+      stage: "apply",
+      ops: authored.ops,
+      report,
+    };
   }
 
   return { ok: true, png: shot.png, png2: shot.png2 ?? null, report, ops: authored.ops, unapplied: summary.unapplied, captures };
