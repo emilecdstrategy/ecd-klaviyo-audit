@@ -554,6 +554,17 @@ function brandTokens(hint) {
 
 function mark(el) { el.setAttribute("data-ecd-added", "1"); return el; }
 
+// House style: no em or en dashes in anything we write into a client's page. The
+// author reaches for them constantly ("Loved by our customers — shop the best
+// sellers"), so it is enforced here rather than asked for in a prompt.
+function clean(text) {
+  return String(text == null ? "" : text)
+    .replace(/\s*[—–]\s*/g, ", ")
+    .replace(/\s+,/g, ",")
+    .replace(/,\s*,/g, ",")
+    .trim();
+}
+
 function mkLine(text, style, brand, ctx) {
   var el = document.createElement("p");
   var size = style === "micro" ? "12px" : style === "subhead" ? "16px" : "14px";
@@ -561,7 +572,7 @@ function mkLine(text, style, brand, ctx) {
   // Inherit the surrounding text colour so a line added over a photo or a dark
   // band stays readable, instead of defaulting to the body colour.
   var inheritColor = ctx && ctx.color ? ctx.color : brand.bodyColor;
-  el.textContent = text;
+  el.textContent = clean(text);
   el.style.cssText = "margin:8px 0 0;font-family:" + brand.bodyFont + ";font-size:" + size +
     ";font-weight:" + weight + ";line-height:1.45;color:" + inheritColor + ";";
   if (style === "micro") el.style.opacity = "0.75";
@@ -570,7 +581,7 @@ function mkLine(text, style, brand, ctx) {
 
 function mkButton(text, variant, brand) {
   var el = document.createElement("button");
-  el.textContent = text;
+  el.textContent = clean(text);
   var compact = variant === "compact";
   var base = "display:block;box-sizing:border-box;border:0;cursor:pointer;font-family:" + brand.buttonFont +
     ";font-weight:" + brand.buttonWeight + ";border-radius:" + brand.buttonRadius + ";";
@@ -610,7 +621,7 @@ function mkBadges(items, brand) {
   wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0;";
   (items || []).slice(0, 4).forEach(function (t) {
     var pill = document.createElement("span");
-    pill.textContent = t;
+    pill.textContent = clean(t);
     pill.style.cssText = "font-family:" + brand.bodyFont + ";font-size:12px;line-height:1;padding:7px 10px;border-radius:999px;" +
       "color:" + brand.bodyColor + ";box-shadow:inset 0 0 0 1px rgba(128,128,128,.35);white-space:nowrap;";
     wrap.appendChild(pill);
@@ -689,7 +700,7 @@ function applyOp(op, brand, opts) {
         while (host.children.length === 1 && (host.textContent || "").trim() === (host.children[0].textContent || "").trim()) {
           host = host.children[0];
         }
-        host.textContent = op.text;
+        host.textContent = clean(op.text);
         result.applied = true;
         break;
       }
@@ -714,7 +725,7 @@ function applyOp(op, brand, opts) {
           (neighbour.textContent || "").trim().length < 220 &&
           !/^h[1-6]$/i.test(neighbour.tagName);
         if (isSupportingLine) {
-          neighbour.textContent = op.text;
+          neighbour.textContent = clean(op.text);
           neighbour.setAttribute("data-ecd-added", "1");
           result.skipped.push("rewrote the existing line instead of adding a second one");
           result.applied = true;

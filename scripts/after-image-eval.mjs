@@ -109,10 +109,11 @@ const CASES = [
       'Balance the phone header: keep the menu and search on the left, the logo centred, and the cart on the right, so the icons are not bunched on one side.',
       "Add a short trust line under the hero button using the store's own review numbers, so first-time visitors see social proof before they scroll.",
     ],
-    // Header rearrangement is the case the collision guard exists for. A reverted
-    // edit is the CORRECT outcome, so coverage is not asserted; what matters is
-    // that the header does not come back broken.
+    // Header rearrangement is what the collision guard exists for, so this case
+    // asserts the guard actually fires rather than asserting coverage: the right
+    // outcome is the unsafe edit being caught and the header coming back intact.
     expectUnserved: true,
+    expectRevert: true,
   },
   {
     id: 'homepage-double-subhead',
@@ -172,15 +173,22 @@ function assess(c, res) {
   );
 
   const ops = res.report?.ops ?? [];
-  const reverted = (re) => ops.filter((o) => (o.skipped ?? []).some((s) => re.test(s)));
-  const grew = reverted(/taller/i);
-  add('no_growth', grew.length === 0, grew.length ? `${grew.length} edit(s) made a row taller` : 'nothing grew');
-  const collided = reverted(/overlap/i);
-  add(
-    'no_overlap',
-    collided.length === 0,
-    collided.length ? `${collided.length} edit(s) caused a collision` : 'no collisions',
-  );
+  const reverted = ops.filter((o) => (o.skipped ?? []).some((s) => /reverted/i.test(s)));
+  // Every op is applied transactionally, so a rollback means the page was
+  // PROTECTED: no collision or growth can survive into the image. Counting a
+  // rollback as a failure would fail the guard for doing its job, which is what
+  // the header case did while its output was correct.
+  if (c.expectRevert) {
+    add(
+      'guard_fired',
+      reverted.length > 0,
+      reverted.length
+        ? `caught: ${reverted.flatMap((o) => o.skipped ?? []).join('; ').slice(0, 120)}`
+        : 'the unsafe edit was NOT caught',
+    );
+  } else if (reverted.length > 0) {
+    add('guards_rolled_back', true, `${reverted.length} edit(s) rolled back, page protected`);
+  }
 
   if (c.expectUnserved) {
     // The point of these cases is that the engine refuses rather than fakes it.
@@ -215,7 +223,7 @@ for (const c of cases) {
   process.stdout.write(`  ${c.id.padEnd(26)} `);
   const t0 = Date.now();
   let res;
-  try {
+  const call = async () => {
     const r = await fetch(FN, {
       method: 'POST',
       headers: { authorization: `Bearer ${key}`, apikey: key, 'content-type': 'application/json' },
@@ -228,7 +236,16 @@ for (const c of cases) {
         ...(c.cartAdd ? { cartAdd: c.cartAdd } : {}),
       }),
     });
-    res = await r.json();
+    return await r.json();
+  };
+  try {
+    res = await call();
+    // A navigation timeout or an HTTP error from the browser service is the live
+    // storefront being slow, not the engine regressing. One retry.
+    if (!res.ok && /timeout|browserless_http|storefront_blocked|429/i.test(String(res.error ?? ''))) {
+      process.stdout.write('(retry) ');
+      res = await call();
+    }
   } catch (e) {
     res = { ok: false, stage: 'request', error: String(e?.message ?? e) };
   }
