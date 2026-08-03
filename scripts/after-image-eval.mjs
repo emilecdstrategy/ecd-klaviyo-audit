@@ -94,9 +94,13 @@ const CASES = [
     recommendations: [
       'Show the plant in a real garden setting as a second lifestyle photo so shoppers can judge its size in context.',
     ],
-    // The engine must NOT satisfy this one by fabricating imagery. Honest
-    // behaviour is to leave it unserved, so coverage is not asserted here.
+    // The engine must NOT satisfy this one by fabricating imagery: there is no
+    // photo of the plant in a garden to use, and inventing one is the single
+    // worst thing the old image path did. Refusing is therefore the pass
+    // condition, whether that shows up as an unserved fix or as every edit being
+    // rolled back.
     expectUnserved: true,
+    allowRefusal: true,
   },
   {
     id: 'homepage-header-balance',
