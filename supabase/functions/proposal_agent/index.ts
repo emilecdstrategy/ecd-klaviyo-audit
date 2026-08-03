@@ -6,7 +6,15 @@ import { fetchGoogleDoc } from "../_shared/fetch-google-doc.ts";
 import { fetchFirefliesTranscript } from "../_shared/fetch-fireflies-transcript.ts";
 import { buildSystemPrompt, type AgentSnapshot } from "./prompt.ts";
 import { AGENT_TOOLS, TERMINAL_TOOLS } from "./tools.ts";
-import { deepSanitize, sanitizeCopy, stripInternalNotes, validateDraft, validateEditSet, validateQuestion } from "./validate.ts";
+import {
+  deepSanitize,
+  isEmptyEditSet,
+  sanitizeCopy,
+  stripInternalNotes,
+  validateDraft,
+  validateEditSet,
+  validateQuestion,
+} from "./validate.ts";
 import { buildClientDossier, fetchClientHistory } from "./dossier.ts";
 import { readMemory, readVoiceProfile, scheduleMemoryUpdate } from "../_shared/agent-memory.ts";
 
@@ -391,6 +399,24 @@ serve(async (req) => {
 
       if (!validation.ok) {
         if (retriedValidation) {
+          // An edit set with no operations means the assistant concluded nothing
+          // should change, which is a fair answer to "no, don't add it". Erroring
+          // on it threw away a perfectly good reply and blocked the user, so when
+          // there is something to say, say it and make no edits.
+          if (turn.name === "propose_edits" && isEmptyEditSet(turn.input)) {
+            const spoken = stripInternalNotes(sanitizeCopy(turn.text ?? "")).trim();
+            if (spoken) {
+              assistantText = spoken;
+              break;
+            }
+          }
+          // Keep the payload that failed twice: without it, diagnosing this meant
+          // inferring from the error string alone.
+          console.error(
+            `proposal_agent: ${turn.name} failed validation twice (${validation.error}); payload=${
+              JSON.stringify(turn.input ?? null).slice(0, 1500)
+            }`,
+          );
           return json(
             { ok: false, error: { code: "bad_response", message: `The assistant produced an invalid ${turn.name} payload: ${validation.error}` } },
             { status: 200 },

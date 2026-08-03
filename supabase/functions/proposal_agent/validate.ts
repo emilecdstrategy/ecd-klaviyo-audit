@@ -1,3 +1,5 @@
+import { normalizeToArray } from "../_shared/tool-payload.ts";
+
 // Hand-rolled validation + copy sanitizing for agent payloads.
 
 export type ValidationResult<T> = { ok: true; value: T } | { ok: false; error: string };
@@ -151,14 +153,37 @@ const EDIT_OPS = new Set([
   "update_recipient",
 ]);
 
+/** True when propose_edits carried no operations at all. The caller treats this
+ * as "the assistant decided nothing should change", which is a legitimate answer
+ * to a message like "no, don't add it", rather than a malformed payload. */
+export function isEmptyEditSet(input: unknown): boolean {
+  const rec = input as { operations?: unknown } | null;
+  if (!rec || typeof rec !== "object") return false;
+  const ops = normalizeToArray(rec.operations);
+  return Array.isArray(ops) && ops.length === 0;
+}
+
 export function validateEditSet(
   input: any,
   ctx: { blockKeys: Set<string>; itemIds: Set<string>; contractSlugs: Set<string> },
 ): ValidationResult<any> {
   if (!input || typeof input !== "object") return { ok: false, error: "propose_edits input must be an object" };
   if (!isStr(input.summary) || !input.summary.trim()) return { ok: false, error: "summary is required" };
-  if (!Array.isArray(input.operations) || input.operations.length === 0) {
-    return { ok: false, error: "operations must be a non-empty array" };
+  const normalized = normalizeToArray(input.operations);
+  if (normalized === null) {
+    return {
+      ok: false,
+      error:
+        "operations could not be read as a list of edits. Send it as a JSON array of operation objects, not as text.",
+    };
+  }
+  input.operations = normalized;
+  if (input.operations.length === 0) {
+    return {
+      ok: false,
+      error:
+        "operations was empty. If the proposal should change, include at least one operation. If nothing should change, do NOT call propose_edits: reply with a short message instead.",
+    };
   }
   for (let i = 0; i < input.operations.length; i++) {
     const o = input.operations[i];

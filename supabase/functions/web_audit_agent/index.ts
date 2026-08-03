@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { normalizeToArray } from "../_shared/tool-payload.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { requireStaffUserId, assertServiceRoleClient } from "../_shared/auth.ts";
 import { createLlmClient, type LlmImage, type LlmMessage, type LlmTool } from "../_shared/llm-adapter.ts";
@@ -229,7 +230,10 @@ serve(async (req) => {
         if (!SECTION_KEYS.includes(sectionKey)) return { error: `section_key must be one of ${SECTION_KEYS.join(", ")}` };
         const section = byKey.get(sectionKey);
         const count = section ? webFindings(section).length : 0;
-        const rawOps = Array.isArray(input.operations) ? input.operations : [];
+        // Same shape tolerance as the proposal agent: a large edit set can arrive
+        // with operations JSON-encoded as a string, which used to silently become
+        // an empty list and lose every edit the assistant meant to make.
+        const rawOps = normalizeToArray(input.operations) ?? [];
         const operations: Array<Record<string, unknown>> = [];
         for (const raw of rawOps) {
           const o = (raw ?? {}) as Record<string, unknown>;
