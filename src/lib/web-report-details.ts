@@ -37,7 +37,16 @@ export function findingHighlights(f: WebFinding): WebHighlight[] {
   return out;
 }
 
-export type WebAfterImage = { url: string; generated_at: string };
+export type WebAfterImage = {
+  url: string;
+  generated_at: string;
+  /** Which engine produced it: 'html' edits the real page, 'gemini_fallback'
+   * repaints the screenshot. Shown as an editor-only badge so a result being
+   * judged is always attributable. */
+  engine?: 'html' | 'gemini_fallback';
+  applied_count?: number;
+  total_count?: number;
+};
 
 export type WebSectionDetail = {
   pros: string[];
@@ -118,7 +127,16 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
   const parseAfter = (v: unknown): WebAfterImage | undefined => {
     const rec = asRecord(v);
     const url = asString(rec.url);
-    return url ? { url, generated_at: asString(rec.generated_at) } : undefined;
+    if (!url) return undefined;
+    const engine = asString(rec.engine);
+    const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+    return {
+      url,
+      generated_at: asString(rec.generated_at),
+      engine: engine === 'html' || engine === 'gemini_fallback' ? engine : undefined,
+      applied_count: num(rec.applied_count),
+      total_count: num(rec.total_count),
+    };
   };
   const after_images: WebSectionDetail['after_images'] = {};
   const desktopAfter = parseAfter(afterRaw.desktop);

@@ -195,19 +195,23 @@ export async function generateSectionAfter(
 
 /** Fetch just the current after-image URLs for a section (used to poll the
  * report so auto-generated afters appear without a manual refresh). */
+export type AfterImageMeta = { url: string; engine?: string; applied_count?: number; total_count?: number };
+
 export async function fetchSectionAfterImages(
   sectionId: string,
-): Promise<{ desktop?: string; mobile?: string }> {
+): Promise<{ desktop?: string; mobile?: string; meta?: { desktop?: AfterImageMeta; mobile?: AfterImageMeta } }> {
   const { data } = await supabase
     .from('audit_sections')
     .select('section_details')
     .eq('id', sectionId)
     .maybeSingle();
   const web = ((data?.section_details as Record<string, unknown> | null | undefined)?.web ?? {}) as Record<string, unknown>;
-  const ai = (web.after_images ?? {}) as Record<string, { url?: string } | undefined>;
-  const out: { desktop?: string; mobile?: string } = {};
-  if (ai.desktop?.url) out.desktop = ai.desktop.url;
-  if (ai.mobile?.url) out.mobile = ai.mobile.url;
+  const ai = (web.after_images ?? {}) as Record<string, AfterImageMeta | undefined>;
+  const out: { desktop?: string; mobile?: string; meta?: { desktop?: AfterImageMeta; mobile?: AfterImageMeta } } = {};
+  const meta: { desktop?: AfterImageMeta; mobile?: AfterImageMeta } = {};
+  if (ai.desktop?.url) { out.desktop = ai.desktop.url; meta.desktop = ai.desktop; }
+  if (ai.mobile?.url) { out.mobile = ai.mobile.url; meta.mobile = ai.mobile; }
+  out.meta = meta;
   return out;
 }
 

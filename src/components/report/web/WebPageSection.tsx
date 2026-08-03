@@ -36,6 +36,8 @@ export default function WebPageSection({
   // Locally overrides the persisted after image right after a (re)generate, so
   // the new concept shows without a full report reload.
   const [afterOverride, setAfterOverride] = useState<{ desktop?: string; mobile?: string }>({});
+  // Which engine produced the freshly generated image, for the editor-only badge.
+  const [engineOverride, setEngineOverride] = useState<{ desktop?: string; mobile?: string }>({});
 
   // "After" images are generated ~1-2 min AFTER analysis completes (the report is
   // viewable before they finish). Poll briefly so they appear on their own without
@@ -49,13 +51,17 @@ export default function WebPageSection({
     let cancelled = false;
     const id = window.setInterval(async () => {
       tries += 1;
-      let imgs: { desktop?: string; mobile?: string } = {};
+      let imgs: Awaited<ReturnType<typeof fetchSectionAfterImages>> = {};
       try {
         imgs = await fetchSectionAfterImages(section.id);
       } catch { /* transient, keep polling */ }
       if (cancelled) return;
       if (imgs.desktop || imgs.mobile) {
         setAfterOverride((prev) => ({ desktop: prev.desktop ?? imgs.desktop, mobile: prev.mobile ?? imgs.mobile }));
+        setEngineOverride((prev) => ({
+          desktop: prev.desktop ?? imgs.meta?.desktop?.engine,
+          mobile: prev.mobile ?? imgs.meta?.mobile?.engine,
+        }));
       }
       const haveD = Boolean(imgs.desktop || d0.desktop?.url);
       const haveM = Boolean(imgs.mobile || d0.mobile?.url);
@@ -129,6 +135,8 @@ export default function WebPageSection({
   };
 
   const afterUrl = afterOverride[viewport] ?? detail.after_images[viewport]?.url ?? null;
+  const afterMeta = detail.after_images[viewport];
+  const afterEngine = engineOverride[viewport] ?? afterMeta?.engine ?? null;
   // Both Before and After are always shown together when an after exists: mobile
   // side-by-side (narrow shots), desktop stacked (before above, after below). No
   // toggle needed.
@@ -144,6 +152,11 @@ export default function WebPageSection({
       await flushSaves();
       const res = await generateSectionAfter(section.audit_id, section.section_key, viewport);
       setAfterOverride((prev) => ({ ...prev, [res.viewport]: res.url }));
+      // Read back which engine served it, so the badge is right without a reload.
+      try {
+        const fresh = await fetchSectionAfterImages(section.id);
+        setEngineOverride((prev) => ({ ...prev, [res.viewport]: fresh.meta?.[res.viewport]?.engine }));
+      } catch { /* the badge just stays as it was */ }
       if (res.viewport !== viewport) setViewport(res.viewport);
     } catch (e) {
       setAfterError(e instanceof Error ? e.message : 'Could not generate the after image.');
@@ -239,7 +252,30 @@ export default function WebPageSection({
                   </div>
                   {/* After (AI concept) */}
                   <div className="flex min-h-0 flex-col">
-                    <p className="mb-1 text-center text-[11px] font-semibold uppercase tracking-wide text-brand-primary">After</p>
+                    <div className="mb-1 flex items-center justify-center gap-2">
+                      <p className="text-[11px] font-semibold uppercase tracking-wide text-brand-primary">After</p>
+                      {/* Editor-only, never shown to a client: which engine built
+                          this image, so what is being judged is unambiguous. */}
+                      {editMode && afterEngine && (
+                        <span
+                          title={afterEngine === 'html'
+                            ? 'Built by editing the real page: the photos, fonts and colours are the store own assets, so nothing was repainted.'
+                            : 'Built by the image model as a fallback, because the page could not be edited directly. Check the photos.'}
+                          className={`rounded-full px-1.5 py-0.5 text-[9px] font-semibold uppercase tracking-wide ${
+                            afterEngine === 'html'
+                              ? 'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-200'
+                              : 'bg-amber-50 text-amber-700 ring-1 ring-amber-200'
+                          }`}
+                        >
+                          {afterEngine === 'html' ? 'Real page' : 'Image model'}
+                        </span>
+                      )}
+                      {editMode && afterMeta?.total_count != null && afterMeta.applied_count != null && (
+                        <span className="text-[9px] font-medium uppercase tracking-wide text-gray-400">
+                          {afterMeta.applied_count}/{afterMeta.total_count} fixes
+                        </span>
+                      )}
+                    </div>
                     <div
                       className={`cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30 ${twoUp ? 'min-h-0 flex-1' : ''}`}
                       onClick={() => setLightbox(afterUrl)}
