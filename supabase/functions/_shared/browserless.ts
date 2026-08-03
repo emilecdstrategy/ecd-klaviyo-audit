@@ -49,7 +49,12 @@ function b64ToBytes(b64: string): Uint8Array {
 // optional cart-drawer click, and (for the viewport shot) element-box collection.
 const FUNCTION_CODE = `
 export default async ({ page, context }) => {
-  const { url, width, height, fullPage, withElements, cartAdd, isMobile, secondFold } = context;
+  const { url, width, height, fullPage, withElements, cartAdd, isMobile, secondFold, editScript } = context;
+  if (editScript) {
+    // Must be set before navigation; lets our injected edits run on stores
+    // whose CSP would otherwise reject evaluated scripts.
+    try { await page.setBypassCSP(true); } catch (e) {}
+  }
   // Some storefronts serve a blank page or bot-block the default HeadlessChrome
   // UA at a phone viewport, so emulate a real iPhone (UA + touch) for mobile.
   if (isMobile) {
@@ -411,6 +416,20 @@ export default async ({ page, context }) => {
     return { data: { error: "storefront_blocked (final: " + finalText.slice(0, 90) + ")" }, type: "application/json" };
   }
 
+  // HTML-after mode: apply DOM/CSS edits to the REAL rendered page, then shoot
+  // it. Photos, fonts, colors and the logo are the site's own assets, so brand
+  // fidelity is by construction rather than by prompt. A failed script returns
+  // an error instead of silently shooting the unedited page.
+  if (editScript) {
+    try {
+      const AsyncFunction = Object.getPrototypeOf(async function () {}).constructor;
+      await page.evaluate(new AsyncFunction(editScript));
+      await new Promise((r) => setTimeout(r, 700));
+    } catch (e) {
+      return { data: { error: "edit_script_failed: " + String(e && e.message || e).slice(0, 200) }, type: "application/json" };
+    }
+  }
+
   const screenshot = await page.screenshot({ encoding: "base64", fullPage: !!fullPage, captureBeyondViewport: !!fullPage });
 
   // Optional second fold: the same page, scrolled down one viewport. Costs one
@@ -449,6 +468,11 @@ export async function captureWithBrowserless(input: {
    * them. Datacenter costs a third of residential per MB; residential is the
    * fallback for storefronts that block datacenter traffic. */
   proxyTier?: "datacenter" | "residential";
+  /** DOM/CSS edit script (a function body) executed on the rendered page just
+   * before the screenshot. This is what turns a capture into an HTML "after":
+   * the page is re-shot with the edits applied, so every photo and brand asset
+   * stays the site's own. */
+  editScript?: string;
   /** Overall time budget. The cart flow chains several navigations (product
    * page, permalink add, drawer) and over a residential proxy it can be doing
    * fine at 90s, so carts pass a bigger budget instead of being aborted
@@ -500,6 +524,7 @@ export async function captureWithBrowserless(input: {
           cartAdd: input.cartAdd ?? null,
           isMobile: input.viewport === "mobile",
           secondFold: Boolean(input.secondFold),
+          editScript: input.editScript ?? null,
         },
       }),
       signal: ctrl.signal,
