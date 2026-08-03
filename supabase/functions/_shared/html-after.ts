@@ -23,6 +23,32 @@
 // The model's only job is choosing WHICH edits to make, from a fixed vocabulary,
 // against real selectors from a DOM outline. It never writes code we execute:
 // ops are data, interpreted by the fixed runtime below.
+//
+// RULE PARITY WITH THE IMAGE ERA. Every rule learned from a Gemini failure must
+// have an owner on this path too. The ledger, so the next added rule gets one:
+//   photos untouched / uncropped / never substituted ... structural (nothing redraws them)
+//   phone grid never gains columns .................. setColumns clamp
+//   announcement bar stays one line ................. height lock (lockedRegionViolation)
+//   cart drawer never taller ........................ height lock
+//   cart drawer stays pinned, never a centred modal . drawer horizontal lock
+//   moving never duplicates ......................... real DOM move (one node)
+//   floating widget moves ........................... offset nudge, not reparenting
+//   no second headline / subheadline ................ existingSupportingLine rewrite
+//   say it once (no repeated info) .................. add_line duplicate-text check
+//   one add control per card ........................ per-card guard
+//   no duplicate star rating ........................ per-card guard
+//   adding means VISIBLE ............................ offscreen + no-visible-change checks
+//   nothing overlaps after an edit .................. collision guard (per-op rollback)
+//   nothing grows a row it should not ............... move height check
+//   text legible over photos ........................ scrim + white text + shadow
+//   stars look like ratings ......................... gold 19px stars, contrast-aware count
+//   buttons solid, flat, on-brand ................... cloned from the theme's own button
+//   no em dashes in client copy ..................... clean() on every injected string
+//   never invent numbers / imagery .................. author rule + honest refusal
+//   calm beats complete / first fold light .......... author rules (HTML_AFTER_RULES)
+//   nav fits one row ................................ NOT enforceable here yet: the
+//     'More' menu rewrite is real information architecture; the author is told to
+//     leave it as advice, and the fix reports as not shown rather than faked.
 import { createLlmClient, type LlmMessage, type LlmTool } from "./llm-adapter.ts";
 import { HTML_AFTER_RULES } from "./ecommerce-ux-kb.ts";
 import type { Viewport } from "./after-image-prompt.ts";
@@ -483,11 +509,77 @@ function overlapKeys(rects) {
   return keys;
 }
 
+/** Undo one op: remove what it injected, then restore markup, inline styles and
+ *  DOM position of everything it touched. */
+function undoOp(snapshot, addedBefore) {
+  q("[data-ecd-added]").forEach(function (node) {
+    if (addedBefore.indexOf(node) === -1 && node.parentElement) node.parentElement.removeChild(node);
+  });
+  snapshot.forEach(function (s) {
+    s.el.innerHTML = s.text;
+    if (s.style === null) s.el.removeAttribute("style");
+    else s.el.setAttribute("style", s.style);
+    if (s.parent && s.el.parentElement !== s.parent) s.parent.insertBefore(s.el, s.next);
+  });
+}
+
+/** Geometry of the targets and their immediate surroundings. Comparing this
+ *  before and after an op is how we tell a real change from a no-op: the header
+ *  fix "applied" a move and a style, and the header came back pixel-identical,
+ *  yet the report still counted the fix as done. */
+function layoutSignature(targets) {
+  var parts = [];
+  targets.slice(0, 12).forEach(function (el) {
+    var r = el.getBoundingClientRect();
+    parts.push([Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)].join(","));
+    var parent = el.parentElement;
+    if (parent) {
+      Array.prototype.slice.call(parent.children).forEach(function (sib) {
+        var sr = sib.getBoundingClientRect();
+        parts.push([Math.round(sr.x), Math.round(sr.y), Math.round(sr.width), Math.round(sr.height)].join(","));
+      });
+    }
+  });
+  return parts.join("|");
+}
+
 function newCollisions(list, beforeKeys) {
   var after = overlapKeys(rectsOf(list));
   var found = 0;
   for (var k in after) if (!beforeKeys[k]) found++;
   return found;
+}
+
+/** An existing line of supporting copy near this anchor, if there is one, so a
+ *  new line rewrites it instead of stacking a second one under it. Searches the
+ *  anchor's text block (its nearest multi-child container), not just siblings. */
+function existingSupportingLine(anchor, position) {
+  var block = anchor.parentElement;
+  for (var d = 0; d < 2 && block && block.children.length < 2 && block !== document.body; d++) {
+    block = block.parentElement;
+  }
+  if (!block) return null;
+  var heading = /^h[1-6]$/i.test(anchor.tagName) ? anchor : block.querySelector("h1, h2, h3");
+  var candidates = Array.prototype.slice.call(block.querySelectorAll("p, div, span"))
+    .filter(function (c) {
+      if (c === anchor || c.hasAttribute("data-ecd-added")) return false;
+      if (!isVisible(c)) return false;
+      if (c.querySelector("img, picture, video, svg, button, input, a")) return false;
+      if (c.children.length > 0) return false;
+      var t = (c.textContent || "").trim();
+      // Supporting copy, not a heading, a price, a label or a paragraph of body text.
+      if (t.length < 12 || t.length > 240) return false;
+      if (heading && (heading.textContent || "").trim() === t) return false;
+      if (/^[^a-zA-Z]*[$£€]/.test(t)) return false;
+      return true;
+    });
+  if (candidates.length === 0) return null;
+  // Whichever sits nearest the anchor in the direction the new line would go.
+  var ar = anchor.getBoundingClientRect();
+  candidates.sort(function (a, b) {
+    return Math.abs(a.getBoundingClientRect().top - ar.bottom) - Math.abs(b.getBoundingClientRect().top - ar.bottom);
+  });
+  return position === "before" ? candidates[0] : candidates[candidates.length - 1];
 }
 
 function photoState() {
@@ -554,6 +646,70 @@ function brandTokens(hint) {
 
 function mark(el) { el.setAttribute("data-ecd-added", "1"); return el; }
 
+// ---------------------------------------------------------------------------
+// Contrast. Text sitting over a photograph needs help, and the first version
+// gave it none: it copied the neighbouring computed colour and hoped. On the
+// LazyLeaf hero that produced a benefit line and a star rating that were barely
+// legible over a bright garden photo. So anything we place over imagery gets
+// white text, a shadow, and a dark scrim on the photo behind it.
+// ---------------------------------------------------------------------------
+
+/** The nearest ancestor that is a photographic backdrop: it either has a
+ *  background image, or it contains an image covering most of its own box. */
+function backdropOf(el) {
+  var node = el;
+  for (var d = 0; d < 5 && node && node.nodeType === 1 && node !== document.body; d++) {
+    var cs = getComputedStyle(node);
+    var r = node.getBoundingClientRect();
+    if (r.width > 120 && r.height > 80) {
+      if (cs.backgroundImage && cs.backgroundImage !== "none" && cs.backgroundImage.indexOf("url(") !== -1) return node;
+      var imgs = node.querySelectorAll("img, video");
+      for (var i = 0; i < imgs.length; i++) {
+        var ir = imgs[i].getBoundingClientRect();
+        if (ir.width * ir.height > r.width * r.height * 0.6) return node;
+      }
+    }
+    node = node.parentElement;
+  }
+  return null;
+}
+
+/** Put a dark gradient over the photo, once, so text on top of it can be read.
+ *  The photograph itself is untouched: this is an overlay, which is what real
+ *  storefronts do, and it is what the audit recommends in the first place. */
+function ensureScrim(backdrop) {
+  if (!backdrop || backdrop.querySelector(":scope > [data-ecd-scrim]")) return false;
+  var cs = getComputedStyle(backdrop);
+  if (cs.position === "static") backdrop.style.setProperty("position", "relative", "important");
+  var scrim = document.createElement("div");
+  scrim.setAttribute("data-ecd-scrim", "1");
+  scrim.setAttribute("data-ecd-added", "1");
+  scrim.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:0;" +
+    "background:linear-gradient(180deg, rgba(0,0,0,.34) 0%, rgba(0,0,0,.14) 45%, rgba(0,0,0,.44) 100%);";
+  backdrop.insertBefore(scrim, backdrop.firstChild);
+  // Lift the real content above the scrim, or the gradient would cover the very
+  // text it exists to make readable.
+  Array.prototype.slice.call(backdrop.children).forEach(function (child) {
+    if (child === scrim) return;
+    var ccs = getComputedStyle(child);
+    if (ccs.position === "static") child.style.setProperty("position", "relative", "important");
+    child.style.setProperty("z-index", "1", "important");
+  });
+  return true;
+}
+
+/** Everything an injected element needs to know about where it is landing. */
+function placementContext(el) {
+  var backdrop = backdropOf(el);
+  var cs = getComputedStyle(el);
+  return {
+    onDark: Boolean(backdrop),
+    backdrop: backdrop,
+    color: cs.color,
+    center: cs.textAlign === "center",
+  };
+}
+
 // House style: no em or en dashes in anything we write into a client's page. The
 // author reaches for them constantly ("Loved by our customers — shop the best
 // sellers"), so it is enforced here rather than asked for in a prompt.
@@ -569,19 +725,89 @@ function mkLine(text, style, brand, ctx) {
   var el = document.createElement("p");
   var size = style === "micro" ? "12px" : style === "subhead" ? "16px" : "14px";
   var weight = style === "subhead" ? "500" : "400";
-  // Inherit the surrounding text colour so a line added over a photo or a dark
-  // band stays readable, instead of defaulting to the body colour.
-  var inheritColor = ctx && ctx.color ? ctx.color : brand.bodyColor;
+  var onDark = ctx && ctx.onDark;
+  // Over a photograph, inheriting the neighbour's colour is not enough: pin it
+  // to white with a shadow, and rely on the scrim behind it for the rest. Off a
+  // photograph, follow the surrounding text.
+  var color = onDark ? "#ffffff" : (ctx && ctx.color ? ctx.color : brand.bodyColor);
   el.textContent = clean(text);
   el.style.cssText = "margin:8px 0 0;font-family:" + brand.bodyFont + ";font-size:" + size +
-    ";font-weight:" + weight + ";line-height:1.45;color:" + inheritColor + ";";
-  if (style === "micro") el.style.opacity = "0.75";
+    ";font-weight:" + (onDark ? "500" : weight) + ";line-height:1.45;color:" + color + ";" +
+    (onDark ? "text-shadow:0 1px 8px rgba(0,0,0,.6);" : "") +
+    (ctx && ctx.center ? "text-align:center;" : "");
+  if (style === "micro" && !onDark) el.style.opacity = "0.8";
   return mark(el);
+}
+
+/** Bands whose height is fixed by design: the announcement bar and the cart
+ *  drawer. An edit may change what they say but never how tall they are, which
+ *  is a rule the audit itself applies and the engine kept breaking. */
+function heightLockedRegions() {
+  var found = [];
+  var push = function (el, maxH) {
+    if (!el || !isVisible(el)) return;
+    var h = el.getBoundingClientRect().height;
+    if (h > 0 && h <= maxH && found.indexOf(el) === -1) found.push(el);
+  };
+  // Announcement bar, by name or by being the thin full-width band at the top.
+  q("[class*='announce'], [id*='announce'], [class*='announcement']").forEach(function (el) { push(el, 90); });
+  Array.prototype.slice.call(document.body.children).slice(0, 6).forEach(function (el) {
+    var r = el.getBoundingClientRect();
+    if (r.top <= 4 && r.width >= window.innerWidth * 0.9) push(el, 72);
+  });
+  // Cart drawer: it must never grow, or the checkout button leaves the screen.
+  q("[class*='cart-drawer'], [class*='drawer'], [class*='mini-cart'], [id*='cart-drawer']").forEach(function (el) {
+    if (isVisible(el) && el.getBoundingClientRect().height > 200) {
+      if (found.indexOf(el) === -1) found.push(el);
+    }
+  });
+  return found.map(function (el) {
+    var r = el.getBoundingClientRect();
+    var cn = ((typeof el.className === "string" ? el.className : "") + " " + (el.id || "")).toLowerCase();
+    return { el: el, h: r.height, left: r.left, isDrawer: /drawer|mini-cart/.test(cn) };
+  });
+}
+
+/** A human-readable reason when a locked band was violated, or null. Height is
+ *  locked for all of them; the cart drawer also locks its horizontal position,
+ *  because "slide cart stays pinned to the right, never a centred modal" was an
+ *  image-era rule with no HTML-side guard. */
+function lockedRegionViolation(locked) {
+  for (var i = 0; i < locked.length; i++) {
+    var r = locked[i].el.getBoundingClientRect();
+    if (r.height - locked[i].h > 2) {
+      return "made a fixed-height band (announcement bar or cart drawer) " + Math.round(r.height - locked[i].h) + "px taller";
+    }
+    if (locked[i].isDrawer && Math.abs(r.left - locked[i].left) > 8) {
+      return "moved the cart drawer " + Math.round(Math.abs(r.left - locked[i].left)) + "px sideways; it stays pinned where it is";
+    }
+  }
+  return null;
+}
+
+/** True when this element lives inside a thin band, where a full-width block
+ *  button would force the band onto a second line. */
+function inThinBand(el) {
+  var node = el;
+  for (var d = 0; d < 5 && node && node.nodeType === 1 && node !== document.body; d++) {
+    var r = node.getBoundingClientRect();
+    if (r.width >= window.innerWidth * 0.8 && r.height > 0 && r.height <= 72) return true;
+    node = node.parentElement;
+  }
+  return false;
 }
 
 function mkButton(text, variant, brand) {
   var el = document.createElement("button");
   el.textContent = clean(text);
+  // An announcement bar asked for "a short link like Shop now inside the bar"
+  // and got a full-width block button, which doubled the bar's height. In a thin
+  // band the right control is an inline link on the line that is already there.
+  if (variant === "inline") {
+    el.style.cssText = "display:inline;background:none;border:0;padding:0;margin:0 0 0 10px;cursor:pointer;" +
+      "font:inherit;color:inherit;text-decoration:underline;text-underline-offset:2px;font-weight:700;";
+    return mark(el);
+  }
   var compact = variant === "compact";
   var base = "display:block;box-sizing:border-box;border:0;cursor:pointer;font-family:" + brand.buttonFont +
     ";font-weight:" + brand.buttonWeight + ";border-radius:" + brand.buttonRadius + ";";
@@ -597,22 +823,33 @@ function mkButton(text, variant, brand) {
   return mark(el);
 }
 
-function mkRating(stars, count, brand) {
+function mkRating(stars, count, brand, ctx) {
   var n = Math.max(1, Math.min(5, Math.round(Number(stars) || 5)));
   var el = document.createElement("div");
   var filled = "";
   for (var i = 0; i < 5; i++) filled += i < n ? "★" : "☆";
   var starSpan = document.createElement("span");
   starSpan.textContent = filled;
-  starSpan.style.cssText = "letter-spacing:2px;color:" + brand.buttonBg + ";font-size:15px;";
+  // Review stars are GOLD, not the brand colour, and they have to be big enough
+  // to read. Tinting them with the theme's button green produced a row of tiny
+  // green marks nobody recognised as a rating: gold is the convention shoppers
+  // read instantly, on every storefront.
+  var onDark = ctx && ctx.onDark;
+  starSpan.style.cssText = "letter-spacing:2px;color:#f5a524;font-size:19px;line-height:1;" +
+    (onDark ? "text-shadow:0 1px 6px rgba(0,0,0,.55);" : "");
   el.appendChild(starSpan);
   if (count) {
     var c = document.createElement("span");
-    c.textContent = " " + count;
-    c.style.cssText = "font-family:" + brand.bodyFont + ";font-size:13px;color:" + brand.bodyColor + ";opacity:.8;";
+    c.textContent = " " + clean(count);
+    // The count sits next to the stars, so it needs the same contrast treatment
+    // as any other text we add: it was rendering near-invisible over a photo.
+    c.style.cssText = "font-family:" + brand.bodyFont + ";font-size:14px;font-weight:500;color:" +
+      (onDark ? "#ffffff" : brand.bodyColor) + ";" +
+      (onDark ? "text-shadow:0 1px 6px rgba(0,0,0,.55);" : "opacity:.85;");
     el.appendChild(c);
   }
-  el.style.cssText = "display:flex;align-items:center;gap:4px;margin:8px 0 0;";
+  el.style.cssText = "display:flex;align-items:center;gap:6px;margin:10px 0 0;" +
+    (ctx && ctx.center ? "justify-content:center;" : "");
   return mark(el);
 }
 
@@ -701,6 +938,10 @@ function applyOp(op, brand, opts) {
           host = host.children[0];
         }
         host.textContent = clean(op.text);
+        // Rewriting a hero headline puts new words over the same photo, so give
+        // it the same readability treatment as anything we inject.
+        var textBackdrop = backdropOf(host);
+        if (textBackdrop) ensureScrim(textBackdrop);
         result.applied = true;
         break;
       }
@@ -712,27 +953,26 @@ function applyOp(op, brand, opts) {
           result.skipped.push("this line already appears on the page");
           return;
         }
-        // NEVER STACK A SECOND SUBHEADLINE. If the spot already holds a short
-        // line of supporting copy, rewrite THAT line instead of adding another:
-        // the homepage came back with "Hand-picked plants and garden tools" sat
-        // directly above the store's existing subhead, which is the duplicate the
-        // rules have always forbidden and a prompt cannot prevent.
+        // NEVER STACK A SECOND SUBHEADLINE. Checking only the immediate sibling
+        // was not enough: on a later run the anchor was a different node, the
+        // sibling test missed, and the hero came back with "Premium plants, tools
+        // and supplies" stacked under the store's own subhead. The whole text
+        // block around the anchor is searched now.
         var pos = op.position || "after";
-        var neighbour = pos === "after" ? el.nextElementSibling : pos === "before" ? el.previousElementSibling : null;
-        var isSupportingLine = neighbour && isVisible(neighbour) &&
-          !neighbour.querySelector("img, picture, video, svg, button, input") &&
-          (neighbour.textContent || "").trim().length > 0 &&
-          (neighbour.textContent || "").trim().length < 220 &&
-          !/^h[1-6]$/i.test(neighbour.tagName);
-        if (isSupportingLine) {
-          neighbour.textContent = clean(op.text);
-          neighbour.setAttribute("data-ecd-added", "1");
-          result.skipped.push("rewrote the existing line instead of adding a second one");
+        var existing = existingSupportingLine(el, pos);
+        if (existing) {
+          existing.textContent = clean(op.text);
+          existing.setAttribute("data-ecd-added", "1");
+          var exCtx = placementContext(existing);
+          if (exCtx.backdrop) ensureScrim(exCtx.backdrop);
+          result.skipped.push("rewrote the existing supporting line instead of adding a second one");
           result.applied = true;
           break;
         }
+        var lineCtx = placementContext(el);
+        if (lineCtx.backdrop) ensureScrim(lineCtx.backdrop);
         var cs = getComputedStyle(el);
-        var line = mkLine(op.text, op.style || "benefit", brand, { color: cs.color });
+        var line = mkLine(op.text, op.style || "benefit", brand, lineCtx);
         // A HEADING'S SUPPORTING LINE GOES INSIDE THE HEADING. Hero titles are
         // usually absolutely positioned and centred inside a banner, so a sibling
         // <p> "after" the title lands wherever the banner's own layout puts it:
@@ -761,7 +1001,11 @@ function applyOp(op, brand, opts) {
           result.skipped.push("an add control was already added to this card");
           return;
         }
-        place(mkButton(op.text, op.variant || "primary", brand), el, op.position || "append");
+        // A thin band (an announcement bar) can only take an inline link; a block
+        // button there is what turned a one-line bar into two.
+        var btnVariant = inThinBand(el) ? "inline" : (op.variant || "primary");
+        if (btnVariant === "inline") result.skipped.push("used an inline link: the target is a thin band");
+        place(mkButton(op.text, btnVariant, brand), el, op.position || "append");
         result.applied = true;
         break;
       }
@@ -775,7 +1019,9 @@ function applyOp(op, brand, opts) {
           result.skipped.push("this card already shows a rating");
           return;
         }
-        place(mkRating(op.stars, op.count, brand), el, op.position || "after");
+        var ratingCtx = placementContext(el);
+        if (ratingCtx.backdrop) ensureScrim(ratingCtx.backdrop);
+        place(mkRating(op.stars, op.count, brand, ratingCtx), el, op.position || "after");
         result.applied = true;
         break;
       }
@@ -880,24 +1126,56 @@ function applyOpGuarded(op, brand, opts, watch) {
   });
   var addedBefore = q("[data-ecd-added]");
   var beforeKeys = overlapKeys(rectsOf(watch));
+  var locked = heightLockedRegions();
+  // What the page looked like around the target, so an op that changes nothing
+  // can be told apart from one that works.
+  var sigBefore = layoutSignature(targets);
 
   var result = applyOp(op, brand, opts);
   if (!result.applied) return result;
 
+  var violation = lockedRegionViolation(locked);
+  if (violation) {
+    undoOp(snapshot, addedBefore);
+    result.applied = false;
+    result.skipped = (result.skipped || []).concat(["reverted: this edit " + violation]);
+    return result;
+  }
+
   if (newCollisions(watch, beforeKeys) > 0) {
-    // Undo, in reverse: remove what this op injected, then restore markup,
-    // inline styles and DOM position.
-    q("[data-ecd-added]").forEach(function (node) {
-      if (addedBefore.indexOf(node) === -1 && node.parentElement) node.parentElement.removeChild(node);
-    });
-    snapshot.forEach(function (s) {
-      s.el.innerHTML = s.text;
-      if (s.style === null) s.el.removeAttribute("style");
-      else s.el.setAttribute("style", s.style);
-      if (s.parent && s.el.parentElement !== s.parent) s.parent.insertBefore(s.el, s.next);
-    });
+    undoOp(snapshot, addedBefore);
     result.applied = false;
     result.skipped = (result.skipped || []).concat(["reverted: this edit made existing elements overlap"]);
+    return result;
+  }
+
+  // Nothing was injected and nothing moved: the edit ran but the page looks
+  // exactly as it did, so the fix is NOT applied however successful the op call
+  // was. Reporting it as done is how a header "fix" shipped that changed nothing.
+  var addedNow = q("[data-ecd-added]");
+  var injected = addedNow.length > addedBefore.length;
+  if (!injected && layoutSignature(targets) === sigBefore) {
+    result.applied = false;
+    result.skipped = (result.skipped || []).concat(["no visible change: the page renders identically"]);
+    return result;
+  }
+
+  // An element added below the crop is not in the concept image, so the fix is
+  // not demonstrated even though the edit ran. A star rating landed off the shot
+  // this way and read as simply missing. Say so instead of counting it as shown.
+  if (injected) {
+    var fresh = addedNow.filter(function (n) {
+      return addedBefore.indexOf(n) === -1 && !n.hasAttribute("data-ecd-scrim");
+    });
+    var anyOnScreen = fresh.some(function (n) {
+      var r = n.getBoundingClientRect();
+      return r.height > 0 && r.width > 0 && r.top < window.innerHeight && r.bottom > 0;
+    });
+    if (fresh.length > 0 && !anyOnScreen) {
+      result.skipped = (result.skipped || []).concat(["added below the visible fold, so it is not in the image"]);
+      result.offscreen = true;
+      result.applied = false;
+    }
   }
   return result;
 }

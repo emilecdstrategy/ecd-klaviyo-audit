@@ -114,5 +114,8 @@ export const HTML_AFTER_RULES = [
   "A QUICK ADD BELONGS ON THE ROW IT SERVES. On product cards and cart upsell rows use the compact button variant so the card keeps its height and the photo keeps its shape.",
   "MOVE, DO NOT DUPLICATE. When something is in the wrong place, move it. Never hide it and add a lookalike somewhere else.",
   "ONE PRIMARY ACTION PER SCREEN. If a page has several equal-looking buttons, emphasize the one that matters instead of adding another.",
+  "A THIN BAR HAS NO SPARE ROOM. To add a link into an announcement bar that is already full, shorten its wording in the same edit set. Adding to a full bar without shortening it pushes the bar onto a second line, and the edit will be rolled back.",
+  "ADDING MEANS VISIBLE. Anchor every addition to an element inside the FIRST FOLD, near the spot the fix names. An element added to an anchor below the crop is not in the concept image at all, and the edit will be marked as not shown.",
+  "HEADER REARRANGEMENT IS A LAST RESORT. Theme headers position their icons with their own CSS, and moving or restyling them usually either changes nothing or makes icons collide, and the edit gets rolled back either way. If a header fix can be expressed as ONE small change (hide a duplicate icon, centre the logo wrapper), do that one change; otherwise leave the header alone rather than half-doing it.",
   "PROMISE ONLY WHAT THE PAGE CAN BACK UP. Ratings, review counts, delivery times and stock claims must come from what the page already shows. Never invent a number.",
 ].map((rule) => `- ${rule}`).join("\n");

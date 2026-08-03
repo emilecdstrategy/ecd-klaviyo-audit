@@ -146,6 +146,55 @@ const CASES = [
       "Give each suggestion in the 'You may also like' row a compact add control on its existing row, so an extra item can be added without leaving the cart.",
     ],
   },
+  {
+    id: 'hero-contrast',
+    complaint:
+      'Text placed over the hero photo (a benefit line, a star rating and its count) was barely readable: no scrim, tiny green stars, low-contrast copy.',
+    url: 'https://lazyleaf.com/',
+    viewport: 'mobile',
+    label: 'homepage',
+    recommendations: [
+      'Pair the hero headline with a concrete line naming the products, so a first-time visitor knows this is a full garden shop.',
+      'Add a small line under the hero button like Rated 4.8 by 2,000+ gardeners with a star icon, so new visitors get instant social proof.',
+    ],
+  },
+  {
+    id: 'announcement-bar-one-line',
+    complaint:
+      'Asked to add a link inside the announcement bar, the engine added a block button that doubled the bar height. The bar must never grow.',
+    url: 'https://lazyleaf.com/',
+    viewport: 'mobile',
+    label: 'homepage',
+    // Correct outcomes: an inline link that fits, or a refusal. Never a taller bar.
+    allowRefusal: true,
+    recommendations: [
+      'Add a short link like Shop now inside the announcement bar itself, so the offer and the action live in the same glance.',
+    ],
+  },
+  {
+    id: 'desktop-collection-grid',
+    complaint:
+      'Every guard was only ever proven on mobile; the desktop grid needs the same photo, duplication and quick-add behaviour.',
+    url: 'https://lazyleaf.com/collections/bundles-kits',
+    viewport: 'desktop',
+    label: 'collection page',
+    recommendations: [
+      'Add a quick Add to cart button on each product card so shoppers can buy from the grid.',
+      "Add a short line under 'Bundles & Kits' explaining the value of buying tools and gear together.",
+    ],
+  },
+  {
+    id: 'desktop-hero-contrast',
+    complaint:
+      'Contrast handling (scrim, white text, gold stars) has to hold on desktop heroes too, not only phone ones.',
+    url: 'https://lazyleaf.com/',
+    viewport: 'desktop',
+    label: 'homepage',
+    recommendations: [
+      'Rewrite the hero subheadline to name what the store sells.',
+      'Add a small trust line with a star rating under the hero button using the store review numbers.',
+    ],
+  },
 ];
 
 function assess(c, res) {
