@@ -199,7 +199,7 @@ async function generateOne(
   referenceAfterUrl?: string,
   belowFoldUrl?: string | null,
   sourceElements?: CapturedEl[],
-): Promise<{ url: string; viewport: Viewport }> {
+): Promise<{ url: string | null; viewport: Viewport }> {
   const meta = PAGE_SECTIONS.find((s) => s.key === section.section_key);
   if (!meta) throw new Error(`section ${section.section_key} is not a page section`);
 
@@ -498,6 +498,40 @@ async function generateOne(
   // A capped fix is unapplied too, and more definitely so than one the judge
   // merely could not see.
   const unapplied = [...graded, ...notAttempted.map((r) => `Not attempted (over the ${MAX_FIXES}-fix limit for this image): ${r}`)];
+
+  // HARD GATE. Six prompt rules and two judge checks did not stop the model
+  // cropping, reshaping, swapping and re-gridding client product photos, because
+  // no instruction can guarantee anything from a probabilistic image model. This
+  // can: if the photos in the winning candidate are still damaged after every
+  // attempt, retry and polish, publish NOTHING. A missing concept image is a gap;
+  // a concept image showing a client's product in the wrong shape, or showing a
+  // product that is not theirs, is a credibility problem in front of that client.
+  const finalPhotoDefects = (Array.isArray(publishedVerdict.defects) ? publishedVerdict.defects as string[] : [])
+    .filter(isPhotoDefect);
+  if (finalPhotoDefects.length > 0) {
+    console.error(
+      `after-image ${meta.label}/${viewport}: withheld, photos still damaged after all passes: ${
+        finalPhotoDefects.join(" | ").slice(0, 300)
+      }`,
+    );
+    const detailsBlocked = asRecord(section.section_details);
+    const webBlocked = asRecord(detailsBlocked.web);
+    const imagesBlocked = asRecord(webBlocked.after_images);
+    imagesBlocked[viewport] = {
+      url: null,
+      error: "photo_integrity_failed",
+      photo_defects: finalPhotoDefects,
+      generated_at: new Date().toISOString(),
+      verify,
+    };
+    webBlocked.after_images = imagesBlocked;
+    detailsBlocked.web = webBlocked;
+    await sb.from("audit_sections").update({ section_details: detailsBlocked }).eq("id", section.id);
+    section.section_details = detailsBlocked;
+    // Leave no half-good image lying at the canonical path.
+    await sb.storage.from(STORAGE_BUCKET).remove([path]).catch(() => {});
+    return { url: null, viewport };
+  }
 
   const details = asRecord(section.section_details);
   const webOut = asRecord(details.web);
