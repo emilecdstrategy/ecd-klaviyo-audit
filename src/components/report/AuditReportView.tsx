@@ -147,18 +147,16 @@ function ReportSectionShell({
   }
   return (
     <section id={id} ref={setRef(id)} className="relative">
+      {/* The separator lives outside the chrome so the chrome's children start
+          with the section header: that is what its action bar aligns itself to. */}
+      {!hidden ? topSeparator : null}
       <ReportSectionEditChrome
         label={label}
         hidden={hidden}
         onToggleHidden={onToggleHidden}
         actions={actions}
       >
-        {!hidden ? (
-          <>
-            {topSeparator}
-            {children}
-          </>
-        ) : null}
+        {!hidden ? children : null}
       </ReportSectionEditChrome>
     </section>
   );

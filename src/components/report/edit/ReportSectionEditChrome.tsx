@@ -46,8 +46,13 @@ export default function ReportSectionEditChrome({
   }
 
   return (
-    <div>
-      <div className="mb-4 flex items-center justify-end gap-2">
+    // The action bar is absolutely positioned into the gutter the section header
+    // already reserves in edit mode (its pr-24 sm:pr-52), so it sits on the same
+    // row as the section title on the far right. It used to be a block above the
+    // section, which read as floating chrome belonging to nothing: the buttons
+    // act on this section, so they belong beside its heading.
+    <div className="relative">
+      <div className="absolute right-0 top-1 z-10 flex items-center justify-end gap-2">
         {actions?.map(action => (
           <button
             key={action.label}

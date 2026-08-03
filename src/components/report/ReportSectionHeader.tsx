@@ -28,7 +28,10 @@ export default function ReportSectionHeader({
   const showInlinePills = !editMode && talkTrackMarkers.length > 0;
 
   return (
-    <div className={cn('mb-8', editMode && 'pr-24 sm:pr-28')}>
+    // In edit mode the section's action bar is absolutely positioned into this
+    // right-hand gutter, so it has to be wide enough for a labelled button plus
+    // the hide toggle (about 195px), not just the toggle.
+    <div className={cn('mb-8', editMode && 'pr-24 sm:pr-52')}>
       <div
         className={cn(
           'flex gap-4',

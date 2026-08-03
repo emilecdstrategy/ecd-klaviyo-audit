@@ -1,4 +1,5 @@
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
+import { rowNavProps } from '../lib/row-nav';
 import {
   Plus,
   Search,
@@ -304,7 +305,7 @@ export default function Audits() {
                   return (
                     <tr
                       key={audit.id}
-                      onClick={() => { if (isLockedWeb) return; navigate(`/audits/${audit.id}`); }}
+                      {...rowNavProps(`/audits/${audit.id}`, navigate, { disabled: isLockedWeb })}
                       className={`transition-colors ${isLockedWeb ? 'opacity-60 cursor-not-allowed' : 'hover:bg-gray-50/50 cursor-pointer'}`}
                     >
                       <td className="px-6 py-4">

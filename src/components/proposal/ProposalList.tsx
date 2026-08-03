@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { rowNavProps } from '../../lib/row-nav';
 import { createPortal } from 'react-dom';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -389,7 +390,7 @@ export default function ProposalList({ proposals, onDeleted, onUpdated, emptyAct
                 return (
                   <tr
                     key={proposal.id}
-                    onClick={() => navigate(`/proposals/${proposal.id}`)}
+                    {...rowNavProps(`/proposals/${proposal.id}`, navigate)}
                     className="hover:bg-gray-50/50 cursor-pointer transition-colors"
                   >
                     <td className="px-6 py-4">

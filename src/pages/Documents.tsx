@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { rowNavProps } from '../lib/row-nav';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { FileText, LayoutTemplate, Plus, Settings2, Trash2 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
@@ -93,7 +94,7 @@ function DocumentList({
             return (
               <tr
                 key={doc.id}
-                onClick={() => navigate(`/documents/${doc.id}`)}
+                {...rowNavProps(`/documents/${doc.id}`, navigate)}
                 className="cursor-pointer border-b border-gray-50 last:border-0 hover:bg-gray-50/60"
               >
                 <td className="px-5 py-3.5">
