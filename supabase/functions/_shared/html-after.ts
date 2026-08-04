@@ -465,6 +465,10 @@ function atomicElements() {
   var SEL = "a, button, img, svg, input, select, h1, h2, h3, h4, h5, p, span, li, label";
   var cands = q(SEL).filter(function (el) {
     if (!isVisible(el)) return false;
+    // Floating widgets (chat launcher, loyalty badge) sit over page content by
+    // design, so they cannot be in the collision watch: nudging one is the fix,
+    // and counting its new overlap as a collision reverted that very fix.
+    if (isFloatingOrThirdParty(el)) return false;
     var r = el.getBoundingClientRect();
     if (r.width * r.height < 140) return false;
     if (r.top > window.innerHeight * 1.6 || r.bottom < 0) return false;
@@ -531,7 +535,11 @@ function layoutSignature(targets) {
   var parts = [];
   targets.slice(0, 12).forEach(function (el) {
     var r = el.getBoundingClientRect();
+    // Geometry AND words: rewriting a subheadline with copy of similar length
+    // moves no box at all, and geometry alone called that "renders identically"
+    // and voided a perfectly good set_text.
     parts.push([Math.round(r.x), Math.round(r.y), Math.round(r.width), Math.round(r.height)].join(","));
+    parts.push(((el.textContent || "").replace(/s+/g, " ").trim()).slice(0, 200));
     var parent = el.parentElement;
     if (parent) {
       Array.prototype.slice.call(parent.children).forEach(function (sib) {
@@ -959,7 +967,10 @@ function applyOp(op, brand, opts) {
         // and supplies" stacked under the store's own subhead. The whole text
         // block around the anchor is searched now.
         var pos = op.position || "after";
-        var existing = existingSupportingLine(el, pos);
+        // The rewrite-instead-of-stack path is for SUBHEADLINES, so it only
+        // applies when the anchor is a heading. Anchored to a button it was
+        // rewriting whatever line happened to sit nearby, destroying real copy.
+        var existing = /^h[1-6]$/i.test(el.tagName) ? existingSupportingLine(el, pos) : null;
         if (existing) {
           existing.textContent = clean(op.text);
           existing.setAttribute("data-ecd-added", "1");
@@ -1246,6 +1257,7 @@ const AUTHOR_SYSTEM = [
   "- Keep the result calmer than the original, never busier. Do not stack many small additions. On a phone especially, restraint wins: one clear addition per area.",
   "- On a phone, product grids stay ONE card per row. Never ask for more (the runtime clamps it anyway).",
   "- Only add a quick-add control to product cards or cart upsell rows with variant 'compact', so it sits on the existing row instead of making the card or the cart drawer taller.",
+  "- A per-card control goes ON EVERY CARD: use the card node's 'all' selector with each:true. NEVER append a single control to a grid, section or page wrapper; it lands at the bottom of the section, far from any product, and will be voided as not visible.",
   "- Do not repeat information already on the page. If the announcement bar already states free shipping, do not add a second free-shipping line.",
   "",
   "Layout knowledge to apply:",
@@ -1421,7 +1433,7 @@ export async function runHtmlAfter(input: {
   // take another row); selectors matching nothing is an authoring failure.
   if (!report.ops?.some((r) => r.applied)) {
     const allGuarded = (report.ops ?? []).length > 0 &&
-      (report.ops ?? []).every((r) => (r.skipped ?? []).some((s) => /reverted|already/i.test(s)));
+      (report.ops ?? []).every((r) => (r.skipped ?? []).some((s) => /reverted|already|no visible change|captured area/i.test(s)));
     return {
       ok: false,
       error: allGuarded ? "all_edits_guarded" : "no_edit_applied",
