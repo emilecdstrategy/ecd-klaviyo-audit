@@ -590,6 +590,23 @@ function existingSupportingLine(anchor, position) {
   return position === "before" ? candidates[0] : candidates[candidates.length - 1];
 }
 
+/** Product cards inside this element, when it is really a grid or a wrapper
+ *  rather than a single card. Empty when the element IS a card. */
+function cardsWithin(el) {
+  if (el.querySelectorAll("img").length < 2) return [];
+  var cards = Array.prototype.slice.call(
+    el.querySelectorAll("[class*='card-product'], [class*='grid-item'], [class*='grid__item'], [class*='product-item'], [class*='card-wrapper']"),
+  ).filter(function (c) {
+    if (!isVisible(c)) return false;
+    if (!c.querySelector("img")) return false;
+    // Innermost card only, so a wrapper and its card are not both counted.
+    return !Array.prototype.slice.call(c.querySelectorAll("[class*='card-product'], [class*='grid-item'], [class*='product-item']")).some(isVisible);
+  });
+  // If the target is itself one of those cards, this is not a redirect case.
+  if (cards.length === 1 && cards[0] === el) return [];
+  return cards.slice(0, 30);
+}
+
 function photoState() {
   return Array.prototype.slice.call(document.images)
     .map(function (img) {
@@ -967,13 +984,20 @@ function applyOp(op, brand, opts) {
         // and supplies" stacked under the store's own subhead. The whole text
         // block around the anchor is searched now.
         var pos = op.position || "after";
-        // The rewrite-instead-of-stack path is for SUBHEADLINES, so it only
-        // applies when the anchor is a heading. Anchored to a button it was
-        // rewriting whatever line happened to sit nearby, destroying real copy.
-        var existing = /^h[1-6]$/i.test(el.tagName) ? existingSupportingLine(el, pos) : null;
+        // The rewrite-instead-of-stack path exists for the HERO subheadline, the
+        // one place a second line reads as a duplicate. Anchored to a product
+        // title it rewrote real copy (a vendor line, a variant label) when the
+        // fix only asked to add a trust line. So: a heading anchor, and either an
+        // explicit subhead, or a heading sitting over hero imagery.
+        var lineHeading = /^h[1-6]$/i.test(el.tagName);
+        var heroish = lineHeading && (op.style === "subhead" || Boolean(backdropOf(el)));
+        var existing = heroish ? existingSupportingLine(el, pos) : null;
         if (existing) {
           existing.textContent = clean(op.text);
-          existing.setAttribute("data-ecd-added", "1");
+          // Marked as rewritten, NOT as added: data-ecd-added means "a node we
+          // injected", and using it here made the off-screen check treat an
+          // existing element as a fresh injection and void a good edit.
+          existing.setAttribute("data-ecd-rewritten", "1");
           var exCtx = placementContext(existing);
           if (exCtx.backdrop) ensureScrim(exCtx.backdrop);
           result.skipped.push("rewrote the existing supporting line instead of adding a second one");
@@ -1003,6 +1027,21 @@ function applyOp(op, brand, opts) {
       }
       case "add_button": {
         if (!op.text) { result.skipped.push("no text"); return; }
+        // A quick add aimed at a GRID or page wrapper lands once, at the bottom
+        // of the section, nowhere near a product. Telling the author not to do it
+        // did not stop it, so the runtime repairs it: put the control on each card
+        // inside the container it was pointed at.
+        var cardsInside = cardsWithin(el);
+        if (cardsInside.length > 1) {
+          cardsInside.forEach(function (card) {
+            if (card.querySelector("button[data-ecd-added]")) return;
+            var slot = card.querySelector("[class*='card-info'], [class*='card-content'], [class*='caption']") || card;
+            place(mkButton(op.text, "compact", brand), slot, "append");
+          });
+          result.skipped.push("redirected onto the " + cardsInside.length + " cards inside the container");
+          result.applied = true;
+          break;
+        }
         // ONE ADD CONTROL PER CARD. Two fixes often both ask for a quick add on
         // the collection grid ("put a quick add on the card" and "add an Add to
         // cart button"), which put two buttons on the same product. The guard is
