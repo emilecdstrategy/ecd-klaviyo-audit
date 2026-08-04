@@ -1435,6 +1435,7 @@ export async function runHtmlAfter(input: {
   const { captureWithBrowserless } = await import("./browserless.ts");
   const isMobile = input.viewport === "mobile";
   let captures = 0;
+  const startedAt = Date.now();
 
   // Storefronts rate-limit the cheap datacenter pool (a probe came back
   // "storefront_blocked (http 429)" and sent a perfectly good page to the image
@@ -1452,8 +1453,21 @@ export async function runHtmlAfter(input: {
       ...opts,
     } as Parameters<typeof captureWithBrowserless>[0]);
     captures++;
-    if (first.ok || input.proxyTier === "residential") return first;
-    if (!/blocked|429|rate.?limit|too many requests/i.test(first.error)) return first;
+    if (first.ok) return first;
+
+    // A slow storefront costs an after-image otherwise. Two transient failures
+    // are worth one more go, and the second attempt goes out over residential:
+    //  - a block or 429 means the cheap datacenter pool is being refused;
+    //  - a navigation timeout is just a slow page load, and falling back to the
+    //    image model for one is a bad trade. On this audit two desktop pages
+    //    timed out, went to the image model, and one of them had its photos
+    //    damaged and the whole image withheld by the photo gate.
+    const worthRetrying = /blocked|429|rate.?limit|too many requests|timeout|navigation/i.test(first.error);
+    if (!worthRetrying || input.proxyTier === "residential") return first;
+    // Only if a second load still fits inside the caller's budget: the cart
+    // flow chains several navigations and cannot afford one.
+    if (Date.now() - startedAt > 70_000) return first;
+
     const second = await captureWithBrowserless({
       url: input.pageUrl,
       viewport: input.viewport,
