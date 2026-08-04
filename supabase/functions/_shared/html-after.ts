@@ -607,6 +607,39 @@ function cardsWithin(el) {
   return cards.slice(0, 30);
 }
 
+/** True when this element is a whole section or page wrapper rather than a
+ *  specific place to edit. The author keeps aiming text ops at these: a line
+ *  added to a section lands wherever the section's own layout puts it (often
+ *  overlapping something), and clamping a section's lines does nothing at all. */
+function isWrapper(el) {
+  var r = el.getBoundingClientRect();
+  if (r.height > window.innerHeight * 0.7) return true;
+  return el.children.length >= 6 && el.querySelectorAll("img, button, a").length >= 4;
+}
+
+/** A sensible element inside a wrapper for the given kind of text edit. */
+function refineTextTarget(el, kind) {
+  if (!isWrapper(el)) return el;
+  if (kind === "clamp") {
+    // The longest run of body copy: that is what "keep the description short" means.
+    var best = null;
+    var bestLen = 120;
+    Array.prototype.slice.call(el.querySelectorAll("p, div, span, li")).forEach(function (c) {
+      if (c.children.length > 0 || !isVisible(c)) return;
+      var len = (c.textContent || "").trim().length;
+      if (len > bestLen) { best = c; bestLen = len; }
+    });
+    return best || el;
+  }
+  // For an added line: hang it off the heading, or the first visible text leaf.
+  var heading = el.querySelector("h1, h2, h3");
+  if (heading && isVisible(heading)) return heading;
+  var leaf = Array.prototype.slice.call(el.querySelectorAll("p, span, div")).filter(function (c) {
+    return c.children.length === 0 && isVisible(c) && (c.textContent || "").trim().length > 12;
+  })[0];
+  return leaf || el;
+}
+
 function photoState() {
   return Array.prototype.slice.call(document.images)
     .map(function (img) {
@@ -972,6 +1005,11 @@ function applyOp(op, brand, opts) {
       }
       case "add_line": {
         if (!op.text) { result.skipped.push("no text"); return; }
+        var refined = refineTextTarget(el, "line");
+        if (refined !== el) {
+          result.skipped.push("aimed at a section wrapper; anchored to the heading or first line inside it");
+          el = refined;
+        }
         // Say it once: never add a line the page (or an earlier edit) already says.
         var norm = String(op.text).toLowerCase().replace(/[^a-z0-9 ]/g, "").trim();
         if (norm.length > 8 && (document.body.innerText || "").toLowerCase().replace(/[^a-z0-9 ]/g, "").indexOf(norm) !== -1) {
@@ -1136,6 +1174,11 @@ function applyOp(op, brand, opts) {
         break;
       }
       case "clamp_lines": {
+        var clampTarget = refineTextTarget(el, "clamp");
+        if (clampTarget !== el) {
+          result.skipped.push("aimed at a section wrapper; clamped the longest text block inside it");
+          el = clampTarget;
+        }
         var lines = Math.max(1, Math.round(Number(op.lines) || 3));
         el.style.setProperty("display", "-webkit-box", "important");
         el.style.setProperty("-webkit-line-clamp", String(lines), "important");

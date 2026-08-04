@@ -321,6 +321,25 @@ async function generateOne(
         return { url: publishedUrl, viewport };
       }
       htmlError = `${run.stage}: ${run.error}`;
+      // The guards refusing EVERY edit means each one would have broken the page:
+      // a taller announcement bar, a collision, a cart drawer growing. Handing
+      // that page to the image model, which has none of those guards, trades a
+      // missing concept for a probably-broken one, and the cart is exactly where
+      // the image model always did its worst work. So withhold instead.
+      if (run.error === "all_edits_guarded") {
+        console.warn(`after-image ${meta.label}/${viewport}: withheld, every edit would have broken the page`);
+        await saveAfterImage(sb, section, viewport, {
+          url: null,
+          engine: "html",
+          error: "all_edits_guarded",
+          generated_at: new Date().toISOString(),
+          verify: { engine: "html", ops: run.report?.ops ?? null },
+          unapplied: htmlRecs,
+          applied_count: 0,
+          total_count: allRecs.length,
+        });
+        return { url: null, viewport };
+      }
     } catch (e) {
       htmlError = (e instanceof Error ? e.message : String(e)).slice(0, 200);
     }
