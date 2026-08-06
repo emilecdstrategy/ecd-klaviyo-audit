@@ -1282,12 +1282,24 @@ function applyOp(op, brand, opts) {
         // was on screen: the edit "succeeds" and the overlap it was meant to fix is
         // still there. What actually moves it is its offset, so nudge it clear of
         // whatever it is covering.
-        var posNow = getComputedStyle(el).position;
-        if (posNow === "fixed" || posNow === "sticky") {
-          var rNow = el.getBoundingClientRect();
+        // The FIXED element is often an ancestor wrapper, not the button the
+        // author selected: checking only the element's own position sent a
+        // static button inside a fixed chat container down the DOM-move path,
+        // where the height guard rightly reverted it. Find the fixed root and
+        // nudge THAT.
+        var fixedRoot = null;
+        var walkF = el;
+        for (var fdw = 0; fdw < 6 && walkF && walkF.nodeType === 1 && walkF !== document.body; fdw++) {
+          var posW = getComputedStyle(walkF).position;
+          if (posW === "fixed" || posW === "sticky") fixedRoot = walkF;
+          walkF = walkF.parentElement;
+        }
+        if (fixedRoot) {
+          var rNow = fixedRoot.getBoundingClientRect();
           var bottomNow = window.innerHeight - rNow.bottom;
-          el.style.setProperty("bottom", Math.round(bottomNow + 96) + "px", "important");
-          el.style.setProperty("top", "auto", "important");
+          fixedRoot.style.setProperty("bottom", Math.round(bottomNow + 96) + "px", "important");
+          fixedRoot.style.setProperty("top", "auto", "important");
+          tagOp(fixedRoot);
           result.skipped.push("floating widget nudged clear instead of reparented");
           result.applied = true;
           break;
