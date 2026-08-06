@@ -38,6 +38,10 @@ export default function WebPageSection({
   const [afterOverride, setAfterOverride] = useState<{ desktop?: string; mobile?: string }>({});
   // Which engine produced the freshly generated image, for the editor-only badge.
   const [engineOverride, setEngineOverride] = useState<{ desktop?: string; mobile?: string }>({});
+  const [markersOverride, setMarkersOverride] = useState<{
+    desktop?: Array<{ index: number; x: number; y: number; w: number; h: number }>;
+    mobile?: Array<{ index: number; x: number; y: number; w: number; h: number }>;
+  }>({});
 
   // "After" images are generated ~1-2 min AFTER analysis completes (the report is
   // viewable before they finish). Poll briefly so they appear on their own without
@@ -61,6 +65,10 @@ export default function WebPageSection({
         setEngineOverride((prev) => ({
           desktop: prev.desktop ?? imgs.meta?.desktop?.engine,
           mobile: prev.mobile ?? imgs.meta?.mobile?.engine,
+        }));
+        setMarkersOverride((prev) => ({
+          desktop: prev.desktop ?? imgs.meta?.desktop?.markers,
+          mobile: prev.mobile ?? imgs.meta?.mobile?.markers,
         }));
       }
       const haveD = Boolean(imgs.desktop || d0.desktop?.url);
@@ -137,6 +145,18 @@ export default function WebPageSection({
   const afterUrl = afterOverride[viewport] ?? detail.after_images[viewport]?.url ?? null;
   const afterMeta = detail.after_images[viewport];
   const afterEngine = engineOverride[viewport] ?? afterMeta?.engine ?? null;
+  // Numbered pins on the After, carrying the same numbers as the Before pins so
+  // "what changed" is visible at a glance instead of a spot-the-difference. The
+  // freshly regenerated markers (override) win over the persisted ones.
+  const afterMarkers = (markersOverride[viewport] ?? afterMeta?.markers ?? []).flatMap((m) => {
+    const found = visibleFindings.find(({ number }) => number === m.index);
+    return [{
+      index: m.index,
+      highlight: { snapshot_id: '', x: m.x, y: m.y, w: m.w, h: m.h, label: 'Applied change' },
+      text: found?.f.text,
+      recommendation: found?.f.recommendation,
+    }];
+  });
   // Both Before and After are always shown together when an after exists: mobile
   // side-by-side (narrow shots), desktop stacked (before above, after below). No
   // toggle needed.
@@ -156,6 +176,7 @@ export default function WebPageSection({
       try {
         const fresh = await fetchSectionAfterImages(section.id);
         setEngineOverride((prev) => ({ ...prev, [res.viewport]: fresh.meta?.[res.viewport]?.engine }));
+        setMarkersOverride((prev) => ({ ...prev, [res.viewport]: fresh.meta?.[res.viewport]?.markers ?? [] }));
       } catch { /* the badge just stays as it was */ }
       if (res.viewport !== viewport) setViewport(res.viewport);
     } catch (e) {
@@ -276,16 +297,33 @@ export default function WebPageSection({
                         </span>
                       )}
                     </div>
-                    <div
-                      className={`cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30 ${twoUp ? 'min-h-0 flex-1' : ''}`}
-                      onClick={() => setLightbox(afterUrl)}
-                    >
-                      <img
-                        src={afterUrl}
-                        alt={`${title} redesign concept`}
-                        className={twoUp ? 'block h-full w-full object-contain object-top' : 'block w-full'}
-                      />
-                    </div>
+                    {afterMarkers.length > 0 ? (
+                      // No overflow-hidden here: it would clip edge pins and
+                      // their hover tooltips, same as on the Before.
+                      <div
+                        className="cursor-zoom-in rounded-lg border border-brand-primary/30"
+                        onClick={() => setLightbox(afterUrl)}
+                      >
+                        <WebHighlightLayer
+                          imageUrl={afterUrl}
+                          alt={`${title} redesign concept`}
+                          markers={afterMarkers}
+                          activeIndex={activeIndex}
+                          onMarkerClick={focusFinding}
+                        />
+                      </div>
+                    ) : (
+                      <div
+                        className={`cursor-zoom-in overflow-hidden rounded-lg border border-brand-primary/30 ${twoUp ? 'min-h-0 flex-1' : ''}`}
+                        onClick={() => setLightbox(afterUrl)}
+                      >
+                        <img
+                          src={afterUrl}
+                          alt={`${title} redesign concept`}
+                          className={twoUp ? 'block h-full w-full object-contain object-top' : 'block w-full'}
+                        />
+                      </div>
+                    )}
                   </div>
                 </div>
               ) : (

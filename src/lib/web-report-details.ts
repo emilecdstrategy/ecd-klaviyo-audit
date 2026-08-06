@@ -37,9 +37,14 @@ export function findingHighlights(f: WebFinding): WebHighlight[] {
   return out;
 }
 
+export type WebAfterMarker = { index: number; x: number; y: number; w: number; h: number };
+
 export type WebAfterImage = {
   url: string;
   generated_at: string;
+  /** Numbered pins for the After image, carrying the SAME finding numbers as
+   * the Before pins. Written by the HTML engine; percentages of the image. */
+  markers?: WebAfterMarker[];
   /** Which engine produced it: 'html' edits the real page, 'gemini_fallback'
    * repaints the screenshot. Shown as an editor-only badge so a result being
    * judged is always attributable. */
@@ -130,12 +135,22 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
     if (!url) return undefined;
     const engine = asString(rec.engine);
     const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
+    const markers = (Array.isArray(rec.markers) ? rec.markers : [])
+      .map((m) => {
+        const r = asRecord(m);
+        const vals = [r.index, r.x, r.y, r.w, r.h].map(Number);
+        return vals.every((v) => Number.isFinite(v))
+          ? { index: vals[0], x: vals[1], y: vals[2], w: vals[3], h: vals[4] }
+          : null;
+      })
+      .filter((m): m is WebAfterMarker => m !== null);
     return {
       url,
       generated_at: asString(rec.generated_at),
       engine: engine === 'html' || engine === 'gemini_fallback' ? engine : undefined,
       applied_count: num(rec.applied_count),
       total_count: num(rec.total_count),
+      markers,
     };
   };
   const after_images: WebSectionDetail['after_images'] = {};

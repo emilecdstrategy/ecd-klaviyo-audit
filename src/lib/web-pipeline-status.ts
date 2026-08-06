@@ -195,7 +195,13 @@ export async function generateSectionAfter(
 
 /** Fetch just the current after-image URLs for a section (used to poll the
  * report so auto-generated afters appear without a manual refresh). */
-export type AfterImageMeta = { url: string; engine?: string; applied_count?: number; total_count?: number };
+export type AfterImageMeta = {
+  url: string;
+  engine?: string;
+  applied_count?: number;
+  total_count?: number;
+  markers?: Array<{ index: number; x: number; y: number; w: number; h: number }>;
+};
 
 export async function fetchSectionAfterImages(
   sectionId: string,

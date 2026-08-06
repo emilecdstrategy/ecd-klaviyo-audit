@@ -338,9 +338,10 @@ export const EDIT_TOOL: LlmTool = {
                 "clamp_lines",
                 "emphasize_button",
                 "style",
+                "rebalance_header",
               ],
               description:
-                "set_text: replace an element's copy in place (shortening an announcement bar, rewriting a vague headline). add_line: insert one short line of text. add_button: insert a call-to-action styled from the theme's own button. add_rating: insert a star rating line. add_badges: insert a row of small trust/shipping pills. hide: hide a distracting or duplicate element (never an image). move: physically relocate an element (it cannot leave a copy behind). grid_columns: set how many cards per row. clamp_lines: limit a text block to N lines so the page stays uncrowded. emphasize_button: restyle a weak-looking button as the primary action. style: a small whitelisted CSS tweak (spacing, alignment, width, order).",
+                "set_text: replace an element's copy in place (shortening an announcement bar, rewriting a vague headline). add_line: insert one short line of text. add_button: insert a call-to-action styled from the theme's own button. add_rating: insert a star rating line. add_badges: insert a row of small trust/shipping pills. hide: hide a distracting or duplicate element (never an image). move: physically relocate an element (it cannot leave a copy behind). grid_columns: set how many cards per row. clamp_lines: limit a text block to N lines so the page stays uncrowded. emphasize_button: restyle a weak-looking button as the primary action. style: a small whitelisted CSS tweak (spacing, alignment, width, order). rebalance_header: rebuild the page header into the standard balanced layout (menu and search LEFT, logo CENTER, account and cart RIGHT) using the header's own real elements; use this for ANY finding about a crowded, bunched or unbalanced header, and never try to fix a header with move/style.",
             },
             selector: {
               type: "string",
@@ -365,10 +366,15 @@ export const EDIT_TOOL: LlmTool = {
             },
             variant: {
               type: "string",
-              enum: ["primary", "secondary", "compact"],
-              description: "add_button styling. compact is a small inline control, for a quick add on a card or cart upsell row.",
+              enum: ["primary", "secondary", "compact", "hero"],
+              description: "add_button styling. compact is a small inline control, for a quick add on a card or cart upsell row. hero is the page's single main call-to-action: large, wide and centred; use it when rewriting or adding the hero button.",
             },
-            items: { type: "array", items: { type: "string" }, description: "add_badges: 2 to 4 very short labels." },
+            items: {
+              type: "array",
+              items: { type: "string" },
+              description:
+                "add_badges: 2 to 4 very short labels. Over a hero photo these render as frosted category pills; use the store's REAL collection or nav names from the outline, never invented categories.",
+            },
             columns: { type: "number", description: "grid_columns: cards per row. On a phone this is forced to 1." },
             lines: { type: "number", description: "clamp_lines: how many lines of the text block to keep visible." },
             stars: { type: "number", description: "add_rating: 1 to 5." },
@@ -702,7 +708,20 @@ function brandTokens(hint) {
   };
 }
 
-function mark(el) { el.setAttribute("data-ecd-added", "1"); return el; }
+// Which op is currently applying; mark()/tagOp() stamp it onto elements so the
+// end-of-run pass can measure one bounding box per op for the report's numbered
+// After pins. Measured at the end, not per-op, because later ops shift earlier
+// elements.
+var CURRENT_OP = -1;
+function mark(el) {
+  el.setAttribute("data-ecd-added", "1");
+  if (CURRENT_OP >= 0) el.setAttribute("data-ecd-op", String(CURRENT_OP));
+  return el;
+}
+function tagOp(el) {
+  if (el && CURRENT_OP >= 0) el.setAttribute("data-ecd-op", String(CURRENT_OP));
+  return el;
+}
 
 // ---------------------------------------------------------------------------
 // Contrast. Text sitting over a photograph needs help, and the first version
@@ -721,6 +740,16 @@ function backdropOf(el) {
     var r = node.getBoundingClientRect();
     if (r.width > 120 && r.height > 80) {
       if (cs.backgroundImage && cs.backgroundImage !== "none" && cs.backgroundImage.indexOf("url(") !== -1) return node;
+      // Media web components (parallax-image, media-hero, slideshow-*) render
+      // their photo inside shadow DOM, invisible to querySelectorAll. The tag
+      // itself is the tell.
+      if (node.tagName.indexOf("-") !== -1 && /image|media|parallax|video|slide|banner/i.test(node.tagName)) return node;
+      var media = node.querySelector(":scope > *");
+      if (media && media.tagName && media.tagName.indexOf("-") !== -1 &&
+        /image|media|parallax|video|slide|banner/i.test(media.tagName)) {
+        var mr = media.getBoundingClientRect();
+        if (mr.width * mr.height > r.width * r.height * 0.6) return node;
+      }
       var imgs = node.querySelectorAll("img, video");
       for (var i = 0; i < imgs.length; i++) {
         var ir = imgs[i].getBoundingClientRect();
@@ -866,6 +895,16 @@ function mkButton(text, variant, brand) {
       "font:inherit;color:inherit;text-decoration:underline;text-underline-offset:2px;font-weight:700;";
     return mark(el);
   }
+  if (variant === "hero") {
+    // The page's one main call-to-action: large, wide, centred, unmissable. A
+    // hero whose button looks like every other button is why the afters read
+    // as unchanged.
+    el.style.cssText = "display:block;box-sizing:border-box;border:0;cursor:pointer;margin:16px auto 0;" +
+      "min-width:min(320px, 86%);padding:15px 34px;font-size:15px;letter-spacing:.08em;text-transform:uppercase;" +
+      "font-family:" + brand.buttonFont + ";font-weight:" + brand.buttonWeight + ";border-radius:" + brand.buttonRadius +
+      ";background:" + brand.buttonBg + ";color:" + brand.buttonFg + ";box-shadow:0 6px 18px rgba(0,0,0,.25);";
+    return mark(el);
+  }
   var compact = variant === "compact";
   var base = "display:block;box-sizing:border-box;border:0;cursor:pointer;font-family:" + brand.buttonFont +
     ";font-weight:" + brand.buttonWeight + ";border-radius:" + brand.buttonRadius + ";";
@@ -901,9 +940,9 @@ function mkRating(stars, count, brand, ctx) {
     c.textContent = " " + clean(count);
     // The count sits next to the stars, so it needs the same contrast treatment
     // as any other text we add: it was rendering near-invisible over a photo.
-    c.style.cssText = "font-family:" + brand.bodyFont + ";font-size:14px;font-weight:500;color:" +
+    c.style.cssText = "font-family:" + brand.bodyFont + ";font-size:14px;font-weight:600;color:" +
       (onDark ? "#ffffff" : brand.bodyColor) + ";" +
-      (onDark ? "text-shadow:0 1px 6px rgba(0,0,0,.55);" : "opacity:.85;");
+      (onDark ? "text-shadow:0 1px 3px rgba(0,0,0,.9), 0 0 12px rgba(0,0,0,.5);" : "opacity:.85;");
     el.appendChild(c);
   }
   el.style.cssText = "display:flex;align-items:center;gap:6px;margin:10px 0 0;" +
@@ -911,14 +950,22 @@ function mkRating(stars, count, brand, ctx) {
   return mark(el);
 }
 
-function mkBadges(items, brand) {
+function mkBadges(items, brand, ctx) {
+  var onDark = ctx && ctx.onDark;
   var wrap = document.createElement("div");
-  wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin:10px 0 0;";
+  wrap.style.cssText = "display:flex;flex-wrap:wrap;gap:8px;margin:12px 0 0;" +
+    (ctx && ctx.center ? "justify-content:center;" : "");
   (items || []).slice(0, 4).forEach(function (t) {
     var pill = document.createElement("span");
     pill.textContent = clean(t);
-    pill.style.cssText = "font-family:" + brand.bodyFont + ";font-size:12px;line-height:1;padding:7px 10px;border-radius:999px;" +
-      "color:" + brand.bodyColor + ";box-shadow:inset 0 0 0 1px rgba(128,128,128,.35);white-space:nowrap;";
+    // Over a hero photo the pills go frosted white, which is how real
+    // storefronts put category shortcuts on imagery.
+    pill.style.cssText = onDark
+      ? "font-family:" + brand.bodyFont + ";font-size:12px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;" +
+        "line-height:1;padding:8px 14px;border-radius:999px;color:#ffffff;background:rgba(255,255,255,.16);" +
+        "box-shadow:inset 0 0 0 1px rgba(255,255,255,.55);backdrop-filter:blur(2px);white-space:nowrap;"
+      : "font-family:" + brand.bodyFont + ";font-size:12px;line-height:1;padding:7px 10px;border-radius:999px;" +
+        "color:" + brand.bodyColor + ";box-shadow:inset 0 0 0 1px rgba(128,128,128,.35);white-space:nowrap;";
     wrap.appendChild(pill);
   });
   return mark(wrap);
@@ -996,6 +1043,7 @@ function applyOp(op, brand, opts) {
           host = host.children[0];
         }
         host.textContent = clean(op.text);
+        tagOp(host);
         // Rewriting a hero headline puts new words over the same photo, so give
         // it the same readability treatment as anything we inject.
         var textBackdrop = backdropOf(host);
@@ -1115,7 +1163,106 @@ function applyOp(op, brand, opts) {
       }
       case "add_badges": {
         if (!op.items || !op.items.length) { result.skipped.push("no items"); return; }
-        place(mkBadges(op.items, brand), el, op.position || "after");
+        var badgeCtx = placementContext(el);
+        if (badgeCtx.backdrop) ensureScrim(badgeCtx.backdrop);
+        var badgeAnchor = el;
+        if (badgeCtx.backdrop) {
+          // The heading usually lives in a SIBLING overlay of the image wrapper,
+          // not inside it, so walk up from the backdrop until a scope holds a
+          // visible heading. Anchoring there puts the pills on the overlay
+          // (above the photo) instead of inside the background layer.
+          // "Heading" by size, not by tag: this theme's hero headline is a
+          // styled <p>, so an h1-h3 query found nothing and the rescue never
+          // fired. The biggest visible text in the hero IS the headline.
+          var heroScope = badgeCtx.backdrop;
+          var heroHeading = null;
+          for (var hd = 0; hd < 3 && heroScope && heroScope !== document.body; hd++) {
+            var biggest = null;
+            var biggestSize = 19;
+            Array.prototype.slice.call(heroScope.querySelectorAll("h1, h2, h3, p, div, span")).forEach(function (cand) {
+              if (!isVisible(cand)) return;
+              var own = Array.prototype.slice.call(cand.childNodes)
+                .filter(function (n) { return n.nodeType === 3; })
+                .map(function (n) { return (n.textContent || "").trim(); })
+                .join("");
+              if (own.length < 4) return;
+              var size = parseFloat(getComputedStyle(cand).fontSize) || 0;
+              if (size > biggestSize) { biggest = cand; biggestSize = size; }
+            });
+            if (biggest) { heroHeading = biggest; break; }
+            heroScope = heroScope.parentElement;
+          }
+          if (heroHeading && !el.contains(heroHeading) && !heroHeading.contains(el)) {
+            badgeAnchor = heroHeading;
+            result.skipped.push("anchored to the hero heading so the pills sit on the overlay, not the background");
+          }
+        }
+        var badgeRow = mkBadges(op.items, brand, badgeCtx);
+        badgeRow.style.setProperty("position", "relative", "important");
+        badgeRow.style.setProperty("z-index", "3", "important");
+        // Hero overlays are commonly pointer-events:none, which makes
+        // elementFromPoint skip everything in them, including pills that are
+        // plainly visible, and the occlusion probe then removes a good row.
+        // Making the row hit-testable keeps the probe honest.
+        badgeRow.style.setProperty("pointer-events", "auto", "important");
+        place(badgeRow, badgeAnchor, badgeAnchor === el ? (op.position || "after") : "after");
+        // Occlusion check: a box measurement cannot tell that something else is
+        // painted ON TOP. Probe the centre of the first pill; if the hit is not
+        // the pill row, the pills are behind the hero image and must not count.
+        var probeRow = function () {
+          var fp = badgeRow.firstElementChild;
+          if (!fp) return true;
+          var fr = fp.getBoundingClientRect();
+          if (fr.width < 2 || fr.height < 2) return false;
+          var h = document.elementFromPoint(fr.left + fr.width / 2, fr.top + fr.height / 2);
+          return Boolean(h && (badgeRow.contains(h) || h.contains(badgeRow)));
+        };
+        if (!probeRow()) {
+          // Second try: widen scope one ancestor at a time until it holds a
+          // headline. Stopping at "big enough box" landed on the media element
+          // itself, whose light DOM has no text at all: the overlay copy lives
+          // in a SIBLING subtree, only reachable from a shared ancestor.
+          var headline = null;
+          var scope = el.parentElement;
+          for (var sd = 0; sd < 7 && scope && scope !== document.body && !headline; sd++) {
+            var headlineSize = 19;
+            Array.prototype.slice.call(scope.querySelectorAll("h1, h2, h3, p, div, span")).forEach(function (cand) {
+              if (!isVisible(cand) || cand.hasAttribute("data-ecd-added") || badgeRow.contains(cand)) return;
+              var own = Array.prototype.slice.call(cand.childNodes)
+                .filter(function (n) { return n.nodeType === 3; })
+                .map(function (n) { return (n.textContent || "").trim(); })
+                .join("");
+              if (own.length < 4) return;
+              var size = parseFloat(getComputedStyle(cand).fontSize) || 0;
+              if (size > headlineSize) { headline = cand; headlineSize = size; }
+            });
+            scope = scope.parentElement;
+          }
+          if (headline) {
+            place(badgeRow, headline, "after");
+            result.skipped.push("re-anchored under the hero headline: the first spot was a background layer");
+          }
+        }
+        var firstPill = badgeRow.firstElementChild;
+        if (firstPill) {
+          var pr = firstPill.getBoundingClientRect();
+          var hit = document.elementFromPoint(pr.left + pr.width / 2, pr.top + pr.height / 2);
+          var related = hit && (badgeRow.contains(hit) || hit.contains(badgeRow));
+          if (!related) {
+            // Name what was actually on top, so a wrong removal is debuggable
+            // from the report instead of by guesswork.
+            var hitDesc = hit
+              ? hit.tagName + "." + String(typeof hit.className === "string" ? hit.className : "").split(/s+/).slice(0, 2).join(".")
+              : "null";
+            var pillRect = firstPill.getBoundingClientRect();
+            if (badgeRow.parentElement) badgeRow.parentElement.removeChild(badgeRow);
+            result.skipped.push(
+              "removed: pills occluded (probe hit " + hitDesc + " at " + Math.round(pillRect.left) + "," + Math.round(pillRect.top) +
+              " size " + Math.round(pillRect.width) + "x" + Math.round(pillRect.height) + ")",
+            );
+            return;
+          }
+        }
         result.applied = true;
         break;
       }
@@ -1160,6 +1307,7 @@ function applyOp(op, brand, opts) {
         var host = anchors[0].parentElement || anchors[0];
         var heightBefore = host.getBoundingClientRect().height;
         place(el, anchors[0], op.position || "after");
+        tagOp(el);
         var grew = host.getBoundingClientRect().height - heightBefore;
         if (grew > 8 && oldParent) {
           oldParent.insertBefore(el, oldNext);
@@ -1170,6 +1318,7 @@ function applyOp(op, brand, opts) {
         break;
       }
       case "grid_columns": {
+        tagOp(el);
         result.applied = setColumns(el, op.columns, opts.isMobile, result);
         break;
       }
@@ -1184,6 +1333,7 @@ function applyOp(op, brand, opts) {
         el.style.setProperty("-webkit-line-clamp", String(lines), "important");
         el.style.setProperty("-webkit-box-orient", "vertical", "important");
         el.style.setProperty("overflow", "hidden", "important");
+        tagOp(el);
         result.applied = true;
         break;
       }
@@ -1192,11 +1342,160 @@ function applyOp(op, brand, opts) {
         el.style.setProperty("color", brand.buttonFg, "important");
         el.style.setProperty("border-radius", brand.buttonRadius, "important");
         el.style.setProperty("box-shadow", "none", "important");
+        tagOp(el);
         result.applied = true;
         break;
       }
       case "style": {
         applyStyle(el, op.props, result);
+        tagOp(el);
+        result.applied = true;
+        break;
+      }
+      case "rebalance_header": {
+        // Rebuild the header into the standard balanced layout using its OWN
+        // real elements: menu and search on the left, the logo centred, the
+        // cart on the right. Freeform moves and styles kept either doing
+        // nothing (theme CSS overrode them) or colliding icons into the logo;
+        // a rebuild into one fresh flex row is deterministic. Height is locked,
+        // every element is the theme's own node moved once, nothing is redrawn.
+        var headerEl = el.closest("header") || (el.tagName === "HEADER" ? el : el.querySelector("header")) || el;
+        // The first match is often a HIDDEN image (a mega-menu thumbnail), which
+        // is how this op reported "no logo" on a header that plainly has one.
+        // Gather candidates and take the first VISIBLE, plausibly logo-sized one,
+        // preferring things actually named logo over any old linked image.
+        var logoImg = Array.prototype.slice.call(
+          headerEl.querySelectorAll("[class*='logo'] img, img[class*='logo'], [class*='logo'] svg, [class*='logo'], a[href='/'] img, a img, a svg"),
+        ).filter(function (cand) {
+          if (!isVisible(cand)) return false;
+          var r = cand.getBoundingClientRect();
+          return r.width >= 40 && r.width <= 420 && r.height >= 12 && r.height <= 130;
+        }).sort(function (a, b) {
+          var score = function (x) {
+            var cn = ((typeof x.className === "string" ? x.className : "") + " " +
+              ((x.parentElement && typeof x.parentElement.className === "string") ? x.parentElement.className : "")).toLowerCase();
+            return /logo/.test(cn) ? 0 : 1;
+          };
+          return score(a) - score(b);
+        })[0];
+        if (!logoImg) { result.error = "no logo found in the header"; return; }
+        var logoRoot = logoImg.closest("a") || logoImg;
+        // The row that actually holds the logo, not the whole <header>, which
+        // often also contains the announcement bar or a search band.
+        var row = logoRoot.parentElement;
+        var headerBox = headerEl.getBoundingClientRect();
+        for (var d = 0; d < 4 && row && row.parentElement && row !== headerEl; d++) {
+          var rr = row.getBoundingClientRect();
+          if (rr.width >= headerBox.width * 0.8 && rr.height <= 140) break;
+          row = row.parentElement;
+        }
+        if (!row || row === document.body) { result.error = "no header row found"; return; }
+        var rowBox = row.getBoundingClientRect();
+
+        // The controls: small interactive elements in the row, classified by
+        // what they link to or say. Everything is detected, nothing invented.
+        // The whole header, not just the logo's row: themes often put the
+        // hamburger in a sibling wrapper, and searching only the row silently
+        // DROPPED it from the rebuilt header, which deletes an icon instead of
+        // repositioning it.
+        // Not just a/button: theme drawer toggles are labels, aria-wired divs or
+        // custom elements, and missing one DELETES an icon from the rebuilt
+        // header. The size filter keeps this from swallowing whole nav menus.
+        var controls = Array.prototype.slice.call(headerEl.querySelectorAll(
+          "a, button, summary, label, [role='button'], [aria-controls], [aria-expanded], [class*='burger'], [class*='menu-toggle'], [class*='menu-icon'], [class*='hamburger']",
+        ))
+          .filter(function (c) {
+            if (!isVisible(c) || c === logoRoot || logoRoot.contains(c) || c.contains(logoRoot)) return false;
+            var r = c.getBoundingClientRect();
+            if (r.width > 90 || r.height > 90 || r.width < 8 || r.height < 8) return false;
+            return !Array.prototype.slice.call(
+              c.querySelectorAll("a, button, summary, label, [role='button'], [aria-controls]"),
+            ).some(isVisible);
+          })
+          // An aria-wired wrapper and its inner button both match; innermost
+          // filtering handles nesting, this dedupes exact duplicates.
+          .filter(function (c, i, arr) { return arr.indexOf(c) === i; });
+        if (controls.length === 0) { result.error = "no header controls found"; return; }
+        var kindOf = function (c) {
+          var sig = ((c.getAttribute("href") || "") + " " + (typeof c.className === "string" ? c.className : "") + " " +
+            (c.getAttribute("aria-label") || "") + " " + (c.getAttribute("id") || "") + " " + (c.textContent || "")).toLowerCase();
+          if (/cart|bag|basket/.test(sig)) return "cart";
+          if (/search/.test(sig)) return "search";
+          if (/account|login|customer|profile|user/.test(sig)) return "account";
+          if (/menu|burger|drawer|nav/.test(sig) || c.tagName === "SUMMARY") return "menu";
+          return "other";
+        };
+        // Geometric sweep for what the selector query cannot see: a web
+        // component hamburger keeps its icon in shadow DOM and matches nothing,
+        // and the rebuild then DELETES it from the header. Anything icon-sized
+        // sitting in the header row that is not already a known piece is a
+        // control, whatever its tag is.
+        var known = controls.concat([logoRoot]);
+        var extras = Array.prototype.slice.call(headerEl.querySelectorAll("*")).filter(function (x) {
+          if (!isVisible(x)) return false;
+          if (known.some(function (k) { return k === x || k.contains(x) || x.contains(k); })) return false;
+          var xr = x.getBoundingClientRect();
+          if (xr.width < 16 || xr.width > 90 || xr.height < 16 || xr.height > 90) return false;
+          if (xr.top < rowBox.top - 6 || xr.bottom > rowBox.bottom + 6) return false;
+          return true;
+        });
+        extras = extras.filter(function (x) {
+          return !extras.some(function (o) { return o !== x && o.contains(x); });
+        });
+        controls = controls.concat(extras);
+
+        var groups = { menu: [], search: [], account: [], cart: [], other: [] };
+        controls.forEach(function (c) { groups[kindOf(c)].push(c); });
+        // The rebuilt header is only as good as this detection, so record it:
+        // a header that came back missing its hamburger was undebuggable without
+        // knowing which pieces the op saw.
+        result.skipped.push(
+          "pieces: menu=" + groups.menu.length + " search=" + groups.search.length +
+          " account=" + groups.account.length + " cart=" + groups.cart.length + " other=" + groups.other.length,
+        );
+
+        // One fresh flex row; the real nodes are MOVED into it exactly once.
+        var mk = function () {
+          var g = document.createElement("div");
+          g.style.cssText = "display:flex;align-items:center;gap:14px;flex:1 1 0;min-width:0;";
+          return g;
+        };
+        var left = mk(); var centre = mk(); var right = mk();
+        centre.style.justifyContent = "center";
+        centre.style.flex = "0 0 auto";
+        right.style.justifyContent = "flex-end";
+        groups.menu.forEach(function (c) { left.appendChild(c); });
+        groups.search.forEach(function (c) { left.appendChild(c); });
+        groups.other.forEach(function (c) { left.appendChild(c); });
+        centre.appendChild(logoRoot);
+        groups.account.forEach(function (c) { right.appendChild(c); });
+        groups.cart.forEach(function (c) { right.appendChild(c); });
+
+        // Whatever else the row held is hidden, not deleted: usually the
+        // now-empty wrappers the theme used for its own layout.
+        Array.prototype.slice.call(row.children).forEach(function (child) {
+          child.style.setProperty("display", "none", "important");
+        });
+        row.appendChild(left); row.appendChild(centre); row.appendChild(right);
+        row.style.setProperty("display", "flex", "important");
+        row.style.setProperty("align-items", "center", "important");
+        row.style.setProperty("height", Math.round(rowBox.height) + "px", "important");
+        row.style.setProperty("padding", "0 14px", "important");
+        tagOp(row);
+
+        // The op's own acceptance checks, stricter than the generic guards:
+        // same height, one line, logo still visible, nothing overlapping inside.
+        var newBox = row.getBoundingClientRect();
+        var pieces = [logoRoot].concat(controls).filter(isVisible);
+        var tops = pieces.map(function (x) { return x.getBoundingClientRect().top; });
+        var oneRow = Math.max.apply(null, tops) - Math.min.apply(null, tops) < 18;
+        var innerOverlap = overlapKeys(rectsOf(pieces));
+        // Balancing means repositioning, never deleting: every control that was
+        // visible before must still be visible after, or the rebuild is refused.
+        var allSurvived = controls.every(isVisible);
+        var ok = Math.abs(newBox.height - rowBox.height) <= 6 && oneRow && allSurvived &&
+          isVisible(logoImg) && Object.keys(innerOverlap).length === 0;
+        if (!ok) { result.error = "rebuilt header failed its own checks"; return; }
         result.applied = true;
         break;
       }
@@ -1281,7 +1580,8 @@ function run(ops, opts) {
   var before = photoState();
   var watch = atomicElements();
   var report = { ops: [], notes: [], brand: { buttonBg: brand.buttonBg, clonedFrom: brand.clonedFrom } };
-  (ops || []).forEach(function (op) {
+  (ops || []).forEach(function (op, i) {
+    CURRENT_OP = i;
     try {
       report.ops.push(applyOpGuarded(op, brand, opts, watch));
     } catch (e) {
@@ -1291,6 +1591,87 @@ function run(ops, opts) {
       });
     }
   });
+  CURRENT_OP = -1;
+
+  // FIT PASS. Injections into a fixed-height hero push the content stack down,
+  // and the theme clips the overflow: the CTA came back sliced in half at the
+  // hero's bottom edge. For every scrimmed backdrop (i.e. every hero we put
+  // content over), if anything now sticks out of its section, first tighten the
+  // injected rows' spacing, then thin an added pill row, and as a last resort
+  // remove the pill row entirely rather than ship a cut-off button.
+  q("[data-ecd-scrim]").forEach(function (scrim) {
+    // The section has to hold BOTH the photo backdrop and the overlay with the
+    // copy and button: measuring the backdrop alone saw "no overflow" while the
+    // call-to-action, which lives in a sibling subtree, hung out of the hero.
+    var backdrop = scrim.parentElement;
+    var section = backdrop ? backdrop.parentElement : null;
+    for (var fd = 0; fd < 5 && section && section !== document.body; fd++) {
+      var r = section.getBoundingClientRect();
+      var hasOverlayContent = Array.prototype.slice.call(section.querySelectorAll("a, button"))
+        .some(function (n) { return isVisible(n) && !backdrop.contains(n); });
+      if (r.height >= 300 && r.width >= window.innerWidth * 0.8 && hasOverlayContent) break;
+      section = section.parentElement;
+    }
+    if (!section || section === document.body) return;
+    var overflowPx = function () {
+      var bottom = section.getBoundingClientRect().bottom;
+      var worst = 0;
+      Array.prototype.slice.call(section.querySelectorAll("a, button, p, div, span")).forEach(function (n) {
+        if (!isVisible(n)) return;
+        var nb = n.getBoundingClientRect();
+        if (nb.height < 8 || nb.height > 200) return;
+        worst = Math.max(worst, nb.bottom - bottom);
+      });
+      return worst;
+    };
+    if (overflowPx() <= 4) return;
+    var added = Array.prototype.slice.call(section.querySelectorAll("[data-ecd-added]"))
+      .filter(function (n) { return !n.hasAttribute("data-ecd-scrim"); });
+    // Step 1: tighter spacing on everything we added.
+    added.forEach(function (n) {
+      n.style.setProperty("margin-top", "6px", "important");
+      n.style.setProperty("margin-bottom", "0", "important");
+    });
+    if (overflowPx() <= 4) return;
+    // Step 2: a pill row down to three, then two, entries.
+    var pillRow = added.filter(function (n) { return n.children.length >= 3 && n.tagName === "DIV"; })[0];
+    if (pillRow) {
+      while (pillRow.children.length > 2 && overflowPx() > 4) {
+        pillRow.removeChild(pillRow.lastElementChild);
+      }
+      if (overflowPx() <= 4) return;
+      // Step 3: the pills lose to a sliced call-to-action.
+      if (pillRow.parentElement) pillRow.parentElement.removeChild(pillRow);
+    }
+  });
+
+  // One bounding box per APPLIED op, measured after every op has run because a
+  // later edit shifts earlier elements. These become the numbered pins on the
+  // After image in the report, so a reader can see exactly what changed instead
+  // of hunting for it. Percentages of the first-fold shot, the image shown.
+  report.ops.forEach(function (r, i) {
+    if (!r.applied) return;
+    var nodes = q('[data-ecd-op="' + i + '"]').filter(isVisible);
+    if (nodes.length === 0) return;
+    var L = Infinity, T = Infinity, R = -Infinity, B = -Infinity;
+    nodes.forEach(function (n) {
+      var b = n.getBoundingClientRect();
+      if (b.width < 1 || b.height < 1) return;
+      L = Math.min(L, b.left); T = Math.min(T, b.top);
+      R = Math.max(R, b.right); B = Math.max(B, b.bottom);
+    });
+    if (!(R > L && B > T)) return;
+    if (T >= window.innerHeight) return; // below the published crop
+    B = Math.min(B, window.innerHeight);
+    var pct = function (v, base) { return Math.round(Math.max(0, Math.min(100, v / base * 100)) * 10) / 10; };
+    r.box = {
+      x: pct(L, window.innerWidth),
+      y: pct(T, window.innerHeight),
+      w: Math.max(1, pct(R - L, window.innerWidth)),
+      h: Math.max(1, pct(B - T, window.innerHeight)),
+    };
+  });
+
   report.photos = photoDiff(before);
   return report;
 }
@@ -1304,6 +1685,9 @@ export type EditOpResult = {
   applied?: boolean;
   skipped?: string[];
   error?: string;
+  /** Where this edit landed, as percentages of the published first-fold shot.
+   * Measured after every op has run; absent for reverted or off-shot edits. */
+  box?: { x: number; y: number; w: number; h: number };
 };
 
 export type EditReport = {
@@ -1324,7 +1708,11 @@ export function renderEditScript(ops: EditOp[], opts: { isMobile: boolean; brand
 // ---------------------------------------------------------------------------
 
 const AUTHOR_SYSTEM = [
-  "You are a senior e-commerce UX engineer. You are given a REAL storefront page as a DOM outline, plus a list of fixes an audit recommended for it. You return the concrete DOM/CSS edits that show those fixes applied, so the result can be screenshotted as an 'after' concept for the client.",
+  "You are a senior e-commerce UX designer producing a CONCEPT REDESIGN of a real storefront page. You are given the page as a DOM outline plus the fixes an audit recommended. You return concrete DOM/CSS edits; the edited page is screenshotted side by side with the original as the before/after in a paid report.",
+  "",
+  "THE BAR: a client glancing at the two images must SEE the transformation in two seconds. A concept that looks 95% identical to the original reads as no work done, however correct the edits are. Concentrate visible change in the first fold: a rewritten headline that actually sells, ONE unmissable hero call-to-action (variant 'hero'), a proof line, category pills over the hero using the store's real nav names, a rebalanced header when any finding mentions the header. Aim for every finding served by a change a non-designer can point at.",
+  "",
+  "Bold is not busy: a few strong, well-spaced changes, never a pile of small ones. Rewrite existing copy IN PLACE rather than adding lines beside it.",
   "",
   "This is a real page in a real browser, not a picture. That means:",
   "- The photographs, fonts, colours and logo are the client's own and are already correct. You never need to change them, and you cannot: any edit that would resize or reframe a photo is refused by the runtime.",

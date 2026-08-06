@@ -186,7 +186,7 @@ function needsNewPhotography(text: string): boolean {
 function recommendationsFor(
   section: { section_details: Record<string, unknown> | null },
   viewport: Viewport,
-): string[] {
+): Array<{ text: string; number: number }> {
   const web = asRecord(asRecord(section.section_details).web);
   const findings = Array.isArray(web.findings) ? web.findings : [];
   return findings
@@ -197,15 +197,19 @@ function recommendationsFor(
       const vp = String(rec.viewport ?? "both");
       return vp === "both" || vp === viewport;
     })
-    .map((f) => {
+    .map((f, idx) => {
       const rec = asRecord(f);
-      return typeof rec.recommendation === "string" && rec.recommendation.trim()
+      const text = typeof rec.recommendation === "string" && rec.recommendation.trim()
         ? rec.recommendation.trim()
         : typeof rec.text === "string"
         ? rec.text.trim()
         : "";
+      // idx + 1 is the number the report renders on the Before pin: the UI
+      // numbers exactly this filtered list. Keeping it here is what lets the
+      // After pins carry the same numbers instead of a parallel numbering.
+      return { text, number: idx + 1 };
     })
-    .filter(Boolean) as string[];
+    .filter((r) => r.text.length > 0);
 }
 
 /** Upload a PNG and return its public URL, cache-busted so a regenerate shows
@@ -263,12 +267,14 @@ async function generateOne(
   // ENGINE 1: edit the real page. Preferred, because on this path the client's
   // photographs cannot be damaged and the brand cannot drift: nothing is redrawn.
   // ---------------------------------------------------------------------------
-  const allRecs = recommendationsFor(section, viewport);
+  const allRecPairs = recommendationsFor(section, viewport);
+  const allRecs = allRecPairs.map((r) => r.text);
   // Photography the store never gave us is the one thing a DOM edit still cannot
   // honestly produce. Floating-widget moves, by contrast, are exactly what this
   // engine does best (a real DOM move cannot duplicate the widget), so unlike the
   // image path they are NOT withheld here.
-  const htmlRecs = allRecs.filter((r) => !needsNewPhotography(r)).slice(0, 8);
+  const htmlRecPairs = allRecPairs.filter((r) => !needsNewPhotography(r.text)).slice(0, 8);
+  const htmlRecs = htmlRecPairs.map((r) => r.text);
   let htmlError: string | null = null;
   // The cart is the one page whose capture drives a multi-hop add-to-cart flow,
   // so it can only afford ONE page load per invocation. With a stored outline
@@ -294,6 +300,21 @@ async function generateOne(
       if (run.ok) {
         const summary = summarizeEditReport(run.report, htmlRecs);
         const publishedUrl = await uploadPng(sb, path, run.png);
+        // Numbered pins for the After image: one box per finding, carrying the
+        // SAME number the report shows on the Before, so a reader can see what
+        // changed instead of hunting for it. Largest box wins when several edits
+        // served one finding.
+        const markerByNumber = new Map<number, { x: number; y: number; w: number; h: number }>();
+        for (const op of run.report.ops ?? []) {
+          if (!op.applied || !op.box || !op.fix_index) continue;
+          const pair = htmlRecPairs[Number(op.fix_index) - 1];
+          if (!pair) continue;
+          const prev = markerByNumber.get(pair.number);
+          if (!prev || op.box.w * op.box.h > prev.w * prev.h) markerByNumber.set(pair.number, op.box);
+        }
+        const markers = [...markerByNumber.entries()]
+          .sort((a, b) => a[0] - b[0])
+          .map(([number, box]) => ({ index: number, ...box }));
         const skippedPhotography = allRecs.filter(needsNewPhotography);
         await saveAfterImage(sb, section, viewport, {
           url: publishedUrl,
@@ -314,9 +335,10 @@ async function generateOne(
           ],
           applied_count: summary.applied.length,
           total_count: allRecs.length,
+          markers,
         });
         console.log(
-          `after-image ${meta.label}/${viewport}: HTML engine applied ${summary.applied.length}/${htmlRecs.length} fixes, photos unchanged (${run.report.photos?.before ?? "?"})`,
+          `after-image ${meta.label}/${viewport}: HTML engine applied ${summary.applied.length}/${htmlRecs.length} fixes, ${markers.length} marker(s), photos unchanged (${run.report.photos?.before ?? "?"})`,
         );
         return { url: publishedUrl, viewport };
       }
