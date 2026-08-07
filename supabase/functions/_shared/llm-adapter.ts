@@ -63,10 +63,19 @@ async function postJson(url: string, headers: Record<string, string>, body: unkn
       }
       if (!res.ok) {
         const msg = parsed?.error?.message ?? `LLM request failed (${res.status})`;
-        const retryable = res.status === 429 || res.status === 502 || res.status === 503 || res.status === 529;
+        // Anthropic reports a failure to fetch a caller-supplied image URL as a
+        // 400, but "timed out while trying to download" is their fetcher having
+        // a moment (or our storage responding slowly), not a bad request: the
+        // identical call succeeds seconds later. Treating it as terminal paused
+        // a whole audit for a human click. Longer backoff than the rate-limit
+        // path, to give the slow storage read time to recover.
+        const downloadHiccup = res.status === 400 &&
+          /timed out while trying to download|error (while )?downloading|could not (be )?download|failed to download/i.test(msg);
+        const retryable = res.status === 429 || res.status === 502 || res.status === 503 || res.status === 529 ||
+          downloadHiccup;
         if (retryable && attempt < MAX_ATTEMPTS) {
           lastErr = new Error(msg);
-          await new Promise((r) => setTimeout(r, 800 * attempt));
+          await new Promise((r) => setTimeout(r, (downloadHiccup ? 2500 : 800) * attempt));
           continue;
         }
         throw new Error(`${msg} (status ${res.status})`);

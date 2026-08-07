@@ -70,8 +70,8 @@ serve(async (req) => {
       .in("status", ["pending", "running", "failed"]),
     sb
       .from("audit_analysis_jobs")
-      .select("audit_id, status, updated_at, step_index, partial_state")
-      .in("status", ["pending", "running"]),
+      .select("audit_id, status, updated_at, step_index, partial_state, error_message")
+      .in("status", ["pending", "running", "failed"]),
   ]);
 
   if (profileErr) {
@@ -127,6 +127,32 @@ serve(async (req) => {
   for (const job of aiJobs ?? []) {
     const partial = (job.partial_state ?? {}) as Record<string, unknown>;
     const isHighlightRegen = partial.highlightRegen === true;
+
+    // A FAILED analysis whose error is transient should resume itself. The step
+    // machine already restarts from step_index, so a resume costs one step, not
+    // the whole audit. This is the same treatment profile scans got: an
+    // Anthropic image-download timeout paused a Power Planter audit behind a
+    // human click for no reason. Budgeted via partial_state so a genuinely
+    // broken audit stops instead of looping.
+    if (job.status === "failed") {
+      const msg = String(job.error_message ?? "");
+      const transient =
+        /timed out|timeout|overloaded|rate.?limit|(429|500|502|503|504|529)|download|temporarily|unavailable|econnreset|fetch failed/i
+          .test(msg);
+      const resumes = Number(partial.autoResumes ?? 0);
+      if (!transient || resumes >= 3) continue;
+      const updatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
+      // Give a just-failed job a moment in case a human is already resuming it.
+      if (updatedMs && now - updatedMs < 120_000) continue;
+      await sb.from("audit_analysis_jobs").update({
+        status: "pending",
+        partial_state: { ...partial, autoResumes: resumes + 1 },
+        updated_at: new Date().toISOString(),
+      }).eq("audit_id", job.audit_id);
+      chainAuditFinalize(String(job.audit_id), isHighlightRegen ? "highlight_regen" : undefined);
+      aiResumed += 1;
+      continue;
+    }
     const staleAfterMs = isHighlightRegen ? HIGHLIGHT_REGEN_STALE_AFTER_MS : STALE_AFTER_MS;
     const updatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
     const stale = !updatedMs || now - updatedMs >= staleAfterMs;
