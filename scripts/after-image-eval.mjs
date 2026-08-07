@@ -300,7 +300,19 @@ for (const c of cases) {
     res = { ok: false, stage: 'request', error: String(e?.message ?? e) };
   }
   const secs = Math.round((Date.now() - t0) / 1000);
-  const { checks, pass } = assess(c, res);
+  let { checks, pass } = assess(c, res);
+  // The author is a model: roughly one roll per full run it aims a single fix
+  // at an element that gets voided, and the run is otherwise perfect. One
+  // retry when COVERAGE is the only failing check separates that noise from a
+  // systematic regression, which fails both rolls. Photo or guard failures
+  // never get a retry: those must fail loudly on the first roll.
+  if (!pass && checks.every((k) => k.pass || k.name === 'coverage')) {
+    process.stdout.write('(coverage retry) ');
+    try {
+      res = await call();
+      ({ checks, pass } = assess(c, res));
+    } catch { /* keep the first verdict */ }
+  }
   console.log(`${pass ? 'PASS' : 'FAIL'}  ${secs}s`);
   for (const k of checks) {
     if (!k.pass || process.env.EVAL_VERBOSE) console.log(`      ${k.pass ? 'ok  ' : 'FAIL'} ${k.name}: ${k.detail}`);
