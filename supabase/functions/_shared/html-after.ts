@@ -772,7 +772,7 @@ function ensureScrim(backdrop) {
   scrim.setAttribute("data-ecd-scrim", "1");
   scrim.setAttribute("data-ecd-added", "1");
   scrim.style.cssText = "position:absolute;inset:0;pointer-events:none;z-index:0;" +
-    "background:linear-gradient(180deg, rgba(0,0,0,.34) 0%, rgba(0,0,0,.14) 45%, rgba(0,0,0,.44) 100%);";
+    "background:linear-gradient(180deg, rgba(0,0,0,.48) 0%, rgba(0,0,0,.36) 45%, rgba(0,0,0,.58) 100%);";
   backdrop.insertBefore(scrim, backdrop.firstChild);
   // Lift the real content above the scrim, or the gradient would cover the very
   // text it exists to make readable.
@@ -1469,19 +1469,29 @@ function applyOp(op, brand, opts) {
         // One fresh flex row; the real nodes are MOVED into it exactly once.
         var mk = function () {
           var g = document.createElement("div");
-          g.style.cssText = "display:flex;align-items:center;gap:14px;flex:1 1 0;min-width:0;";
+          g.style.cssText = "display:flex;align-items:center;gap:16px;flex:1 1 0;min-width:0;";
           return g;
+        };
+        // A moved control drags its old layout with it: margin-left:auto pushed
+        // the search icon across its new group and up against the logo. Strip
+        // everything positional; the flex groups own the layout now.
+        var normCtl = function (c) {
+          c.style.setProperty("margin", "0", "important");
+          c.style.setProperty("float", "none", "important");
+          c.style.setProperty("position", "static", "important");
+          c.style.setProperty("flex", "0 0 auto", "important");
+          return c;
         };
         var left = mk(); var centre = mk(); var right = mk();
         centre.style.justifyContent = "center";
         centre.style.flex = "0 0 auto";
         right.style.justifyContent = "flex-end";
-        groups.menu.forEach(function (c) { left.appendChild(c); });
-        groups.search.forEach(function (c) { left.appendChild(c); });
-        groups.other.forEach(function (c) { left.appendChild(c); });
-        centre.appendChild(logoRoot);
-        groups.account.forEach(function (c) { right.appendChild(c); });
-        groups.cart.forEach(function (c) { right.appendChild(c); });
+        groups.menu.forEach(function (c) { left.appendChild(normCtl(c)); });
+        groups.search.forEach(function (c) { left.appendChild(normCtl(c)); });
+        groups.other.forEach(function (c) { left.appendChild(normCtl(c)); });
+        centre.appendChild(normCtl(logoRoot));
+        groups.account.forEach(function (c) { right.appendChild(normCtl(c)); });
+        groups.cart.forEach(function (c) { right.appendChild(normCtl(c)); });
 
         // Whatever else the row held is hidden, not deleted: usually the
         // now-empty wrappers the theme used for its own layout.
