@@ -253,6 +253,39 @@ function hideConfig(section: SectionRow): Record<string, unknown> {
   return root;
 }
 
+// Nothing logged what the model actually returned, so a section could ship with
+// an empty findings list leaving no trace of whether the model said nothing or
+// the coercer threw it all away. These two record exactly that distinction.
+function logAuditShape(stepKey: string, pass: string, input: unknown) {
+  const o = (input ?? {}) as Record<string, unknown>;
+  const shape = (v: unknown) => (Array.isArray(v) ? `array(${v.length})` : v === undefined ? "absent" : typeof v);
+  const firstFinding = Array.isArray(o.findings) ? o.findings[0] : null;
+  console.log(JSON.stringify({
+    event: "page_audit_shape",
+    step: stepKey,
+    pass,
+    keys: Object.keys(o),
+    intro: shape(o.intro),
+    pros: shape(o.pros),
+    findings: shape(o.findings),
+    recommendations: shape(o.recommendations),
+    finding_keys: firstFinding && typeof firstFinding === "object" ? Object.keys(firstFinding as Record<string, unknown>) : null,
+  }));
+}
+
+function logCoercionLoss(stepKey: string, pass: string, input: unknown, kept: number) {
+  const o = (input ?? {}) as Record<string, unknown>;
+  const raw = Array.isArray(o.findings) ? o.findings.length : 0;
+  if (raw === 0 || kept > 0) return;
+  console.log(JSON.stringify({
+    event: "page_audit_coercion_dropped_all",
+    step: stepKey,
+    pass,
+    raw_count: raw,
+    sample: JSON.stringify(o.findings).slice(0, 1500),
+  }));
+}
+
 async function runStep(
   sb: ReturnType<typeof assertServiceClient>,
   llm: ReturnType<typeof createLlmClient>,
@@ -308,7 +341,9 @@ async function runStep(
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
     if (turn.kind !== "tool_call") throw new Error(`${step.key}: model did not call the tool`);
+    logAuditShape(step.key, "first", turn.input);
     let parsed = coercePageAudit(turn.input, refToId, refToElements, refToViewport);
+    logCoercionLoss(step.key, "first", turn.input, parsed.findings.length);
     // The model sometimes returns an empty audit for a page that clearly
     // rendered, and it often skips the intro entirely (which left the report's
     // section summary blank). Retry once for whichever piece is missing.
@@ -353,7 +388,9 @@ async function runStep(
       }];
       const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
       if (retry.kind === "tool_call") {
+        logAuditShape(step.key, "retry", retry.input);
         const retryParsed = coercePageAudit(retry.input, refToId, refToElements, refToViewport);
+        logCoercionLoss(step.key, "retry", retry.input, retryParsed.findings.length);
         // Only take what was actually missing, so a retry cannot throw away good
         // findings from the first pass.
         if (needFindings && retryParsed.findings.length > 0) parsed = retryParsed;
@@ -367,6 +404,17 @@ async function runStep(
         } else if (needIntro && retryParsed.intro.trim()) parsed = { ...parsed, intro: retryParsed.intro };
       }
     }
+    // A page section with no findings renders in the client's report as a
+    // heading, a screenshot and nothing else, and the after-image step then runs
+    // with zero fixes to make, so the After looks identical to the Before. Until
+    // now the pipeline wrote that and published it. Two passes have already been
+    // spent here, so fail the step instead: the run pauses with a Resume button
+    // and the watchdog picks it up, which is recoverable in a way a silently
+    // blank section never was.
+    if (parsed.findings.length === 0) {
+      throw new Error(`${step.key}: the model returned no findings on either pass, so the section was left untouched rather than published empty`);
+    }
+
     // Enforce the memory in code: the prompt asks the model not to repeat, but it
     // still does, so drop anything that restates an earlier section's finding or
     // re-raises a sitewide topic already covered. Only enforced when this page has

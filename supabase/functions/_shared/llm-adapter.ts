@@ -264,11 +264,14 @@ class OpenAiClient implements LlmClient {
       .trim();
     const call = items.find((o) => o?.type === "function_call");
     if (call) {
+      // Swallowing a parse failure here used to hand the caller a tool call with
+      // an empty object for input, which every coercer happily turned into an
+      // empty-but-valid result. A truncated or malformed payload has to surface.
       let input: unknown = {};
       try {
         input = call.arguments ? JSON.parse(call.arguments) : {};
-      } catch {
-        input = {};
+      } catch (err) {
+        throw new Error(`${call.name}: tool arguments were not valid JSON (${(err as Error).message}); received ${String(call.arguments ?? "").length} chars`);
       }
       return { kind: "tool_call", id: call.call_id, name: call.name, input, text };
     }
