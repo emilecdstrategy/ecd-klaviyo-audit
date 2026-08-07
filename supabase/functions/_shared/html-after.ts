@@ -646,12 +646,34 @@ function refineTextTarget(el, kind) {
   return leaf || el;
 }
 
+// Identity of a photo, independent of which responsive candidate is loaded.
+// Shopify serves the same image at ?width=350 / 750 / 1600 and swaps between
+// them as layout settles, so keying on the full URL made an unchanged photo
+// look like it "disappeared" and a different one "appeared".
+function photoKey(url) {
+  var u = String(url || "").split("?")[0];
+  var slash = u.lastIndexOf("/");
+  var name = slash >= 0 ? u.slice(slash + 1) : u;
+  // Strip the _600x600 / _1024x style size suffix themes bake into filenames.
+  return name.replace(/_d+xd*(?=.[a-z]+$)/i, "").toLowerCase();
+}
+
 function photoState() {
   return Array.prototype.slice.call(document.images)
     .map(function (img) {
       var r = img.getBoundingClientRect();
       if (r.width * r.height < 1500) return null;
-      return { src: (img.currentSrc || img.src || "").slice(0, 300), ar: r.width / Math.max(1, r.height) };
+      // Only settled images can be compared: one still decoding has no natural
+      // size yet, and measuring it produces a fictional aspect ratio.
+      if (!img.complete || !img.naturalWidth) return null;
+      return {
+        key: photoKey(img.currentSrc || img.src),
+        src: (img.currentSrc || img.src || "").slice(0, 300),
+        // The INTRINSIC ratio, which is the thing that must never change. The
+        // rendered box legitimately reflows when we edit the layout around it.
+        naturalAr: img.naturalWidth / Math.max(1, img.naturalHeight),
+        ar: r.width / Math.max(1, r.height),
+      };
     })
     .filter(Boolean);
 }
@@ -661,21 +683,40 @@ function photoState() {
 // fact about the actual output rather than an assumption about the code.
 function photoDiff(before) {
   var after = photoState();
-  var beforeBySrc = {};
-  before.forEach(function (p) { beforeBySrc[p.src] = p; });
-  var afterBySrc = {};
-  after.forEach(function (p) { afterBySrc[p.src] = p; });
+  var byKey = function (list) {
+    var m = {};
+    list.forEach(function (p) { if (!m[p.key]) m[p.key] = p; });
+    return m;
+  };
+  var beforeByKey = byKey(before);
+  var afterByKey = byKey(after);
   var changed = [];
-  before.forEach(function (p) {
-    var a = afterBySrc[p.src];
-    if (!a) { changed.push("photo disappeared: " + p.src.slice(-60)); return; }
-    var drift = Math.abs(a.ar - p.ar) / Math.max(0.01, p.ar);
+  Object.keys(beforeByKey).forEach(function (k) {
+    var b = beforeByKey[k];
+    var a = afterByKey[k];
+    // Gone means gone from the page. A lazy-loaded image that had not decoded
+    // when we measured is simply absent from the BEFORE set, so it can never
+    // be reported as disappearing.
+    if (!a) { changed.push("photo disappeared: " + b.src.slice(-60)); return; }
+    // Compare INTRINSIC ratios. The rendered box changes whenever we alter the
+    // layout around a photo, which is legitimate; what must never change is the
+    // shape of the image itself. Comparing rendered boxes is what produced
+    // "aspect ratio changed by 40%" on pages where nothing was touched.
+    var drift = Math.abs(a.naturalAr - b.naturalAr) / Math.max(0.01, b.naturalAr);
     if (drift > 0.03) {
-      changed.push("photo aspect ratio changed by " + Math.round(drift * 100) + "%: " + p.src.slice(-60));
+      changed.push("photo aspect ratio changed by " + Math.round(drift * 100) + "%: " + b.src.slice(-60));
     }
   });
-  after.forEach(function (p) {
-    if (!beforeBySrc[p.src]) changed.push("photo appeared that was not in the original: " + p.src.slice(-60));
+  Object.keys(afterByKey).forEach(function (k) {
+    if (!beforeByKey[k]) {
+      // New imagery is only a defect if WE put it there. Lazy loading brings in
+      // photos on its own as the page settles, and that is the page working.
+      var el = Array.prototype.slice.call(document.images).filter(function (img) {
+        return photoKey(img.currentSrc || img.src) === k;
+      })[0];
+      var ours = el && (el.hasAttribute("data-ecd-added") || (el.closest && el.closest("[data-ecd-added]")));
+      if (ours) changed.push("photo appeared that was not in the original: " + afterByKey[k].src.slice(-60));
+    }
   });
   return { before: before.length, after: after.length, changed: changed };
 }
@@ -1042,7 +1083,38 @@ function applyOp(op, brand, opts) {
         while (host.children.length === 1 && (host.textContent || "").trim() === (host.children[0].textContent || "").trim()) {
           host = host.children[0];
         }
-        host.textContent = clean(op.text);
+        // textContent DESTROYS every child element. Aimed at a container rather
+        // than a text node it deleted a product page's whole thumbnail gallery,
+        // eight photos, which the photo gate then caught and the after-image was
+        // withheld. If the target holds media, retarget to a text-only
+        // descendant; if there is none, refuse rather than delete imagery.
+        if (host.querySelector("img, picture, video, svg, canvas, iframe")) {
+          var textOnly = Array.prototype.slice.call(host.querySelectorAll("h1, h2, h3, h4, p, span, div"))
+            .filter(function (c) {
+              if (!isVisible(c)) return false;
+              if (c.querySelector("img, picture, video, svg, canvas, iframe")) return false;
+              return (c.textContent || "").trim().length >= 4;
+            })
+            .sort(function (a, b) {
+              return (b.textContent || "").trim().length - (a.textContent || "").trim().length;
+            })[0];
+          if (!textOnly) {
+            result.skipped.push("refused: rewriting this element would delete the imagery inside it");
+            return;
+          }
+          result.skipped.push("retargeted to the text inside, so the imagery in this block survives");
+          host = textOnly;
+        }
+        // Replace only this element's OWN text, leaving child elements (icons,
+        // badges, links) in place.
+        var ownTextNodes = Array.prototype.slice.call(host.childNodes)
+          .filter(function (n) { return n.nodeType === 3 && (n.textContent || "").trim().length > 0; });
+        if (host.children.length > 0 && ownTextNodes.length > 0) {
+          ownTextNodes[0].textContent = clean(op.text);
+          for (var tn = 1; tn < ownTextNodes.length; tn++) ownTextNodes[tn].textContent = "";
+        } else {
+          host.textContent = clean(op.text);
+        }
         tagOp(host);
         // Rewriting a hero headline puts new words over the same photo, so give
         // it the same readability treatment as anything we inject.
@@ -1599,6 +1671,12 @@ function applyOpGuarded(op, brand, opts, watch) {
 
 function run(ops, opts) {
   var brand = brandTokens(opts.brand);
+  // Nudge lazy images into loading before the baseline, so the comparison is
+  // between two settled states rather than a half-loaded page and a full one.
+  Array.prototype.slice.call(document.images).forEach(function (img) {
+    if (img.loading === "lazy") img.loading = "eager";
+    if (img.hasAttribute("data-src") && !img.src) img.src = img.getAttribute("data-src");
+  });
   var before = photoState();
   var watch = atomicElements();
   var report = { ops: [], notes: [], brand: { buttonBg: brand.buttonBg, clonedFrom: brand.clonedFrom } };
