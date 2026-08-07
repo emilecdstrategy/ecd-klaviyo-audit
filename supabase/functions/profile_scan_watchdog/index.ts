@@ -66,8 +66,8 @@ serve(async (req) => {
   const [{ data: profileJobs, error: profileErr }, { data: aiJobs, error: aiErr }] = await Promise.all([
     sb
       .from("klaviyo_profile_scan_jobs")
-      .select("audit_id, status, updated_at")
-      .in("status", ["pending", "running"]),
+      .select("audit_id, status, updated_at, error_message, next_path, resume_attempts")
+      .in("status", ["pending", "running", "failed"]),
     sb
       .from("audit_analysis_jobs")
       .select("audit_id, status, updated_at, step_index, partial_state")
@@ -91,6 +91,26 @@ serve(async (req) => {
     const updatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
     const stale = !updatedMs || now - updatedMs >= STALE_AFTER_MS;
     if (!stale) continue;
+
+    // A FAILED scan with a cursor and a transient-looking error is four hours
+    // of paging one bad Klaviyo minute away from completion: revive it, with a
+    // budget so a genuinely broken account cannot loop. Grill Rescue sat failed
+    // for nine hours on a 502 with 2.45M profiles already counted, because
+    // failed was terminal and nothing ever looked at it again.
+    if (job.status === "failed") {
+      const transient = /(429|500|502|503|504)|timeout|bad gateway|temporarily|overloaded/i
+        .test(String(job.error_message ?? ""));
+      const attempts = Number(job.resume_attempts ?? 0);
+      if (!transient || !job.next_path || attempts >= 4) continue;
+      await sb.from("klaviyo_profile_scan_jobs").update({
+        status: "pending",
+        resume_attempts: attempts + 1,
+        updated_at: new Date().toISOString(),
+      }).eq("audit_id", job.audit_id);
+      chainResumeProfileScan(String(job.audit_id));
+      profileResumed += 1;
+      continue;
+    }
 
     if (job.status === "running") {
       await sb.from("klaviyo_profile_scan_jobs").update({

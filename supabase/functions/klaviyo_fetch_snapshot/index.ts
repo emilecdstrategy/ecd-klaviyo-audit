@@ -283,7 +283,7 @@ async function klaviyoFetch(apiKey: string, revision: string, path: string) {
   }
 }
 
-async function fetchWithRetry(fn: () => Promise<{ ok: boolean; status: number; body: any }>, attempts = 3) {
+async function fetchWithRetry(fn: () => Promise<{ ok: boolean; status: number; body: any }>, attempts = 5) {
   let last: any = null;
   for (let i = 1; i <= attempts; i++) {
     const res = await fn();
@@ -591,6 +591,30 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
   });
 
   if (!chunk.ok) {
+    // 429s and 5xx are Klaviyo having a moment, not the scan being wrong. With
+    // a cursor in hand the job parks as pending and the watchdog resumes it in
+    // a few minutes; hours of paging survive a bad minute. Failed is reserved
+    // for errors a retry cannot change.
+    const retryable = [429, 500, 502, 503, 504].includes(Number(chunk.status));
+    if (retryable) {
+      await sb.from("klaviyo_profile_scan_jobs").update({
+        status: "pending",
+        error_message: `transient ${chunk.status}, parked for the watchdog: ${(trimBody(chunk.body) ?? "").slice(0, 300)}`,
+        updated_at: new Date().toISOString(),
+      }).eq("audit_id", auditId);
+      await logStageRun(sb, {
+        correlationId,
+        auditId,
+        clientId: (claimed.client_id as string) ?? null,
+        stage: "resume_profile_scan",
+        status: "partial",
+        revision: String(claimed.revision ?? KLAVIYO_REVISION),
+        elapsedMs: Date.now() - startedAt,
+        errorCode: `profile_${chunk.status}_parked`,
+        errorMessage: "transient upstream error; watchdog will resume",
+      });
+      return json({ ok: true, correlationId, profile_metrics_status: "in_progress", reason: "parked_transient" }, { status: 200 });
+    }
     await sb.from("klaviyo_profile_scan_jobs").update({
       status: "failed",
       error_message: trimBody(chunk.body) ?? "Klaviyo profile fetch failed",
