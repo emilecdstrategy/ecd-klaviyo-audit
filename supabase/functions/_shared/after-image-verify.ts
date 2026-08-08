@@ -177,6 +177,7 @@ export async function verifyPhotoFidelity(
           "A photo whose subject is now sliced by an edge is altered. A photo made circular is altered. " +
           "Repositioning a photo, or changing its overall size while keeping the same proportions and crop, is NOT altered. " +
           "A photo partially covered by a new panel, overlay or badge is NOT altered: occlusion is not a geometry change. " +
+          "A wide banner showing a SHORTER BAND of the same photo at the same scale, with the subject the same size and in the same place, is NOT altered when a fix asked to trim or shorten that banner: that is the fix working. It IS altered if the photo was squashed, stretched, zoomed, or re-centred to fit. " +
           "A photo you cannot see well enough in both images to compare is NOT reportable: inconclusive means say nothing. " +
           "Never write an entry that itself says a photo is unchanged." +
           fixesNote + "\n\n" +
