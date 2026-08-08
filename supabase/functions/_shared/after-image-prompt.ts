@@ -160,6 +160,12 @@ export function buildEditPrompt(
     `4. A slide-out cart stays exactly where it is: on desktop, pinned to the right edge with the page still visible behind it. Never centre it and never blank out the page behind it.`,
     `5. Nothing may get taller than it is in the source. A cart drawer, a header, or a line of text that fits one row must still fit one row.`,
     `6. COUNT THE FLOATING BADGES. Every floating widget (chat bubble, loyalty or rewards star, back-to-top) appears EXACTLY ONCE, in the same corner as the source. Before you finish, count them: two loyalty stars, or a chat bubble in two corners, is a broken image.`,
+    `7. THE GRID KEEPS ITS COLUMN COUNT. Count the product cards per row in the source and draw exactly that many. ${
+      viewport === "mobile"
+        ? "This is a phone: ONE full-width card per row. Never fit two side by side to show more products."
+        : "Never add or remove a column to fit more products."
+    } Changing the column count narrows every card, which re-crops every product photo inside it, so it fails constraints 1 and 2 as well.`,
+    `8. A WIDE BANNER KEEPS ITS HEIGHT. A full-width hero or category banner photo stays as tall as it is in the source. Never compress it into a short strip to move the content below it up the page. That is cropping, and it is the most common way this task fails on a collection page.`,
   ].join("\n");
 
   if (hasReference) {
