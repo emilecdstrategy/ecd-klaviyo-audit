@@ -756,7 +756,7 @@ async function gradeWithPhotoCheck(
 ) {
   const [graded, alteredPhotos] = await Promise.all([
     verifyAfterImage(sourceUrl, candidateUrl, recommendations, viewport),
-    verifyPhotoFidelity(sourceUrl, candidateUrl),
+    verifyPhotoFidelity(sourceUrl, candidateUrl, recommendations),
   ]);
   if (alteredPhotos.length === 0) return graded;
   const extra = alteredPhotos.map((p) => `Photo geometry changed: ${p}`);

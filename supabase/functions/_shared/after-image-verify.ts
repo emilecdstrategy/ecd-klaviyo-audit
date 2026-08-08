@@ -136,7 +136,7 @@ const PHOTO_TOOL = {
         type: "array",
         items: { type: "string" },
         description:
-          "One entry per photograph in IMG_2 that is not the identical photograph from IMG_1. Report BOTH kinds of change. (1) SUBSTITUTION, the most serious: the photo shows different content, a different product, a different scene, or looks redrawn or invented. Start those entries with the word SUBSTITUTED. (2) GEOMETRY: a different aspect ratio (a square card now taller or wider), a tighter or looser crop, a zoom, a shifted centre point, part of the product sliced off at an edge, or a photo turned into a circle or other new shape. Say which photo and what changed. Empty array only if every photo is the same photograph at the same framing and proportions.",
+          "One entry per photograph in IMG_2 that is not the identical photograph from IMG_1. Report BOTH kinds of change. (1) SUBSTITUTION, the most serious: the photo shows different content, a different product, a different scene, or looks redrawn or invented. Start those entries with the word SUBSTITUTED. (2) GEOMETRY: a different aspect ratio (a square card now taller or wider), a tighter or looser crop, a zoom, a shifted centre point, part of the product sliced off at an edge, or a photo turned into a circle or other new shape. Say which photo and what changed. WHAT IS NOT AN ALTERATION, never report these: a photo partially COVERED by a new panel, overlay, badge or pill (occlusion is not a geometry change; the photo behind it is intact); new imagery that one of the listed fixes plainly calls for, such as category tiles, a cart panel, or a reviews strip; a photo you cannot see well enough in BOTH images to compare, for example one cut off at the frame edge (inconclusive means say nothing, not report it); and a photo that is unchanged (never write an entry that itself says the photo was not altered). DO still report, as SUBSTITUTED, any new photographic scene that NO listed fix asks for: that is invented imagery. Empty array only if every photo that appears in both images has the same framing and proportions.",
       },
     },
   },
@@ -151,9 +151,20 @@ const PHOTO_TOOL = {
  * zero defects. One narrow question is far more reliable than a clause inside a
  * long rubric, and this is the defect the client notices first.
  */
-export async function verifyPhotoFidelity(beforeUrl: string, afterUrl: string): Promise<string[]> {
+export async function verifyPhotoFidelity(
+  beforeUrl: string,
+  afterUrl: string,
+  recommendations: string[] = [],
+): Promise<string[]> {
   try {
     const llm = createLlmClient("anthropic", { model: VERIFY_MODEL });
+    // The checker must know what the redesign was ASKED to do: without this it
+    // flagged requested additions (category tiles, an opened cart panel) and
+    // photos merely covered by a new element as photo damage, and half the
+    // Power Planter afters were withheld for changes the fixes demanded.
+    const fixesNote = recommendations.length
+      ? `\n\nThe redesign was asked to make these changes, so imagery they plainly call for is EXPECTED, not an alteration:\n${recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n")}`
+      : "";
     const turn = await llm.runTurn({
       system:
         "You are a photo-geometry checker. You do not care about layout, wording, colour, or whether any redesign is good. You compare ONLY the photographs in two screenshots and report any whose shape, crop, framing, or zoom changed.",
@@ -164,7 +175,11 @@ export async function verifyPhotoFidelity(beforeUrl: string, afterUrl: string): 
           "For each photo, ask: is it the same shape, the same crop, and the same amount of the product in frame? " +
           "A square product card that is now rectangular is altered. A photo zoomed in so the product fills more of the frame is altered. " +
           "A photo whose subject is now sliced by an edge is altered. A photo made circular is altered. " +
-          "Repositioning a photo, or changing its overall size while keeping the same proportions and crop, is NOT altered.\n\n" +
+          "Repositioning a photo, or changing its overall size while keeping the same proportions and crop, is NOT altered. " +
+          "A photo partially covered by a new panel, overlay or badge is NOT altered: occlusion is not a geometry change. " +
+          "A photo you cannot see well enough in both images to compare is NOT reportable: inconclusive means say nothing. " +
+          "Never write an entry that itself says a photo is unchanged." +
+          fixesNote + "\n\n" +
           "Call record_photo_check exactly once.",
         images: [
           { url: beforeUrl, label: "IMG_1: original" },
