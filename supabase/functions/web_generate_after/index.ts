@@ -264,9 +264,15 @@ async function generateOne(
   const path = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}.png`;
 
   // ---------------------------------------------------------------------------
-  // ENGINE 1: edit the real page. Preferred, because on this path the client's
-  // photographs cannot be damaged and the brand cannot drift: nothing is redrawn.
+  // ENGINE 1: edit the real page. RETIRED as the default on 2026-08-08: the
+  // header rebuild kept producing mangled headers (duplicated cart icons, the
+  // hamburger overlapping the logo) and set_text truncated product titles, so
+  // the concept looked worse than the original. The code stays as a backup;
+  // flip this constant to try it again, and web_html_after_spike still drives
+  // it directly for experiments. The image model is the default again, with
+  // its hard photo gate, focused retry and verify-before-publish intact.
   // ---------------------------------------------------------------------------
+  const USE_HTML_ENGINE = false;
   const allRecPairs = recommendationsFor(section, viewport);
   const allRecs = allRecPairs.map((r) => r.text);
   // Photography the store never gave us is the one thing a DOM edit still cannot
@@ -283,7 +289,8 @@ async function generateOne(
   // requires the outline its capture now saves, and older audits fall back.
   const cartNeedsOutline = meta.page_type === "cart" && !isUsableOutline(htmlSource?.outline);
   if (cartNeedsOutline) htmlError = "cart_without_stored_outline";
-  if (htmlSource?.pageUrl && htmlRecs.length > 0 && !cartNeedsOutline) {
+  if (!USE_HTML_ENGINE) htmlError = "html_engine_disabled";
+  if (USE_HTML_ENGINE && htmlSource?.pageUrl && htmlRecs.length > 0 && !cartNeedsOutline) {
     try {
       const run = await runHtmlAfter({
         pageUrl: htmlSource.pageUrl,
