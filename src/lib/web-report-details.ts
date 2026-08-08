@@ -51,6 +51,10 @@ export type WebAfterImage = {
   engine?: 'html' | 'gemini_fallback';
   applied_count?: number;
   total_count?: number;
+  /** Why nothing was published, when `url` is empty. `photo_integrity_failed`
+   * means the generator damaged the client's own photos on every attempt and
+   * the hard gate refused to publish the result. */
+  error?: string;
 };
 
 export type WebSectionDetail = {
@@ -132,7 +136,10 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
   const parseAfter = (v: unknown): WebAfterImage | undefined => {
     const rec = asRecord(v);
     const url = asString(rec.url);
-    if (!url) return undefined;
+    const error = asString(rec.error);
+    // Keep a withheld entry (no url) when it carries a reason, so the editor can
+    // explain the gap instead of the report silently showing the Before alone.
+    if (!url && !error) return undefined;
     const engine = asString(rec.engine);
     const num = (v: unknown) => (typeof v === 'number' && Number.isFinite(v) ? v : undefined);
     const markers = (Array.isArray(rec.markers) ? rec.markers : [])
@@ -151,6 +158,7 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
       applied_count: num(rec.applied_count),
       total_count: num(rec.total_count),
       markers,
+      error: error || undefined,
     };
   };
   const after_images: WebSectionDetail['after_images'] = {};
