@@ -13,12 +13,29 @@
  */
 
 export type CapturedElement = { id: string; label: string; x: number; y: number; w: number; h: number };
+
+/** One photograph as it was painted in the shot. Boxes are percentages of the
+ * VIEWPORT, so they line up with the primary screenshot the after-image edits.
+ * This is a COMPLETE inventory, unlike `elements`, which is a capped, filtered
+ * list built for placing finding pins. */
+export type CapturedPhoto = {
+  src: string;
+  /** CSS object-fit, so the compositor knows whether the original pixels can be
+   * dropped into a differently-shaped box without distorting them. */
+  fit: string;
+  /** Intrinsic aspect ratio of the file, when the browser had decoded it. */
+  natural_ar: number | null;
+  x: number; y: number; w: number; h: number;
+};
+
 export type BrowserlessResult =
   | {
     ok: true;
     png: Uint8Array;
     png2?: Uint8Array | null;
     elements: CapturedElement[];
+    /** Every photo painted in the shot; drives the after-image compositor. */
+    photos: CapturedPhoto[];
     cartCount?: number | null;
     /** The proxy pool that actually served this capture ("" for none). Recorded
      * per snapshot so the datacenter-vs-residential spend is auditable rather
@@ -407,6 +424,81 @@ export default async ({ page, context }) => {
     });
   }
 
+  // A COMPLETE inventory of the photographs in the shot, which the elements
+  // list above is not: that one exists to place finding pins, so it filters by
+  // tag and text and caps itself, and it recorded ONE image on a homepage whose
+  // product photos were later swapped, and NONE at all on a product page. The
+  // compositor needs every photo or it restores the wrong things. Separate pass,
+  // no text filter, pierces shadow roots, and includes CSS background images.
+  // Boxes are percentages of the VIEWPORT, matching the primary screenshot.
+  // NOTE: this block is inside a template literal sent to Browserless. No
+  // backticks and no dollar-brace sequences, or the string terminates here.
+  const photos = await page.evaluate(() => {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const out = [];
+    const seen = [];
+    // Walk light DOM and any open shadow roots: these themes build carousels
+    // and gallery slides as web components, which a plain querySelectorAll
+    // cannot see into.
+    const all = [];
+    const walk = (root, depth) => {
+      if (depth > 6) return;
+      let nodes = [];
+      try { nodes = Array.from(root.querySelectorAll("*")); } catch (e) { return; }
+      for (const n of nodes) {
+        all.push(n);
+        if (n.shadowRoot) walk(n.shadowRoot, depth + 1);
+      }
+    };
+    walk(document, 0);
+
+    for (const el of all) {
+      const tag = el.tagName ? el.tagName.toLowerCase() : "";
+      let src = "";
+      let natW = 0, natH = 0;
+      if (tag === "img") {
+        src = el.currentSrc || el.src || "";
+        natW = el.naturalWidth || 0;
+        natH = el.naturalHeight || 0;
+        // Not decoded yet means nothing is painted there to protect.
+        if (!natW || !natH) continue;
+      } else {
+        let bg = "";
+        try { bg = getComputedStyle(el).backgroundImage || ""; } catch (e) { continue; }
+        const m = /url\(["']?(.*?)["']?\)/.exec(bg);
+        if (!m || !m[1] || /^data:image\/svg/i.test(m[1])) continue;
+        src = m[1];
+      }
+      const r = el.getBoundingClientRect();
+      if (r.bottom <= 0 || r.top >= vh) continue;
+      const left = Math.max(0, r.left), top = Math.max(0, r.top);
+      const right = Math.min(vw, r.right), bottom = Math.min(vh, r.bottom);
+      const w = right - left, h = bottom - top;
+      // Ignore icons and tracking pixels; a real photograph is bigger.
+      if (w < 40 || h < 40 || w * h < 4000) continue;
+      let cs = null;
+      try { cs = getComputedStyle(el); } catch (e) { continue; }
+      if (cs.visibility === "hidden" || cs.display === "none" || Number(cs.opacity) === 0) continue;
+      // A carousel keeps off-screen slides in the DOM at full size; only what is
+      // actually painted in the shot matters.
+      const key = [Math.round(left / 4), Math.round(top / 4), Math.round(w / 4), Math.round(h / 4)].join(",");
+      if (seen.indexOf(key) !== -1) continue;
+      seen.push(key);
+      out.push({
+        src: String(src).slice(0, 400),
+        // How the photo is fitted into its box decides whether restoring the
+        // original pixels at a different box would distort it.
+        fit: (cs.objectFit || "") || (tag === "img" ? "fill" : "cover"),
+        natural_ar: natW && natH ? +(natW / natH).toFixed(4) : null,
+        x: +(left / vw * 100).toFixed(2), y: +(top / vh * 100).toFixed(2),
+        w: +(w / vw * 100).toFixed(2), h: +(h / vh * 100).toFixed(2),
+      });
+    }
+    // Biggest first: if anything has to be dropped it should be the least
+    // visually important, and the hero must never be the one that goes.
+    return out.sort((a, b) => (b.w * b.h) - (a.w * a.h)).slice(0, 40);
+  }).catch(() => []);
+
   // Final guard: cart flow navigates a few times; if any hop landed on a bot
   // challenge / error page, bail so the caller requeues instead of storing a
   // picture of the block. (Real pages have far more than 280 chars of text.)
@@ -472,7 +564,7 @@ export default async ({ page, context }) => {
       await page.evaluate(() => { window.scrollTo(0, 0); });
     } catch (e) {}
   }
-  return { data: { screenshot, screenshot2, elements, cartCount, probe, editReport }, type: "application/json" };
+  return { data: { screenshot, screenshot2, elements, photos, cartCount, probe, editReport }, type: "application/json" };
 };
 `;
 
@@ -575,6 +667,7 @@ export async function captureWithBrowserless(input: {
         screenshot?: string;
         screenshot2?: string | null;
         elements?: CapturedElement[];
+        photos?: CapturedPhoto[];
         error?: string;
         cartCount?: number | null;
         probe?: unknown;
@@ -588,6 +681,7 @@ export async function captureWithBrowserless(input: {
     const png = b64ToBytes(payload.screenshot);
     if (png.byteLength < 5000) return { ok: false, error: "browserless_blank_page", proxyUsed: proxy };
     const elements = Array.isArray(payload.elements) ? payload.elements.slice(0, 90) : [];
+    const photos = Array.isArray(payload.photos) ? payload.photos.slice(0, 40) : [];
     let png2: Uint8Array | null = null;
     if (payload.screenshot2) {
       const b = b64ToBytes(payload.screenshot2);
@@ -598,6 +692,7 @@ export async function captureWithBrowserless(input: {
       png,
       png2,
       elements,
+      photos,
       cartCount: payload.cartCount ?? null,
       proxyUsed: proxy,
       probe: payload.probe ?? null,

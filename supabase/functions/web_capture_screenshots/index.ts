@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getScreenshotProvider } from "../_shared/screenshot-provider.ts";
-import { browserlessEnabled, captureWithBrowserless, type CapturedElement } from "../_shared/browserless.ts";
+import { browserlessEnabled, captureWithBrowserless, type CapturedElement, type CapturedPhoto } from "../_shared/browserless.ts";
 import { DOM_OUTLINE_PROBE, isUsableOutline } from "../_shared/html-after.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest, exchangeClientCredentials } from "../_shared/shopify-api.ts";
@@ -446,6 +446,10 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   // generator so it knows what really continues below the crop.
   let pngFold2: Uint8Array | null = null;
   let elements: CapturedElement[] = [];
+  // Complete photo inventory for this shot, stored so the after-image compositor
+  // can restore the client's own photos rather than trusting the model to
+  // reproduce them. Browserless-only: the ScreenshotOne fallback cannot probe.
+  let photos: CapturedPhoto[] = [];
   let captureError = "";
   let browserlessError = ""; // kept separate so the fallback's error doesn't hide it
   let usedBrowserless = false;
@@ -519,6 +523,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       png = bl.png;
       pngFold2 = bl.png2 ?? null;
       elements = bl.elements;
+      photos = bl.photos ?? [];
       if (isUsableOutline(bl.probe)) domOutline = bl.probe;
       usedBrowserless = true;
       if (typeof bl.cartCount === "number") cartCount = bl.cartCount;
@@ -637,11 +642,13 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       // Stored per snapshot: the "after" engine reuses it instead of reloading
       // the page, and it is the record of what the page looked like when shot.
       const withOutline = domOutline ? { ...withFold, dom_outline: domOutline } : withFold;
+      // Every photo painted in this shot, for the after-image compositor.
+      const withPhotos = photos.length ? { ...withOutline, photos } : withOutline;
       // Which proxy pool served this capture, so the datacenter-vs-residential
       // savings are verifiable from the rows rather than guessed.
       const raw = proxyTierUsed && usedBrowserless
-        ? { ...withOutline, proxy_tier: proxyTierUsed, proxy_used: proxyUsed ?? "none" }
-        : withOutline;
+        ? { ...withPhotos, proxy_tier: proxyTierUsed, proxy_used: proxyUsed ?? "none" }
+        : withPhotos;
       await sb.from("web_page_snapshots").update({
         status: "success",
         screenshot_path: path,
