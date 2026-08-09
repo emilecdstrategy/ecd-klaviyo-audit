@@ -595,7 +595,14 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
     // a cursor in hand the job parks as pending and the watchdog resumes it in
     // a few minutes; hours of paging survive a bad minute. Failed is reserved
     // for errors a retry cannot change.
-    const retryable = [429, 500, 502, 503, 504].includes(Number(chunk.status));
+    // A 403 whose body is a Cloudflare HTML page is the CDN edge blocking one
+    // request, not a revoked key: Betsey's scan died this way at 183k profiles
+    // with a valid cursor in hand, and a manual un-fail resumed it cleanly. A
+    // real permissions 403 comes back as Klaviyo JSON, so that still fails.
+    const bodyText = typeof chunk.body === "string" ? chunk.body : "";
+    const edgeBlock403 = Number(chunk.status) === 403 &&
+      /<!DOCTYPE html|cloudflare|attention required/i.test(bodyText);
+    const retryable = [429, 500, 502, 503, 504].includes(Number(chunk.status)) || edgeBlock403;
     if (retryable) {
       await sb.from("klaviyo_profile_scan_jobs").update({
         status: "pending",
@@ -942,6 +949,13 @@ async function pickBestConversionMetricId(params: {
     });
   }
 
+  // A metric whose probe 400'd as values-incapable must never be the fallback:
+  // that is exactly how a broken "Placed Order" metric ended up running (and
+  // zeroing) an entire audit's reporting. A metric that answered OK with zero
+  // conversions is at least QUERYABLE, so prefer it over unprobed candidates.
+  const notQueryable = new Set<string>();
+  let firstQueryable: string | null = null;
+
   const pass1Count = Math.min(candidates.length, 4);
   for (let i = 0; i < pass1Count; i++) {
     if (Date.now() >= probeDeadline) break;
@@ -963,7 +977,11 @@ async function pickBestConversionMetricId(params: {
         }),
       1,
     );
-    if (!probe.ok) continue;
+    if (!probe.ok) {
+      if (isMetricNotValuesQueryable(probe)) notQueryable.add(metricId);
+      continue;
+    }
+    if (firstQueryable === null) firstQueryable = metricId;
     if (hasNonZeroConversion(probe.body?.data?.attributes?.results ?? [])) {
       return { metricId, reason: "probe_flow_filtered" as const, probesRun };
     }
@@ -972,6 +990,7 @@ async function pickBestConversionMetricId(params: {
   for (let i = 0; i < Math.min(candidates.length, 2); i++) {
     if (Date.now() >= probeDeadline) break;
     const metricId = candidates[i];
+    if (notQueryable.has(metricId)) continue;
     probesRun++;
     const probe = await fetchWithRetry(
       () =>
@@ -989,13 +1008,77 @@ async function pickBestConversionMetricId(params: {
         }),
       1,
     );
-    if (!probe.ok) continue;
+    if (!probe.ok) {
+      if (isMetricNotValuesQueryable(probe)) notQueryable.add(metricId);
+      continue;
+    }
+    if (firstQueryable === null) firstQueryable = metricId;
     if (hasNonZeroConversion(probe.body?.data?.attributes?.results ?? [])) {
       return { metricId, reason: "probe_campaign" as const, probesRun };
     }
   }
 
-  return { metricId: candidates[0] ?? null, reason: "fallback_first_candidate" as const, probesRun };
+  const fallback = firstQueryable ?? candidates.find((id) => !notQueryable.has(id)) ?? null;
+  return { metricId: fallback, reason: "fallback_first_candidate" as const, probesRun };
+}
+
+/** Klaviyo's 400 for a metric that exists but cannot answer values-report
+ * queries (no monetary value attached). Betsey's account has a metric literally
+ * named "Placed Order" with this property: the name-based picker chose it
+ * directly, and every reporting query on the audit then 400'd with this, so
+ * the report rendered $0 revenue and raw error JSON in the metric cards. */
+function isMetricNotValuesQueryable(res: { ok: boolean; status?: number | null; body?: unknown }): boolean {
+  if (res.ok || res.status !== 400) return false;
+  try {
+    return JSON.stringify(res.body ?? "").includes("does not support querying for values data");
+  } catch {
+    return false;
+  }
+}
+
+/** Find a metric that provably carries revenue values, excluding known-bad
+ * ids. Used by the reporting stage to self-heal when the cached metric turns
+ * out to be values-incapable, so re-running the stage fixes the audit instead
+ * of failing the same way.
+ *
+ * Probes via metric-aggregates (sum of value), NOT via values reports: the
+ * values-report endpoint sits behind the shared 2-per-minute token bucket, and
+ * a first version that probed through it blew the stage's 150s wall clock
+ * before finishing a single repick. Aggregates answer the same question (does
+ * this metric have $value data) in seconds. Prefers a metric with real revenue
+ * in the window; falls back to any metric that answers with a value at all. */
+async function repickValuesQueryableMetric(params: {
+  apiKey: string;
+  revision: string;
+  excludeIds: string[];
+  timezone: string;
+  deadlineAtMs: number;
+}): Promise<{ id: string; name: string | null } | null> {
+  const metricsRes = await klaviyoPaged(
+    params.apiKey,
+    params.revision,
+    "/api/metrics/?fields%5Bmetric%5D=name,integration",
+    METRICS_MAX_PAGES,
+  );
+  if (!metricsRes.ok) return null;
+  const { candidates, findName } = pickMetricCandidatesFromList(metricsRes.items ?? []);
+  const excluded = new Set(params.excludeIds);
+  const eligible = candidates.filter((id) => !excluded.has(id));
+  let firstAnswering: string | null = null;
+  for (const id of eligible.slice(0, 6)) {
+    if (Date.now() >= params.deadlineAtMs - 15_000) break;
+    const agg = await queryMetricAggregateSumValueWithRetry({
+      apiKey: params.apiKey,
+      revision: params.revision,
+      metricId: id,
+      timezone: params.timezone,
+      days: 30,
+    });
+    if (!agg.ok || agg.sum == null) continue;
+    if (agg.sum > 0) return { id, name: findName(id) };
+    if (firstAnswering === null) firstAnswering = id;
+  }
+  return firstAnswering ? { id: firstAnswering, name: findName(firstAnswering) } : null;
 }
 
 const REVENUE_METRIC_PATTERNS = [
@@ -1673,7 +1756,9 @@ async function runStageReporting(params: {
       .select("revision, conversion_metric_id, timezone")
       .eq("client_id", clientId).maybeSingle();
     revision = KLAVIYO_REVISION;
-    const conversionMetricId = (conn?.conversion_metric_id as string | null) || null;
+    // Mutable: the stage re-picks mid-run when the cached metric turns out to
+    // be values-incapable (see the camp30 failure branch below).
+    let conversionMetricId = (conn?.conversion_metric_id as string | null) || null;
     const accountTimezone = (conn?.timezone as string | null) || "UTC";
 
     const apiKey = await resolveApiKey(sb, clientId, null);
@@ -1731,18 +1816,51 @@ async function runStageReporting(params: {
     if (conversionMetricId) {
       // Serialize main reports through the token bucket (2/min steady).
       const tf: "last_30_days" = "last_30_days";
-      const camp30 = await queryValuesReportWithBackoff({
+      const campaignParams = () => ({
         apiKey,
         revision,
-        endpointPath: "/api/campaign-values-reports/",
+        endpointPath: "/api/campaign-values-reports/" as const,
         timeframeKey: tf,
-        conversionMetricId,
+        conversionMetricId: conversionMetricId as string,
         filter: "contains-any(send_channel,[\"email\"])",
         statistics: campaignReportStats,
         groupBy: ["campaign_id", "campaign_message_id", "send_channel"],
         deadlineAtMs,
         bucket,
       });
+      let camp30 = await queryValuesReportWithBackoff(campaignParams());
+      // Self-heal a values-incapable metric. The name-based picker can choose a
+      // metric Klaviyo then rejects for every values query ("Placed Order" with
+      // no monetary value on Betsey's account), which used to zero out the whole
+      // report. Re-pick a provably queryable metric, persist it, and continue,
+      // so re-running this stage repairs the audit.
+      if (!camp30.ok && isMetricNotValuesQueryable(camp30)) {
+        const badId = conversionMetricId;
+        const repicked = await repickValuesQueryableMetric({
+          apiKey,
+          revision,
+          excludeIds: [badId],
+          timezone: accountTimezone,
+          deadlineAtMs,
+        });
+        if (repicked) {
+          conversionMetricId = repicked.id;
+          await sb.from("klaviyo_connections").update({
+            conversion_metric_id: repicked.id,
+            conversion_metric_name: repicked.name,
+            conversion_metric_verified_at: new Date().toISOString(),
+          }).eq("client_id", clientId);
+          await sb.from("klaviyo_reporting_rollups").update({ conversion_metric_id: repicked.id })
+            .eq("audit_id", params.auditId);
+          reportingErrors.push({
+            stage: "conversion_metric_repick",
+            status: null,
+            message:
+              `Cached conversion metric ${badId} cannot answer values queries; switched to ${repicked.id} (${repicked.name ?? "unnamed"}) and continued.`,
+          });
+          camp30 = await queryValuesReportWithBackoff(campaignParams());
+        }
+      }
       if (camp30.ok) {
         campaignReports.push({ timeframe: tf, results: camp30.body?.data?.attributes?.results ?? [] });
       } else {
