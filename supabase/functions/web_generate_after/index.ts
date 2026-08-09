@@ -463,14 +463,35 @@ async function generateOne(
   // afterwards. The model never sees a photo, so it cannot damage one. If it
   // destroys a slot anyway, or invents an extra one, the restore reports it and
   // the whole candidate is rejected by arithmetic, not by a vision judge.
-  const compositing = USE_COMPOSITE && Array.isArray(photos) && photos.length > 0;
+  // A photo whose box is a sliver clipped by the bottom of the shot (a product
+  // row just peeking into frame) cannot be a mandatory slot: fixes routinely
+  // reflow exactly that band ("show the first products without scrolling"), the
+  // model redraws it, and the dead sliver slot rejected every masked attempt on
+  // the first live run. Leave slivers unmasked; the vision gate still watches
+  // that region.
+  const srcDims = pngSize(srcPng);
+  const lockablePhotos = (Array.isArray(photos) ? photos : []).filter((p) => {
+    if (p.y + p.h < 98) return true; // not clipped by the bottom of the shot
+    // Clipped photos are slivers only when MOST of the photo is below the crop,
+    // judged from the file's intrinsic ratio (percent boxes use different
+    // denominators per axis, so this needs real pixels). The first cut used a
+    // flat height threshold and it swallowed fully-visible product cards.
+    const ar = (p as PhotoBox & { natural_ar?: number | null }).natural_ar;
+    if (typeof ar === "number" && ar > 0 && srcDims) {
+      const wPx = (p.w / 100) * srcDims.w;
+      const visibleHPx = (p.h / 100) * srcDims.h;
+      return visibleHPx >= (wPx / ar) * 0.55;
+    }
+    return p.h > 18;
+  });
+  const compositing = USE_COMPOSITE && lockablePhotos.length > 0;
   let genSrc: Uint8Array = srcPng;
   let lockNote = "";
   if (compositing) {
     try {
-      const m = await maskPhotos(srcPng, photos as PhotoBox[]);
+      const m = await maskPhotos(srcPng, lockablePhotos);
       genSrc = m.png;
-      lockNote = lockSlotsPrompt((photos as PhotoBox[]).length);
+      lockNote = lockSlotsPrompt(lockablePhotos.length);
     } catch (e) {
       // Mask failure just means generating the old way, with the old gate.
       console.warn(`after-image ${meta.label}/${viewport}: mask failed (${e instanceof Error ? e.message : e}), generating unmasked`);
@@ -526,13 +547,13 @@ async function generateOne(
           if (!candidate) {
             lastErr = new Error("gemini_no_image_returned (finish=none)");
           } else if (!plan.masked) {
-            if (compositing) compositeInfo = { slots: (photos as PhotoBox[]).length, restored: 0, fallback: "unmasked" };
+            if (compositing) compositeInfo = { slots: lockablePhotos.length, restored: 0, fallback: "unmasked" };
             return candidate;
           } else {
             // Paste the client's own photos into the slots the model kept. All
             // slots restored and no stray slot pixels means the photos are the
             // originals by construction; anything else rejects this candidate.
-            const restored = await restorePhotos(srcPng, candidate, photos as PhotoBox[]);
+            const restored = await restorePhotos(srcPng, candidate, lockablePhotos);
             const missing = restored.report.filter((r) => !r.found).length;
             const leftover = await leftoverSlotPixels(restored.png);
             if (missing === 0 && leftover < 1500) {
@@ -688,7 +709,13 @@ async function generateOne(
   const dupWidget = finalVerdict.defects.some(
     (d) => /duplicat/i.test(d) && /widget|bubble|badge|icon/i.test(d),
   );
-  if ((finalVerdict.missing.length > 0 || dupWidget) && Date.now() - startedAt < 90_000) {
+  // Never polish a fully-composited image: polish regenerates WITHOUT masking,
+  // so it trades photos that are provably the client's own pixels for a chance
+  // at one more fix. On the first live run it won publication and re-damaged
+  // the banner the compositor had just restored, which un-published the page.
+  const ciNow = compositeInfo as { slots: number; restored: number; fallback?: string } | null;
+  const compositeClean = ciNow !== null && !ciNow.fallback && ciNow.restored === ciNow.slots;
+  if (!compositeClean && (finalVerdict.missing.length > 0 || dupWidget) && Date.now() - startedAt < 90_000) {
     try {
       const polishFixes = [
         ...finalVerdict.missing,
@@ -745,8 +772,26 @@ async function generateOne(
   // The retry may have generated again, so record the LAST restore that fed the
   // published image rather than whatever attempt 1 happened to do.
   verify.composite = compositeInfo;
-  const finalPhotoDefects = (Array.isArray(publishedVerdict.defects) ? publishedVerdict.defects as string[] : [])
-    .filter(isPhotoDefect);
+  // When every slot was restored, the photos in the published image ARE the
+  // source pixels, copied by arithmetic. A vision judge disagreeing with that is
+  // wrong by construction (it flagged a requested banner trim as a re-crop on
+  // the first composited run), so its photo verdicts become informational and
+  // only the unmasked fallback still lives or dies by them.
+  // The polish pass regenerates from the composited image WITHOUT masking, so a
+  // promoted polish forfeits the guarantee and faces the vision gate like any
+  // unmasked output.
+  // compositeInfo is only ever assigned inside the gemini closure, which TS's
+  // control-flow analysis cannot see, so it narrows the variable to its initial
+  // null here; the cast restores the declared type.
+  const ci = compositeInfo as { slots: number; restored: number; fallback?: string } | null;
+  const photosProvablyOriginal = ci !== null &&
+    !ci.fallback &&
+    ci.restored === ci.slots &&
+    verify.published !== "polish";
+  const finalPhotoDefects = photosProvablyOriginal
+    ? []
+    : (Array.isArray(publishedVerdict.defects) ? publishedVerdict.defects as string[] : [])
+      .filter(isPhotoDefect);
   if (finalPhotoDefects.length > 0) {
     console.error(
       `after-image ${meta.label}/${viewport}: withheld, photos still damaged after all passes: ${

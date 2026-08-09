@@ -43,6 +43,11 @@ export type SlotReport = {
    * purity means the model drew INTO the slot, so pasting over it would also
    * paste over whatever it drew. */
   purity: number;
+  /** How the restore was done: a clean rectangle paste, or pixel-wise when the
+   * model drew a text overlay over the slot (hero titles), where only the
+   * slot-coloured pixels are replaced so the drawn overlay survives on top of
+   * the restored photo. */
+  mode?: "rect" | "pixelwise";
 };
 
 function toPx(b: PhotoBox, w: number, h: number) {
@@ -178,25 +183,45 @@ export async function restorePhotos(
     if (ci !== undefined) {
       const c = components[ci];
       entry.purity = c.purity;
-      // Purity of a clean solid rectangle is ~1. Well below that means the
-      // component is an L-shape or the model drew into the slot; pasting a
-      // rectangle over it would cover real content.
-      if (c.purity >= 0.85) {
-        entry.found = { x: c.x, y: c.y, w: c.w, h: c.h };
-        // COVER-fit: scale the source photo to fill the slot while keeping its
-        // aspect ratio, cropping the overflow evenly. srcW/srcH is the region
-        // of the source photo actually shown.
-        const scale = Math.max(c.w / srcBox.w, c.h / srcBox.h);
-        const cropW = Math.min(srcBox.w, Math.round(c.w / scale));
-        const cropH = Math.min(srcBox.h, Math.round(c.h / scale));
+      // Purity of a clean solid rectangle is ~1 (spike runs measured 0.996 to
+      // 1.0). Meaningfully below that means the model drew INTO the slot
+      // (glyphs over the rectangle scored ~0.85-0.92 on a live run and pasting
+      // erased them halfway, leaving clipped text remnants), so demand a clean
+      // rectangle and let the caller regenerate instead.
+      // 0.5 instead of demanding near-1: a slot with a title drawn into it (the
+      // model re-adds a hero heading over the banner, as the real design has)
+      // scores 0.5-0.95. Pasting the source rect over it is right: the source
+      // pixels carry the page's own baked-in overlay text. A pixel-wise variant
+      // that tried to keep the model's drawn title was worse in practice: the
+      // glyphs blend into the magenta, so they came back with pink fringing.
+      if (c.purity >= 0.5) {
+        // Dilate the paste rect a couple of pixels: the model re-encodes the
+        // image, so the slot has a thin blended halo just outside the pure
+        // bounding box, and it showed up as a 1px magenta outline in the first
+        // published composite.
+        const D = 3;
+        const px0 = Math.max(0, c.x - D), py0 = Math.max(0, c.y - D);
+        const pw = Math.min(gen.width - px0, c.w + 2 * D);
+        const ph = Math.min(gen.height - py0, c.h + 2 * D);
+        entry.found = { x: px0, y: py0, w: pw, h: ph };
+        entry.mode = "rect";
+        // COVER-fit, anchored to the TOP of the source region: scale the source
+        // photo to fill the slot while keeping its aspect ratio. Top-anchored
+        // because a slot that came back shorter almost always means a fix asked
+        // to trim the banner, and "trim" means the window got shorter, not that
+        // the view re-centred; hero banners also carry their headline overlay in
+        // the upper part of the source pixels, which a centre crop cut off.
+        const scale = Math.max(pw / srcBox.w, ph / srcBox.h);
+        const cropW = Math.min(srcBox.w, Math.round(pw / scale));
+        const cropH = Math.min(srcBox.h, Math.round(ph / scale));
         const cropX = srcBox.x + ((srcBox.w - cropW) >> 1);
-        const cropY = srcBox.y + ((srcBox.h - cropH) >> 1);
-        for (let ty = 0; ty < c.h; ty++) {
-          const sy = cropY + Math.min(cropH - 1, Math.floor((ty / c.h) * cropH));
-          for (let tx = 0; tx < c.w; tx++) {
-            const sx = cropX + Math.min(cropW - 1, Math.floor((tx / c.w) * cropW));
+        const cropY = srcBox.y;
+        for (let ty = 0; ty < ph; ty++) {
+          const sy = cropY + Math.min(cropH - 1, Math.floor((ty / ph) * cropH));
+          for (let tx = 0; tx < pw; tx++) {
+            const sx = cropX + Math.min(cropW - 1, Math.floor((tx / pw) * cropW));
             const si = (sy * src.width + sx) * 4;
-            const gi = ((c.y + ty) * gen.width + (c.x + tx)) * 4;
+            const gi = ((py0 + ty) * gen.width + (px0 + tx)) * 4;
             gen.bitmap[gi] = src.bitmap[si];
             gen.bitmap[gi + 1] = src.bitmap[si + 1];
             gen.bitmap[gi + 2] = src.bitmap[si + 2];
@@ -208,7 +233,45 @@ export async function restorePhotos(
     report.push(entry);
   }
 
+  defringe(gen);
   return { png: await gen.encode(), report };
+}
+
+/** Clean up thin magenta remnants: anti-aliased slot borders and glyphs the
+ * model blended into a slot leave pinkish fringes that survive the rect paste
+ * (they sit outside any component's bounding box, e.g. a breadcrumb drawn over
+ * the slot's top sliver). A fringe pixel is replaced by a nearby non-magenta
+ * neighbour. Deliberately only fixes THIN features: a pixel deep inside a solid
+ * magenta block has no clean neighbour in reach and stays magenta, so a
+ * destroyed or invented slot still trips the leftover gate afterwards. */
+function defringe(img: Image): void {
+  const w = img.width, h = img.height;
+  const b = img.bitmap;
+  // Wider net than the slot test: catches half-blended pink, not just pure.
+  const fringey = (i: number) => b[i] >= 140 && b[i + 2] >= 120 && b[i + 1] <= 120 && (b[i] - b[i + 1]) >= 60 && (b[i + 2] - b[i + 1]) >= 40;
+  const hits: number[] = [];
+  for (let i = 0, n = w * h * 4; i < n; i += 4) {
+    if (fringey(i)) hits.push(i);
+  }
+  for (const i of hits) {
+    const p = i >> 2;
+    const x = p % w, y = (p / w) | 0;
+    // Nearest clean pixel within 3px, scanning outward.
+    let done = false;
+    for (let r = 1; r <= 3 && !done; r++) {
+      for (const [dx, dy] of [[0, -r], [0, r], [-r, 0], [r, 0], [-r, -r], [r, -r], [-r, r], [r, r]]) {
+        const nx = x + dx, ny = y + dy;
+        if (nx < 0 || ny < 0 || nx >= w || ny >= h) continue;
+        const ni = (ny * w + nx) * 4;
+        if (fringey(ni)) continue;
+        b[i] = b[ni];
+        b[i + 1] = b[ni + 1];
+        b[i + 2] = b[ni + 2];
+        done = true;
+        break;
+      }
+    }
+  }
 }
 
 /** Count slot-coloured pixels left in a composited image. The spike showed the
