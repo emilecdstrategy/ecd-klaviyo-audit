@@ -22,7 +22,7 @@ import {
 } from "../_shared/after-image-verify.ts";
 import { autoPublishAudit } from "../_shared/auto-publish.ts";
 import { isUsableOutline, runHtmlAfter, summarizeEditReport } from "../_shared/html-after.ts";
-import { leftoverSlotPixels, lockSlotsPrompt, maskPhotos, restorePhotos, type PhotoBox } from "../_shared/after-composite.ts";
+import { cropToSupportedRatio, lockSlotsPrompt, maskPhotos, restorePhotos, type PhotoBox } from "../_shared/after-composite.ts";
 
 // Generates an "after" concept image for a web-audit page section.
 //
@@ -50,6 +50,11 @@ import { leftoverSlotPixels, lockSlotsPrompt, maskPhotos, restorePhotos, type Ph
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 const GEMINI_IMAGE_MODEL = Deno.env.get("GEMINI_IMAGE_MODEL") ?? "gemini-3.1-flash-image";
+// The pro image tier ("Nano Banana Pro"): measurably better long-text rendering
+// and layout control, which is exactly what a storefront screenshot is. Tried
+// first; the runtime falls back to the flash model above if the account cannot
+// use it (wrong id, no access, quota).
+const GEMINI_IMAGE_MODEL_PRO = Deno.env.get("GEMINI_IMAGE_MODEL_PRO") ?? "gemini-3-pro-image-preview";
 const STORAGE_BUCKET = "audit-assets";
 
 const corsHeaders: Record<string, string> = {
@@ -392,7 +397,33 @@ async function generateOne(
 
   const srcRes = await fetch(sourceUrl);
   if (!srcRes.ok) throw new Error(`fetch_source_${srcRes.status}`);
-  const srcPng = new Uint8Array(await srcRes.arrayBuffer());
+  let srcPng: Uint8Array = new Uint8Array(await srcRes.arrayBuffer());
+
+  // SHAPE CONTRACT. The model can only output its supported aspect ratios; fed
+  // a 704x1530 phone shot with no imageConfig it rendered at default 1K in a
+  // shape of its own choosing, which is where the unreadable text, blank
+  // bottom halves, and sliced banners came from. Crop the source, top-anchored,
+  // to the tallest supported ratio that fits (the first fold survives; fixes
+  // live there), then request EXACTLY that ratio at 2K. The verifier must judge
+  // against the cropped source, or it flags the missing bottom as a defect.
+  let effectivePhotos: PhotoBox[] = Array.isArray(photos) ? photos : [];
+  let outputRatio: string | undefined;
+  let verifySourceUrl = sourceUrl;
+  try {
+    const shaped = await cropToSupportedRatio(srcPng, effectivePhotos);
+    outputRatio = shaped.ratio;
+    if (shaped.cropped) {
+      srcPng = shaped.png;
+      effectivePhotos = shaped.photos;
+      verifySourceUrl = await uploadPng(
+        sb,
+        `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}_source.png`,
+        srcPng,
+      );
+    }
+  } catch (e) {
+    console.warn(`after-image ${meta.label}/${viewport}: ratio crop failed (${e instanceof Error ? e.message : e}), sending unshaped`);
+  }
 
   let refPng: Uint8Array | undefined;
   if (referenceAfterUrl) {
@@ -470,7 +501,7 @@ async function generateOne(
   // the first live run. Leave slivers unmasked; the vision gate still watches
   // that region.
   const srcDims = pngSize(srcPng);
-  const lockablePhotos = (Array.isArray(photos) ? photos : []).filter((p) => {
+  const lockablePhotos = effectivePhotos.filter((p) => {
     if (p.y + p.h < 98) return true; // not clipped by the bottom of the shot
     // Clipped photos are slivers only when MOST of the photo is below the crop,
     // judged from the file's intrinsic ratio (percent boxes use different
@@ -517,6 +548,8 @@ async function generateOne(
   // Same prompt, one more go, before treating it as a real failure.
   // Per-generation record of the last composite restore, persisted into verify.
   let compositeInfo: { slots: number; restored: number; fallback?: string } | null = null;
+  // Pro tier first for its text rendering; downgraded in-flight if unavailable.
+  let imageModel = GEMINI_IMAGE_MODEL_PRO;
   const gemini = async (prompt: string, referencePng?: Uint8Array) => {
     let lastErr: unknown;
     // When compositing, a masked failure falls back to one unmasked pass (the
@@ -537,10 +570,14 @@ async function generateOne(
             plan.masked && lockNote ? `${prompt}\n\n${lockNote}` : prompt,
             apiKey,
             {
-              model: GEMINI_IMAGE_MODEL,
+              model: imageModel,
               referencePng,
               belowFoldPng: attempt < 3 ? belowPng : undefined,
               temperature: attempt === 1 ? 0.4 : 0.7,
+              // The shape contract: output exactly the (cropped) source's ratio
+              // at 2K, instead of the default 1K at a model-chosen shape.
+              aspectRatio: outputRatio,
+              imageSize: "1K",
             },
           );
           const candidate = candidates[0];
@@ -555,7 +592,7 @@ async function generateOne(
             // originals by construction; anything else rejects this candidate.
             const restored = await restorePhotos(srcPng, candidate, lockablePhotos);
             const missing = restored.report.filter((r) => !r.found).length;
-            const leftover = await leftoverSlotPixels(restored.png);
+            const leftover = restored.leftoverPx;
             if (missing === 0 && leftover < 1500) {
               compositeInfo = { slots: restored.report.length, restored: restored.report.length };
               return restored.png;
@@ -564,8 +601,16 @@ async function generateOne(
           }
         } catch (e) {
           lastErr = e;
-          // Only bail on failures a retry cannot change: hard blocks and infra.
           const msg = e instanceof Error ? e.message : String(e);
+          // The pro tier may not exist for this key (wrong id, no access): drop
+          // to the flash model and redo this attempt rather than failing.
+          if (imageModel !== GEMINI_IMAGE_MODEL && /not[_ ]?found|does not exist|NOT_FOUND|permission|unsupported|invalid.{0,20}model/i.test(msg)) {
+            console.warn(`after-image: model ${imageModel} unavailable (${msg.slice(0, 100)}), falling back to ${GEMINI_IMAGE_MODEL}`);
+            imageModel = GEMINI_IMAGE_MODEL;
+            attempt--;
+            continue;
+          }
+          // Only bail on failures a retry cannot change: hard blocks and infra.
           if (/timeout|abort|block=|safety|prohibited|api_key|quota/i.test(msg)) throw e;
         }
         console.warn(
@@ -604,7 +649,7 @@ async function generateOne(
   // fix or introduced a defect. Capped at one retry to stay inside the edge
   // function's wall clock. The retry gets a strictly more specific prompt, so if
   // it succeeds we keep it; if the retry itself fails we keep the first attempt.
-  const check = await gradeWithPhotoCheck(sourceUrl, bustedUrl, recommendations, viewport);
+  const check = await gradeWithPhotoCheck(verifySourceUrl, bustedUrl, recommendations, viewport);
   // Persisted with the image so a bad result can be diagnosed from the DB:
   // did the judge miss the problem, or see it and ship the lesser evil anyway?
   const verify: Record<string, unknown> = {
@@ -670,7 +715,7 @@ async function generateOne(
         // Grade the retry against the FULL fix list, not just what it was asked
         // to do. A fewer-fixes retry that silently drops fixes the first attempt
         // had must lose points for them, or "asked for less" wins for free.
-        const recheck = await gradeWithPhotoCheck(sourceUrl, candidateUrl, recommendations, viewport);
+        const recheck = await gradeWithPhotoCheck(verifySourceUrl, candidateUrl, recommendations, viewport);
         verify.retry_ran = true;
         verify.retry_mode = photoTrouble ? "photo_lock" : focusedOnMissing ? "missing_only" : "full";
         verify.retry = { missing: recheck.missing, defects: recheck.defects };
@@ -731,10 +776,14 @@ async function generateOne(
         polishFixes.map((r, i) => `${i + 1}. ${r}`).join("\n"),
         `Keep every photograph, heading, button, and layout region exactly as it is. Do not re-lay-out anything. Output the full corrected screenshot at the same size and aspect ratio.`,
       ].join("\n\n");
-      const polished = (await geminiEditImage(finalBytes, polishPrompt, apiKey, { model: GEMINI_IMAGE_MODEL }))[0];
+      const polished = (await geminiEditImage(finalBytes, polishPrompt, apiKey, {
+        model: imageModel,
+        aspectRatio: outputRatio,
+        imageSize: "1K",
+      }))[0];
       if (!wrongShape(srcPng, polished)) {
         const polishUrl = await storeAt(candidatePath, polished);
-        const pcheck = await gradeWithPhotoCheck(sourceUrl, polishUrl, recommendations, viewport);
+        const pcheck = await gradeWithPhotoCheck(verifySourceUrl, polishUrl, recommendations, viewport);
         verify.polish_ran = true;
         verify.polish = { missing: pcheck.missing, defects: pcheck.defects };
         // Promote only a strict improvement: photos no worse, total score lower.

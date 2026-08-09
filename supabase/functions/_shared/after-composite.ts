@@ -146,7 +146,7 @@ export async function restorePhotos(
   sourcePng: Uint8Array,
   generatedPng: Uint8Array,
   photos: PhotoBox[],
-): Promise<{ png: Uint8Array; report: SlotReport[] }> {
+): Promise<{ png: Uint8Array; report: SlotReport[]; leftoverPx: number }> {
   const src = await Image.decode(sourcePng);
   const gen = await Image.decode(generatedPng);
 
@@ -234,7 +234,14 @@ export async function restorePhotos(
   }
 
   defringe(gen);
-  return { png: await gen.encode(), report };
+  // Count remaining slot pixels on the in-memory bitmap: re-decoding the
+  // encoded 2K PNG just to count (the old leftoverSlotPixels round trip) was
+  // one full decode too many for the edge function's compute budget.
+  let leftoverPx = 0;
+  for (let i = 0; i < gen.bitmap.length; i += 4) {
+    if (isSlotColour(gen.bitmap, i)) leftoverPx++;
+  }
+  return { png: await gen.encode(), report, leftoverPx };
 }
 
 /** Clean up thin magenta remnants: anti-aliased slot borders and glyphs the
@@ -274,6 +281,60 @@ function defringe(img: Image): void {
   }
 }
 
+/** Aspect ratios the Gemini image API accepts, as height/width values. The
+ * model can ONLY output these shapes: asking for anything else means it
+ * free-picks, letterboxes, or crops on its own, which is where the unreadable
+ * text, blank bottom halves, and sliced banners came from. */
+const SUPPORTED_RATIOS: Array<{ label: string; hw: number }> = [
+  { label: "21:9", hw: 9 / 21 },
+  { label: "16:9", hw: 9 / 16 },
+  { label: "3:2", hw: 2 / 3 },
+  { label: "4:3", hw: 3 / 4 },
+  { label: "5:4", hw: 4 / 5 },
+  { label: "1:1", hw: 1 },
+  { label: "4:5", hw: 5 / 4 },
+  { label: "3:4", hw: 4 / 3 },
+  { label: "2:3", hw: 3 / 2 },
+  { label: "9:16", hw: 16 / 9 },
+];
+
+/** Crop a screenshot, top-anchored, to the tallest supported ratio that fits
+ * inside it, so the model can output EXACTLY the input's shape. Returns the
+ * cropped PNG, the ratio label to request, and rescaled photo boxes (photos
+ * fully below the crop are dropped; ones straddling the edge are clipped).
+ * A screenshot already within 2% of a supported ratio is passed through. */
+export async function cropToSupportedRatio(
+  sourcePng: Uint8Array,
+  photos: PhotoBox[],
+): Promise<{ png: Uint8Array; ratio: string; photos: PhotoBox[]; cropped: boolean }> {
+  const img = await Image.decode(sourcePng);
+  const hw = img.height / img.width;
+  // Tallest ratio that is NOT taller than the source: cropping the bottom keeps
+  // the first fold, which is where nearly every fix lives; padding would hand
+  // the model empty space to fill with inventions.
+  let best = SUPPORTED_RATIOS[0];
+  for (const r of SUPPORTED_RATIOS) {
+    if (r.hw <= hw + 0.02 && r.hw > best.hw) best = r;
+  }
+  if (Math.abs(best.hw - hw) / hw <= 0.02) {
+    return { png: sourcePng, ratio: best.label, photos, cropped: false };
+  }
+  const newH = Math.round(img.width * best.hw);
+  // In-place crop: a clone doubled the resident bitmap and helped push the
+  // edge function over its compute limit at 2K.
+  const cropped = img.crop(0, 0, img.width, newH);
+  const scale = img.height / newH; // old % of full height -> % of cropped height
+  const keptPhotos: PhotoBox[] = [];
+  for (const p of photos) {
+    const y = p.y * scale;
+    if (y >= 99) continue; // entirely below the crop
+    const h = Math.min(100 - y, p.h * scale);
+    if (h < 2) continue;
+    keptPhotos.push({ ...p, y: +y.toFixed(2), h: +h.toFixed(2) });
+  }
+  return { png: await cropped.encode(), ratio: best.label, photos: keptPhotos, cropped: true };
+}
+
 /** Count slot-coloured pixels left in a composited image. The spike showed the
  * model sometimes INVENTS an extra slot (it drew a second product card as a
  * magenta rectangle); no photo maps to it, so it survives the restore as raw
@@ -295,5 +356,6 @@ export function lockSlotsPrompt(count: number): string {
     `LOCKED IMAGE SLOTS: the source screenshot contains ${count} solid magenta rectangle(s). Each one is a LOCKED placeholder standing in for a real photograph that will be pasted back in afterwards by software.`,
     `Treat every magenta rectangle as an immovable photo that you cannot see. Carry each one through to your output as the SAME clean, solid, pure magenta rectangle: same proportions, same place in the layout (it may shift slightly if a fix moves content around it).`,
     `NEVER draw anything inside a magenta rectangle, never tint it, never delete one, never split or merge them, and never add a new one. Your output must contain exactly ${count} solid magenta rectangle(s).`,
+    `The magenta colour is RESERVED for those slots alone: never use magenta, pink, or violet as a fill, bar, band, button, or accent anywhere else in the design. Any pink element that is not one of the ${count} locked slots makes the output unusable.`,
   ].join(" ");
 }

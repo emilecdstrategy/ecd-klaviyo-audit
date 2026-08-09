@@ -210,6 +210,14 @@ export type GeminiImageOptions = {
   /** Sampling temperature (default 0.4). Retries nudge this so a refusal loop
    * is not replayed with byte-identical odds. */
   temperature?: number;
+  /** Output shape, e.g. "9:16". Without it the model FREE-PICKS a ratio and
+   * renders at the default 1K, which downscaled every screenshot into
+   * illegible text and padded or cropped the frame: weeks of "inconsistency"
+   * were this parameter being absent. Callers should crop the source to a
+   * supported ratio and pass it here so input and output shapes agree. */
+  aspectRatio?: string;
+  /** "1K" | "2K" | "4K" (uppercase K required by the API). Default 1K. */
+  imageSize?: string;
 };
 
 /** Calls Gemini image editing: source screenshot in, edited screenshot(s) out.
@@ -237,6 +245,12 @@ export async function geminiEditImage(
     temperature: opts.temperature ?? 0.4,
   };
   if (opts.candidateCount && opts.candidateCount > 1) generationConfig.candidateCount = opts.candidateCount;
+  if (opts.aspectRatio || opts.imageSize) {
+    generationConfig.imageConfig = {
+      ...(opts.aspectRatio ? { aspectRatio: opts.aspectRatio } : {}),
+      ...(opts.imageSize ? { imageSize: opts.imageSize } : {}),
+    };
+  }
   // Bounded like the llm-adapter (110s): an unanswered image call used to hold
   // the edge invocation open until the platform killed it.
   const controller = new AbortController();
