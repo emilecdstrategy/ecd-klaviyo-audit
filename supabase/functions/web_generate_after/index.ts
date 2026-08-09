@@ -22,6 +22,7 @@ import {
 } from "../_shared/after-image-verify.ts";
 import { autoPublishAudit } from "../_shared/auto-publish.ts";
 import { isUsableOutline, runHtmlAfter, summarizeEditReport } from "../_shared/html-after.ts";
+import { leftoverSlotPixels, lockSlotsPrompt, maskPhotos, restorePhotos, type PhotoBox } from "../_shared/after-composite.ts";
 
 // Generates an "after" concept image for a web-audit page section.
 //
@@ -98,6 +99,8 @@ type ViewportSource = {
   outline?: unknown;
   /** Cart captures need the variant re-added before the drawer has anything in it. */
   variantId?: string | null;
+  /** Complete capture-time photo inventory (raw.photos); drives the compositor. */
+  photos?: PhotoBox[];
 };
 
 // One source screenshot per viewport for a page (above-the-fold variant preferred).
@@ -133,6 +136,7 @@ async function listViewportSources(sb: SupabaseClient, auditId: string, pageType
       pageUrl: chosen.url ?? null,
       outline: chosen.raw?.dom_outline ?? null,
       variantId: typeof chosen.raw?.variant_id === "string" ? chosen.raw.variant_id : null,
+      photos: Array.isArray(chosen.raw?.photos) ? (chosen.raw.photos as PhotoBox[]) : [],
     });
   }
   return out;
@@ -257,6 +261,7 @@ async function generateOne(
   belowFoldUrl?: string | null,
   sourceElements?: CapturedEl[],
   htmlSource?: { pageUrl?: string | null; outline?: unknown; variantId?: string | null },
+  photos?: PhotoBox[],
 ): Promise<{ url: string | null; viewport: Viewport }> {
   const meta = PAGE_SECTIONS.find((s) => s.key === section.section_key);
   if (!meta) throw new Error(`section ${section.section_key} is not a page section`);
@@ -273,6 +278,9 @@ async function generateOne(
   // its hard photo gate, focused retry and verify-before-publish intact.
   // ---------------------------------------------------------------------------
   const USE_HTML_ENGINE = false;
+  // Photo-lock compositing (mask photos to magenta slots, restore after
+  // generation). Flip off to return to pure prompt-and-gate generation.
+  const USE_COMPOSITE = true;
   const allRecPairs = recommendationsFor(section, viewport);
   const allRecs = allRecPairs.map((r) => r.text);
   // Photography the store never gave us is the one thing a DOM edit still cannot
@@ -448,6 +456,29 @@ async function generateOne(
     skippedPhotoFix,
   );
 
+  // PHOTO-LOCK COMPOSITING. The model cannot reproduce a photograph exactly, so
+  // every photo it repaints drifts and the gate withholds the image. Instead:
+  // paint each photo (from the capture-time inventory) as a solid magenta slot,
+  // generate from THAT, and paste the client's own pixels back into the slots
+  // afterwards. The model never sees a photo, so it cannot damage one. If it
+  // destroys a slot anyway, or invents an extra one, the restore reports it and
+  // the whole candidate is rejected by arithmetic, not by a vision judge.
+  const compositing = USE_COMPOSITE && Array.isArray(photos) && photos.length > 0;
+  let genSrc: Uint8Array = srcPng;
+  let lockNote = "";
+  if (compositing) {
+    try {
+      const m = await maskPhotos(srcPng, photos as PhotoBox[]);
+      genSrc = m.png;
+      lockNote = lockSlotsPrompt((photos as PhotoBox[]).length);
+    } catch (e) {
+      // Mask failure just means generating the old way, with the old gate.
+      console.warn(`after-image ${meta.label}/${viewport}: mask failed (${e instanceof Error ? e.message : e}), generating unmasked`);
+      genSrc = srcPng;
+      lockNote = "";
+    }
+  }
+
   // Retries are judged at a scratch path and only promoted if they win, so a
   // rejected retry is never, even briefly, the live image at the canonical URL.
   const candidatePath = `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}_candidate.png`;
@@ -463,29 +494,63 @@ async function generateOne(
   // gemini_no_image_returned. Left alone that was a coin flip which either 500'd
   // the whole generation or, inside the corrective retry, silently cancelled it.
   // Same prompt, one more go, before treating it as a real failure.
+  // Per-generation record of the last composite restore, persisted into verify.
+  let compositeInfo: { slots: number; restored: number; fallback?: string } | null = null;
   const gemini = async (prompt: string, referencePng?: Uint8Array) => {
     let lastErr: unknown;
-    for (let attempt = 1; attempt <= 3; attempt++) {
-      try {
-        // Replaying the identical request replays the identical odds, so each
-        // attempt changes something: attempt 2 raises the temperature, attempt 3
-        // also drops the below-fold context image so the request is lighter and
-        // the model has one less reason to answer in prose about it.
-        const candidates = await geminiEditImage(srcPng, prompt, apiKey, {
-          model: GEMINI_IMAGE_MODEL,
-          referencePng,
-          belowFoldPng: attempt < 3 ? belowPng : undefined,
-          temperature: attempt === 1 ? 0.4 : 0.7,
-        });
-        if (candidates[0]) return candidates[0];
-        lastErr = new Error("gemini_no_image_returned (finish=none)");
-      } catch (e) {
-        lastErr = e;
-        // Only bail on failures a retry cannot change: hard blocks and infra.
-        const msg = e instanceof Error ? e.message : String(e);
-        if (/timeout|abort|block=|safety|prohibited|api_key|quota/i.test(msg)) throw e;
+    // When compositing, a masked failure falls back to one unmasked pass (the
+    // pre-composite behaviour, still covered by the hard photo gate below)
+    // rather than failing the whole generation.
+    const plans: Array<{ masked: boolean; tries: number }> = compositing
+      ? [{ masked: true, tries: 3 }, { masked: false, tries: 1 }]
+      : [{ masked: false, tries: 3 }];
+    for (const plan of plans) {
+      for (let attempt = 1; attempt <= plan.tries; attempt++) {
+        try {
+          // Replaying the identical request replays the identical odds, so each
+          // attempt changes something: attempt 2 raises the temperature, attempt 3
+          // also drops the below-fold context image so the request is lighter and
+          // the model has one less reason to answer in prose about it.
+          const candidates = await geminiEditImage(
+            plan.masked ? genSrc : srcPng,
+            plan.masked && lockNote ? `${prompt}\n\n${lockNote}` : prompt,
+            apiKey,
+            {
+              model: GEMINI_IMAGE_MODEL,
+              referencePng,
+              belowFoldPng: attempt < 3 ? belowPng : undefined,
+              temperature: attempt === 1 ? 0.4 : 0.7,
+            },
+          );
+          const candidate = candidates[0];
+          if (!candidate) {
+            lastErr = new Error("gemini_no_image_returned (finish=none)");
+          } else if (!plan.masked) {
+            if (compositing) compositeInfo = { slots: (photos as PhotoBox[]).length, restored: 0, fallback: "unmasked" };
+            return candidate;
+          } else {
+            // Paste the client's own photos into the slots the model kept. All
+            // slots restored and no stray slot pixels means the photos are the
+            // originals by construction; anything else rejects this candidate.
+            const restored = await restorePhotos(srcPng, candidate, photos as PhotoBox[]);
+            const missing = restored.report.filter((r) => !r.found).length;
+            const leftover = await leftoverSlotPixels(restored.png);
+            if (missing === 0 && leftover < 1500) {
+              compositeInfo = { slots: restored.report.length, restored: restored.report.length };
+              return restored.png;
+            }
+            lastErr = new Error(`composite_slots_failed (missing=${missing}, leftover_px=${leftover})`);
+          }
+        } catch (e) {
+          lastErr = e;
+          // Only bail on failures a retry cannot change: hard blocks and infra.
+          const msg = e instanceof Error ? e.message : String(e);
+          if (/timeout|abort|block=|safety|prohibited|api_key|quota/i.test(msg)) throw e;
+        }
+        console.warn(
+          `after-image: gemini ${plan.masked ? "masked " : ""}attempt ${attempt} failed (${String(lastErr).slice(0, 120)}), retrying`,
+        );
       }
-      console.warn(`after-image: gemini attempt ${attempt} produced no image (${String(lastErr).slice(0, 120)}), retrying`);
     }
     throw lastErr instanceof Error ? lastErr : new Error("gemini_no_image_returned");
   };
@@ -525,6 +590,9 @@ async function generateOne(
     attempt1: { missing: check.missing, defects: check.defects },
     retry_ran: false,
     published: "attempt1",
+    // How the photos were protected: slots restored by the compositor, or the
+    // unmasked fallback (photo gate only), or absent entirely (no inventory).
+    composite: compositeInfo,
   };
   // The bytes and verdict of whatever is currently published, for the polish pass.
   let finalBytes = edited;
@@ -674,6 +742,9 @@ async function generateOne(
   // attempt, retry and polish, publish NOTHING. A missing concept image is a gap;
   // a concept image showing a client's product in the wrong shape, or showing a
   // product that is not theirs, is a credibility problem in front of that client.
+  // The retry may have generated again, so record the LAST restore that fed the
+  // published image rather than whatever attempt 1 happened to do.
+  verify.composite = compositeInfo;
   const finalPhotoDefects = (Array.isArray(publishedVerdict.defects) ? publishedVerdict.defects as string[] : [])
     .filter(isPhotoDefect);
   if (finalPhotoDefects.length > 0) {
@@ -859,7 +930,7 @@ serve(async (req) => {
       const referenceAfterUrl = targetVp !== primaryVp ? afterUrlFor(section, primaryVp) : undefined;
       const result = await generateOne(
         sb, auditId, clientId, section, apiKey, targetVp, src.url, referenceAfterUrl, src.fold2Url, src.elements,
-        { pageUrl: src.pageUrl, outline: src.outline, variantId: src.variantId },
+        { pageUrl: src.pageUrl, outline: src.outline, variantId: src.variantId }, src.photos,
       );
       return json({ ok: true, correlationId, url: result.url, viewport: result.viewport });
     }
@@ -876,6 +947,7 @@ serve(async (req) => {
         primaryViewport: Viewport;
         elements?: CapturedEl[];
         html?: { pageUrl?: string | null; outline?: unknown; variantId?: string | null };
+        photos?: PhotoBox[];
       };
       const units: Unit[] = [];
       for (const meta of PAGE_SECTIONS) {
@@ -894,6 +966,7 @@ serve(async (req) => {
               primaryViewport: order[0],
               elements: src.elements,
               html: { pageUrl: src.pageUrl, outline: src.outline, variantId: src.variantId },
+              photos: src.photos,
             });
           }
         }
@@ -928,7 +1001,7 @@ serve(async (req) => {
       try {
         await generateOne(
           sb, auditId, clientId, next.section, apiKey, next.viewport, next.url, referenceAfterUrl, next.fold2Url, next.elements,
-          next.html,
+          next.html, next.photos,
         );
       } catch (e) {
         // Count the attempt. Only the LAST one records a terminal error, so a
