@@ -604,8 +604,43 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       /<!DOCTYPE html|cloudflare|attention required/i.test(bodyText);
     const retryable = [429, 500, 502, 503, 504].includes(Number(chunk.status)) || edgeBlock403;
     if (retryable) {
+      // Parking is only right while retrying can work. Betsey's scan proved the
+      // other case: one cursor URL that Cloudflare blocks EVERY time, revived by
+      // the watchdog every 5 minutes for a day with zero progress. Count
+      // consecutive parks (cleared on any successful chunk); after an hour of
+      // them, the cursor is poisoned, so restart the scan from the beginning
+      // once, counters zeroed, instead of churning forever. A fresh cursor
+      // paged the same account fine before.
+      const stalls = Number(claimed.resume_attempts ?? 0) + 1;
+      if (stalls >= 12 && claimed.next_path) {
+        await sb.from("klaviyo_profile_scan_jobs").update({
+          status: "pending",
+          next_path: null,
+          total_profiles: 0,
+          subscribed: 0,
+          sms_subscribed: 0,
+          active90d: 0,
+          suppressed: 0,
+          resume_attempts: 0,
+          error_message: `cursor blocked ${stalls} consecutive times (${chunk.status}); scan restarted from the beginning`,
+          updated_at: new Date().toISOString(),
+        }).eq("audit_id", auditId);
+        await logStageRun(sb, {
+          correlationId,
+          auditId,
+          clientId: (claimed.client_id as string) ?? null,
+          stage: "resume_profile_scan",
+          status: "partial",
+          revision: String(claimed.revision ?? KLAVIYO_REVISION),
+          elapsedMs: Date.now() - startedAt,
+          errorCode: "profile_cursor_reset",
+          errorMessage: `poisoned cursor after ${stalls} blocked resumes; restarting scan`,
+        });
+        return json({ ok: true, correlationId, profile_metrics_status: "in_progress", reason: "cursor_reset" }, { status: 200 });
+      }
       await sb.from("klaviyo_profile_scan_jobs").update({
         status: "pending",
+        resume_attempts: stalls,
         error_message: `transient ${chunk.status}, parked for the watchdog: ${(trimBody(chunk.body) ?? "").slice(0, 300)}`,
         updated_at: new Date().toISOString(),
       }).eq("audit_id", auditId);
@@ -644,6 +679,8 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
   if (chunk.truncated && chunk.nextPath) {
     await mustSucceed("profile job progress", sb.from("klaviyo_profile_scan_jobs").update({
       status: "pending",
+      // Forward progress: the consecutive-park counter starts over.
+      resume_attempts: 0,
       next_path: chunk.nextPath,
       total_profiles: chunk.totalProfiles,
       subscribed: chunk.subscribed,

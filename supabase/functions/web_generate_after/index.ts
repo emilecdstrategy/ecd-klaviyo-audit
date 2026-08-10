@@ -555,8 +555,11 @@ async function generateOne(
     // When compositing, a masked failure falls back to one unmasked pass (the
     // pre-composite behaviour, still covered by the hard photo gate below)
     // rather than failing the whole generation.
+    // Two masked tries, not three: the pro model is slower per generation, and
+    // a worst case of three masked + one unmasked + verify passes blew the edge
+    // function's 150s ceiling with nothing published at all.
     const plans: Array<{ masked: boolean; tries: number }> = compositing
-      ? [{ masked: true, tries: 3 }, { masked: false, tries: 1 }]
+      ? [{ masked: true, tries: 2 }, { masked: false, tries: 1 }]
       : [{ masked: false, tries: 3 }];
     for (const plan of plans) {
       for (let attempt = 1; attempt <= plan.tries; attempt++) {

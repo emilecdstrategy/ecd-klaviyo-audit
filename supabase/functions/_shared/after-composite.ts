@@ -159,6 +159,14 @@ export async function restorePhotos(
   for (let pi = 0; pi < expected.length; pi++) {
     for (let ci = 0; ci < components.length; ci++) {
       const e = expected[pi], c = components[ci];
+      // Shape compatibility: matching by distance alone pasted a wide BANNER
+      // photo into a square product-card slot when the model rearranged the
+      // page. A slot standing in for a photo keeps roughly its proportions and
+      // scale, so a candidate whose aspect or area is far off is not that slot.
+      const aspectDrift = (c.w / c.h) / (e.w / e.h);
+      const areaDrift = (c.w * c.h) / (e.w * e.h);
+      if (aspectDrift < 0.45 || aspectDrift > 2.2) continue;
+      if (areaDrift < 0.25 || areaDrift > 4) continue;
       const d = Math.hypot((e.x + e.w / 2) - (c.x + c.w / 2), (e.y + e.h / 2) - (c.y + c.h / 2));
       pairs.push({ pi, ci, d });
     }
