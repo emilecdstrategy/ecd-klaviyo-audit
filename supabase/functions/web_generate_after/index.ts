@@ -548,6 +548,12 @@ async function generateOne(
   // Same prompt, one more go, before treating it as a real failure.
   // Per-generation record of the last composite restore, persisted into verify.
   let compositeInfo: { slots: number; restored: number; fallback?: string } | null = null;
+  // Every attempt's outcome, persisted into verify.composite_attempts. The
+  // bc0d9a4e audit came back with restored:0 on all 8 sections and the only
+  // trail was console.warn lines the log API never shows; whether the masked
+  // pass died on a model 429, destroyed slots, or a matcher rejection has to
+  // be answerable from the DB row.
+  const compositeAttempts: Array<Record<string, unknown>> = [];
   // Pro tier first for its text rendering; downgraded in-flight if unavailable.
   let imageModel = GEMINI_IMAGE_MODEL_PRO;
   const gemini = async (prompt: string, referencePng?: Uint8Array) => {
@@ -574,11 +580,16 @@ async function generateOne(
             apiKey,
             {
               model: imageModel,
-              referencePng,
+              // No sibling reference on masked attempts: in auto mode every
+              // mobile generation carries the desktop after, full of real
+              // photos, and that invites the model to paint photos over the
+              // slots. The unmasked fallback keeps it for cross-viewport
+              // consistency.
+              referencePng: plan.masked ? undefined : referencePng,
               belowFoldPng: attempt < 3 ? belowPng : undefined,
               temperature: attempt === 1 ? 0.4 : 0.7,
-              // The shape contract: output exactly the (cropped) source's ratio
-              // at 2K, instead of the default 1K at a model-chosen shape.
+              // The shape contract: output exactly the (cropped) source's
+              // ratio, instead of a model-chosen shape.
               aspectRatio: outputRatio,
               imageSize: "1K",
             },
@@ -586,8 +597,10 @@ async function generateOne(
           const candidate = candidates[0];
           if (!candidate) {
             lastErr = new Error("gemini_no_image_returned (finish=none)");
+            compositeAttempts.push({ masked: plan.masked, model: imageModel, error: "no_image_returned" });
           } else if (!plan.masked) {
             if (compositing) compositeInfo = { slots: lockablePhotos.length, restored: 0, fallback: "unmasked" };
+            compositeAttempts.push({ masked: false, model: imageModel, ok: true });
             return candidate;
           } else {
             // Paste the client's own photos into the slots the model kept. All
@@ -598,13 +611,37 @@ async function generateOne(
             const leftover = restored.leftoverPx;
             if (missing === 0 && leftover < 1500) {
               compositeInfo = { slots: restored.report.length, restored: restored.report.length };
+              compositeAttempts.push({ masked: true, model: imageModel, ok: true });
               return restored.png;
             }
             lastErr = new Error(`composite_slots_failed (missing=${missing}, leftover_px=${leftover})`);
+            compositeAttempts.push({
+              masked: true,
+              model: imageModel,
+              missing,
+              leftover_px: leftover,
+              // Purity per slot separates "model destroyed the slot" from "the
+              // matcher rejected a rectangle it found".
+              purities: restored.report.map((r) => r.purity),
+            });
           }
         } catch (e) {
           lastErr = e;
           const msg = e instanceof Error ? e.message : String(e);
+          compositeAttempts.push({ masked: plan.masked, model: imageModel, error: msg.slice(0, 160) });
+          // A 429 on the pro tier (rate limit or unfunded preview) must NOT be
+          // retried against the same wall: on the bc0d9a4e audit it burned every
+          // masked attempt in seconds and the whole audit shipped via the
+          // unmasked fallback, which the photo gate then rightly withheld.
+          // Downgrade to flash and redo the attempt. Checked BEFORE the bail
+          // regex so "prepayment credits are depleted" never hard-fails while
+          // flash still has credit.
+          if (imageModel !== GEMINI_IMAGE_MODEL && /429|RESOURCE_EXHAUSTED|prepayment credits|rate.?limit/i.test(msg)) {
+            console.warn(`after-image: ${imageModel} throttled/unfunded (${msg.slice(0, 100)}), downgrading to ${GEMINI_IMAGE_MODEL}`);
+            imageModel = GEMINI_IMAGE_MODEL;
+            attempt--;
+            continue;
+          }
           // The pro tier may not exist for this key (wrong id, no access): drop
           // to the flash model and redo this attempt rather than failing.
           if (imageModel !== GEMINI_IMAGE_MODEL && /not[_ ]?found|does not exist|NOT_FOUND|permission|unsupported|invalid.{0,20}model/i.test(msg)) {
@@ -824,6 +861,10 @@ async function generateOne(
   // The retry may have generated again, so record the LAST restore that fed the
   // published image rather than whatever attempt 1 happened to do.
   verify.composite = compositeInfo;
+  verify.composite_attempts = compositeAttempts;
+  // Which model actually produced the published bytes: after a mid-run
+  // downgrade "pro vs flash" must never be a guess.
+  verify.model = imageModel;
   // When every slot was restored, the photos in the published image ARE the
   // source pixels, copied by arithmetic. A vision judge disagreeing with that is
   // wrong by construction (it flagged a requested banner trim as a re-crop on
