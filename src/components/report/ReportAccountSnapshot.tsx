@@ -255,7 +255,9 @@ export default function ReportAccountSnapshot({
     suppressed_profiles_truncated?: boolean | null;
     campaigns_truncated?: boolean | null;
     deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
-    profile_scan_status?: 'pending' | 'complete' | 'failed' | 'skipped' | null;
+    /** 'partial': the scan hit an upstream block it could not get past, so the
+     * counts are real but are lower bounds rather than account totals. */
+    profile_scan_status?: 'pending' | 'complete' | 'partial' | 'failed' | 'skipped' | null;
     revenue_breakdown?: RevenueBreakdown | null;
   } | null;
 }) {
@@ -318,7 +320,9 @@ export default function ReportAccountSnapshot({
                 ? 'full profile scan in progress'
                 : (accountSnapshot?.total_profiles_count ?? accountSnapshot?.email_subscribed_profiles_count) == null
                   ? 'requires profiles:read scope'
-                  : 'all profiles in Klaviyo account'
+                  : accountSnapshot?.profile_scan_status === 'partial'
+                    ? 'partial scan — at least this many profiles'
+                    : 'all profiles in Klaviyo account'
           }
         />
         <Card
@@ -335,7 +339,9 @@ export default function ReportAccountSnapshot({
                 ? 'full profile scan in progress'
                 : accountSnapshot?.sms_subscribed_profiles_count == null
                   ? 'requires full profile scan'
-                  : 'SMS marketing subscribed'
+                  : accountSnapshot?.profile_scan_status === 'partial'
+                    ? 'SMS marketing subscribed · partial scan, at least this many'
+                    : 'SMS marketing subscribed'
           }
         />
         <Card
@@ -352,7 +358,9 @@ export default function ReportAccountSnapshot({
                 ? 'full profile scan in progress'
                 : accountSnapshot?.email_subscribed_profiles_count == null
                   ? 'requires profiles:read scope'
-                  : 'email-subscribed profiles'
+                  : accountSnapshot?.profile_scan_status === 'partial'
+                    ? 'email-subscribed · partial scan, at least this many'
+                    : 'email-subscribed profiles'
           }
         />
         <Card

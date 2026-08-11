@@ -468,6 +468,11 @@ async function finalizeProfileScan(
   active90d: number,
   suppressed: number,
   stagedRpr: number | null,
+  /** True when the scan could not reach the end of the account (an upstream
+   * block it could not get past). The counts are then real but incomplete, so
+   * they publish as lower bounds rather than leaving the report stuck on
+   * "full profile scan in progress" indefinitely. */
+  partial = false,
 ) {
   const { data: rollups } = await sb.from("klaviyo_reporting_rollups").select("id, computed").eq("audit_id", auditId);
   if (!rollups?.length) return;
@@ -478,10 +483,13 @@ async function finalizeProfileScan(
     sms_subscribed_profiles_count: smsSubscribed,
     active_profiles_90d_count: active90d,
     suppressed_profiles_count: suppressed,
-    email_subscribed_profiles_truncated: false,
-    active_profiles_90d_truncated: false,
-    suppressed_profiles_truncated: false,
-    profile_scan_status: "complete",
+    // Truncated flags already exist for exactly this meaning, so a partial scan
+    // reuses them instead of inventing a parallel concept.
+    email_subscribed_profiles_truncated: partial,
+    active_profiles_90d_truncated: partial,
+    suppressed_profiles_truncated: partial,
+    total_profiles_truncated: partial,
+    profile_scan_status: partial ? "partial" : "complete",
     computed_at: new Date().toISOString(),
   };
 
@@ -514,12 +522,16 @@ async function finalizeProfileScan(
 
   await mustSucceed("complete profile scan job", sb.from("klaviyo_profile_scan_jobs").update({
     status: "complete",
-    next_path: null,
+    // A partial finalize keeps next_path so the scan can still be resumed by
+    // hand (or by a later fix) from exactly where the block stopped it.
+    next_path: partial ? undefined : null,
     total_profiles: totalProfiles,
     subscribed,
     active90d,
     suppressed,
-    error_message: null,
+    error_message: partial
+      ? `partial: blocked upstream after ${totalProfiles} profiles; counts published as lower bounds`
+      : null,
     updated_at: new Date().toISOString(),
   }).eq("audit_id", auditId));
 
@@ -653,6 +665,56 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       // between attempts. resume_attempts is the consecutive-block count (reset
       // by any successful chunk) and drives that wait.
       const stalls = Number(claimed.resume_attempts ?? 0) + 1;
+
+      // Waiting forever is its own failure. One account blocks at the same
+      // cursor depth on every attempt regardless of pacing, so after this many
+      // consecutive blocks the honest move is to publish the counts we DO have
+      // as lower bounds and let the report render, rather than leaving four
+      // cards reading "full profile scan in progress" indefinitely. next_path
+      // is kept, so the scan can still be resumed later.
+      // Counts come from the job row (the last progress the scan persisted):
+      // this is the failure branch, so `chunk` carries only status and body.
+      const PARTIAL_AFTER_BLOCKS = 6;
+      const soFar = {
+        total: Number(claimed.total_profiles ?? 0),
+        subscribed: Number(claimed.subscribed ?? 0),
+        sms: Number(claimed.sms_subscribed ?? 0),
+        active90d: Number(claimed.active90d ?? 0),
+        suppressed: Number(claimed.suppressed ?? 0),
+      };
+      if (stalls >= PARTIAL_AFTER_BLOCKS && soFar.total > 0) {
+        await finalizeProfileScan(
+          sb,
+          auditId,
+          soFar.total,
+          soFar.subscribed,
+          soFar.sms,
+          soFar.active90d,
+          soFar.suppressed,
+          typeof claimed.staged_revenue_per_recipient === "number"
+            ? claimed.staged_revenue_per_recipient
+            : null,
+          true,
+        );
+        await logStageRun(sb, {
+          correlationId,
+          auditId,
+          clientId: (claimed.client_id as string) ?? null,
+          stage: "resume_profile_scan",
+          status: "partial",
+          revision: String(claimed.revision ?? KLAVIYO_REVISION),
+          elapsedMs: Date.now() - startedAt,
+          errorCode: "profile_partial_published",
+          errorMessage: `blocked ${stalls}x at ${soFar.total} profiles; published as lower bounds`,
+        });
+        return json({
+          ok: true,
+          correlationId,
+          profile_metrics_status: "partial",
+          total_profiles: soFar.total,
+        }, { status: 200 });
+      }
+
       await sb.from("klaviyo_profile_scan_jobs").update({
         status: "pending",
         resume_attempts: stalls,
