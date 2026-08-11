@@ -182,6 +182,45 @@ const PROFILE_CURSOR_PAGE_LIMIT = 150;
 
 /** First page of a scan segment. No filter starts from the oldest profile;
  * an anchor continues strictly after that created timestamp. */
+/** Klaviyo's page[cursor] is base64 of "next::created::<ts>::id::<id>", so the
+ * scan's exact position is recoverable from the cursor itself.
+ *
+ * This is what lets a BLOCKED scan escape. Re-anchoring only happened
+ * proactively every 150 pages; when a cursor got rejected, the job parked with
+ * that same poisoned cursor and every later resume replayed it, which is how one
+ * account sat at ~191k through five consecutive blocks. Decoding the position
+ * turns "retry the cursor that just failed" into "start a fresh shallow cursor
+ * from where we actually got to".
+ *
+ * Best effort by design: this reads an undocumented internal format, so an
+ * unexpected shape returns null and the caller simply parks as before. */
+function anchorFromCursorPath(path: string): string | null {
+  try {
+    const query = path.split("?")[1];
+    if (!query) return null;
+    const cursor = new URLSearchParams(query).get("page[cursor]");
+    if (!cursor) return null;
+    // The created value itself contains colons ("14:34:35+00:00"), so match
+    // lazily up to the ::id:: separator rather than splitting on ":".
+    const m = /created::(.*?)::id::/.exec(atob(cursor));
+    if (!m?.[1]) return null;
+    const ms = Date.parse(m[1].trim().replace(" ", "T"));
+    return Number.isFinite(ms) ? new Date(ms).toISOString() : null;
+  } catch {
+    return null;
+  }
+}
+
+/** How far past the recovered anchor to restart after N consecutive blocks.
+ * The first couple of retries re-anchor exactly, losing nothing. If the block
+ * survives that, the cause is a specific record just past the anchor that
+ * Klaviyo cannot serve, so the scan steps over a widening window to get past it.
+ * Skipping profiles is a real cost, which is why it is a late resort. */
+function anchorNudgeMs(consecutiveBlocks: number): number {
+  const minutes = [0, 0, 1, 60, 360, 1440];
+  return (minutes[Math.min(consecutiveBlocks, minutes.length - 1)] ?? 1440) * 60_000;
+}
+
 function profileKeysetPath(afterCreatedIso: string | null): string {
   const qs = new URLSearchParams();
   qs.set("page[size]", "100");
@@ -611,12 +650,17 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
   // Honour the cooldown BEFORE claiming: claiming flips the row to running, and
   // a rejected attempt would then rewrite updated_at and restart the clock.
   const { data: pre } = await sb.from("klaviyo_profile_scan_jobs")
-    .select("status, resume_attempts, updated_at")
+    .select("status, resume_attempts, updated_at, error_message")
     .eq("audit_id", auditId)
     .maybeSingle();
   if (pre && pre.status === "pending") {
     const blocks = Number(pre.resume_attempts ?? 0);
-    const waitMs = blockedCooldownMs(blocks);
+    // The long cooldown exists because replaying a request that just failed
+    // needs time for the upstream condition to lapse. A re-anchored scan is not
+    // a replay: it is a brand-new shallow query from a recovered position, so
+    // making it wait 45 minutes only delays the recovery it was built for.
+    const reAnchored = /re-anchored at/.test(String(pre.error_message ?? ""));
+    const waitMs = reAnchored ? 60_000 : blockedCooldownMs(blocks);
     const sinceMs = pre.updated_at ? Date.now() - Date.parse(String(pre.updated_at)) : Number.MAX_SAFE_INTEGER;
     if (waitMs > 0 && sinceMs < waitMs) {
       return json({
@@ -731,7 +775,7 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       // is kept, so the scan can still be resumed later.
       // Counts come from the job row (the last progress the scan persisted):
       // this is the failure branch, so `chunk` carries only status and body.
-      const PARTIAL_AFTER_BLOCKS = 6;
+      const PARTIAL_AFTER_BLOCKS = 9;
       const soFar = {
         total: Number(claimed.total_profiles ?? 0),
         subscribed: Number(claimed.subscribed ?? 0),
@@ -772,10 +816,25 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
         }, { status: 200 });
       }
 
+      // Escape the poisoned cursor. Recover the scan's position from the cursor
+      // Klaviyo just refused and rebuild a FRESH shallow keyset path from it, so
+      // the next resume is a brand-new depth-1 query instead of a replay of the
+      // request that failed. After a couple of exact re-anchors the window nudges
+      // forward to step over a record Klaviyo cannot serve at all.
+      const blockedAnchor = anchorFromCursorPath(String(claimed.next_path ?? ""));
+      const nudgeMs = anchorNudgeMs(stalls);
+      const rebuiltPath = blockedAnchor
+        ? profileKeysetPath(new Date(Date.parse(blockedAnchor) + nudgeMs).toISOString())
+        : null;
       await sb.from("klaviyo_profile_scan_jobs").update({
         status: "pending",
         resume_attempts: stalls,
-        error_message: `transient ${chunk.status} (block #${stalls}), parked for the watchdog: ${(trimBody(chunk.body) ?? "").slice(0, 260)}`,
+        // Only replace the cursor when a position was actually recovered;
+        // otherwise keep what we had rather than losing the scan's place.
+        ...(rebuiltPath ? { next_path: rebuiltPath } : {}),
+        error_message: `transient ${chunk.status} (block #${stalls})${
+          rebuiltPath ? `, re-anchored at ${blockedAnchor}${nudgeMs ? ` +${nudgeMs / 60_000}m` : ""}` : ", cursor kept"
+        }: ${(trimBody(chunk.body) ?? "").slice(0, 200)}`,
         updated_at: new Date().toISOString(),
       }).eq("audit_id", auditId);
       await logStageRun(sb, {
