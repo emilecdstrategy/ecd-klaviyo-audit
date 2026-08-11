@@ -152,15 +152,45 @@ function mergeSegmentItemsForSnapshots(primary: any[], extra: any[]): any[] {
 }
 /** Skip optional email HTML fetch if less than this many ms remain before deadline. */
 const MIN_SLACK_MS_EMAIL_HTML = 15_000;
-/** Full enumeration is required for exact consent/suppression counts; Klaviyo has no aggregate-only endpoint for those metrics. */
-const PROFILE_FIRST_PATH =
-  "/api/profiles/?page%5Bsize%5D=100&additional-fields%5Bprofile%5D=subscriptions";
+// Full enumeration is required for exact consent/suppression counts; Klaviyo has
+// no aggregate-only endpoint for those metrics. The unpartitioned first path this
+// used to start from is gone on purpose: see the partitioned-scan block below.
 /** Breather between profile pages. The loop used to fire pages back-to-back for
  * the full 148s stage budget, and on one large account that sustained hammering
  * tripped Klaviyo's CDN into 403-ing every request roughly 20 minutes into a
  * scan. Costs ~20% throughput; a scan that finishes slowly beats one that is
  * blocked and never finishes. */
 const PROFILE_PAGE_DELAY_MS = 250;
+
+// KEYSET SCAN. One account blocked at ~185k profiles on every attempt (183,000 /
+// 191,700 / 184,700 across passes) regardless of pacing or elapsed time, so the
+// wall tracks cursor DEPTH: past roughly 1,850 pages of one cursor the CDN
+// rejects everything and waiting cannot help. The scan therefore never lets a
+// single cursor get deep. Every PROFILE_CURSOR_PAGE_LIMIT pages it abandons the
+// opaque cursor and starts a fresh, shallow one anchored at the created
+// timestamp of the last profile it saw.
+//
+// Bounded date buckets were the first attempt and Klaviyo rejects them outright:
+// "Ascending sort may only be used with greater-than", i.e. an ascending scan
+// cannot carry an upper bound. That leaves exactly this shape, which is the
+// textbook keyset pattern anyway: sort ascending, filter on greater-than, walk
+// forward. The anchor rides inside next_path and Klaviyo echoes the filter on
+// every links.next, so position survives a resume with no extra state.
+/** Pages to follow on one cursor before re-anchoring. 150 pages is ~15k
+ * profiles, an order of magnitude clear of the observed wall. */
+const PROFILE_CURSOR_PAGE_LIMIT = 150;
+
+/** First page of a scan segment. No filter starts from the oldest profile;
+ * an anchor continues strictly after that created timestamp. */
+function profileKeysetPath(afterCreatedIso: string | null): string {
+  const qs = new URLSearchParams();
+  qs.set("page[size]", "100");
+  qs.set("additional-fields[profile]", "subscriptions");
+  // Ascending order is what makes "continue after the last one seen" meaningful.
+  qs.set("sort", "created");
+  if (afterCreatedIso) qs.set("filter", `greater-than(created,${afterCreatedIso})`);
+  return `/api/profiles/?${qs.toString()}`;
+}
 /** Per-client cached metric is honored for this long before we re-probe. */
 const METRIC_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 /** Klaviyo values-reports are documented at 1/s burst + 2/min steady. */
@@ -356,7 +386,13 @@ async function computeProfileSnapshotChunk(params: {
   let smsSubscribed = params.smsSubscribed;
   let active90d = params.active90d;
   let suppressed = params.suppressed;
-  let next = params.startPath ?? PROFILE_FIRST_PATH;
+  // Fresh scans start at the oldest profile; resumed scans continue on whatever
+  // cursor (and therefore whatever anchor) they stopped at.
+  let next = params.startPath ?? profileKeysetPath(null);
+  // Pages followed on the CURRENT cursor, and the newest created timestamp seen,
+  // which together drive re-anchoring before any cursor gets deep.
+  let pagesOnCursor = 0;
+  let lastCreated: string | null = null;
 
   for (;;) {
     if (Date.now() >= params.deadlineAtMs) {
@@ -376,8 +412,13 @@ async function computeProfileSnapshotChunk(params: {
       return { ok: false, status: res.status, body: res.body };
     }
     const items = res.body?.data ?? [];
+    pagesOnCursor += 1;
     for (const p of items) {
       totalProfiles += 1;
+      // Ascending sort means the last profile on the last page carries the
+      // newest created timestamp, which is the anchor for the next segment.
+      const created = p?.attributes?.created;
+      if (typeof created === "string" && created) lastCreated = created;
       const emailConsent = String(p?.attributes?.subscriptions?.email?.marketing?.consent ?? "").toUpperCase();
       const isEmailSubscribed = emailConsent === "SUBSCRIBED";
       if (isEmailSubscribed) subscribed += 1;
@@ -397,6 +438,8 @@ async function computeProfileSnapshotChunk(params: {
     }
     const nextUrl: string | null = res.body?.links?.next ?? null;
     if (!nextUrl) {
+      // No further page on this cursor and ascending order means we have reached
+      // the newest profile: the account is fully counted.
       return {
         ok: true,
         totalProfiles,
@@ -407,6 +450,20 @@ async function computeProfileSnapshotChunk(params: {
         truncated: false,
         nextPath: null,
       };
+    }
+    if (pagesOnCursor >= PROFILE_CURSOR_PAGE_LIMIT && lastCreated) {
+      // Re-anchor before this cursor gets deep enough to be rejected. Dropping
+      // the opaque cursor for a fresh greater-than filter is the whole point:
+      // depth resets to zero while position is preserved.
+      //
+      // Caveat: the bound is exclusive, so profiles sharing the anchor's exact
+      // created timestamp are skipped. Klaviyo's timestamps carry sub-second
+      // precision and this happens at most once per 15k profiles, so the
+      // undercount is negligible next to not finishing at all.
+      next = profileKeysetPath(lastCreated);
+      pagesOnCursor = 0;
+      await sleep(PROFILE_PAGE_DELAY_MS);
+      continue;
     }
     const u = new URL(nextUrl);
     next = `${u.pathname}${u.search}`;
