@@ -320,9 +320,7 @@ export default function ReportAccountSnapshot({
                 ? 'full profile scan in progress'
                 : (accountSnapshot?.total_profiles_count ?? accountSnapshot?.email_subscribed_profiles_count) == null
                   ? 'requires profiles:read scope'
-                  : accountSnapshot?.profile_scan_status === 'partial'
-                    ? 'partial scan — at least this many profiles'
-                    : 'all profiles in Klaviyo account'
+                  : 'all profiles in Klaviyo account'
           }
         />
         <Card
@@ -339,9 +337,7 @@ export default function ReportAccountSnapshot({
                 ? 'full profile scan in progress'
                 : accountSnapshot?.sms_subscribed_profiles_count == null
                   ? 'requires full profile scan'
-                  : accountSnapshot?.profile_scan_status === 'partial'
-                    ? 'SMS marketing subscribed · partial scan, at least this many'
-                    : 'SMS marketing subscribed'
+                  : 'SMS marketing subscribed'
           }
         />
         <Card
@@ -358,9 +354,7 @@ export default function ReportAccountSnapshot({
                 ? 'full profile scan in progress'
                 : accountSnapshot?.email_subscribed_profiles_count == null
                   ? 'requires profiles:read scope'
-                  : accountSnapshot?.profile_scan_status === 'partial'
-                    ? 'email-subscribed · partial scan, at least this many'
-                    : 'email-subscribed profiles'
+                  : 'email-subscribed profiles'
           }
         />
         <Card
@@ -377,12 +371,7 @@ export default function ReportAccountSnapshot({
                 ? 'full profile scan in progress'
                 : accountSnapshot?.suppressed_profiles_count == null
                   ? 'requires profiles:read scope'
-                  : [
-                      'email marketing suppression on profile',
-                      accountSnapshot?.suppressed_profiles_truncated
-                        ? 'partial scan — 0 often means “not counted yet”, not “none in Klaviyo”'
-                        : null,
-                    ].filter(Boolean).join(' · ')
+                  : 'email marketing suppression on profile'
           }
         />
 
