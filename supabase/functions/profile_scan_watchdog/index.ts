@@ -97,6 +97,13 @@ serve(async (req) => {
     // budget so a genuinely broken account cannot loop. Grill Rescue sat failed
     // for nine hours on a 502 with 2.45M profiles already counted, because
     // failed was terminal and nothing ever looked at it again.
+    //
+    // NOTE: resume_attempts is shared with the scan's own consecutive-block
+    // counter (klaviyo_fetch_snapshot parks a CDN-blocked chunk as pending and
+    // increments it; any successful chunk zeroes it). Both readings mean "how
+    // many times have we failed to get past this spot", so the budget below
+    // stays meaningful either way. Transient statuses now park rather than
+    // fail, so this branch mainly rescues legacy failed rows.
     if (job.status === "failed") {
       const transient = /(429|500|502|503|504)|timeout|bad gateway|temporarily|overloaded/i
         .test(String(job.error_message ?? ""));

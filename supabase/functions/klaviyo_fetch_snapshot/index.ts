@@ -155,6 +155,12 @@ const MIN_SLACK_MS_EMAIL_HTML = 15_000;
 /** Full enumeration is required for exact consent/suppression counts; Klaviyo has no aggregate-only endpoint for those metrics. */
 const PROFILE_FIRST_PATH =
   "/api/profiles/?page%5Bsize%5D=100&additional-fields%5Bprofile%5D=subscriptions";
+/** Breather between profile pages. The loop used to fire pages back-to-back for
+ * the full 148s stage budget, and on one large account that sustained hammering
+ * tripped Klaviyo's CDN into 403-ing every request roughly 20 minutes into a
+ * scan. Costs ~20% throughput; a scan that finishes slowly beats one that is
+ * blocked and never finishes. */
+const PROFILE_PAGE_DELAY_MS = 250;
 /** Per-client cached metric is honored for this long before we re-probe. */
 const METRIC_CACHE_TTL_MS = 30 * 24 * 60 * 60 * 1000; // 30 days
 /** Klaviyo values-reports are documented at 1/s burst + 2/min steady. */
@@ -404,6 +410,9 @@ async function computeProfileSnapshotChunk(params: {
     }
     const u = new URL(nextUrl);
     next = `${u.pathname}${u.search}`;
+    // Pace the next request. Sustained back-to-back paging is what the CDN
+    // reacts to, not any single call.
+    await sleep(PROFILE_PAGE_DELAY_MS);
   }
 }
 
@@ -517,8 +526,39 @@ async function finalizeProfileScan(
   await chainAuditAnalysis(auditId);
 }
 
+/** How long to wait before retrying after N consecutive upstream blocks.
+ * The watchdog fires every ~5 minutes, which is right for a one-off blip and
+ * useless against a CDN block that lasts an hour: one account burned 11 straight
+ * resumes over 50 minutes, every one rejected instantly. Backing off gives the
+ * block time to lapse instead of confirming the traffic pattern that caused it.
+ * Capped so a scan always makes another attempt within the hour. */
+function blockedCooldownMs(consecutiveBlocks: number): number {
+  if (consecutiveBlocks <= 1) return 0;
+  return Math.min(45 * 60_000, 5 * 60_000 * Math.pow(2, consecutiveBlocks - 2));
+}
+
 async function handleResumeProfileScan(auditId: string, correlationId: string): Promise<Response> {
   const sb = assertServiceClient();
+  // Honour the cooldown BEFORE claiming: claiming flips the row to running, and
+  // a rejected attempt would then rewrite updated_at and restart the clock.
+  const { data: pre } = await sb.from("klaviyo_profile_scan_jobs")
+    .select("status, resume_attempts, updated_at")
+    .eq("audit_id", auditId)
+    .maybeSingle();
+  if (pre && pre.status === "pending") {
+    const blocks = Number(pre.resume_attempts ?? 0);
+    const waitMs = blockedCooldownMs(blocks);
+    const sinceMs = pre.updated_at ? Date.now() - Date.parse(String(pre.updated_at)) : Number.MAX_SAFE_INTEGER;
+    if (waitMs > 0 && sinceMs < waitMs) {
+      return json({
+        ok: true,
+        correlationId,
+        profile_metrics_status: "in_progress",
+        reason: "cooling_down",
+        retry_in_s: Math.ceil((waitMs - sinceMs) / 1000),
+      });
+    }
+  }
   const { data: claimRows, error: claimErr } = await sb.rpc("claim_profile_scan_job", { p_audit_id: auditId });
   if (claimErr) {
     return json({ ok: false, error: { code: "claim_failed", message: claimErr.message }, correlationId }, { status: 500 });
@@ -604,44 +644,19 @@ async function handleResumeProfileScan(auditId: string, correlationId: string): 
       /<!DOCTYPE html|cloudflare|attention required/i.test(bodyText);
     const retryable = [429, 500, 502, 503, 504].includes(Number(chunk.status)) || edgeBlock403;
     if (retryable) {
-      // Parking is only right while retrying can work. Betsey's scan proved the
-      // other case: one cursor URL that Cloudflare blocks EVERY time, revived by
-      // the watchdog every 5 minutes for a day with zero progress. Count
-      // consecutive parks (cleared on any successful chunk); after an hour of
-      // them, the cursor is poisoned, so restart the scan from the beginning
-      // once, counters zeroed, instead of churning forever. A fresh cursor
-      // paged the same account fine before.
+      // NEVER discard the cursor. An earlier version restarted the scan from
+      // zero after 12 consecutive blocked resumes, on the theory that the cursor
+      // was poisoned. On the account that motivated it, that turned "stuck at
+      // 190k" into an endless sawtooth: scan ~20 minutes, get blocked, park ~50
+      // minutes, restart from 0, repeat, never finishing. Progress is expensive
+      // and the block is temporary, so we keep next_path and simply wait longer
+      // between attempts. resume_attempts is the consecutive-block count (reset
+      // by any successful chunk) and drives that wait.
       const stalls = Number(claimed.resume_attempts ?? 0) + 1;
-      if (stalls >= 12 && claimed.next_path) {
-        await sb.from("klaviyo_profile_scan_jobs").update({
-          status: "pending",
-          next_path: null,
-          total_profiles: 0,
-          subscribed: 0,
-          sms_subscribed: 0,
-          active90d: 0,
-          suppressed: 0,
-          resume_attempts: 0,
-          error_message: `cursor blocked ${stalls} consecutive times (${chunk.status}); scan restarted from the beginning`,
-          updated_at: new Date().toISOString(),
-        }).eq("audit_id", auditId);
-        await logStageRun(sb, {
-          correlationId,
-          auditId,
-          clientId: (claimed.client_id as string) ?? null,
-          stage: "resume_profile_scan",
-          status: "partial",
-          revision: String(claimed.revision ?? KLAVIYO_REVISION),
-          elapsedMs: Date.now() - startedAt,
-          errorCode: "profile_cursor_reset",
-          errorMessage: `poisoned cursor after ${stalls} blocked resumes; restarting scan`,
-        });
-        return json({ ok: true, correlationId, profile_metrics_status: "in_progress", reason: "cursor_reset" }, { status: 200 });
-      }
       await sb.from("klaviyo_profile_scan_jobs").update({
         status: "pending",
         resume_attempts: stalls,
-        error_message: `transient ${chunk.status}, parked for the watchdog: ${(trimBody(chunk.body) ?? "").slice(0, 300)}`,
+        error_message: `transient ${chunk.status} (block #${stalls}), parked for the watchdog: ${(trimBody(chunk.body) ?? "").slice(0, 260)}`,
         updated_at: new Date().toISOString(),
       }).eq("audit_id", auditId);
       await logStageRun(sb, {
