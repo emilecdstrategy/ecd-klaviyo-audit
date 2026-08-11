@@ -22,7 +22,7 @@ import {
 } from "../_shared/after-image-verify.ts";
 import { autoPublishAudit } from "../_shared/auto-publish.ts";
 import { isUsableOutline, runHtmlAfter, summarizeEditReport } from "../_shared/html-after.ts";
-import { cropToSupportedRatio, lockSlotsPrompt, maskPhotos, restorePhotos, type PhotoBox } from "../_shared/after-composite.ts";
+import { conformToSize, cropToSupportedRatio, lockSlotsPrompt, maskPhotos, restorePhotos, type PhotoBox } from "../_shared/after-composite.ts";
 
 // Generates an "after" concept image for a web-audit page section.
 //
@@ -556,6 +556,21 @@ async function generateOne(
   const compositeAttempts: Array<Record<string, unknown>> = [];
   // Pro tier first for its text rendering; downgraded in-flight if unavailable.
   let imageModel = GEMINI_IMAGE_MODEL_PRO;
+  // COST GUARDRAIL. One image could previously spend ~10 generations: two masked
+  // attempts plus an unmasked fallback, then that whole ladder again for a
+  // wrong-shape reshoot, again for the corrective retry, plus a polish pass.
+  // Times eight sections that is ~80 generations per audit, which is how a 25 EUR
+  // top-up disappeared in an afternoon. Every generation for this image is
+  // counted against one hard cap, so a pathological page costs a known maximum
+  // instead of whatever the retry ladders happen to want.
+  const MAX_GENERATIONS_PER_IMAGE = 6;
+  let generations = 0;
+  const spendGeneration = () => {
+    if (generations >= MAX_GENERATIONS_PER_IMAGE) {
+      throw new Error(`generation_budget_exhausted (${MAX_GENERATIONS_PER_IMAGE} per image)`);
+    }
+    generations += 1;
+  };
   const gemini = async (prompt: string, referencePng?: Uint8Array) => {
     let lastErr: unknown;
     // When compositing, a masked failure falls back to one unmasked pass (the
@@ -574,6 +589,7 @@ async function generateOne(
           // attempt changes something: attempt 2 raises the temperature, attempt 3
           // also drops the below-fold context image so the request is lighter and
           // the model has one less reason to answer in prose about it.
+          spendGeneration();
           const candidates = await geminiEditImage(
             plan.masked ? genSrc : srcPng,
             plan.masked && lockNote ? `${prompt}\n\n${lockNote}` : prompt,
@@ -588,10 +604,15 @@ async function generateOne(
               referencePng: plan.masked ? undefined : referencePng,
               belowFoldPng: attempt < 3 ? belowPng : undefined,
               temperature: attempt === 1 ? 0.4 : 0.7,
-              // The shape contract: output exactly the (cropped) source's
-              // ratio, instead of a model-chosen shape.
-              aspectRatio: outputRatio,
-              imageSize: "1K",
+              // The shape contract, but ONLY on unmasked attempts. Asking for an
+              // explicit shape makes the model re-render the page rather than
+              // edit it, which erased the magenta lock slots every single time:
+              // measured purity 0.997 without imageConfig versus 0.0 with it, on
+              // the same page and prompt. Masked attempts therefore request no
+              // shape and get conformed to the source's exact pixels in code
+              // afterwards, which is both exact and free.
+              aspectRatio: plan.masked ? undefined : outputRatio,
+              imageSize: plan.masked ? undefined : "1K",
             },
           );
           const candidate = candidates[0];
@@ -603,10 +624,14 @@ async function generateOne(
             compositeAttempts.push({ masked: false, model: imageModel, ok: true });
             return candidate;
           } else {
+            // Impose the shape here, since the masked request deliberately did
+            // not ask for one. Doing it BEFORE the restore also means slot
+            // geometry is compared in the source's own coordinate space.
+            const conformed = srcDims ? await conformToSize(candidate, srcDims) : candidate;
             // Paste the client's own photos into the slots the model kept. All
             // slots restored and no stray slot pixels means the photos are the
             // originals by construction; anything else rejects this candidate.
-            const restored = await restorePhotos(srcPng, candidate, lockablePhotos);
+            const restored = await restorePhotos(srcPng, conformed, lockablePhotos);
             const missing = restored.report.filter((r) => !r.found).length;
             const leftover = restored.leftoverPx;
             if (missing === 0 && leftover < 1500) {
@@ -629,6 +654,9 @@ async function generateOne(
           lastErr = e;
           const msg = e instanceof Error ? e.message : String(e);
           compositeAttempts.push({ masked: plan.masked, model: imageModel, error: msg.slice(0, 160) });
+          // The spend cap is not a transient failure: retrying is precisely what
+          // it exists to prevent, so it propagates immediately.
+          if (/generation_budget_exhausted/.test(msg)) throw e;
           // A 429 on the pro tier (rate limit or unfunded preview) must NOT be
           // retried against the same wall: on the bc0d9a4e audit it burned every
           // masked attempt in seconds and the whole audit shipped via the
@@ -663,6 +691,15 @@ async function generateOne(
 
   const startedAt = Date.now();
   let edited = await gemini(basePrompt, refPng);
+  // Did the FIRST generation come back as a clean composite (every photo slot
+  // restored from the client's own pixels)? If so its photos are correct by
+  // construction, and that is worth more than any extra fix a later attempt
+  // might add: a corrective retry can only fall back to an unmasked generation,
+  // which forfeits the guarantee and then loses to the photo gate. Measured on
+  // this exact page: attempt 1 composited cleanly, the retry went unmasked, and
+  // the whole image was withheld despite already being good.
+  const firstCi = compositeInfo as { slots: number; restored: number; fallback?: string } | null;
+  const firstWasCleanComposite = firstCi !== null && !firstCi.fallback && firstCi.restored === firstCi.slots;
 
   // Deterministic shape gate BEFORE anything else: a mobile source that comes
   // back landscape is unusable, and no amount of prompting reliably prevents it.
@@ -703,7 +740,12 @@ async function generateOne(
   // The bytes and verdict of whatever is currently published, for the polish pass.
   let finalBytes = edited;
   let finalVerdict = check;
-  if (!check.ok) {
+  if (firstWasCleanComposite && !check.ok) {
+    // Keep the guarantee, skip the retry. Also saves the two or three
+    // generations the ladder would have spent losing it.
+    verify.retry_skipped = "first attempt composited cleanly; photos are the client's own pixels";
+  }
+  if (!check.ok && !firstWasCleanComposite) {
     try {
       const photoTrouble = check.defects.some(isPhotoDefect);
       // The retry never repeats the first prompt verbatim: same prompt, same
@@ -798,7 +840,11 @@ async function generateOne(
   // so it trades photos that are provably the client's own pixels for a chance
   // at one more fix. On the first live run it won publication and re-damaged
   // the banner the compositor had just restored, which un-published the page.
-  const ciNow = compositeInfo as { slots: number; restored: number; fallback?: string } | null;
+  // Same care as the gate: judge what is actually published, not whatever a
+  // losing later attempt left behind in compositeInfo.
+  const ciNow = (verify.published === "attempt1"
+    ? firstCi
+    : compositeInfo) as { slots: number; restored: number; fallback?: string } | null;
   const compositeClean = ciNow !== null && !ciNow.fallback && ciNow.restored === ciNow.slots;
   if (!compositeClean && (finalVerdict.missing.length > 0 || dupWidget) && Date.now() - startedAt < 90_000) {
     try {
@@ -816,6 +862,7 @@ async function generateOne(
         polishFixes.map((r, i) => `${i + 1}. ${r}`).join("\n"),
         `Keep every photograph, heading, button, and layout region exactly as it is. Do not re-lay-out anything. Output the full corrected screenshot at the same size and aspect ratio.`,
       ].join("\n\n");
+      spendGeneration();
       const polished = (await geminiEditImage(finalBytes, polishPrompt, apiKey, {
         model: imageModel,
         aspectRatio: outputRatio,
@@ -860,11 +907,14 @@ async function generateOne(
   // product that is not theirs, is a credibility problem in front of that client.
   // The retry may have generated again, so record the LAST restore that fed the
   // published image rather than whatever attempt 1 happened to do.
-  verify.composite = compositeInfo;
+  verify.composite = verify.published === "attempt1" ? firstCi : compositeInfo;
   verify.composite_attempts = compositeAttempts;
   // Which model actually produced the published bytes: after a mid-run
   // downgrade "pro vs flash" must never be a guess.
   verify.model = imageModel;
+  // Image generations spent on this one image, so the cost of an audit is
+  // auditable from the rows instead of reconstructed from a billing page.
+  verify.generations = generations;
   // When every slot was restored, the photos in the published image ARE the
   // source pixels, copied by arithmetic. A vision judge disagreeing with that is
   // wrong by construction (it flagged a requested banner trim as a re-crop on
@@ -876,7 +926,14 @@ async function generateOne(
   // compositeInfo is only ever assigned inside the gemini closure, which TS's
   // control-flow analysis cannot see, so it narrows the variable to its initial
   // null here; the cast restores the declared type.
-  const ci = compositeInfo as { slots: number; restored: number; fallback?: string } | null;
+  // Judge the composite state of the image that is ACTUALLY published. When
+  // attempt 1 is what shipped, that is the first generation's state, not
+  // whatever a later call left in compositeInfo: a retry that ran and lost still
+  // overwrites the variable, which is how a cleanly composited attempt 1 got
+  // gated as if it were an unmasked fallback.
+  const ci = (verify.published === "attempt1"
+    ? firstCi
+    : compositeInfo) as { slots: number; restored: number; fallback?: string } | null;
   const photosProvablyOriginal = ci !== null &&
     !ci.fallback &&
     ci.restored === ci.slots &&

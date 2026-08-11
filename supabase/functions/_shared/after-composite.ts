@@ -343,6 +343,34 @@ export async function cropToSupportedRatio(
   return { png: await cropped.encode(), ratio: best.label, photos: keptPhotos, cropped: true };
 }
 
+/** Force a generated image to the source's exact pixel dimensions.
+ *
+ * Exists because the two protections were fighting each other. Requesting an
+ * explicit aspectRatio/imageSize makes Gemini RE-RENDER the page instead of
+ * editing the input, which wiped the magenta lock slots every time (measured:
+ * purity 0.997 without imageConfig, 0.0 with it, same page and prompt). So the
+ * masked pass now asks for no shape at all and the shape is imposed here, in
+ * code, where it is exact and free.
+ *
+ * Aspect differences are absorbed by scaling to cover and centre-cropping the
+ * overflow, which is the same rule the slot restore uses, so a slightly
+ * differently-shaped generation loses a sliver of margin rather than being
+ * squashed. */
+export async function conformToSize(
+  png: Uint8Array,
+  target: { w: number; h: number },
+): Promise<Uint8Array> {
+  const img = await Image.decode(png);
+  if (img.width === target.w && img.height === target.h) return png;
+  const scale = Math.max(target.w / img.width, target.h / img.height);
+  const scaledW = Math.max(target.w, Math.round(img.width * scale));
+  const scaledH = Math.max(target.h, Math.round(img.height * scale));
+  const resized = img.resize(scaledW, scaledH);
+  const cropX = Math.max(0, (scaledW - target.w) >> 1);
+  const cropY = Math.max(0, (scaledH - target.h) >> 1);
+  return await resized.crop(cropX, cropY, target.w, target.h).encode();
+}
+
 /** Count slot-coloured pixels left in a composited image. The spike showed the
  * model sometimes INVENTS an extra slot (it drew a second product card as a
  * magenta rectangle); no photo maps to it, so it survives the restore as raw
