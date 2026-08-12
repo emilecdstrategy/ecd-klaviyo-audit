@@ -816,6 +816,17 @@ async function generateOne(
       // one whose retry deleted the photos. The photo lock in the lead, plus the
       // accept guard, are the protections that actually held.
       const retried = await gemini(`${retryBase}\n\n${lead}`, refPng);
+      // Captured NOW, before polish can reassign it: whether the retry's
+      // generation restored every slot. A clean composite means every photo in
+      // the retry is the client's own pixels BY CONSTRUCTION, so the vision
+      // judge's photo verdicts on it are noise. Without this, a retry that
+      // achieved the guarantee was rejected because the judge flagged a
+      // legitimately-shortened banner as a re-crop, and the damaged unmasked
+      // first attempt stayed published and was then withheld (live audit
+      // 611dc75f, homepage desktop: attempts show masked ok on the retry,
+      // published stayed attempt1, section withheld).
+      const retryCi = compositeInfo as { slots: number; restored: number; fallback?: string } | null;
+      const retryCleanComposite = retryCi !== null && !retryCi.fallback && retryCi.restored === retryCi.slots;
       // Never let a corrective attempt regress the device shape.
       if (!wrongShape(srcPng, retried)) {
         // Judge the retry at the scratch path; the canonical image is untouched
@@ -830,16 +841,22 @@ async function generateOne(
         const recheck = await gradeWithPhotoCheck(verifySourceUrl, candidateUrl, recommendations, viewport);
         verify.retry_ran = true;
         verify.retry_mode = photoTrouble ? "photo_lock" : focusedOnMissing ? "missing_only" : "full";
-        verify.retry = { missing: recheck.missing, defects: recheck.defects };
+        verify.retry = { missing: recheck.missing, defects: recheck.defects, clean_composite: retryCleanComposite };
         // When photos were the problem, the retry has to actually heal the
         // photos to win, not merely tie on the overall score. Both verdicts are
         // graded against the full fix list, so any fix the retry drops counts
         // against it.
         const photoBefore = check.defects.filter(isPhotoDefect).length;
-        const photoAfter = recheck.defects.filter(isPhotoDefect).length;
+        // A clean-composite retry has zero photo damage by arithmetic, whatever
+        // the judge says; scoring it on the judge's photo verdicts let a
+        // guaranteed-intact retry lose to a damaged first attempt.
+        const photoAfter = retryCleanComposite ? 0 : recheck.defects.filter(isPhotoDefect).length;
+        const recheckScored = retryCleanComposite
+          ? { ...recheck, defects: recheck.defects.filter((d) => !isPhotoDefect(d)) }
+          : recheck;
         const accept = photoTrouble
-          ? photoAfter < photoBefore && verifyScore(recheck) <= verifyScore(check)
-          : verifyScore(recheck) <= verifyScore(check);
+          ? photoAfter < photoBefore && verifyScore(recheckScored) <= verifyScore(check)
+          : verifyScore(recheckScored) <= verifyScore(check);
         if (accept) {
           bustedUrl = await store(retried);
           verify.published = "retry";
