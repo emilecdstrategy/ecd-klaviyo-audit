@@ -28,6 +28,18 @@ export type CapturedPhoto = {
   x: number; y: number; w: number; h: number;
 };
 
+/** Text that must never change in a generated after: a product title, a price
+ * or total, a review count, or the brand mark with its tagline. The compositor
+ * locks these the same way it locks photos, because the model kept corrupting
+ * exactly this class of content (misspelled titles, invented totals). */
+export type CapturedTextLock = {
+  kind: string;
+  /** The actual text, kept so a lock can be skipped when a fix explicitly
+   * targets it, and so corruption is diagnosable from the row. */
+  text: string;
+  x: number; y: number; w: number; h: number;
+};
+
 export type BrowserlessResult =
   | {
     ok: true;
@@ -36,6 +48,8 @@ export type BrowserlessResult =
     elements: CapturedElement[];
     /** Every photo painted in the shot; drives the after-image compositor. */
     photos: CapturedPhoto[];
+    /** Must-not-change text in the shot; the compositor locks these too. */
+    textLocks: CapturedTextLock[];
     cartCount?: number | null;
     /** The proxy pool that actually served this capture ("" for none). Recorded
      * per snapshot so the datacenter-vs-residential spend is auditable rather
@@ -499,6 +513,88 @@ export default async ({ page, context }) => {
     return out.sort((a, b) => (b.w * b.h) - (a.w * a.h)).slice(0, 40);
   }).catch(() => []);
 
+  // Text that must never change: product titles, prices and totals, review
+  // counts, and the brand mark's tagline. Generated afters kept corrupting
+  // exactly these (a title misspelled, a cart total invented, a tagline
+  // smeared), so they get the same lock-and-restore treatment as photos, and
+  // this inventory is what the compositor locks. Boxes are percentages of the
+  // VIEWPORT, matching the primary screenshot.
+  // NOTE: inside a template literal sent to Browserless. No backticks and no
+  // dollar-brace sequences, or the string terminates here.
+  const textLocks = await page.evaluate(() => {
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const out = [];
+    const seen = [];
+    const clean = (s) => (((s || "") + "").replace(/\\s+/g, " ")).trim();
+    const digit = (s) => /[0-9]/.test(s);
+    const visibleBox = (el) => {
+      let cs = null;
+      try { cs = getComputedStyle(el); } catch (e) { return null; }
+      if (cs.visibility === "hidden" || cs.display === "none" || Number(cs.opacity) === 0) return null;
+      const r = el.getBoundingClientRect();
+      if (r.bottom <= 0 || r.top >= vh) return null;
+      const left = Math.max(0, r.left), top = Math.max(0, r.top);
+      const right = Math.min(vw, r.right), bottom = Math.min(vh, r.bottom);
+      if (right - left < 8 || bottom - top < 6) return null;
+      return { x: left, y: top, w: right - left, h: bottom - top };
+    };
+    const add = (el, kind, maxChars, maxWFrac, maxHFrac) => {
+      const b = visibleBox(el);
+      if (!b) return;
+      if (b.w > vw * maxWFrac || b.h > vh * maxHFrac) return;
+      const text = clean(el.innerText);
+      if (!text || text.length > maxChars) return;
+      const key = [Math.round(b.x / 6), Math.round(b.y / 6), Math.round(b.w / 6), Math.round(b.h / 6)].join(",");
+      if (seen.indexOf(key) !== -1) return;
+      seen.push(key);
+      out.push({
+        kind: kind,
+        text: text.slice(0, 80),
+        x: +(b.x / vw * 100).toFixed(2), y: +(b.y / vh * 100).toFixed(2),
+        w: +(b.w / vw * 100).toFixed(2), h: +(b.h / vh * 100).toFixed(2),
+      });
+    };
+    // Page / product titles.
+    const titles = Array.prototype.slice.call(document.querySelectorAll("h1")).slice(0, 2);
+    for (const t of titles) add(t, "title", 120, 0.98, 0.2);
+    // Prices and totals: the INNERMOST element holding a currency amount, so a
+    // whole buy box is never locked just because a price sits inside it.
+    const hasMoney = (s) => (s.indexOf("$") !== -1 || s.indexOf("€") !== -1 || s.indexOf("£") !== -1) && digit(s);
+    const candidates = Array.prototype.slice.call(document.querySelectorAll("span,div,p,td,dd,strong,b,h2,h3,h4"));
+    const prices = [];
+    for (const el of candidates) {
+      if ((((el.textContent || "") + "").length) > 60) continue; // cheap pre-filter before innerText forces layout
+      const t = clean(el.innerText);
+      if (!t || t.length > 24 || !hasMoney(t)) continue;
+      let innermost = true;
+      const kids = Array.prototype.slice.call(el.children);
+      for (const k of kids) { if (hasMoney(clean(k.innerText))) { innermost = false; break; } }
+      if (innermost) prices.push(el);
+    }
+    for (const el of prices.slice(0, 10)) add(el, "price", 24, 0.6, 0.08);
+    // Review counts and ratings written as text.
+    for (const el of candidates) {
+      if ((((el.textContent || "") + "").length) > 80) continue;
+      const t = clean(el.innerText);
+      if (!t || t.length > 40) continue;
+      const lower = t.toLowerCase();
+      if (lower.indexOf("review") === -1 || !digit(lower)) continue;
+      let innermost = true;
+      const kids = Array.prototype.slice.call(el.children);
+      for (const k of kids) { if (clean(k.innerText).toLowerCase().indexOf("review") !== -1) { innermost = false; break; } }
+      if (innermost) add(el, "rating", 40, 0.6, 0.06);
+    }
+    // The brand mark: the first header link wrapping the logo, INCLUDING any
+    // tagline text under it (a smeared tagline shipped on a live audit).
+    const headerLinks = Array.prototype.slice.call(document.querySelectorAll("header a"));
+    for (const a of headerLinks) {
+      if (!a.querySelector("img,svg")) continue;
+      add(a, "logo", 80, 0.7, 0.15);
+      break;
+    }
+    return out.slice(0, 12);
+  }).catch(() => []);
+
   // Final guard: cart flow navigates a few times; if any hop landed on a bot
   // challenge / error page, bail so the caller requeues instead of storing a
   // picture of the block. (Real pages have far more than 280 chars of text.)
@@ -564,7 +660,7 @@ export default async ({ page, context }) => {
       await page.evaluate(() => { window.scrollTo(0, 0); });
     } catch (e) {}
   }
-  return { data: { screenshot, screenshot2, elements, photos, cartCount, probe, editReport }, type: "application/json" };
+  return { data: { screenshot, screenshot2, elements, photos, textLocks, cartCount, probe, editReport }, type: "application/json" };
 };
 `;
 
@@ -668,6 +764,7 @@ export async function captureWithBrowserless(input: {
         screenshot2?: string | null;
         elements?: CapturedElement[];
         photos?: CapturedPhoto[];
+        textLocks?: CapturedTextLock[];
         error?: string;
         cartCount?: number | null;
         probe?: unknown;
@@ -682,6 +779,7 @@ export async function captureWithBrowserless(input: {
     if (png.byteLength < 5000) return { ok: false, error: "browserless_blank_page", proxyUsed: proxy };
     const elements = Array.isArray(payload.elements) ? payload.elements.slice(0, 90) : [];
     const photos = Array.isArray(payload.photos) ? payload.photos.slice(0, 40) : [];
+    const textLocks = Array.isArray(payload.textLocks) ? payload.textLocks.slice(0, 12) : [];
     let png2: Uint8Array | null = null;
     if (payload.screenshot2) {
       const b = b64ToBytes(payload.screenshot2);
@@ -693,6 +791,7 @@ export async function captureWithBrowserless(input: {
       png2,
       elements,
       photos,
+      textLocks,
       cartCount: payload.cartCount ?? null,
       proxyUsed: proxy,
       probe: payload.probe ?? null,

@@ -188,9 +188,19 @@ const TEXT_TOOL = {
 export async function verifyTextIntegrity(
   beforeUrl: string,
   afterUrl: string,
+  recommendations: string[] = [],
 ): Promise<{ clean: boolean; problems: string[] }> {
   try {
     const llm = createLlmClient("anthropic", { model: VERIFY_MODEL });
+    // The checker must know what the redesign was ASKED to write: a fix that
+    // proposes concrete copy ("add a line saying free returns within 30 days")
+    // produces text that is absent from IMG_1 by design, and without this note
+    // the checker reports exactly that requested copy as invented.
+    const fixesNote = recommendations.length
+      ? `\n\nThe redesign was asked to make these changes; text those fixes explicitly propose is EXPECTED, not invented:\n${
+        recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n")
+      }\n\nOne exception stands even for requested changes: NUMBERS. A fix asking for "a star rating and review count" licenses drawing stars and a count, but the VALUES must come from IMG_1. A rating or count that contradicts IMG_1, or that appears nowhere in IMG_1, is still an invented number and must be reported.`
+      : "";
     const turn = await llm.runTurn({
       system:
         "You are a typesetting proofreader. You judge only whether text is cleanly rendered, never whether the design is good.",
@@ -201,7 +211,8 @@ export async function verifyTextIntegrity(
           "1. OVERLAPPING: two pieces of text drawn on top of each other, or new copy painted over old copy that was not erased.\n" +
           "2. GARBLED: half-formed words, doubled or smeared letters, or nonsense strings that are not real language.\n" +
           "3. INVENTED NUMBERS: any price, total, count or rating in IMG_2 that contradicts IMG_1. Compare the cart total or product prices against the line items and against IMG_1.\n\n" +
-          "Quote the offending text in each entry. Call record_text_check exactly once.",
+          "Quote the offending text in each entry. Call record_text_check exactly once." +
+          fixesNote,
         images: [
           { url: beforeUrl, label: "IMG_1: original" },
           { url: afterUrl, label: "IMG_2: redesign" },

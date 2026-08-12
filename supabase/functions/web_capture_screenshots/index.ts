@@ -2,7 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getScreenshotProvider } from "../_shared/screenshot-provider.ts";
-import { browserlessEnabled, captureWithBrowserless, type CapturedElement, type CapturedPhoto } from "../_shared/browserless.ts";
+import { browserlessEnabled, captureWithBrowserless, type CapturedElement, type CapturedPhoto, type CapturedTextLock } from "../_shared/browserless.ts";
 import { DOM_OUTLINE_PROBE, isUsableOutline } from "../_shared/html-after.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest, exchangeClientCredentials } from "../_shared/shopify-api.ts";
@@ -450,6 +450,8 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   // can restore the client's own photos rather than trusting the model to
   // reproduce them. Browserless-only: the ScreenshotOne fallback cannot probe.
   let photos: CapturedPhoto[] = [];
+  // Must-not-change text (titles, prices, ratings, brand mark): same treatment.
+  let textLocks: CapturedTextLock[] = [];
   let captureError = "";
   let browserlessError = ""; // kept separate so the fallback's error doesn't hide it
   let usedBrowserless = false;
@@ -524,6 +526,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       pngFold2 = bl.png2 ?? null;
       elements = bl.elements;
       photos = bl.photos ?? [];
+      textLocks = bl.textLocks ?? [];
       if (isUsableOutline(bl.probe)) domOutline = bl.probe;
       usedBrowserless = true;
       if (typeof bl.cartCount === "number") cartCount = bl.cartCount;
@@ -644,11 +647,13 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       const withOutline = domOutline ? { ...withFold, dom_outline: domOutline } : withFold;
       // Every photo painted in this shot, for the after-image compositor.
       const withPhotos = photos.length ? { ...withOutline, photos } : withOutline;
+      // And the text that must never change (titles, prices, ratings, brand).
+      const withText = textLocks.length ? { ...withPhotos, text_locks: textLocks } : withPhotos;
       // Which proxy pool served this capture, so the datacenter-vs-residential
       // savings are verifiable from the rows rather than guessed.
       const raw = proxyTierUsed && usedBrowserless
-        ? { ...withPhotos, proxy_tier: proxyTierUsed, proxy_used: proxyUsed ?? "none" }
-        : withPhotos;
+        ? { ...withText, proxy_tier: proxyTierUsed, proxy_used: proxyUsed ?? "none" }
+        : withText;
       await sb.from("web_page_snapshots").update({
         status: "success",
         screenshot_path: path,

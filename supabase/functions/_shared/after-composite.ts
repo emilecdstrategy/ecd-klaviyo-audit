@@ -26,7 +26,17 @@
 import { Image } from "https://deno.land/x/imagescript@1.3.0/mod.ts";
 
 /** One photo as inventoried at capture time; box is % of the screenshot. */
-export type PhotoBox = { x: number; y: number; w: number; h: number; src?: string };
+export type PhotoBox = {
+  x: number; y: number; w: number; h: number; src?: string;
+  /** Present on TEXT locks: what kind of must-not-change text this box holds
+   * ("title" | "price" | "rating" | "logo"). Photos leave it unset. The
+   * mask/restore pipeline treats both identically; kind exists for the prepare
+   * step (fix-targeting, sizing) and for diagnosability. */
+  kind?: string;
+  /** The locked text itself, so a lock can be skipped when a fix explicitly
+   * targets that copy. */
+  text?: string;
+};
 
 /** Lock-slot colour. Pure magenta never occurs in real storefront imagery. */
 const SLOT = { r: 255, g: 0, b: 255 };
@@ -186,7 +196,13 @@ export async function restorePhotos(
   const report: SlotReport[] = [];
   for (let pi = 0; pi < photos.length; pi++) {
     const srcBox = toPx(photos[pi], src.width, src.height);
-    const entry: SlotReport = { index: pi, src: photos[pi].src, expected: expected[pi], found: null, purity: 0 };
+    const entry: SlotReport = {
+      index: pi,
+      src: photos[pi].src ?? (photos[pi].kind ? `${photos[pi].kind}: ${photos[pi].text ?? ""}`.trim() : undefined),
+      expected: expected[pi],
+      found: null,
+      purity: 0,
+    };
     const ci = slotByPhoto.get(pi);
     if (ci !== undefined) {
       const c = components[ci];
@@ -387,11 +403,106 @@ export async function leftoverSlotPixels(compositedPng: Uint8Array): Promise<num
 
 /** The paragraph appended to the production prompt when the source has been
  * masked. Kept here so the spike and the real path can never drift apart. */
-export function lockSlotsPrompt(count: number): string {
+export function lockSlotsPrompt(count: number, textCount = 0): string {
   return [
-    `LOCKED IMAGE SLOTS: the source screenshot contains ${count} solid magenta rectangle(s). Each one is a LOCKED placeholder standing in for a real photograph that will be pasted back in afterwards by software.`,
-    `Treat every magenta rectangle as an immovable photo that you cannot see. Carry each one through to your output as the SAME clean, solid, pure magenta rectangle: same proportions, same place in the layout (it may shift slightly if a fix moves content around it).`,
+    `LOCKED SLOTS: the source screenshot contains ${count} solid magenta rectangle(s). Each one is a LOCKED placeholder standing in for real content that will be pasted back in afterwards by software.`,
+    textCount > 0
+      ? `${textCount} of them hold text the store owns (a product title, a price or total, a review count, or the brand mark); the rest hold photographs. The rules are identical for both. NEVER write the locked text yourself: even when you can guess what a rectangle contains (a breadcrumb may repeat the product title), do NOT type it out and do NOT shrink the rectangle to make room for your own text. Leave the rectangle solid magenta at its full original size; software will place the exact text in the store's own typography. A slot replaced by your own typed text counts as a deleted slot and fails the task.`
+      : `Each one stands in for a real photograph.`,
+    `Treat every magenta rectangle as immovable content that you cannot see. Carry each one through to your output as the SAME clean, solid, pure magenta rectangle: same proportions, same place in the layout (it may shift slightly if a fix moves content around it).`,
     `NEVER draw anything inside a magenta rectangle, never tint it, never delete one, never split or merge them, and never add a new one. Your output must contain exactly ${count} solid magenta rectangle(s).`,
     `The magenta colour is RESERVED for those slots alone: never use magenta, pink, or violet as a fill, bar, band, button, or accent anywhere else in the design. Any pink element that is not one of the ${count} locked slots makes the output unusable.`,
   ].join(" ");
+}
+
+/** Prepare the combined lock list for one generation.
+ *
+ * Text boxes need three treatments photos never did:
+ *  - EXPANSION: a price is ~60x18px; the slot finder's minimums and the model's
+ *    willingness to preserve a rectangle both fail at that size, so every text
+ *    lock grows to a survivable minimum. Growth is harmless: the restore pastes
+ *    the source pixels of the SAME expanded region, so the extra margin comes
+ *    back as the original whitespace it was.
+ *  - FIX-TARGETING: a fix that quotes the locked text wants to CHANGE it
+ *    ("rename the Shop Now button"); locking it would make the fix impossible,
+ *    so that lock is dropped and the text stays editable (the text-integrity
+ *    verifier still watches it).
+ *  - OVERLAP MERGE: expanded neighbours (price beside compare-at price, tagline
+ *    under a logo photo) would otherwise fuse into one magenta blob that the
+ *    finder counts as one component against two expected slots and rejects the
+ *    candidate. Overlapping locks merge into their union up front, photos
+ *    included, so the mask and the expectation always agree.
+ */
+export function prepareLockBoxes(params: {
+  photos: PhotoBox[];
+  textLocks: PhotoBox[];
+  recommendations: string[];
+  dims: { w: number; h: number };
+}): PhotoBox[] {
+  const { photos, textLocks, recommendations, dims } = params;
+  const recsLower = recommendations.map((r) => r.toLowerCase());
+  const fixTargets = (t?: string) => {
+    if (!t) return false;
+    const needle = t.toLowerCase().trim();
+    // Very short strings ("$5") match too easily; keep those locked.
+    if (needle.length < 5) return false;
+    return recsLower.some((r) => r.includes(needle));
+  };
+
+  const MIN_W = 52, MIN_H = 30, PAD = 4;
+  const expanded: PhotoBox[] = [];
+  for (const t of textLocks) {
+    if (fixTargets(t.text)) continue;
+    let x = (t.x / 100) * dims.w - PAD;
+    let y = (t.y / 100) * dims.h - PAD;
+    let w = (t.w / 100) * dims.w + PAD * 2;
+    let h = (t.h / 100) * dims.h + PAD * 2;
+    if (w < MIN_W) { x -= (MIN_W - w) / 2; w = MIN_W; }
+    if (h < MIN_H) { y -= (MIN_H - h) / 2; h = MIN_H; }
+    x = Math.max(0, x);
+    y = Math.max(0, y);
+    w = Math.min(dims.w - x, w);
+    h = Math.min(dims.h - y, h);
+    expanded.push({
+      ...t,
+      x: +((x / dims.w) * 100).toFixed(2),
+      y: +((y / dims.h) * 100).toFixed(2),
+      w: +((w / dims.w) * 100).toFixed(2),
+      h: +((h / dims.h) * 100).toFixed(2),
+    });
+  }
+
+  // Union any two locks whose overlap covers most of the smaller one, until
+  // stable. O(n^2) over at most a few dozen boxes.
+  const merged: PhotoBox[] = [...photos, ...expanded];
+  let changed = true;
+  while (changed) {
+    changed = false;
+    outer: for (let i = 0; i < merged.length; i++) {
+      for (let j = i + 1; j < merged.length; j++) {
+        const a = merged[i], b = merged[j];
+        const ix = Math.max(0, Math.min(a.x + a.w, b.x + b.w) - Math.max(a.x, b.x));
+        const iy = Math.max(0, Math.min(a.y + a.h, b.y + b.h) - Math.max(a.y, b.y));
+        const inter = ix * iy;
+        if (inter <= 0) continue;
+        const smaller = Math.min(a.w * a.h, b.w * b.h);
+        if (inter < smaller * 0.4) continue;
+        const x = Math.min(a.x, b.x), y = Math.min(a.y, b.y);
+        const union: PhotoBox = {
+          x,
+          y,
+          w: Math.max(a.x + a.w, b.x + b.w) - x,
+          h: Math.max(a.y + a.h, b.y + b.h) - y,
+          src: a.src ?? b.src,
+          kind: a.kind && b.kind ? a.kind : a.kind ?? b.kind,
+          text: [a.text, b.text].filter(Boolean).join(" | ") || undefined,
+        };
+        merged.splice(j, 1);
+        merged.splice(i, 1, union);
+        changed = true;
+        break outer;
+      }
+    }
+  }
+  return merged;
 }

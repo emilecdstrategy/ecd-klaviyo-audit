@@ -25,7 +25,7 @@ import {
 } from "../_shared/after-image-verify.ts";
 import { autoPublishAudit } from "../_shared/auto-publish.ts";
 import { isUsableOutline, runHtmlAfter, summarizeEditReport } from "../_shared/html-after.ts";
-import { conformToSize, cropToSupportedRatio, lockSlotsPrompt, maskPhotos, restorePhotos, type PhotoBox } from "../_shared/after-composite.ts";
+import { conformToSize, cropToSupportedRatio, lockSlotsPrompt, maskPhotos, prepareLockBoxes, restorePhotos, type PhotoBox } from "../_shared/after-composite.ts";
 
 // Generates an "after" concept image for a web-audit page section.
 //
@@ -109,6 +109,8 @@ type ViewportSource = {
   variantId?: string | null;
   /** Complete capture-time photo inventory (raw.photos); drives the compositor. */
   photos?: PhotoBox[];
+  /** Must-not-change text (raw.text_locks): titles, prices, ratings, brand. */
+  textLocks?: PhotoBox[];
 };
 
 // One source screenshot per viewport for a page (above-the-fold variant preferred).
@@ -145,6 +147,7 @@ async function listViewportSources(sb: SupabaseClient, auditId: string, pageType
       outline: chosen.raw?.dom_outline ?? null,
       variantId: typeof chosen.raw?.variant_id === "string" ? chosen.raw.variant_id : null,
       photos: Array.isArray(chosen.raw?.photos) ? (chosen.raw.photos as PhotoBox[]) : [],
+      textLocks: Array.isArray(chosen.raw?.text_locks) ? (chosen.raw.text_locks as PhotoBox[]) : [],
     });
   }
   return out;
@@ -270,6 +273,7 @@ async function generateOne(
   sourceElements?: CapturedEl[],
   htmlSource?: { pageUrl?: string | null; outline?: unknown; variantId?: string | null },
   photos?: PhotoBox[],
+  textLocks?: PhotoBox[],
 ): Promise<{ url: string | null; viewport: Viewport }> {
   const meta = PAGE_SECTIONS.find((s) => s.key === section.section_key);
   if (!meta) throw new Error(`section ${section.section_key} is not a page section`);
@@ -409,15 +413,22 @@ async function generateOne(
   // to the tallest supported ratio that fits (the first fold survives; fixes
   // live there), then request EXACTLY that ratio at 2K. The verifier must judge
   // against the cropped source, or it flags the missing bottom as a defect.
-  let effectivePhotos: PhotoBox[] = Array.isArray(photos) ? photos : [];
+  // Photos and text locks travel through the crop as ONE list (the crop only
+  // touches boxes, and both kinds are boxes); they split again afterwards
+  // because only photos get the sliver filter and only text gets the prepare
+  // treatment. Text locks are tagged by their `kind` field.
+  let effectiveLocks: PhotoBox[] = [
+    ...(Array.isArray(photos) ? photos : []),
+    ...(Array.isArray(textLocks) ? textLocks : []),
+  ];
   let outputRatio: string | undefined;
   let verifySourceUrl = sourceUrl;
   try {
-    const shaped = await cropToSupportedRatio(srcPng, effectivePhotos);
+    const shaped = await cropToSupportedRatio(srcPng, effectiveLocks);
     outputRatio = shaped.ratio;
     if (shaped.cropped) {
       srcPng = shaped.png;
-      effectivePhotos = shaped.photos;
+      effectiveLocks = shaped.photos;
       verifySourceUrl = await uploadPng(
         sb,
         `${clientId}/${auditId}/web/after_${meta.page_type}_${viewport}_source.png`,
@@ -427,6 +438,8 @@ async function generateOne(
   } catch (e) {
     console.warn(`after-image ${meta.label}/${viewport}: ratio crop failed (${e instanceof Error ? e.message : e}), sending unshaped`);
   }
+  const effectivePhotos = effectiveLocks.filter((b) => !b.kind);
+  const effectiveTextLocks = effectiveLocks.filter((b) => !!b.kind);
 
   let refPng: Uint8Array | undefined;
   if (referenceAfterUrl) {
@@ -504,7 +517,7 @@ async function generateOne(
   // the first live run. Leave slivers unmasked; the vision gate still watches
   // that region.
   const srcDims = pngSize(srcPng);
-  const lockablePhotos = effectivePhotos.filter((p) => {
+  const photoLocks = effectivePhotos.filter((p) => {
     if (p.y + p.h < 98) return true; // not clipped by the bottom of the shot
     // Clipped photos are slivers only when MOST of the photo is below the crop,
     // judged from the file's intrinsic ratio (percent boxes use different
@@ -518,6 +531,20 @@ async function generateOne(
     }
     return p.h > 18;
   });
+  // Photos plus must-not-change text, one lock list: text boxes expanded to
+  // survivable sizes, text a fix explicitly targets left editable, overlapping
+  // locks merged. From here down the pipeline does not care which is which.
+  const lockablePhotos = srcDims
+    ? prepareLockBoxes({
+      photos: photoLocks,
+      textLocks: effectiveTextLocks,
+      // Only fixes that will actually run can justify unlocking their target
+      // text; anything past the cap never reaches the model.
+      recommendations,
+      dims: srcDims,
+    })
+    : photoLocks;
+  const lockedTextCount = lockablePhotos.filter((b) => !!b.kind).length;
   const compositing = USE_COMPOSITE && lockablePhotos.length > 0;
   let genSrc: Uint8Array = srcPng;
   let lockNote = "";
@@ -525,7 +552,7 @@ async function generateOne(
     try {
       const m = await maskPhotos(srcPng, lockablePhotos);
       genSrc = m.png;
-      lockNote = lockSlotsPrompt(lockablePhotos.length);
+      lockNote = lockSlotsPrompt(lockablePhotos.length, lockedTextCount);
     } catch (e) {
       // Mask failure just means generating the old way, with the old gate.
       console.warn(`after-image ${meta.label}/${viewport}: mask failed (${e instanceof Error ? e.message : e}), generating unmasked`);
@@ -968,7 +995,7 @@ async function generateOne(
   // headlines smeared over each other or a wrong price is unusable however good
   // the layout is. Same narrow-question approach that finally caught cropped
   // photos and sliced checkout buttons.
-  const textCheck = await verifyTextIntegrity(verifySourceUrl, bustedUrl);
+  const textCheck = await verifyTextIntegrity(verifySourceUrl, bustedUrl, recommendations);
   verify.text_check = textCheck;
   if (!textCheck.clean) {
     finalCriticalDefects.push(
@@ -1162,7 +1189,7 @@ serve(async (req) => {
       const referenceAfterUrl = targetVp !== primaryVp ? afterUrlFor(section, primaryVp) : undefined;
       const result = await generateOne(
         sb, auditId, clientId, section, apiKey, targetVp, src.url, referenceAfterUrl, src.fold2Url, src.elements,
-        { pageUrl: src.pageUrl, outline: src.outline, variantId: src.variantId }, src.photos,
+        { pageUrl: src.pageUrl, outline: src.outline, variantId: src.variantId }, src.photos, src.textLocks,
       );
       return json({ ok: true, correlationId, url: result.url, viewport: result.viewport });
     }
@@ -1180,6 +1207,7 @@ serve(async (req) => {
         elements?: CapturedEl[];
         html?: { pageUrl?: string | null; outline?: unknown; variantId?: string | null };
         photos?: PhotoBox[];
+        textLocks?: PhotoBox[];
       };
       const units: Unit[] = [];
       for (const meta of PAGE_SECTIONS) {
@@ -1199,6 +1227,7 @@ serve(async (req) => {
               elements: src.elements,
               html: { pageUrl: src.pageUrl, outline: src.outline, variantId: src.variantId },
               photos: src.photos,
+              textLocks: src.textLocks,
             });
           }
         }
@@ -1233,7 +1262,7 @@ serve(async (req) => {
       try {
         await generateOne(
           sb, auditId, clientId, next.section, apiKey, next.viewport, next.url, referenceAfterUrl, next.fold2Url, next.elements,
-          next.html, next.photos,
+          next.html, next.photos, next.textLocks,
         );
       } catch (e) {
         // Count the attempt. Only the LAST one records a terminal error, so a

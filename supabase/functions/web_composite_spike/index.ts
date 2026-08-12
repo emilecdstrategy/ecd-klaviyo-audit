@@ -2,8 +2,8 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getSecret } from "../_shared/app-secrets.ts";
-import { buildEditPrompt, geminiEditImage, type Viewport } from "../_shared/after-image-prompt.ts";
-import { maskPhotos, restorePhotos, lockSlotsPrompt, type PhotoBox } from "../_shared/after-composite.ts";
+import { buildEditPrompt, geminiEditImage, pngSize, type Viewport } from "../_shared/after-image-prompt.ts";
+import { maskPhotos, prepareLockBoxes, restorePhotos, lockSlotsPrompt, type PhotoBox } from "../_shared/after-composite.ts";
 import type { WebPageKind } from "../_shared/ecommerce-ux-kb.ts";
 
 // Test harness for the photo-lock compositor. Takes a snapshot that carries the
@@ -52,9 +52,11 @@ serve(async (req) => {
       .single();
     if (error || !snap) return json({ ok: false, error: `snapshot_not_found: ${error?.message ?? ""}` });
 
-    const photos = ((snap.raw as Record<string, unknown> | null)?.photos ?? []) as PhotoBox[];
-    if (!Array.isArray(photos) || photos.length === 0) {
-      return json({ ok: false, error: "snapshot_has_no_photo_inventory (recapture it first)" });
+    const rawObj = (snap.raw ?? {}) as Record<string, unknown>;
+    const rawPhotos = (Array.isArray(rawObj.photos) ? rawObj.photos : []) as PhotoBox[];
+    const rawText = (Array.isArray(rawObj.text_locks) ? rawObj.text_locks : []) as PhotoBox[];
+    if (rawPhotos.length === 0 && rawText.length === 0) {
+      return json({ ok: false, error: "snapshot_has_no_lock_inventory (recapture it first)" });
     }
     if (!snap.screenshot_url) return json({ ok: false, error: "snapshot_has_no_screenshot" });
 
@@ -62,7 +64,15 @@ serve(async (req) => {
     if (!srcRes.ok) return json({ ok: false, error: `fetch_source_${srcRes.status}` });
     const sourcePng = new Uint8Array(await srcRes.arrayBuffer());
 
-    // 1. Mask: the model never sees a real photo.
+    // Same prepare step as production: text locks expanded to survivable sizes,
+    // fix-targeted text left editable, overlapping locks merged.
+    const dims = pngSize(sourcePng);
+    const photos = dims
+      ? prepareLockBoxes({ photos: rawPhotos, textLocks: rawText, recommendations, dims })
+      : rawPhotos;
+    const textCount = photos.filter((b) => !!b.kind).length;
+
+    // 1. Mask: the model never sees a real photo or a locked line of text.
     const masked = await maskPhotos(sourcePng, photos);
 
     // 2. Generate with the EXACT production prompt plus the lock paragraph.
@@ -72,7 +82,7 @@ serve(async (req) => {
       : "homepage") as WebPageKind;
     const prompt = [
       buildEditPrompt(String(snap.page_type), recommendations, false, viewport, pageKind),
-      lockSlotsPrompt(photos.length),
+      lockSlotsPrompt(photos.length, textCount),
     ].join("\n\n");
     const apiKey = (await getSecret("gemini_api_key")).trim();
     const genStarted = Date.now();
