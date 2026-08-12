@@ -175,8 +175,18 @@ export async function restorePhotos(
       // scale, so a candidate whose aspect or area is far off is not that slot.
       const aspectDrift = (c.w / c.h) / (e.w / e.h);
       const areaDrift = (c.w * c.h) / (e.w * e.h);
-      if (aspectDrift < 0.45 || aspectDrift > 2.2) continue;
-      if (areaDrift < 0.25 || areaDrift > 4) continue;
+      // Text slots get a tighter gate than photos: their paste STRETCHES the
+      // source pixels to the found rect (see below), and a stretch beyond
+      // ~1.5x makes the client's own typography look wrong, which is exactly
+      // the impression the lock exists to prevent. Better to reject and retry.
+      const isText = !!photos[pi].kind;
+      if (isText) {
+        if (aspectDrift < 0.65 || aspectDrift > 1.55) continue;
+        if (areaDrift < 0.4 || areaDrift > 2.5) continue;
+      } else {
+        if (aspectDrift < 0.45 || aspectDrift > 2.2) continue;
+        if (areaDrift < 0.25 || areaDrift > 4) continue;
+      }
       const d = Math.hypot((e.x + e.w / 2) - (c.x + c.w / 2), (e.y + e.h / 2) - (c.y + c.h / 2));
       pairs.push({ pi, ci, d });
     }
@@ -235,10 +245,16 @@ export async function restorePhotos(
         // to trim the banner, and "trim" means the window got shorter, not that
         // the view re-centred; hero banners also carry their headline overlay in
         // the upper part of the source pixels, which a centre crop cut off.
+        // Text slots STRETCH instead: cover-fit crops pixels, and cropping a
+        // title slices glyphs off its edges (a live spike lost the leading
+        // "'Si" of a product name to a 22% taller slot). A mild non-uniform
+        // stretch keeps every glyph and the shape gate above caps how far the
+        // stretch can go before the candidate is rejected outright.
+        const isTextSlot = !!photos[pi].kind;
         const scale = Math.max(pw / srcBox.w, ph / srcBox.h);
-        const cropW = Math.min(srcBox.w, Math.round(pw / scale));
-        const cropH = Math.min(srcBox.h, Math.round(ph / scale));
-        const cropX = srcBox.x + ((srcBox.w - cropW) >> 1);
+        const cropW = isTextSlot ? srcBox.w : Math.min(srcBox.w, Math.round(pw / scale));
+        const cropH = isTextSlot ? srcBox.h : Math.min(srcBox.h, Math.round(ph / scale));
+        const cropX = isTextSlot ? srcBox.x : srcBox.x + ((srcBox.w - cropW) >> 1);
         const cropY = srcBox.y;
         for (let ty = 0; ty < ph; ty++) {
           const sy = cropY + Math.min(cropH - 1, Math.floor((ty / ph) * cropH));
