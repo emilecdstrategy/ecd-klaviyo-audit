@@ -189,6 +189,7 @@ export async function verifyTextIntegrity(
   beforeUrl: string,
   afterUrl: string,
   recommendations: string[] = [],
+  extraBeforeUrl?: string,
 ): Promise<{ clean: boolean; problems: string[] }> {
   try {
     const llm = createLlmClient("anthropic", { model: VERIFY_MODEL });
@@ -199,22 +200,32 @@ export async function verifyTextIntegrity(
     const fixesNote = recommendations.length
       ? `\n\nThe redesign was asked to make these changes; text those fixes explicitly propose is EXPECTED, not invented:\n${
         recommendations.map((r, i) => `${i + 1}. ${r}`).join("\n")
-      }\n\nOne exception stands even for requested changes: NUMBERS. A fix asking for "a star rating and review count" licenses drawing stars and a count, but the VALUES must come from IMG_1. A rating or count that contradicts IMG_1, or that appears nowhere in IMG_1, is still an invented number and must be reported.`
+      }\n\nOne exception stands even for requested changes: NUMBERS. A fix asking for "a star rating and review count" licenses drawing stars and a count, but the VALUES must come from the original page (any IMG_1 image). A rating or count that contradicts the original page, or that appears nowhere on it, is still an invented number and must be reported.`
       : "";
+    // The redesign may legitimately pull content up from below the fold (a
+    // price, a review count, a product grid), so the original-page evidence
+    // must include what sits under the crop: the uncropped fold plus the
+    // second-fold shot when the caller has one. Without them the checker
+    // flagged the store's REAL price as an invented number, because the 9:16
+    // crop it was shown ended above the price line.
+    const beforeImages = [
+      { url: beforeUrl, label: "IMG_1: original" },
+      ...(extraBeforeUrl ? [{ url: extraBeforeUrl, label: "IMG_1b: the same original page, continued below the first image" }] : []),
+    ];
     const turn = await llm.runTurn({
       system:
         "You are a typesetting proofreader. You judge only whether text is cleanly rendered, never whether the design is good.",
       messages: [{
         role: "user_images",
         text:
-          "IMG_1 is the original screenshot. IMG_2 is a redesign of it. Ignore layout, colour and design quality entirely. Check ONLY the text in IMG_2 for these faults:\n\n" +
+          "The IMG_1 images show the original page (IMG_1b, when present, continues the same page below IMG_1). IMG_2 is a redesign of it. Ignore layout, colour and design quality entirely. Check ONLY the text in IMG_2 for these faults:\n\n" +
           "1. OVERLAPPING: two pieces of text drawn on top of each other, or new copy painted over old copy that was not erased.\n" +
           "2. GARBLED: half-formed words, doubled or smeared letters, or nonsense strings that are not real language.\n" +
-          "3. INVENTED NUMBERS: any price, total, count or rating in IMG_2 that contradicts IMG_1. Compare the cart total or product prices against the line items and against IMG_1.\n\n" +
+          "3. INVENTED NUMBERS: any price, total, count or rating in IMG_2 that contradicts the original page. Compare the cart total or product prices against the line items and against every IMG_1 image before calling a number invented.\n\n" +
           "Quote the offending text in each entry. Call record_text_check exactly once." +
           fixesNote,
         images: [
-          { url: beforeUrl, label: "IMG_1: original" },
+          ...beforeImages,
           { url: afterUrl, label: "IMG_2: redesign" },
         ],
       }],

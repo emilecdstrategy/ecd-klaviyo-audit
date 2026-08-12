@@ -995,7 +995,11 @@ async function generateOne(
   // headlines smeared over each other or a wrong price is unusable however good
   // the layout is. Same narrow-question approach that finally caught cropped
   // photos and sliced checkout buttons.
-  const textCheck = await verifyTextIntegrity(verifySourceUrl, bustedUrl, recommendations);
+  // Judged against the UNCROPPED source plus the second fold, not the 9:16
+  // crop: a redesign that pulls the real price or review count up from below
+  // the crop line was being withheld for "inventing" numbers the page really
+  // shows.
+  const textCheck = await verifyTextIntegrity(sourceUrl, bustedUrl, recommendations, belowFoldUrl ?? undefined);
   verify.text_check = textCheck;
   if (!textCheck.clean) {
     finalCriticalDefects.push(
