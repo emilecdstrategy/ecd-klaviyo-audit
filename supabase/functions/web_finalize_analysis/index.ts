@@ -372,15 +372,30 @@ async function runStep(
           ? "desktop"
           : null;
     if (needFindings || needIntro || thinViewport || tooFew) {
-      const ask = tooFew && !needIntro
-        ? `Your audit of the ${step.label} produced only ${parsed.findings.length} finding(s). Every storefront page has more than that worth raising. Return your existing findings PLUS enough new ones to reach at least ${MIN_FINDINGS}, and four or five is normal. Each must be a specific, visible issue with a recommendation, tagged with the viewport it applies to. Do not pad with vague advice: only real issues you can point at in the screenshot.`
-        : thinViewport && !needIntro
-        ? `Your audit of the ${step.label} only produced ${countFor(thinViewport)} finding(s) that apply to ${thinViewport}. The report shows one device at a time, so that page looks almost empty to a ${thinViewport} reader. Look again at the ${thinViewport} screenshot specifically and return your existing findings PLUS at least two more that genuinely apply to ${thinViewport}, each tagged "${thinViewport}" (or "both" when it truly affects both), and each with a recommendation. Do not pad: only real, visible issues.`
-        : needFindings && needIntro
-        ? `You returned no findings and no intro for the ${step.label}. This page rendered normally and every storefront page has concrete issues worth raising. Write the intro (2-3 sentences summarising this page) AND at least 3 specific, visible findings, each with a recommendation.`
-        : needFindings
-          ? `You returned no findings for the ${step.label}, but this page rendered normally and every storefront page has concrete UX and conversion issues. Look again and identify at least 3 specific, visible issues, each with a recommendation, plus a few strengths.`
-          : `You left the intro empty for the ${step.label}. Write it now: 2-3 sentences in the founder-friendly voice summarising where this page stands, what it does well, and what is holding it back. Keep the same findings and recommendations you already gave.`;
+      // Ask for EVERYTHING that is missing. This was a ternary chain whose
+      // first branches were guarded by `&& !needIntro`, so a page that came
+      // back with too few findings AND no intro fell through to the intro-only
+      // ask, which even told the model to keep the findings it already gave.
+      // A live homepage shipped with 1 finding, no recommendations and a blank
+      // summary because of exactly that.
+      const needs: string[] = [];
+      if (needFindings) {
+        needs.push(`at least ${MIN_FINDINGS} specific, visible findings, each with a recommendation and tagged with the viewport it applies to`);
+      } else if (tooFew) {
+        needs.push(`your existing ${parsed.findings.length} finding(s) PLUS enough new ones to reach at least ${MIN_FINDINGS} (four or five is normal), each with a recommendation and a viewport tag`);
+      } else if (thinViewport) {
+        needs.push(`your existing findings PLUS at least two more that genuinely apply to ${thinViewport}, each tagged "${thinViewport}" (or "both" when it truly affects both), each with a recommendation`);
+      }
+      if (needIntro) {
+        needs.push(`the intro: 2-3 sentences in the founder-friendly voice on where this page stands, what it does well, and what is holding it back`);
+      }
+      const keepNote = needs.length === 1 && needIntro
+        ? " Keep the same findings and recommendations you already gave."
+        : "";
+      const ask =
+        `Your audit of the ${step.label} came back incomplete. This page rendered normally and every storefront page has concrete UX and conversion issues worth raising. Return ${
+          needs.join(" AND ")
+        }. Do not pad with vague advice: only real issues you can point at in the screenshot.${keepNote}`;
       const retryMessages: LlmMessage[] = [{
         role: "user_images",
         text: `${ask} Call record_page_audit exactly once.${elementsText}`,
@@ -392,9 +407,17 @@ async function runStep(
         const retryParsed = coercePageAudit(retry.input, refToId, refToElements, refToViewport);
         logCoercionLoss(step.key, "retry", retry.input, retryParsed.findings.length);
         // Only take what was actually missing, so a retry cannot throw away good
-        // findings from the first pass.
-        if (needFindings && retryParsed.findings.length > 0) parsed = retryParsed;
-        else if (thinViewport) {
+        // findings from the first pass. `tooFew` is handled alongside
+        // `needFindings`: it was absent here, so a retry that genuinely added
+        // findings to a thin page was computed and then discarded.
+        if ((needFindings || tooFew) && retryParsed.findings.length > parsed.findings.length) {
+          parsed = {
+            ...retryParsed,
+            intro: retryParsed.intro.trim() ? retryParsed.intro : parsed.intro,
+          };
+        } else if (needIntro && retryParsed.intro.trim() && !parsed.intro.trim()) {
+          parsed = { ...parsed, intro: retryParsed.intro };
+        } else if (thinViewport) {
           // Keep the better-covered pass. The retry was asked to return the old
           // findings plus more, but if it came back thinner, the first pass wins.
           const before = parsed.findings.filter((f) => f.viewport === thinViewport || f.viewport === "both").length;
@@ -411,8 +434,16 @@ async function runStep(
     // spent here, so fail the step instead: the run pauses with a Resume button
     // and the watchdog picks it up, which is recoverable in a way a silently
     // blank section never was.
-    if (parsed.findings.length === 0) {
-      throw new Error(`${step.key}: the model returned no findings on either pass, so the section was left untouched rather than published empty`);
+    // The bar is a section a client can actually read: at least one finding AND
+    // a summary paragraph. Checking only for zero findings let a homepage ship
+    // with one finding, no recommendations and a blank summary, which reads as
+    // broken even though it technically had content.
+    if (parsed.findings.length === 0 || !parsed.intro.trim()) {
+      throw new Error(
+        `${step.key}: incomplete after both passes (${parsed.findings.length} finding(s), ${
+          parsed.intro.trim() ? "intro present" : "no intro"
+        }), so the section was left untouched rather than published half-empty`,
+      );
     }
 
     // Enforce the memory in code: the prompt asks the model not to repeat, but it

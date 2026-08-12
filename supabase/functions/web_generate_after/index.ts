@@ -15,6 +15,7 @@ import {
   type Viewport,
 } from "../_shared/after-image-prompt.ts";
 import {
+  isCriticalLayoutDefect,
   isPhotoDefect,
   verifyAfterImage,
   verifyPhotoFidelity,
@@ -938,14 +939,19 @@ async function generateOne(
     !ci.fallback &&
     ci.restored === ci.slots &&
     verify.published !== "polish";
-  const finalPhotoDefects = photosProvablyOriginal
-    ? []
-    : (Array.isArray(publishedVerdict.defects) ? publishedVerdict.defects as string[] : [])
-      .filter(isPhotoDefect);
-  if (finalPhotoDefects.length > 0) {
+  const publishedDefects = Array.isArray(publishedVerdict.defects) ? publishedVerdict.defects as string[] : [];
+  const finalPhotoDefects = photosProvablyOriginal ? [] : publishedDefects.filter(isPhotoDefect);
+  // Photos were never the only way to ship something unusable. The judge
+  // reported "the Checkout button extends beyond the visible frame" on a cart
+  // and it published regardless, because only photo defects were ever gated on.
+  // A cart with no reachable checkout button fails at the one job the page has,
+  // so it is withheld on the same terms. Compositing does not exempt this: the
+  // guarantee is about pixels, not layout.
+  const finalCriticalDefects = publishedDefects.filter(isCriticalLayoutDefect);
+  if (finalPhotoDefects.length + finalCriticalDefects.length > 0) {
     console.error(
-      `after-image ${meta.label}/${viewport}: withheld, photos still damaged after all passes: ${
-        finalPhotoDefects.join(" | ").slice(0, 300)
+      `after-image ${meta.label}/${viewport}: withheld after all passes: ${
+        [...finalPhotoDefects, ...finalCriticalDefects].join(" | ").slice(0, 300)
       }`,
     );
     const detailsBlocked = asRecord(section.section_details);
@@ -955,8 +961,10 @@ async function generateOne(
       url: null,
       engine: "gemini_fallback",
       html_error: htmlError,
-      error: "photo_integrity_failed",
-      photo_defects: finalPhotoDefects,
+      // Distinguish the two withhold reasons: the editor note for a broken cart
+      // should not claim the client's photos were altered.
+      error: finalPhotoDefects.length > 0 ? "photo_integrity_failed" : "critical_layout_failed",
+      photo_defects: [...finalPhotoDefects, ...finalCriticalDefects],
       generated_at: new Date().toISOString(),
       verify,
     };

@@ -351,6 +351,11 @@ export default function WebPageSection({
                   Concept image withheld: the image model altered the client's own photos on every attempt, so nothing was published. Regenerate to try again.
                 </p>
               )}
+              {editMode && !afterUrl && afterMeta?.error === 'critical_layout_failed' && (
+                <p className="mt-1.5 rounded-lg bg-amber-50 px-3 py-2 text-[11px] text-amber-700">
+                  Concept image withheld: the redesign pushed the checkout button out of view, so the cart could not be checked out from. Regenerate to try again.
+                </p>
+              )}
               {afterError && <p className="mt-1.5 rounded-lg bg-red-50 px-3 py-2 text-[11px] text-red-600">{afterError}</p>}
             </div>
           ) : (

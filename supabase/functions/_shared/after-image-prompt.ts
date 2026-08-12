@@ -161,6 +161,8 @@ export function buildEditPrompt(
     `3. Never remove or shrink the main product photo, and never replace it with thumbnails.`,
     `4. A slide-out cart stays exactly where it is: on desktop, pinned to the right edge with the page still visible behind it. Never centre it and never blank out the page behind it.`,
     `5. Nothing may get taller than it is in the source. A cart drawer, a header, or a line of text that fits one row must still fit one row.`,
+    `5b. ON A CART, THE CHECKOUT BUTTON MUST SURVIVE. It stays fully inside the frame, whole label readable, at the same size, with the subtotal above it. Everything you add competes for space with it: if a change would push the checkout button, the total, or that block even partly out of view, do not make that change. A cart image with no reachable checkout button is worthless no matter how good the rest looks. Take space from padding, wording, or the suggestions row, never from the checkout block.`,
+    `5c. DO NOT ADD A FLOATING WIDGET THAT IS NOT IN THE SOURCE. If the source has no chat bubble, your output has no chat bubble. Count them: the number of floating icons in your output must equal the number in the source, in the same corners.`,
     `6. COUNT THE FLOATING BADGES. Every floating widget (chat bubble, loyalty or rewards star, back-to-top) appears EXACTLY ONCE, in the same corner as the source. Before you finish, count them: two loyalty stars, or a chat bubble in two corners, is a broken image.`,
     `7. THE GRID KEEPS ITS COLUMN COUNT. Count the product cards per row in the source and draw exactly that many. ${
       viewport === "mobile"

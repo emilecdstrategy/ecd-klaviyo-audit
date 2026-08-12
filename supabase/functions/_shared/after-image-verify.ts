@@ -29,7 +29,7 @@ export const VERIFY_TOOL: LlmTool = {
         type: "array",
         items: { type: "string" },
         description:
-          "Visual defects the edit introduced: duplicated text or elements, an element left behind in its old place after a move, overlapping or colliding elements, unreadable text over a photo, empty icon slots, or misspellings. ALSO report each of these as a defect: (a) IMG_2 is in the WRONG DEVICE LAYOUT, i.e. IMG_1 is a narrow phone screenshot but IMG_2 is a wide multi-column desktop layout, or the reverse; (b) the main product photo from IMG_1 is missing, shrunk to a thumbnail, or replaced by a row of thumbnails; (c) product images changed shape, for example square cards in IMG_1 becoming taller or wider in IMG_2, or a photo cropped or stretched; (d) IMG_2 looks more crowded than IMG_1, with smaller text or tighter spacing; (e) any photo is framed differently from IMG_1, i.e. zoomed in, re-centred, or with part of the product sliced off at an edge; (f) IMG_1 shows a cart drawer pinned to the right edge with the page visible behind it but IMG_2 centres the cart, turns it into a modal, or blanks out the page behind it; (g) IMG_2's cart drawer is taller than IMG_1's, or a line that fitted on one row in IMG_1 now wraps onto two; (h) a floating widget is DUPLICATED, i.e. a chat bubble, loyalty or rewards star, or back-to-top button that appears once in IMG_1 appears twice or more in IMG_2, or has moved to a different corner. Count the floating badges in each image and compare the totals; (i) THE GRID GAINED COLUMNS: count the product cards per row in IMG_1 and in IMG_2. If IMG_1 is a phone screenshot showing ONE full-width card per row and IMG_2 shows two or more side by side, that is a serious defect. Narrowing the cards forces every product photo to be re-cropped, so report it explicitly as 'grid changed from one card per row to N per row'. All of these are serious.",
+          "Visual defects the edit introduced: duplicated text or elements, an element left behind in its old place after a move, overlapping or colliding elements, unreadable text over a photo, empty icon slots, or misspellings. ALSO report each of these as a defect: (a) IMG_2 is in the WRONG DEVICE LAYOUT, i.e. IMG_1 is a narrow phone screenshot but IMG_2 is a wide multi-column desktop layout, or the reverse; (b) the main product photo from IMG_1 is missing, shrunk to a thumbnail, or replaced by a row of thumbnails; (c) product images changed shape, for example square cards in IMG_1 becoming taller or wider in IMG_2, or a photo cropped or stretched; (d) IMG_2 looks more crowded than IMG_1, with smaller text or tighter spacing; (e) any photo is framed differently from IMG_1, i.e. zoomed in, re-centred, or with part of the product sliced off at an edge; (f) IMG_1 shows a cart drawer pinned to the right edge with the page visible behind it but IMG_2 centres the cart, turns it into a modal, or blanks out the page behind it; (g) IMG_2's cart drawer is taller than IMG_1's, or a line that fitted on one row in IMG_1 now wraps onto two; (h) a floating widget is DUPLICATED or INVENTED, i.e. a chat bubble, loyalty or rewards star, or back-to-top button that appears once in IMG_1 appears twice or more in IMG_2, has moved to a different corner, or appears in IMG_2 having been absent from IMG_1 entirely. Count the floating badges in each image and compare the totals, and say explicitly when one was ADDED; (h2) ON A CART, THE CHECKOUT BUTTON IS THE POINT OF THE PAGE: it must sit fully inside the frame with its whole label readable. If the drawer grew and pushed the checkout button, the total, or that block partly or wholly out of view, report it and name the checkout button. A cart a shopper cannot check out from is a broken image, not a rough one; (i) THE GRID GAINED COLUMNS: count the product cards per row in IMG_1 and in IMG_2. If IMG_1 is a phone screenshot showing ONE full-width card per row and IMG_2 shows two or more side by side, that is a serious defect. Narrowing the cards forces every product photo to be re-cropped, so report it explicitly as 'grid changed from one card per row to N per row'. All of these are serious.",
       },
     },
   },
@@ -66,14 +66,42 @@ export function isSubstitutedPhoto(defect: string): boolean {
     .test(defect);
 }
 
+/** A defect that breaks the PURPOSE of the page rather than its polish: a cart
+ * with no reachable checkout button is not a concept, it is a broken picture.
+ * The judge already reports these ("the Checkout button extends beyond the
+ * visible frame"), but only photo defects were ever gated on, so a cart missing
+ * its checkout button was recorded and published anyway. */
+export function isCriticalLayoutDefect(defect: string): boolean {
+  const d = defect.toLowerCase();
+  const aboutCheckout = /checkout|add to cart|buy (now|button)|primary (button|cta)/.test(d);
+  const gone = /cut off|cutoff|beyond the visible|out of (the )?(frame|view)|not visible|missing|hidden|off-?screen|clipped|extends? below/
+    .test(d);
+  if (aboutCheckout && gone) return true;
+  // A drawer that grew taller is the usual cause of the above, so it is treated
+  // as critical on its own: on a cart, height IS the checkout button's visibility.
+  return /(drawer|cart).{0,30}(taller|grew|expanded|longer)|taller.{0,20}(drawer|cart)/.test(d);
+}
+
+/** A floating widget that was NOT in the original. The duplicate check only
+ * catches one appearing twice; a chat bubble invented on a page that never had
+ * one is just as wrong and reads as sloppy. */
+export function isInventedWidgetDefect(defect: string): boolean {
+  const d = defect.toLowerCase();
+  return /(chat|bubble|widget|badge|loyalty|rewards|back-?to-?top)/.test(d) &&
+    /(added|new|appears?|introduc|not present|did not exist|wasn'?t (in|present))/.test(d);
+}
+
 /** Lower is better. A photo defect outweighs every skipped fix, because the
  * fixes still appear as text in the report while a mangled photo does not, and
- * a SUBSTITUTED photo outweighs a merely reshaped one. */
+ * a SUBSTITUTED photo outweighs a merely reshaped one. A critical layout defect
+ * sits with the photo defects: both make the image unusable rather than
+ * imperfect. */
 export function verifyScore(v: VerifyResult): number {
   const substituted = v.defects.filter(isSubstitutedPhoto).length;
   const photo = v.defects.filter((d) => isPhotoDefect(d) && !isSubstitutedPhoto(d)).length;
-  const other = v.defects.length - substituted - photo;
-  return substituted * 1000 + photo * 100 + other * 10 + v.missing.length;
+  const critical = v.defects.filter((d) => !isPhotoDefect(d) && isCriticalLayoutDefect(d)).length;
+  const other = v.defects.length - substituted - photo - critical;
+  return substituted * 1000 + photo * 100 + critical * 100 + other * 10 + v.missing.length;
 }
 
 /** Check the generated "after" against the fixes it was supposed to apply. The
