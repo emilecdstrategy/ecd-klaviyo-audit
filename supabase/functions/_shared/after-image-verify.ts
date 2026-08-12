@@ -153,6 +153,72 @@ export async function verifyAfterImage(
   }
 }
 
+const TEXT_TOOL = {
+  name: "record_text_check",
+  description: "Report whether any text in the redesign is overlapping, garbled, or invented.",
+  input_schema: {
+    type: "object" as const,
+    required: ["text_is_clean"],
+    properties: {
+      text_is_clean: {
+        type: "boolean",
+        description:
+          "true ONLY if every piece of text is cleanly rendered: no text sitting on top of other text, no half-erased or doubled words, no nonsense strings, and no number that contradicts the original. false if ANY of those are present.",
+      },
+      problems: {
+        type: "array",
+        items: { type: "string" },
+        description: "One short entry per problem, quoting the offending text.",
+      },
+    },
+  },
+};
+
+/**
+ * A single, narrow question: is the text cleanly rendered?
+ *
+ * The combined rubric passed a homepage whose hero had two headlines painted on
+ * top of each other reading "Hand-picked ... sands, todati. eume gear tools",
+ * and a cart whose total said $199.99 for one $19.99 item. Overlapping,
+ * half-erased and invented text is now the dominant defect, and like cropped
+ * photos and sliced checkout buttons before it, it needs its own question
+ * rather than a clause inside an eight-part list. Never throws: a failed check
+ * reports clean, since breaking the checker must not withhold good images.
+ */
+export async function verifyTextIntegrity(
+  beforeUrl: string,
+  afterUrl: string,
+): Promise<{ clean: boolean; problems: string[] }> {
+  try {
+    const llm = createLlmClient("anthropic", { model: VERIFY_MODEL });
+    const turn = await llm.runTurn({
+      system:
+        "You are a typesetting proofreader. You judge only whether text is cleanly rendered, never whether the design is good.",
+      messages: [{
+        role: "user_images",
+        text:
+          "IMG_1 is the original screenshot. IMG_2 is a redesign of it. Ignore layout, colour and design quality entirely. Check ONLY the text in IMG_2 for these faults:\n\n" +
+          "1. OVERLAPPING: two pieces of text drawn on top of each other, or new copy painted over old copy that was not erased.\n" +
+          "2. GARBLED: half-formed words, doubled or smeared letters, or nonsense strings that are not real language.\n" +
+          "3. INVENTED NUMBERS: any price, total, count or rating in IMG_2 that contradicts IMG_1. Compare the cart total or product prices against the line items and against IMG_1.\n\n" +
+          "Quote the offending text in each entry. Call record_text_check exactly once.",
+        images: [
+          { url: beforeUrl, label: "IMG_1: original" },
+          { url: afterUrl, label: "IMG_2: redesign" },
+        ],
+      }],
+      tools: [TEXT_TOOL],
+      toolChoice: { type: "tool", name: "record_text_check" },
+    });
+    if (turn.kind !== "tool_call") return { clean: true, problems: [] };
+    const out = (turn.input ?? {}) as { text_is_clean?: unknown; problems?: unknown };
+    const problems = Array.isArray(out.problems) ? out.problems.map(String).filter(Boolean) : [];
+    return { clean: out.text_is_clean !== false, problems };
+  } catch {
+    return { clean: true, problems: [] };
+  }
+}
+
 const CHECKOUT_TOOL = {
   name: "record_checkout_check",
   description: "Report whether the cart's checkout button is fully visible.",

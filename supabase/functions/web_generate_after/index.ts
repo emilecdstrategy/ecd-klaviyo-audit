@@ -18,6 +18,7 @@ import {
   isCriticalLayoutDefect,
   isPhotoDefect,
   verifyCheckoutVisible,
+  verifyTextIntegrity,
   verifyAfterImage,
   verifyPhotoFidelity,
   verifyScore,
@@ -961,6 +962,20 @@ async function generateOne(
         `Checkout button is not fully visible in the cart${checkout.note ? `: ${checkout.note}` : ""}`,
       );
     }
+  }
+  // Text integrity, every page type. Overlapping headlines, half-erased copy and
+  // invented totals all shipped past the combined rubric, and a concept with two
+  // headlines smeared over each other or a wrong price is unusable however good
+  // the layout is. Same narrow-question approach that finally caught cropped
+  // photos and sliced checkout buttons.
+  const textCheck = await verifyTextIntegrity(verifySourceUrl, bustedUrl);
+  verify.text_check = textCheck;
+  if (!textCheck.clean) {
+    finalCriticalDefects.push(
+      ...(textCheck.problems.length > 0
+        ? textCheck.problems.map((p) => `Text rendered badly: ${p}`)
+        : ["Text rendered badly: overlapping, garbled or invented text in the image"]),
+    );
   }
   if (finalPhotoDefects.length + finalCriticalDefects.length > 0) {
     console.error(
