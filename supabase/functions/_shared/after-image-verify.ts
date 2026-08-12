@@ -153,6 +153,61 @@ export async function verifyAfterImage(
   }
 }
 
+const CHECKOUT_TOOL = {
+  name: "record_checkout_check",
+  description: "Report whether the cart's checkout button is fully visible.",
+  input_schema: {
+    type: "object" as const,
+    required: ["checkout_fully_visible"],
+    properties: {
+      checkout_fully_visible: {
+        type: "boolean",
+        description:
+          "true ONLY if a checkout button is present AND completely inside the image, with its full label readable and nothing about it cut off by the bottom or side edge. false if it is missing entirely, sliced by an edge, or only partly in frame.",
+      },
+      note: { type: "string", description: "One short sentence on what you see at the bottom of the cart." },
+    },
+  },
+};
+
+/**
+ * A single, narrow question: is the checkout button fully visible?
+ *
+ * The combined rubric asks about eight defect classes at once and it MISSED a
+ * cart whose checkout button was sliced off the bottom, twice, even with an
+ * explicit clause telling it to look. That is the same lesson photo cropping
+ * taught: one focused question is far more reliable than a clause inside a long
+ * list, and this is the defect that makes a cart concept worthless. Never
+ * throws: a failed check reports visible, because withholding on the checker
+ * itself breaking would be worse than the defect.
+ */
+export async function verifyCheckoutVisible(afterUrl: string): Promise<{ visible: boolean; note: string }> {
+  try {
+    const llm = createLlmClient("anthropic", { model: VERIFY_MODEL });
+    const turn = await llm.runTurn({
+      system:
+        "You inspect one screenshot of a shopping cart and answer exactly one question about the checkout button. You do not comment on anything else.",
+      messages: [{
+        role: "user_images",
+        text:
+          "This is a shopping cart (or slide-out cart drawer). Look at it and answer one question: is there a checkout button that is FULLY visible, entirely inside the image, with its whole label readable and no part of it cut off by the bottom edge?\n\n" +
+          "Look carefully at the very bottom of the cart. A cart that ends on a subtotal, a taxes note, or a partly-drawn button has NO fully visible checkout button. Call record_checkout_check exactly once.",
+        images: [{ url: afterUrl, label: "cart" }],
+      }],
+      tools: [CHECKOUT_TOOL],
+      toolChoice: { type: "tool", name: "record_checkout_check" },
+    });
+    if (turn.kind !== "tool_call") return { visible: true, note: "" };
+    const out = (turn.input ?? {}) as { checkout_fully_visible?: unknown; note?: unknown };
+    return {
+      visible: out.checkout_fully_visible !== false,
+      note: typeof out.note === "string" ? out.note.slice(0, 200) : "",
+    };
+  } catch {
+    return { visible: true, note: "" };
+  }
+}
+
 const PHOTO_TOOL = {
   name: "record_photo_check",
   description: "Report whether any photograph was altered geometrically.",

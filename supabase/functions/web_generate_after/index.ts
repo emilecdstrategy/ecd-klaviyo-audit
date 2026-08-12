@@ -17,6 +17,7 @@ import {
 import {
   isCriticalLayoutDefect,
   isPhotoDefect,
+  verifyCheckoutVisible,
   verifyAfterImage,
   verifyPhotoFidelity,
   verifyScore,
@@ -948,6 +949,19 @@ async function generateOne(
   // so it is withheld on the same terms. Compositing does not exempt this: the
   // guarantee is about pixels, not layout.
   const finalCriticalDefects = publishedDefects.filter(isCriticalLayoutDefect);
+  // On a cart, ask the one question that matters as its OWN pass. The combined
+  // rubric missed a sliced-off checkout button twice even with a clause telling
+  // it to look, exactly as it used to miss cropped photos before those got a
+  // dedicated pass. Cheap (one call, carts only) and it decides the gate.
+  if (meta.page_type === "cart") {
+    const checkout = await verifyCheckoutVisible(bustedUrl);
+    verify.checkout_check = checkout;
+    if (!checkout.visible) {
+      finalCriticalDefects.push(
+        `Checkout button is not fully visible in the cart${checkout.note ? `: ${checkout.note}` : ""}`,
+      );
+    }
+  }
   if (finalPhotoDefects.length + finalCriticalDefects.length > 0) {
     console.error(
       `after-image ${meta.label}/${viewport}: withheld after all passes: ${
