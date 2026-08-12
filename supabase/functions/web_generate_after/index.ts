@@ -198,6 +198,20 @@ function needsNewPhotography(text: string): boolean {
   return NEW_PHOTOGRAPHY_FIX_RE.test(text);
 }
 
+// Fixes that call for numeric social proof the page does not show. The model
+// cannot honour these honestly either: asked to "show a star rating and review
+// count", it drew "Rated 4.8/5 by 1,200+ happy gardeners" on a page with no
+// rating data anywhere, and the invented-number gate then withheld the image,
+// every time. A fix that can only be satisfied by fabricating a number is a
+// guaranteed withhold, so it stays in the report as advice (install a reviews
+// app, surface real counts) and leaves the image prompt.
+const INVENTED_PROOF_FIX_RE =
+  /(star.?rating|review\s+count|((\d[\d,]*\+?|number|count)\s+of\s+)?(customer|buyer|gardener|shopper)s?\s+(count|served|badge)|social\s+proof|trust\s+(badge|bar|strip)|testimonial|(add|show|display|include|surface).{0,40}\b(reviews?|ratings?)\b)/i;
+
+function needsInventedProof(text: string): boolean {
+  return INVENTED_PROOF_FIX_RE.test(text);
+}
+
 function recommendationsFor(
   section: { section_details: Record<string, unknown> | null },
   viewport: Viewport,
@@ -467,10 +481,16 @@ async function generateOne(
   // Drop floating-widget repositioning fixes: the model reliably duplicates the
   // widget instead of moving it. Everything else is still applied.
   const applicable = allRecommendations.filter((r) =>
-    !isFloatingWidgetRepositionFix(r) && !needsNewPhotography(r)
+    !isFloatingWidgetRepositionFix(r) && !needsNewPhotography(r) && !needsInventedProof(r)
   );
   const skippedWidgetFix = allRecommendations.some(isFloatingWidgetRepositionFix);
   const skippedPhotoFix = allRecommendations.some(needsNewPhotography);
+  const skippedProofFixes = allRecommendations.filter(needsInventedProof);
+  if (skippedProofFixes.length > 0) {
+    console.log(
+      `after-image ${meta.label}/${viewport}: ${skippedProofFixes.length} social-proof fix(es) left to the report text (the page shows no rating data to draw)`,
+    );
+  }
   // Cap how many fixes one image tries to show. Asking for every fix at once
   // makes the model shrink type and cram blocks together, which reads as a
   // cluttered page and undercuts the very point of the concept. Findings are
