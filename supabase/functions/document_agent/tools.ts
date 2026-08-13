@@ -65,7 +65,12 @@ export const AGENT_TOOLS: LlmTool[] = [
         summary: { type: "string", description: "1-2 sentences describing the document, shown on the preview card" },
         include_sender_signature: {
           type: "boolean",
-          description: "Whether the sender's (ECD staff) signature should be included alongside the recipient's. Set from the user's answer to your sender-signature question. Defaults to false if not asked.",
+          description: "Whether a signature from ECD should be included alongside the recipient's. Set from the user's answer to your sender-signature question. Also set it to true whenever the user names whose signature to use.",
+        },
+        sender_signature_signer: {
+          type: "string",
+          description:
+            "WHOSE signature signs for ECD, when the user named someone ('send it with Zak's signature', 'sign as Xiomara'). A first name, full name or email. Leave empty to use the team default (Zak). Never guess a name the user did not say.",
         },
       },
       required: ["title", "content", "summary"],
@@ -80,6 +85,11 @@ export const AGENT_TOOLS: LlmTool[] = [
       properties: {
         content: { type: "string", description: "The full revised document body as Markdown" },
         summary: { type: "string", description: "1-2 sentences describing what changed, shown on the preview card" },
+        sender_signature_signer: {
+          type: "string",
+          description:
+            "Set ONLY when the user asks to change whose signature signs this document for ECD ('actually use Zak's signature'). A first name, full name or email. Applying the preview switches the signature to that person and turns the sender signature on. Leave empty to leave the current signature alone; never send it just because a signature exists.",
+        },
       },
       required: ["content", "summary"],
     },

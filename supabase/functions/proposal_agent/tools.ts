@@ -150,6 +150,11 @@ export const AGENT_TOOLS: LlmTool[] = [
           description: "Contract slugs from get_contracts to attach",
         },
         summary: { type: "string", description: "1-2 sentences describing the draft, shown on the preview card" },
+        agency_signer: {
+          type: "string",
+          description:
+            "WHOSE signature signs this proposal for ECD, when the user named someone ('make it signed by Xiomara'). A first name, full name or email. Leave empty to use the team default (Zak). Never guess a name the user did not say.",
+        },
       },
       required: ["title", "content_blocks", "line_items", "summary"],
     },
@@ -182,6 +187,7 @@ export const AGENT_TOOLS: LlmTool[] = [
                   "toggle_contract",
                   "override_contract",
                   "update_recipient",
+                  "set_agency_signer",
                 ],
               },
               title: { type: "string", description: "For update_title / add_block / update_block" },
@@ -205,6 +211,11 @@ export const AGENT_TOOLS: LlmTool[] = [
               },
               recipient_name: { type: "string", description: "For update_recipient" },
               recipient_email: { type: "string", description: "For update_recipient" },
+              signer: {
+                type: "string",
+                description:
+                  "For set_agency_signer: WHOSE signature signs this proposal for ECD, as a first name, full name or email ('Zak', 'zak@ecdigitalstrategy.com'). Use only when the user asks to change who signs. Proposals are signed by Zak by default.",
+              },
             },
             required: ["op"],
           },

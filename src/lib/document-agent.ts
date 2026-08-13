@@ -1,6 +1,6 @@
 import { supabase } from './supabase';
 import { isImageFile, uploadChatImage } from './chat-image-upload';
-import { createDocument, updateDocument, recordDocumentEvent } from './documents-db';
+import { createDocument, updateDocument, recordDocumentEvent, setDocumentSenderSigner } from './documents-db';
 import { publicDocumentOrigin } from './public-origin';
 import type { Document, ProposalAgentAttachment } from './types';
 
@@ -14,8 +14,20 @@ export type DocAgentQuestion = {
   multi_select?: boolean;
 };
 
-export type DocDraftPayload = { title: string; content: string; summary: string; include_sender_signature?: boolean };
-export type DocEditPayload = { content: string; summary: string };
+export type DocDraftPayload = {
+  title: string;
+  content: string;
+  summary: string;
+  include_sender_signature?: boolean;
+  /** Whose signature signs for ECD, as the user named them. Empty means Zak. */
+  sender_signature_signer?: string;
+};
+export type DocEditPayload = {
+  content: string;
+  summary: string;
+  /** Set only when the user asked to change who signs; empty leaves it alone. */
+  sender_signature_signer?: string;
+};
 
 export type DocAgentResponse = {
   ok: true;
@@ -125,7 +137,7 @@ export async function sendDocAgentMessage(input: {
 export const docPublicOrigin = publicDocumentOrigin;
 
 export async function applyDraftAsNewDocument(draft: DocDraftPayload): Promise<Document> {
-  return createDocument(
+  const doc = await createDocument(
     {
       title: sanitizeCopy(draft.title),
       content: sanitizeCopy(draft.content),
@@ -133,10 +145,36 @@ export async function applyDraftAsNewDocument(draft: DocDraftPayload): Promise<D
     },
     { aiAssisted: true },
   );
+  // createDocument already signed as the default (Zak) when the signature is on;
+  // re-sign only when the user named someone else. Best effort: a document that
+  // fails to re-sign is still a valid draft carrying the default signature, and
+  // the signer picker on the page can fix it.
+  const hint = (draft.sender_signature_signer ?? '').trim();
+  if (doc.sender_signature_enabled && hint) {
+    try {
+      await setDocumentSenderSigner({ document_id: doc.id, signer_hint: hint });
+    } catch (e) {
+      console.error('Could not apply the named signer to the new document', e);
+    }
+  }
+  return doc;
 }
 
 export async function applyDocumentEdits(document: Document, edits: DocEditPayload): Promise<Document> {
-  const updated = await updateDocument(document.id, { content: sanitizeCopy(edits.content) });
+  let updated = await updateDocument(document.id, { content: sanitizeCopy(edits.content) });
+  // "Use Zak's signature instead" arrives as an edit carrying a signer, so the
+  // switch happens on apply alongside any wording change.
+  const hint = (edits.sender_signature_signer ?? '').trim();
+  if (hint) {
+    try {
+      await setDocumentSenderSigner({ document_id: document.id, signer_hint: hint });
+      if (!updated.sender_signature_enabled) {
+        updated = await updateDocument(document.id, { sender_signature_enabled: true });
+      }
+    } catch (e) {
+      console.error('Could not change the document signer', e);
+    }
+  }
   await recordDocumentEvent(document.id, 'updated', { via: 'ai_assistant' }).catch(() => {});
   return updated;
 }

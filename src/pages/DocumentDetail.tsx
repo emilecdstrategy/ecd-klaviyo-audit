@@ -7,7 +7,9 @@ import SimpleRichEditor from '../components/ui/SimpleRichEditor';
 import { useToast } from '../components/ui/Toast';
 import { useAuth } from '../contexts/AuthContext';
 import { useDocumentData } from '../hooks/useDocumentData';
-import { markDocumentSent, updateDocument, voidDocument, reopenDocument, upsertSenderSignature, removeSenderSignature, getMySignature, type SavedSignature } from '../lib/documents-db';
+import { markDocumentSent, updateDocument, voidDocument, reopenDocument, upsertSenderSignature, removeSenderSignature, getMySignature, setDocumentSenderSigner, type SavedSignature } from '../lib/documents-db';
+import { listStaffSigners, pickDefaultSigner, type StaffSigner } from '../lib/staff-signers';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { buildDocumentSnapshot, sanitizeCopy, type DocDraftPayload, type DocEditPayload } from '../lib/document-agent';
 import { publicDocumentOrigin } from '../lib/public-origin';
 import { cn } from '../lib/utils';
@@ -115,6 +117,9 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
   const [email, setEmail] = useState(doc.recipient_email);
   const [togglingSender, setTogglingSender] = useState(false);
   const [savedSig, setSavedSig] = useState<SavedSignature | null>(null);
+  const [signers, setSigners] = useState<StaffSigner[]>([]);
+  const [selectedSignerId, setSelectedSignerId] = useState('');
+  const [applyingSigner, setApplyingSigner] = useState(false);
 
   useEffect(() => () => { if (timer.current) window.clearTimeout(timer.current); }, []);
 
@@ -124,6 +129,44 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
     getMySignature().then(sig => { if (!cancelled) setSavedSig(sig); }).catch(() => {});
     return () => { cancelled = true; };
   }, []);
+
+  // Who signs for ECD. Documents go out under a colleague's name often enough
+  // that this is a picker, not "whoever is logged in", and it defaults to Zak.
+  useEffect(() => {
+    let cancelled = false;
+    listStaffSigners()
+      .then(rows => {
+        if (cancelled) return;
+        setSigners(rows);
+        const current =
+          rows.find(r => r.id === senderSignature?.signer_user_id) ??
+          rows.find(r => r.email.toLowerCase() === (senderSignature?.signer_email ?? '').toLowerCase()) ??
+          pickDefaultSigner(rows);
+        setSelectedSignerId(current?.id ?? '');
+      })
+      .catch(() => { /* the picker degrades to the draw-your-own flow */ });
+    return () => { cancelled = true; };
+  }, [senderSignature?.signer_user_id, senderSignature?.signer_email]);
+
+  const applySigner = async (signerId: string) => {
+    const signer = signers.find(s => s.id === signerId);
+    if (!signer) return;
+    setSelectedSignerId(signerId);
+    setApplyingSigner(true);
+    try {
+      await setDocumentSenderSigner({ document_id: doc.id, signer });
+      if (!doc.sender_signature_enabled) {
+        const updated = await updateDocument(doc.id, { sender_signature_enabled: true });
+        onDocChange(updated);
+      }
+      await reload();
+      toast(`Signed as ${signer.name || signer.email}`);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not change the signature');
+    } finally {
+      setApplyingSigner(false);
+    }
+  };
 
   const scheduleSave = (next: Partial<typeof latest.current>) => {
     latest.current = { ...latest.current, ...next };
@@ -157,10 +200,15 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
     try {
       const updated = await updateDocument(doc.id, { sender_signature_enabled: enabled });
       onDocChange(updated);
-      // Turning it on pre-fills with the user's saved signature if they have one;
-      // otherwise prompt them to draw it once.
+      // Turning it on signs as the selected team member, which defaults to Zak.
+      // It used to reach for the signed-in user's own saved signature and prompt
+      // them to draw one when they had none, which was the wrong default: most
+      // documents go out under Zak's name, and any team member can be signed for
+      // without a drawing (their name renders in a script face).
       if (enabled && !senderSignature) {
-        if (savedSig) await applySavedSignature();
+        const target = selectedSignerId || pickDefaultSigner(signers)?.id || '';
+        if (target) await applySigner(target);
+        else if (savedSig) await applySavedSignature();
         else setSignOpen(true);
       }
     } catch (e) {
@@ -219,6 +267,33 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
     window.setTimeout(() => window.print(), 120);
   };
 
+  /** Apply a signer the assistant named ("send it with Zak's signature"), and
+   * turn the sender signature on, since naming a signer is asking for one. Quiet
+   * when the assistant named nobody, which is the normal case. */
+  const applySignerHint = async (hint?: string) => {
+    const wanted = (hint ?? '').trim();
+    if (!wanted || senderSignDisabled) return;
+    try {
+      const result = await setDocumentSenderSigner({ document_id: doc.id, signer_hint: wanted });
+      if (!result) return;
+      if (!doc.sender_signature_enabled) {
+        const updated = await updateDocument(doc.id, { sender_signature_enabled: true }).catch(() => null);
+        if (updated) onDocChange(updated);
+      }
+      setSelectedSignerId(result.signer.id);
+      await reload();
+      // Say which name was used when the hint did not resolve, so nobody assumes
+      // a document went out under a name it did not.
+      toast(
+        result.matched
+          ? `Signed as ${result.signer.name || result.signer.email}`
+          : `Could not match "${wanted}", so it is signed as ${result.signer.name || result.signer.email}`,
+      );
+    } catch {
+      toast('Could not change the signature');
+    }
+  };
+
   return (
     <DocumentAgentProvider
       defaultOpen={typeof window !== 'undefined' && window.matchMedia('(min-width: 1024px)').matches}
@@ -230,6 +305,8 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
           setContent(clean);
           setViewMode('edit');
           scheduleSave({ content: clean });
+          // "Use Zak's signature instead" comes back as an edit naming a signer.
+          await applySignerHint(edits.sender_signature_signer);
         },
         onApplyDraft: async (draft: DocDraftPayload) => {
           const cleanTitle = sanitizeCopy(draft.title);
@@ -242,6 +319,7 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
             const updated = await updateDocument(doc.id, { sender_signature_enabled: true }).catch(() => null);
             if (updated) onDocChange(updated);
           }
+          await applySignerHint(draft.sender_signature_signer);
         },
       }}
     >
@@ -359,17 +437,41 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
               </div>
 
               <div className="rounded-xl bg-white p-5 card-shadow">
-                <h3 className="text-sm font-semibold text-gray-900">Your signature</h3>
+                <h3 className="text-sm font-semibold text-gray-900">Our signature</h3>
                 <label className="mt-2 flex cursor-pointer items-start gap-2 text-sm text-gray-700">
                   <BrandedCheckbox
                     className="mt-0.5"
                     checked={doc.sender_signature_enabled}
                     disabled={togglingSender || senderSignDisabled}
                     onChange={checked => toggleSenderSignature(checked)}
-                    aria-label="Include my signature on this document"
+                    aria-label="Include a signature from us on this document"
                   />
-                  <span>Include my signature on this document</span>
+                  <span>Include a signature from us</span>
                 </label>
+                {/* Who signs, so a document can go out under a colleague's name.
+                    Changing it re-signs immediately: there is nothing to confirm,
+                    and the preview beside it shows exactly what the recipient
+                    will see. */}
+                {doc.sender_signature_enabled && !senderSignDisabled && signers.length > 0 && (
+                  <div className="mt-3">
+                    <p className="mb-1 text-[11px] font-semibold uppercase tracking-wide text-gray-400">Signed by</p>
+                    <Select value={selectedSignerId} onValueChange={applySigner} disabled={applyingSigner}>
+                      <SelectTrigger className="w-full">
+                        <SelectValue placeholder="Choose who signs" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {signers.map(s => (
+                          <SelectItem key={s.id} value={s.id}>
+                            <SelectItemText>{s.name || s.email}</SelectItemText>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                    {applyingSigner && (
+                      <p className="mt-1.5 flex items-center gap-1 text-xs text-gray-400"><Loader2 className="h-3 w-3 animate-spin" /> Applying…</p>
+                    )}
+                  </div>
+                )}
                 {doc.status === 'signed' && !senderSignature && (
                   <p className="mt-2 text-xs text-gray-500">The recipient has signed. You can still add your countersignature below.</p>
                 )}
@@ -377,7 +479,7 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
                   senderSignature ? (
                     <div className="mt-3">
                       <div className="rounded-lg border border-gray-200 bg-white p-2">
-                        <img src={senderSignature.signature_image} alt="Your signature" className="h-14 w-full object-contain" />
+                        <img src={senderSignature.signature_image} alt="Signature" className="h-14 w-full object-contain" />
                       </div>
                       <p className="mt-1.5 text-xs text-gray-500">{senderSignature.signer_name}</p>
                       {!senderSignDisabled && (

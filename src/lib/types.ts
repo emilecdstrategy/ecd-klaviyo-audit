@@ -653,6 +653,9 @@ export interface DocumentSignature {
   signer_role: 'sender' | 'recipient';
   signer_name: string;
   signer_email: string;
+  /** Which team member a sender signature belongs to. Null on recipient rows and
+   * on sender rows written before signers became selectable. */
+  signer_user_id?: string | null;
   /** PNG data URL. */
   signature_image: string;
   typed_name: string;

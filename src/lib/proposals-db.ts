@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { attachActorNames } from './actor-names';
 import { publicProposalOrigin } from './public-origin';
 import { resolveSignatureImage } from './signature-image';
+import { listStaffSigners, resolveSigner } from './staff-signers';
 import type {
   ContractDocument,
   Proposal,
@@ -164,7 +165,7 @@ export type CreateProposalInput = {
 
 export async function createProposal(
   input: CreateProposalInput,
-  options: { aiAssisted?: boolean } = {},
+  options: { aiAssisted?: boolean; signerHint?: string | null } = {},
 ): Promise<Proposal> {
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData?.user?.id ?? null;
@@ -196,7 +197,7 @@ export async function createProposal(
   // already-executed contract. Non-fatal: an unsigned draft is still usable and
   // the detail page offers to sign it.
   try {
-    await autoSignNewProposal(proposal.id);
+    await autoSignNewProposal(proposal.id, options.signerHint ?? null);
   } catch (e) {
     console.error('Could not auto-sign the new proposal', e);
   }
@@ -488,22 +489,12 @@ export async function countersignProposal(input: {
   if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to countersign');
 }
 
-export type StaffSigner = { id: string; name: string; email: string; signature_image: string | null };
-
-/** Team members who can be named as the agency signer on a proposal. */
-export async function listStaffSigners(): Promise<StaffSigner[]> {
-  const { data, error } = await supabase
-    .from('profiles')
-    .select('id, name, email, signature_image')
-    .order('name');
-  if (error) throw error;
-  return (data ?? []).map(r => ({
-    id: String(r.id),
-    name: String(r.name ?? ''),
-    email: String(r.email ?? ''),
-    signature_image: (r.signature_image as string | null) ?? null,
-  }));
-}
+// The staff-signer list, the Zak default and the hint matcher now live in
+// staff-signers.ts so documents share them instead of keeping a second,
+// drifting copy. Re-exported here because proposal code imports them from this
+// module in a dozen places.
+export type { StaffSigner } from './staff-signers';
+export { listStaffSigners, DEFAULT_SIGNER_EMAIL, findSignerByHint, pickDefaultSigner, resolveSigner } from './staff-signers';
 
 /** Store the signed-in user's handwritten signature for reuse on future proposals. */
 export async function saveMySignature(signatureImage: string | null): Promise<void> {
@@ -514,16 +505,16 @@ export async function saveMySignature(signatureImage: string | null): Promise<vo
   if (error) throw error;
 }
 
-/** The team member proposals are signed by unless someone picks another. */
-export const DEFAULT_SIGNER_EMAIL = 'zak@ecdigitalstrategy.com';
-
 /** Sign a freshly created proposal on the agency's behalf so it goes out already
  * executed. Best effort: a proposal that fails to sign is still a valid draft,
- * and the signature block on the detail page offers to sign it. Never emails. */
-export async function autoSignNewProposal(proposalId: string): Promise<void> {
+ * and the signature block on the detail page offers to sign it. Never emails.
+ *
+ * `signerHint` lets the caller name someone else ("sign it as Xiomara"), which
+ * is what the AI assistant passes through; anything unrecognised falls back to
+ * the default signer rather than signing as the wrong person. */
+export async function autoSignNewProposal(proposalId: string, signerHint?: string | null): Promise<void> {
   const signers = await listStaffSigners();
-  const signer =
-    signers.find(s => s.email.toLowerCase() === DEFAULT_SIGNER_EMAIL) ?? signers[0];
+  const { signer } = resolveSigner(signers, signerHint);
   if (!signer) return;
   const image = resolveSignatureImage(signer);
   if (!image) return;

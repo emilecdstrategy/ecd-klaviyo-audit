@@ -54,7 +54,8 @@ const EDIT_RULES = `
 EDITING (for propose_edits):
 - You are editing the proposal shown in CURRENT PROPOSAL STATE. Reference blocks by their key and line items by their id exactly as given there.
 - Propose the minimal set of operations that accomplishes the request. Do not rewrite blocks the user did not ask about.
-- Keep the existing voice and structure of untouched content.`;
+- Keep the existing voice and structure of untouched content.
+- WHO SIGNS FOR ECD is something you can change. Every proposal is signed on our behalf automatically, by Zak unless someone picked otherwise. If the user asks for a different signer ("have Xiomara sign this one", "use Zak's signature"), emit a set_agency_signer operation with their name; that is the whole change, so do not touch any block to accomplish it. Never guess a name the user did not say, and never emit it unprompted. Once the client has signed, the proposal is executed and the signature can no longer change: say so rather than proposing it.`;
 
 const BEHAVIOR_RULES = `
 BEHAVIOR:

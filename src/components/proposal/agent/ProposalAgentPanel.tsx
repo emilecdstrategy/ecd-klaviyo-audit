@@ -320,6 +320,8 @@ function describeOp(op: ProposalEditOp): string {
     }
     case 'update_recipient':
       return `Update recipient${op.recipient_name ? ` name to ${op.recipient_name}` : ''}${op.recipient_email ? ` email to ${op.recipient_email}` : ''}`;
+    case 'set_agency_signer':
+      return `Sign for ECD as ${op.signer}`;
   }
 }
 

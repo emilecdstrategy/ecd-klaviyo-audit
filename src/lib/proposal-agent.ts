@@ -1,6 +1,7 @@
 import { supabase } from './supabase';
 import { isImageFile, uploadChatImage } from './chat-image-upload';
 import {
+  countersignProposal,
   createProposal,
   createProposalLineItems,
   deleteProposalLineItem,
@@ -8,6 +9,8 @@ import {
   updateProposal,
   updateProposalLineItem,
 } from './proposals-db';
+import { listStaffSigners, resolveSigner } from './staff-signers';
+import { resolveSignatureImage } from './signature-image';
 import type {
   Proposal,
   ProposalAgentAttachment,
@@ -54,6 +57,8 @@ export type ProposalDraftPayload = {
   discount?: AgentDiscount;
   include_contracts?: string[];
   summary: string;
+  /** Whose signature signs for ECD, as the user named them. Empty means Zak. */
+  agency_signer?: string | null;
 };
 
 export type ProposalEditOp =
@@ -68,7 +73,8 @@ export type ProposalEditOp =
   | { op: 'toggle_contract'; slug: string; included: boolean }
   /** Rewrite one contract for THIS proposal only. null clears the override. */
   | { op: 'override_contract'; slug: string; contract_content: string | null }
-  | { op: 'update_recipient'; recipient_name?: string; recipient_email?: string };
+  | { op: 'update_recipient'; recipient_name?: string; recipient_email?: string }
+  | { op: 'set_agency_signer'; signer: string };
 
 export type ProposalEditSet = { summary: string; operations: ProposalEditOp[] };
 
@@ -281,7 +287,9 @@ export async function applyDraftAsNewProposal(
       recipient_name: draft.recipient_name ?? '',
       recipient_email: draft.recipient_email ?? '',
     },
-    { aiAssisted: true },
+    // Auto-signing happens inside createProposal, so the named signer has to go
+    // in with it: signing again afterwards would leave two events in the log.
+    { aiAssisted: true, signerHint: draft.agency_signer ?? null },
   );
 
   await createProposalLineItems(
@@ -333,6 +341,7 @@ export async function applyEditSet(
   let recipientEmail = proposal.recipient_email;
   let discount: AgentDiscount | null = null;
   let proposalDirty = false;
+  let signerHint: string | null = null;
 
   let nextItems: ProposalLineItem[] = lineItems.map(li => ({ ...li }));
   const itemInserts: AgentDraftLineItem[] = [];
@@ -407,6 +416,11 @@ export async function applyEditSet(
         if (op.recipient_email != null) recipientEmail = op.recipient_email;
         proposalDirty = true;
         break;
+      // Re-signing is not a proposal-row edit, so it is collected here and
+      // applied after the row updates land.
+      case 'set_agency_signer':
+        signerHint = op.signer;
+        break;
     }
   }
 
@@ -472,6 +486,30 @@ export async function applyEditSet(
       })),
     );
     nextItems = [...nextItems, ...created];
+  }
+
+  // Re-sign for the agency when the user asked for a different signer. Done last
+  // so a failure here cannot lose the content edits, and best effort: the
+  // signature card on the proposal page can always fix it by hand. The edge
+  // function refuses once the client has signed, which is correct, an executed
+  // proposal must not change underneath them.
+  if (signerHint) {
+    try {
+      const signers = await listStaffSigners();
+      const { signer } = resolveSigner(signers, signerHint);
+      const image = signer ? resolveSignatureImage(signer) : null;
+      if (signer && image) {
+        await countersignProposal({
+          proposal_id: proposal.id,
+          typed_name: signer.name,
+          signature_image: image,
+          signer_user_id: signer.id,
+          replace: true,
+        });
+      }
+    } catch (e) {
+      console.error('Could not change the proposal signer', e);
+    }
   }
 
   // Record AI involvement so the activity log shows the proposal was built or

@@ -1,8 +1,7 @@
 import { supabase } from './supabase';
 import { attachActorNames } from './actor-names';
 import { publicDocumentOrigin } from './public-origin';
-import { resolveSignatureImage } from './signature-image';
-import { listStaffSigners, DEFAULT_SIGNER_EMAIL } from './proposals-db';
+import { listStaffSigners, resolveSigner, signerImage, type StaffSigner } from './staff-signers';
 import type {
   Document,
   DocumentEvent,
@@ -123,26 +122,11 @@ export async function createDocument(
   return doc;
 }
 
-/** Sign a new document for the agency, defaulting to the same signer proposals use. */
-export async function autoSignDocumentAsSender(documentId: string): Promise<void> {
-  const signers = await listStaffSigners();
-  const signer = signers.find(s => s.email.toLowerCase() === DEFAULT_SIGNER_EMAIL) ?? signers[0];
-  if (!signer) return;
-  const image = resolveSignatureImage(signer);
-  if (!image) return;
-  const { error } = await supabase.from('document_signatures').upsert(
-    {
-      document_id: documentId,
-      signer_role: 'sender',
-      signer_name: signer.name,
-      signer_email: signer.email,
-      signature_image: image,
-      typed_name: signer.name,
-      signed_at: new Date().toISOString(),
-    },
-    { onConflict: 'document_id,signer_role' },
-  );
-  if (error) throw error;
+/** Sign a new document for the agency. Defaults to the same signer proposals use
+ * (Zak); `signerHint` names someone else, which is what the AI assistant passes
+ * through when the user says whose signature to use. */
+export async function autoSignDocumentAsSender(documentId: string, signerHint?: string | null): Promise<void> {
+  await setDocumentSenderSigner({ document_id: documentId, signer_hint: signerHint });
 }
 
 export async function updateDocument(
@@ -427,6 +411,9 @@ export async function upsertSenderSignature(input: {
         signer_role: 'sender',
         signer_name: input.signer_name,
         signer_email: email,
+        // Drawing your own signature makes YOU the signer, so the picker on the
+        // page reflects that instead of still showing the previous person.
+        signer_user_id: userData?.user?.id ?? null,
         signature_image: input.signature_image,
         typed_name: input.typed_name ?? input.signer_name,
         signed_at: new Date().toISOString(),
@@ -447,6 +434,54 @@ export async function upsertSenderSignature(input: {
     }).catch(() => {});
   }
   return data as DocumentSignature;
+}
+
+/** Put a named team member's signature on a document as the sender.
+ *
+ * This is the path that makes "send it with Zak's signature" possible: the
+ * signature comes from the SIGNER'S profile, not from the signed-in user's
+ * private user_signatures row, and a signer who never drew one gets their name
+ * rendered in a script face. It deliberately never touches the caller's saved
+ * default, since signing as a colleague says nothing about your own signature.
+ *
+ * Returns the signer actually used, so callers can report "signed as Zak"
+ * truthfully when a hint did not match anyone. */
+export async function setDocumentSenderSigner(input: {
+  document_id: string;
+  /** A name, first name or email. Falls back to the default signer (Zak). */
+  signer_hint?: string | null;
+  /** Skip resolution when the caller already picked from the list. */
+  signer?: StaffSigner;
+}): Promise<{ signer: StaffSigner; matched: boolean } | null> {
+  let signer = input.signer ?? null;
+  let matched = Boolean(input.signer);
+  if (!signer) {
+    const signers = await listStaffSigners();
+    const resolved = resolveSigner(signers, input.signer_hint);
+    signer = resolved.signer;
+    matched = resolved.matched;
+  }
+  if (!signer) return null;
+  const image = signerImage(signer);
+  if (!image) return null;
+  const { error } = await supabase
+    .from('document_signatures')
+    .upsert(
+      {
+        document_id: input.document_id,
+        signer_role: 'sender',
+        signer_name: signer.name,
+        signer_email: signer.email,
+        signer_user_id: signer.id,
+        signature_image: image,
+        typed_name: signer.name,
+        signed_at: new Date().toISOString(),
+      },
+      { onConflict: 'document_id,signer_role' },
+    );
+  if (error) throw error;
+  await recordDocumentEvent(input.document_id, 'signed', { role: 'sender', signer: signer.email }).catch(() => {});
+  return { signer, matched };
 }
 
 export async function removeSenderSignature(documentId: string): Promise<void> {

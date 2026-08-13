@@ -151,6 +151,7 @@ const EDIT_OPS = new Set([
   "toggle_contract",
   "override_contract",
   "update_recipient",
+  "set_agency_signer",
 ]);
 
 /** True when propose_edits carried no operations at all. The caller treats this
@@ -265,6 +266,14 @@ export function validateEditSet(
       case "update_recipient":
         if (o.recipient_name == null && o.recipient_email == null) {
           return { ok: false, error: `${label}: provide recipient_name and/or recipient_email` };
+        }
+        break;
+      // The name stays free text: the app matches it against the real team list
+      // and keeps the current signer when nothing matches, so a typo can never
+      // sign as the wrong person.
+      case "set_agency_signer":
+        if (!isStr(o.signer) || !o.signer.trim()) {
+          return { ok: false, error: `${label}: provide signer (a team member's name or email)` };
         }
         break;
     }
