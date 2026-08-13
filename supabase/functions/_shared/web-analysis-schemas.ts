@@ -286,7 +286,18 @@ export function coercePageAudit(
       // Best: the element the model pointed at. Next best: the element whose
       // label matches what the model called it (its coordinates are unreliable).
       // Last resort: the model's own box.
-      const el = (elId ? els.find((e) => e.id === elId) : undefined) ?? snapToElementByLabel(hl.label, els);
+      // Third try: the finding's own sentence. The model invents pin labels that
+      // describe a POSITION rather than a thing ("second product card edge",
+      // "empty space below item"), which matches no captured element, so the pin
+      // fell back to the model's guessed box and landed on the wrong thing (a
+      // live report pinned the recommendations row over the cart total). The
+      // finding text almost always names the real element ("the You may also
+      // like row only shows two products"), and the scorer already demands most
+      // of a concise element label be present, so a long sentence cannot snap on
+      // one weak token.
+      const el = (elId ? els.find((e) => e.id === elId) : undefined) ??
+        snapToElementByLabel(hl.label, els) ??
+        snapToElementByLabel(rec.text, els);
       let box: { x: number; y: number; w: number; h: number; label?: string } | null = null;
       if (el) {
         box = { x: clampPct(el.x), y: clampPct(el.y), w: clampPct(el.w), h: clampPct(el.h), label: el.label };
@@ -360,6 +371,45 @@ export function coercePageAudit(
         : hlViewports.size === 1
         ? ([...hlViewports][0] as WebViewportTag)
         : "both";
+    // MIRROR a "both" finding's pin onto the viewport that has none. The prompt
+    // asks for one pin per image and the model routinely obeys on one viewport
+    // only: on a live report every collection-page pin sat on the desktop shot,
+    // so switching the report to Mobile showed findings with no pins at all,
+    // which reads as broken. The report filters findings by viewport, so a
+    // "both" finding MUST be able to point at something on either device.
+    //
+    // Mirroring is by element label, never by copying coordinates: the same
+    // element sits somewhere completely different on a phone, and a copied box
+    // would be confidently wrong. If the element cannot be found on the other
+    // shot, no pin is added.
+    if (viewport === "both" && refToElements && refToViewport) {
+      const pinnedViewports = new Set([...hlViewports]);
+      for (const [ref, snapId] of imageRefToSnapshotId) {
+        const vp = refToViewport.get(ref);
+        if (!vp || pinnedViewports.has(vp) || seenSnap.has(snapId)) continue;
+        const els = refToElements.get(ref) ?? [];
+        let mirrored: WebHighlight | null = null;
+        for (const src of highlights) {
+          const el = snapToElementByLabel(src.label, els) ?? snapToElementByLabel(rec.text, els);
+          if (!el) continue;
+          mirrored = {
+            snapshot_id: snapId,
+            x: clampPct(el.x),
+            y: clampPct(el.y),
+            w: clampPct(el.w),
+            h: clampPct(el.h),
+            label: src.label,
+          };
+          break;
+        }
+        if (mirrored && mirrored.w > 0 && mirrored.h > 0) {
+          highlights.push(mirrored);
+          seenSnap.add(snapId);
+          pinnedViewports.add(vp);
+        }
+      }
+    }
+
     const finding: WebFinding = {
       text: sanitizeDash(rec.text),
       recommendation: sanitizeDash(rec.recommendation),

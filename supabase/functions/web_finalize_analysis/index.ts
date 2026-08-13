@@ -268,6 +268,25 @@ function hideConfig(section: SectionRow): Record<string, unknown> {
   return root;
 }
 
+/** The inverse, applied whenever a page section is successfully written.
+ *
+ * Hiding is sticky: it survives in section_config until something clears it, so
+ * a section hidden on one pass (its screenshots had not landed yet) stayed
+ * invisible even after a later pass analysed it perfectly. Re-analysing a page
+ * is exactly the proof that it exists, so publishing findings must also undo the
+ * hide, or recovering an audit means editing the database by hand. */
+function unhideConfig(section: SectionRow): Record<string, unknown> {
+  const root = { ...(section.section_config ?? {}) } as Record<string, unknown>;
+  const existing = (root[section.section_key] && typeof root[section.section_key] === "object")
+    ? (root[section.section_key] as Record<string, unknown>)
+    : null;
+  if (!existing) return root;
+  const next = { ...existing };
+  delete next.hidden;
+  root[section.section_key] = next;
+  return root;
+}
+
 // Nothing logged what the model actually returned, so a section could ship with
 // an empty findings list leaving no trace of whether the model said nothing or
 // the coercer threw it all away. These two record exactly that distinction.
@@ -313,13 +332,24 @@ async function runStep(
   if (!section) return;
 
   if (step.kind === "page") {
+    // Read EVERY row for this page, not just the successful ones, so "not
+    // captured yet" can be told apart from "this page does not exist". Hiding is
+    // permanent and silent, so it must only ever answer the second case.
     const { data: snaps } = await sb
       .from("web_page_snapshots")
-      .select("id, viewport, variant, screenshot_url, elements")
+      .select("id, viewport, variant, screenshot_url, elements, status")
       .eq("audit_id", auditId)
-      .eq("page_type", step.page_type)
-      .eq("status", "success");
-    const rows = (snaps ?? []) as Array<{ id: string; viewport: string; variant: string; screenshot_url: string | null; elements?: ElementBox[] }>;
+      .eq("page_type", step.page_type);
+    const allRows = (snaps ?? []) as Array<
+      { id: string; viewport: string; variant: string; screenshot_url: string | null; elements?: ElementBox[]; status: string }
+    >;
+    // Belt and braces behind the capture gate in runWebPipeline: if a shot for
+    // this page is still pending, leave the section completely alone (not hidden,
+    // not written) and let the capture chain's completion kick run it properly.
+    if (allRows.some((r) => r.status === "pending")) {
+      throw new Error(`${step.key}: screenshots for this page are still being captured`);
+    }
+    const rows = allRows.filter((r) => r.status === "success" && r.screenshot_url);
     if (rows.length === 0) {
       await sb.from("audit_sections").update({ section_config: hideConfig(section) }).eq("id", section.id);
       return;
@@ -485,6 +515,9 @@ async function runStep(
       summary_text: nextSummary,
       key_findings: { items: parsed.recommendations, items_hidden: parsed.recommendations.map(() => false) },
       section_details: details,
+      // This page demonstrably exists and now has findings, so lift any hide left
+      // behind by an earlier pass that could not see its screenshots.
+      section_config: unhideConfig(section),
     }).eq("id", section.id);
     return;
   }
@@ -607,6 +640,35 @@ async function runPipeline(auditId: string, correlationId: string, mode?: string
   const stale = job.status === "running" && jobUpdatedMs > 0 && Date.now() - jobUpdatedMs >= 90_000;
   if (job.status === "running" && !stale) {
     return json({ ok: true, correlationId, status: "in_progress", reason: "already_running" });
+  }
+
+  // CAPTURE MUST BE FINISHED FIRST. Analysis reads only screenshots whose row
+  // says "success", so a page whose shot has not landed yet looks exactly like a
+  // page that does not exist, and runStep used to HIDE it permanently. That is
+  // how audit 633eec94 shipped with no homepage and no product section: analysis
+  // started at 12:36:47 while the capture chain was still working, and those two
+  // shots did not land until 12:38 and 12:40.
+  //
+  // Deferring is safe and self-healing: the capture chain kicks this function
+  // again the moment its last shot lands (remaining === 0), and the job row is
+  // left untouched at the step it was on, so nothing is lost and no step is
+  // skipped. Whatever started us early simply waits.
+  const { count: stillCapturing } = await sb
+    .from("web_page_snapshots")
+    .select("id", { count: "exact", head: true })
+    .eq("audit_id", auditId)
+    .eq("status", "pending");
+  if ((stillCapturing ?? 0) > 0) {
+    await sb.from("audit_analysis_jobs").update({
+      status: "pending",
+      updated_at: new Date().toISOString(),
+    }).eq("audit_id", auditId);
+    return json({
+      ok: true,
+      correlationId,
+      status: "waiting_for_capture",
+      pending_screenshots: stillCapturing ?? 0,
+    });
   }
 
   let stepIndex = Number(job.step_index) || 0;
