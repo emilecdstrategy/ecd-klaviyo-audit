@@ -85,6 +85,7 @@ export type CreateDocumentInput = {
   template_id?: string | null;
   recipient_name?: string;
   recipient_email?: string;
+  /** Defaults to true: documents from us normally carry our signature. */
   sender_signature_enabled?: boolean;
 };
 
@@ -102,7 +103,7 @@ export async function createDocument(
       template_id: input.template_id ?? null,
       recipient_name: input.recipient_name ?? '',
       recipient_email: input.recipient_email ?? '',
-      sender_signature_enabled: input.sender_signature_enabled ?? false,
+      sender_signature_enabled: input.sender_signature_enabled ?? true,
       created_by: userId,
     })
     .select('*')

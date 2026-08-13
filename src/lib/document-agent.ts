@@ -141,7 +141,9 @@ export async function applyDraftAsNewDocument(draft: DocDraftPayload): Promise<D
     {
       title: sanitizeCopy(draft.title),
       content: sanitizeCopy(draft.content),
-      sender_signature_enabled: Boolean(draft.include_sender_signature),
+      // Signed by us unless the assistant was told otherwise, matching the
+      // toggle's default. Only an explicit false turns it off.
+      sender_signature_enabled: draft.include_sender_signature !== false,
     },
     { aiAssisted: true },
   );

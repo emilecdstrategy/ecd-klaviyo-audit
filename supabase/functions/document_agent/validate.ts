@@ -85,9 +85,10 @@ export function validateDraft(
       title: input.title,
       content: input.content,
       summary: input.summary,
-      // Naming a signer IS asking for a signature, so honour it even when the
-      // model forgot to also flip the boolean.
-      include_sender_signature: Boolean(input.include_sender_signature) || signer.length > 0,
+      // On by default, matching the toggle: only an explicit false leaves a
+      // document unsigned by us. Naming a signer is itself asking for a
+      // signature, so it wins even over an explicit false.
+      include_sender_signature: signer.length > 0 || input.include_sender_signature !== false,
       sender_signature_signer: signer,
     },
   };
