@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { WEB_AFTER_IMAGES_ENABLED } from './feature-flags';
 
 /** One label per step of web_finalize_analysis (order must match STEPS there). */
 export const WEB_STEP_LABELS = [
@@ -11,13 +12,13 @@ export const WEB_STEP_LABELS = [
   'Building the roadmap',
 ] as const;
 
-/** Labels shown in the progress UI: the analysis steps plus the "after" concept
- * image generation, which runs after the roadmap. This is the last thing to
- * finish, so the report is only revealed once it is done. */
-export const WEB_DISPLAY_STEP_LABELS = [
-  ...WEB_STEP_LABELS,
-  'Generating concept images',
-] as const;
+/** Labels shown in the progress UI: the analysis steps, plus the "after" concept
+ * image generation when that is switched on. With concept images off the
+ * roadmap is the last step, so the report is revealed as soon as analysis ends
+ * instead of waiting on a phase that never runs. */
+export const WEB_DISPLAY_STEP_LABELS: readonly string[] = WEB_AFTER_IMAGES_ENABLED
+  ? [...WEB_STEP_LABELS, 'Generating concept images']
+  : [...WEB_STEP_LABELS];
 
 /** The capture phase, which runs in the browser before the server-side analysis
  * job exists. Shown as the first steps of the same checklist so a web audit has
@@ -28,11 +29,12 @@ export const WEB_CAPTURE_STEP_LABELS = [
   'Capturing screenshots (desktop and mobile)',
 ] as const;
 
-/** Every step of a web audit, capture then analysis then concept images. */
-export const WEB_ALL_STEP_LABELS = [
+/** Every step of a web audit, capture then analysis (then concept images, when
+ * those are switched on). */
+export const WEB_ALL_STEP_LABELS: readonly string[] = [
   ...WEB_CAPTURE_STEP_LABELS,
   ...WEB_DISPLAY_STEP_LABELS,
-] as const;
+];
 
 export const WEB_CAPTURE_STEP_COUNT = WEB_CAPTURE_STEP_LABELS.length;
 
@@ -48,8 +50,8 @@ export function webCaptureStepFromStage(stage: string): number {
 }
 
 const TOTAL_ANALYSIS_STEPS = WEB_STEP_LABELS.length;
-// Analysis steps + the after-image generation step.
-const TOTAL_STEPS = TOTAL_ANALYSIS_STEPS + 1;
+// Analysis steps, plus the after-image generation step when it is switched on.
+const TOTAL_STEPS = TOTAL_ANALYSIS_STEPS + (WEB_AFTER_IMAGES_ENABLED ? 1 : 0);
 const AFTERS_STEP_INDEX = TOTAL_ANALYSIS_STEPS;
 
 export type WebPipelinePhase = 'capture' | 'analysis' | 'afters';
@@ -140,7 +142,9 @@ export async function fetchWebAuditPipelineStatus(auditId: string): Promise<WebP
   const failed = data.status === 'failed';
   const analysisComplete = data.status === 'complete';
   // Afters are "pending" only after analysis finished and the flag was flipped.
-  const aftersReady = auditRow?.web_afters_ready !== false;
+  // With concept images off there is no afters phase at all, and an old audit
+  // still carrying web_afters_ready = false must not be held behind one.
+  const aftersReady = !WEB_AFTER_IMAGES_ENABLED || auditRow?.web_afters_ready !== false;
   const inAftersPhase = analysisComplete && !aftersReady;
   const phase: WebPipelinePhase = inAftersPhase ? 'afters' : 'analysis';
 
@@ -166,6 +170,7 @@ export async function fetchWebAuditPipelineStatus(auditId: string): Promise<WebP
 /** Re-kick the auto "after" image generation chain (idempotent: it skips any
  * viewport that already has an image). Used to nudge a stalled afters phase. */
 export async function kickAfterGeneration(auditId: string): Promise<void> {
+  if (!WEB_AFTER_IMAGES_ENABLED) return;
   try {
     await supabase.functions.invoke('web_generate_after', {
       body: { audit_id: auditId, mode: 'auto' },
@@ -184,6 +189,12 @@ export async function generateSectionAfter(
   sectionKey: string,
   viewport?: 'desktop' | 'mobile',
 ): Promise<{ url: string; viewport: 'desktop' | 'mobile' }> {
+  // Last line of defence: the UI hides every entry point while afters are off,
+  // so reaching here means a caller was missed. Fail loudly and locally rather
+  // than round-tripping to a function that will refuse anyway.
+  if (!WEB_AFTER_IMAGES_ENABLED) {
+    throw new Error('Concept images are turned off for web audits.');
+  }
   const { data, error } = await supabase.functions.invoke('web_generate_after', {
     body: { audit_id: auditId, section_key: sectionKey, ...(viewport ? { viewport } : {}) },
   });

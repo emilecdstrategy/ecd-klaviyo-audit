@@ -4,6 +4,7 @@ import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shar
 import { getScreenshotProvider } from "../_shared/screenshot-provider.ts";
 import { browserlessEnabled, captureWithBrowserless, type CapturedElement, type CapturedPhoto, type CapturedTextLock } from "../_shared/browserless.ts";
 import { DOM_OUTLINE_PROBE, isUsableOutline } from "../_shared/html-after.ts";
+import { afterImagesEnabled } from "../_shared/after-images-enabled.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest, exchangeClientCredentials } from "../_shared/shopify-api.ts";
 
@@ -506,7 +507,10 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       // The cart drawer is a viewport overlay, so never full-page for cart.
       fullPage: !isViewport && !isCart,
       withElements: isViewport,
-      secondFold: isViewport && !isCart,
+      // The second-fold shot is context for the after-image generator and
+      // nothing else reads fold2_url, so it is pure waste while afters are off:
+      // one extra screenshot per viewport page, six per audit.
+      secondFold: afterImagesEnabled() && isViewport && !isCart,
       cartAdd,
       proxyTier,
       // The cart flow chains up to five navigations; 90s aborted it mid-flow on

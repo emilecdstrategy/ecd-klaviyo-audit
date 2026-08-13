@@ -6,6 +6,7 @@ import type { AuditSection } from '../../lib/types';
 import { parseWebSectionDetail } from '../../lib/web-report-details';
 import { updateAuditSection } from '../../lib/db';
 import { generateSectionAfter } from '../../lib/web-pipeline-status';
+import { WEB_AFTER_IMAGES_ENABLED } from '../../lib/feature-flags';
 import { useReportEdit } from '../report/edit/ReportEditContext';
 import {
   sendWebAuditAgentMessage,
@@ -164,8 +165,11 @@ export default function WebAuditAgentPanel({
     }
   };
 
-  // Regenerate both after images for a section (best effort) then refresh the report.
+  // Regenerate both after images for a section (best effort) then refresh the
+  // report. A no-op while concept images are off: an applied edit would
+  // otherwise spend two generations per section on an image nothing renders.
   const regenAfters = async (sectionKey: string) => {
+    if (!WEB_AFTER_IMAGES_ENABLED) return;
     await Promise.allSettled([
       generateSectionAfter(auditId, sectionKey, 'desktop'),
       generateSectionAfter(auditId, sectionKey, 'mobile'),
@@ -200,9 +204,11 @@ export default function WebAuditAgentPanel({
         await updateAuditSection(section.id, { summary_text: nextSummary });
       }
       onReload();
-      setMsg(msgId, { busy: 'Refreshing after images…' });
-      await regenAfters(edits.section_key);
-      onReload();
+      if (WEB_AFTER_IMAGES_ENABLED) {
+        setMsg(msgId, { busy: 'Refreshing after images…' });
+        await regenAfters(edits.section_key);
+        onReload();
+      }
       void markWebAuditAgentMessageApplied(msgId).catch(() => {});
       setMsg(msgId, { applied: true, busy: undefined });
     } catch (e) {
@@ -216,9 +222,11 @@ export default function WebAuditAgentPanel({
     try {
       await regenerateWebSection(auditId, regen.section_key, regen.instruction);
       onReload();
-      setMsg(msgId, { busy: 'Refreshing after images…' });
-      await regenAfters(regen.section_key);
-      onReload();
+      if (WEB_AFTER_IMAGES_ENABLED) {
+        setMsg(msgId, { busy: 'Refreshing after images…' });
+        await regenAfters(regen.section_key);
+        onReload();
+      }
       void markWebAuditAgentMessageApplied(msgId).catch(() => {});
       setMsg(msgId, { applied: true, busy: undefined });
     } catch (e) {

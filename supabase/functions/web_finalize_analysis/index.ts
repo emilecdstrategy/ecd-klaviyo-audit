@@ -3,6 +3,8 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { createLlmClient, type LlmImage, type LlmMessage } from "../_shared/llm-adapter.ts";
 import { FINDINGS_GUARDRAILS, CRO_HEURISTICS } from "../_shared/ecommerce-ux-kb.ts";
+import { afterImagesEnabled } from "../_shared/after-images-enabled.ts";
+import { autoPublishAudit } from "../_shared/auto-publish.ts";
 import {
   ANALYTICS_TOOL,
   coerceAnalytics,
@@ -114,6 +116,19 @@ Call the provided tool exactly once with your result.`;
 // if GEMINI_API_KEY is unset (the function returns not_configured).
 async function triggerAfterGeneration(auditId: string) {
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
+  // Afters off: analysis is the last step, so it inherits what the after-image
+  // chain used to own at the end of the pipeline. Do NOT set
+  // web_afters_ready = false here, or the report stays gated and the pg_cron
+  // watchdog keeps re-kicking a phase that is switched off (it selects audits
+  // on exactly that flag).
+  if (!afterImagesEnabled()) {
+    try {
+      const sb = assertServiceClient();
+      await sb.from("audits").update({ web_afters_ready: true }).eq("id", auditId);
+      await autoPublishAudit(sb, auditId);
+    } catch { /* non-fatal: a human can still publish by hand */ }
+    return;
+  }
   try {
     // Mark afters as pending so the report waits until they finish generating.
     try {

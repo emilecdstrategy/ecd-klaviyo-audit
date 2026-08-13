@@ -38,7 +38,7 @@ import {
   type WebAuditReportBundle,
 } from '../lib/db';
 import { createProposalFromAudit } from '../lib/proposal-convert';
-import { canSeeProposalsBeta } from '../lib/feature-flags';
+import { canSeeProposalsBeta, WEB_AFTER_IMAGES_ENABLED } from '../lib/feature-flags';
 import { useAuth } from '../contexts/AuthContext';
 import { canUseWebAudits } from '../lib/web-audit-access';
 import { klaviyoScopePermissionWarnings } from '../lib/klaviyo-fetch-diagnostics';
@@ -184,7 +184,10 @@ export default function AuditWorkspace() {
           }
           setWebGenerating(false);
           // Hold the report until every "after" concept image has been generated.
-          if (shell.audit.web_afters_ready === false) {
+          // Skipped entirely while concept images are off, so an audit finalized
+          // before the switch (flag still false, chain never finishing) is not
+          // trapped behind the finalizing screen.
+          if (WEB_AFTER_IMAGES_ENABLED && shell.audit.web_afters_ready === false) {
             setWebAftersPending(true);
             return;
           }

@@ -24,6 +24,7 @@ import {
   verifyScore,
 } from "../_shared/after-image-verify.ts";
 import { autoPublishAudit } from "../_shared/auto-publish.ts";
+import { afterImagesEnabled } from "../_shared/after-images-enabled.ts";
 import { isUsableOutline, runHtmlAfter, summarizeEditReport } from "../_shared/html-after.ts";
 import { conformToSize, cropToSupportedRatio, lockSlotsPrompt, maskPhotos, prepareLockBoxes, restorePhotos, type PhotoBox } from "../_shared/after-composite.ts";
 
@@ -1169,6 +1170,32 @@ serve(async (req) => {
     } catch (e) {
       return json({ ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId }, { status: 401 });
     }
+  }
+
+  // THE DOOR, right after auth and before the API key is read, so no caller can
+  // spend a generation while afters are off: not the auto chain, not the pg_cron
+  // watchdog, not the editor button, not the in-report assistant.
+  //
+  // Two things still have to happen on the way out, because this function used
+  // to own them as the last step of the pipeline:
+  //  - web_afters_ready must end up true. The report gate and the watchdog's
+  //    after-image phase both select on that flag, so leaving it false traps the
+  //    report behind a phase that can never finish.
+  //  - the audit must still get its automatic publish. web_finalize_analysis now
+  //    does that when afters are off; this is the safety net for an audit that
+  //    was finalized before the switch and is being nudged now.
+  if (!afterImagesEnabled()) {
+    const sbOff = assertServiceClient();
+    try { await sbOff.from("audits").update({ web_afters_ready: true }).eq("id", auditId); } catch { /* non-fatal */ }
+    await autoPublishAudit(sbOff, auditId);
+    return json({
+      ok: false,
+      error: {
+        code: "disabled",
+        message: "Concept images are turned off for web audits. Reports ship the findings and the store's own screenshots.",
+      },
+      correlationId,
+    }, { status: 200 });
   }
 
   // Key is managed in admin Settings (app_secrets 'gemini_api_key'); getSecret

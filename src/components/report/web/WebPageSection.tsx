@@ -3,6 +3,7 @@ import { Loader2, Monitor, Plus, Smartphone, Trash2, Wand2 } from 'lucide-react'
 import type { AuditSection, WebPageSnapshot } from '../../../lib/types';
 import { parseWebSectionDetail, findingHighlights } from '../../../lib/web-report-details';
 import { fetchSectionAfterImages, generateSectionAfter } from '../../../lib/web-pipeline-status';
+import { WEB_AFTER_IMAGES_ENABLED } from '../../../lib/feature-flags';
 import { useReportEdit } from '../edit/ReportEditContext';
 import EditablePlainText from '../edit/EditablePlainText';
 import ImageLightbox from '../../ui/ImageLightbox';
@@ -47,6 +48,7 @@ export default function WebPageSection({
   // viewable before they finish). Poll briefly so they appear on their own without
   // a manual refresh. Stops once both viewports have one, or after ~3 minutes.
   useEffect(() => {
+    if (!WEB_AFTER_IMAGES_ENABLED) return;
     const PAGE_KEYS = ['web_homepage', 'web_product_page', 'web_collection_page', 'web_cart'];
     if (!PAGE_KEYS.includes(section.section_key)) return;
     const d0 = parseWebSectionDetail(section.section_details).after_images;
@@ -142,8 +144,13 @@ export default function WebPageSection({
     }
   };
 
-  const afterUrl = afterOverride[viewport] ?? detail.after_images[viewport]?.url ?? null;
-  const afterMeta = detail.after_images[viewport];
+  // With concept images off this stays null, which collapses the whole After
+  // column, its control and its withheld notes to the Before shot alone. The
+  // stored image is untouched and returns when the flag flips back.
+  const afterUrl = WEB_AFTER_IMAGES_ENABLED
+    ? afterOverride[viewport] ?? detail.after_images[viewport]?.url ?? null
+    : null;
+  const afterMeta = WEB_AFTER_IMAGES_ENABLED ? detail.after_images[viewport] : undefined;
   const afterEngine = engineOverride[viewport] ?? afterMeta?.engine ?? null;
   // Numbered pins on the After, carrying the same numbers as the Before pins so
   // "what changed" is visible at a glance instead of a spot-the-difference. The
@@ -232,7 +239,7 @@ export default function WebPageSection({
           {shown ? (
             <div className={afterUrl || viewport === 'desktop' ? 'w-full' : 'mx-auto w-full max-w-[360px]'}>
               {/* Editor-only generate / regenerate control. */}
-              {editMode && (
+              {editMode && WEB_AFTER_IMAGES_ENABLED && (
                 <div className="mb-2 flex items-center justify-end">
                   <button
                     type="button"
