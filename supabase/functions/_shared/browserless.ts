@@ -406,6 +406,22 @@ export default async ({ page, context }) => {
         if (r.bottom <= 0 || r.top >= vh) continue;
         const cs = getComputedStyle(el);
         if (cs.visibility === "hidden" || cs.display === "none" || Number(cs.opacity) === 0) continue;
+        // The checks above read the element's OWN style, and opacity does not
+        // inherit into computed style: a child of an opacity:0 popup still
+        // reports opacity 1. A hidden cart drawer therefore passed as a real
+        // element sitting at the top of the page, and a header finding got
+        // pinned to its invisible "GO TO CART" button. checkVisibility accounts
+        // for ancestors; the manual walk covers engines without it.
+        if (typeof el.checkVisibility === "function") {
+          if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })) continue;
+        } else {
+          var hiddenByAncestor = false;
+          for (var anc = el.parentElement; anc; anc = anc.parentElement) {
+            var acs = getComputedStyle(anc);
+            if (acs.visibility === "hidden" || acs.display === "none" || Number(acs.opacity) === 0) { hiddenByAncestor = true; break; }
+          }
+          if (hiddenByAncestor) continue;
+        }
         const left = Math.max(0, r.left), top = Math.max(0, r.top);
         const right = Math.min(vw, r.right), bottom = Math.min(vh, r.bottom);
         const w = right - left, h = bottom - top;

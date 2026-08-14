@@ -39,11 +39,38 @@ function labelTokens(raw: unknown): string[] {
     .filter((t) => t.length > 2 && !LABEL_STOPWORDS.has(t));
 }
 
+/** A label that is nothing but a tag name carries no identity: the capture
+ * records anonymous nodes as plain "button", "a", "section". Snapping to one
+ * puts the pin on whichever unnamed box happened to share a generic word, which
+ * is how "Shop the Camping Set button" landed on a hamburger menu. */
+const TYPE_ONLY_LABELS = new Set([
+  "a", "div", "span", "p", "button", "section", "header", "footer", "nav", "form",
+  "img", "ul", "ol", "li", "label", "input", "select", "aside", "main", "article",
+  "h1", "h2", "h3", "h4", "h5", "h6",
+]);
+
+/** Words that name an element TYPE or a ubiquitous storefront noun. Sharing one
+ * of these proves nothing about WHICH element is meant: a finding about "cart
+ * icons" shares "cart" with every cart control on the page, and that is how a
+ * header finding got pinned to a hidden "GO TO CART" drawer button. */
+const GENERIC_TOKENS = new Set([
+  "button", "buttons", "link", "links", "menu", "nav", "navigation", "header",
+  "footer", "section", "banner", "bar", "row", "column", "block", "group",
+  "form", "field", "input", "page", "site", "cart", "bag", "search", "account",
+  "login", "shop", "store", "home", "top", "bottom", "left", "right", "main",
+  "first", "second", "card", "box", "list", "photo", "picture", "heading",
+]);
+
 /** The model names elements well ("Sold out button", "Breadcrumb", "Price") but
  * estimates pixel coordinates poorly, which lands pins on the wrong thing. When
  * it did not give a usable element_id, snap its label to the captured element
- * whose own label matches best and use that element's real box instead. */
-function snapToElementByLabel(
+ * whose own label matches best and use that element's real box instead.
+ *
+ * Matching has to be conservative in a specific way: a WRONG pin is worse than
+ * no pin, because a pin is a claim about where the problem is and the reader
+ * checks it against the screenshot. So a candidate needs real evidence of
+ * identity, either two shared words or one distinctive one. */
+export function snapToElementByLabel(
   highlightLabel: unknown,
   elements: ElementBox[],
 ): ElementBox | undefined {
@@ -51,12 +78,17 @@ function snapToElementByLabel(
   if (wanted.length === 0 || elements.length === 0) return undefined;
   let best: { el: ElementBox; score: number } | null = null;
   for (const el of elements) {
+    const raw = String(el.label ?? "").trim().toLowerCase();
+    if (!raw || TYPE_ONLY_LABELS.has(raw)) continue;
     const have = labelTokens(el.label);
     if (have.length === 0) continue;
-    const hits = wanted.filter((t) => have.includes(t)).length;
-    if (hits === 0) continue;
+    const shared = wanted.filter((t) => have.includes(t));
+    if (shared.length === 0) continue;
+    // One shared word is only enough when it actually identifies something.
+    // Two or more can include generic words, since the combination is specific.
+    if (shared.length === 1 && GENERIC_TOKENS.has(shared[0])) continue;
     // Favour matching most of the requested words against a concise label.
-    const score = hits / Math.max(wanted.length, 1) + hits / Math.max(have.length, 1);
+    const score = shared.length / Math.max(wanted.length, 1) + shared.length / Math.max(have.length, 1);
     if (!best || score > best.score) best = { el, score };
   }
   // Require a reasonably confident match so we never snap on a single weak token.
