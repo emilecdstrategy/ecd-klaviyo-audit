@@ -84,6 +84,23 @@ export default function WebPageSection({
   const successful = snapshots.filter((s) => s.status === 'success' && s.screenshot_url);
   const byId = new Map(successful.map((s) => [s.id, s]));
 
+  // Warm BOTH viewports' screenshots up front. Only the selected one is in the
+  // DOM, so switching to desktop used to start its download on click and leave
+  // the mobile shot on screen for a second or two, which read as the toggle
+  // being broken. Decoding too, not just fetching, so the swap is a paint and
+  // not a decode. Joined URLs as the dep: the filtered array is a new identity
+  // every render and would re-run this forever.
+  const preloadKey = successful.map((s) => s.screenshot_url).join('|');
+  useEffect(() => {
+    if (typeof window === 'undefined' || !preloadKey) return;
+    for (const url of preloadKey.split('|')) {
+      if (!url) continue;
+      const img = new Image();
+      img.src = url;
+      void img.decode?.().catch(() => {});
+    }
+  }, [preloadKey]);
+
   // Show the viewport (above-the-fold) shot: it is what the AI annotated, so the
   // marker %-coordinates line up with it. Full-page shots use different heights,
   // so their coords would not map; those open in the lightbox for full context.

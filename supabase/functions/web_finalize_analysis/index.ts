@@ -339,11 +339,20 @@ async function runStep(
     // permanent and silent, so it must only ever answer the second case.
     const { data: snaps } = await sb
       .from("web_page_snapshots")
-      .select("id, viewport, variant, screenshot_url, elements, status")
+      .select("id, viewport, variant, screenshot_url, elements, status, url, raw")
       .eq("audit_id", auditId)
       .eq("page_type", step.page_type);
     const allRows = (snaps ?? []) as Array<
-      { id: string; viewport: string; variant: string; screenshot_url: string | null; elements?: ElementBox[]; status: string }
+      {
+        id: string;
+        viewport: string;
+        variant: string;
+        screenshot_url: string | null;
+        elements?: ElementBox[];
+        status: string;
+        url?: string | null;
+        raw?: Record<string, unknown> | null;
+      }
     >;
     // Belt and braces behind the capture gate in runWebPipeline: if a shot for
     // this page is still pending, leave the section completely alone (not hidden,
@@ -355,6 +364,26 @@ async function runStep(
     if (rows.length === 0) {
       await sb.from("audit_sections").update({ section_config: hideConfig(section) }).eq("id", section.id);
       return;
+    }
+
+    // A CART SHOT THAT IS NOT A CART IS NOT AUDITABLE. The cart capture adds a
+    // product and opens the drawer; when a storefront's bot protection blocks
+    // that (Power Planter answered five retries with "your connection needs to
+    // be verified"), the fallback screenshot is just the homepage. Auditing it
+    // produced a "Cart" section that opened by admitting it was looking at the
+    // home view and then repeated a homepage finding, which reads to the client
+    // as a broken report. cart_count is the honest signal: a real drawer capture
+    // records the number of items it added, and a /cart URL means we are on the
+    // cart page even if the count went unrecorded. Neither one: hide the
+    // section rather than describe the wrong page.
+    if (step.page_type === "cart") {
+      const filled = allRows.some((r) => Number((r.raw ?? {}).cart_count ?? 0) > 0);
+      const onCartUrl = allRows.some((r) => /\/cart(\/|$|\?)/.test(String(r.url ?? "")));
+      if (!filled && !onCartUrl) {
+        console.log(`${step.key}: cart never populated (no cart_count, not a /cart URL), hiding the section`);
+        await sb.from("audit_sections").update({ section_config: hideConfig(section) }).eq("id", section.id);
+        return;
+      }
     }
     const { images, refToId, refToElements, refToViewport, primaryId, elementsText } = buildPageImages(rows, step.label);
 
