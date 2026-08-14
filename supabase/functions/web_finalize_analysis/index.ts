@@ -327,6 +327,8 @@ async function runStep(
   step: Step,
   sections: SectionRow[],
   extraInstruction?: string,
+  /** Client background, call notes and focus instructions. Steering only. */
+  contextBlock = "",
 ) {
   const section = sections.find((s) => s.section_key === step.key);
   if (!section) return;
@@ -381,7 +383,7 @@ async function runStep(
       : "";
     const messages: LlmMessage[] = [{
       role: "user_images",
-      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. ALWAYS write the intro field first: it is this section's summary paragraph in the report, 2-3 sentences on where this page stands, what it does well, and what is holding it back. Never leave it blank. Then return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${priorText}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${elementsText}`,
+      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. ALWAYS write the intro field first: it is this section's summary paragraph in the report, 2-3 sentences on where this page stands, what it does well, and what is holding it back. Never leave it blank. Then return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${priorText}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${contextBlock}${elementsText}`,
       images,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
@@ -443,7 +445,7 @@ async function runStep(
         }. Do not pad with vague advice: only real issues you can point at in the screenshot.${keepNote}`;
       const retryMessages: LlmMessage[] = [{
         role: "user_images",
-        text: `${ask} Call record_page_audit exactly once.${elementsText}`,
+        text: `${ask} Call record_page_audit exactly once.${contextBlock}${elementsText}`,
         images,
       }];
       const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
@@ -539,7 +541,7 @@ async function runStep(
     }
     const messages: LlmMessage[] = [{
       role: "user",
-      text: `Here is the store's Shopify performance for the last 30 days vs the prior 30 days (numbers are authoritative; do not restate them, interpret them):\n\n${JSON.stringify(computed)}\n\nCall record_analytics_audit exactly once with an intro and one entry per relevant metric (commentary + recommendation).`,
+      text: `Here is the store's Shopify performance for the last 30 days vs the prior 30 days (numbers are authoritative; do not restate them, interpret them):\n\n${JSON.stringify(computed)}\n\nCall record_analytics_audit exactly once with an intro and one entry per relevant metric (commentary + recommendation).${contextBlock}`,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [ANALYTICS_TOOL], toolChoice: { type: "tool", name: "record_analytics_audit" } });
     if (turn.kind !== "tool_call") throw new Error("analytics: model did not call the tool");
@@ -558,7 +560,7 @@ async function runStep(
     }).join("\n");
     const messages: LlmMessage[] = [{
       role: "user",
-      text: `Below are the per-page audit results for this store. Write the report's opening: a short intro and an 'Overall Pros' list (the store's genuine strengths across pages). Call record_overview exactly once.\n\n${digest}`,
+      text: `Below are the per-page audit results for this store. Write the report's opening: a short intro and an 'Overall Pros' list (the store's genuine strengths across pages). Call record_overview exactly once.${contextBlock}\n\n${digest}`,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [OVERVIEW_TOOL], toolChoice: { type: "tool", name: "record_overview" } });
     if (turn.kind !== "tool_call") throw new Error("overview: model did not call the tool");
@@ -585,7 +587,7 @@ async function runStep(
   const catalogList = catalog.map((c) => `- ${c.slug}: ${c.name}`).join("\n");
   const messages: LlmMessage[] = [{
     role: "user",
-    text: `Turn these audit findings into a prioritized roadmap of work items. Match an item to a catalog service by slug when one clearly fits; otherwise set template_slug null. Do not state prices. Call record_roadmap exactly once.\n\nFINDINGS:\n${findingsDigest}\n\nCATALOG SERVICES (slug: name):\n${catalogList}`,
+    text: `Turn these audit findings into a prioritized roadmap of work items. Match an item to a catalog service by slug when one clearly fits; otherwise set template_slug null. Do not state prices. Call record_roadmap exactly once.${contextBlock}\n\nFINDINGS:\n${findingsDigest}\n\nCATALOG SERVICES (slug: name):\n${catalogList}`,
   }];
   const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [ROADMAP_TOOL], toolChoice: { type: "tool", name: "record_roadmap" } });
   if (turn.kind !== "tool_call") throw new Error("roadmap: model did not call the tool");
@@ -593,6 +595,78 @@ async function runStep(
   const details = { ...(section.section_details ?? {}) };
   (details as Record<string, unknown>).web_roadmap = { rows };
   await sb.from("audit_sections").update({ section_details: details }).eq("id", section.id);
+}
+
+/** What the strategist told us about this client, plus the facts we already
+ * hold, formatted for the analysis prompts.
+ *
+ * The web analysis used to run blind: it never read audits.context and its
+ * system prompt is a fixed string, so it did not know the client's name, what
+ * they sell, or anything said in the kickoff call. Two auditors, one briefed and
+ * one not, produced identical reports.
+ *
+ * Everything here is STEERING, never evidence. Meeting notes are somebody's
+ * recollection and custom instructions are a request, so neither can become a
+ * finding on its own: the screenshots remain the only proof of what the site
+ * does. That boundary is spelled out in the prompt below because the failure it
+ * prevents (writing "as discussed, your reviews are strong" about a page with no
+ * reviews on it) reads as authoritative and is very hard to spot later.
+ *
+ * Fireflies transcripts get pasted in whole, so notes are capped hard: the tail
+ * of a call is rarely the brief, and a 40k-token transcript in every one of the
+ * seven steps is real money. */
+const CONTEXT_NOTES_CAP = 4_000;
+const CONTEXT_FIELD_CAP = 2_000;
+
+async function loadAuditContextBlock(
+  sb: ReturnType<typeof assertServiceClient>,
+  auditId: string,
+  clientId: string,
+): Promise<string> {
+  try {
+    const [{ data: audit }, { data: client }] = await Promise.all([
+      sb.from("audits").select("context").eq("id", auditId).maybeSingle(),
+      sb.from("clients").select("name, company_name, industry, website_url").eq("id", clientId).maybeSingle(),
+    ]);
+    const ctx = (audit?.context ?? {}) as {
+      meeting_notes?: unknown;
+      client_background?: unknown;
+      custom_instructions?: unknown;
+      sells_subscriptions?: unknown;
+    };
+    const str = (v: unknown, cap: number) => (typeof v === "string" ? v.trim().slice(0, cap) : "");
+    const background = str(ctx.client_background, CONTEXT_FIELD_CAP);
+    const instructions = str(ctx.custom_instructions, CONTEXT_FIELD_CAP);
+    const notes = str(ctx.meeting_notes, CONTEXT_NOTES_CAP);
+
+    const facts: string[] = [];
+    const who = String(client?.company_name ?? client?.name ?? "").trim();
+    if (who) facts.push(`Store: ${who}`);
+    const industry = String(client?.industry ?? "").trim();
+    if (industry) facts.push(`Industry: ${industry}`);
+    if (ctx.sells_subscriptions === true) facts.push(`Sells subscriptions.`);
+
+    if (facts.length === 0 && !background && !instructions && !notes) return "";
+
+    const parts: string[] = [
+      `\n\nABOUT THIS CLIENT. Use it to decide what matters most on this store and to write in terms the client recognises.`,
+    ];
+    if (facts.length) parts.push(facts.join("\n"));
+    if (background) parts.push(`BACKGROUND:\n${background}`);
+    if (notes) parts.push(`NOTES FROM THE CALL (someone's recollection, not evidence about the site):\n${notes}`);
+    if (instructions) {
+      parts.push(
+        `WHAT THE STRATEGIST ASKED YOU TO FOCUS ON (highest priority, follow it):\n${instructions}`,
+      );
+    }
+    parts.push(
+      `HOW TO USE THIS: it changes which findings you lead with and how you phrase them. It is NOT evidence about the site. Every finding must still be something you can SEE in the screenshots, so never report an issue because the notes mention it, never claim something is on the page because the client said so, and if the notes and the screenshots disagree, the screenshots win. The brief itself is invisible to the reader: the CLIENT reads this report, so never refer to "the call", "the brief", "as discussed", or to "the client" in the third person ("the path the client cares most about"). Address them as "you" and let the prioritisation show the focus rather than announcing it.`,
+    );
+    return parts.join("\n\n");
+  } catch {
+    // Context is an enhancement; an audit must never fail for want of it.
+    return "";
+  }
 }
 
 async function runPipeline(auditId: string, correlationId: string, mode?: string): Promise<Response> {
@@ -688,7 +762,8 @@ async function runPipeline(auditId: string, correlationId: string, mode?: string
       .from("audit_sections")
       .select("id, section_key, summary_text, section_details, section_config")
       .eq("audit_id", auditId);
-    await runStep(sb, llm, auditId, step, (freshRows ?? []) as SectionRow[]);
+    const contextBlock = await loadAuditContextBlock(sb, auditId, audit.client_id as string);
+    await runStep(sb, llm, auditId, step, (freshRows ?? []) as SectionRow[], undefined, contextBlock);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     await sb.from("audit_analysis_jobs").update({
@@ -756,7 +831,13 @@ serve(async (req) => {
         .eq("audit_id", auditId);
       const sectionsList = (rows ?? []) as SectionRow[];
       const llm = createLlmClient("anthropic", { model: WEB_MODEL });
-      await runStep(sb, llm, auditId, step, sectionsList, b.instruction?.trim() || undefined);
+      // Regenerating one section reads the same client context as a full run, so
+      // a re-run never silently drops the brief the first pass was written with.
+      const { data: auditRow } = await sb.from("audits").select("client_id").eq("id", auditId).maybeSingle();
+      const contextBlock = auditRow?.client_id
+        ? await loadAuditContextBlock(sb, auditId, auditRow.client_id as string)
+        : "";
+      await runStep(sb, llm, auditId, step, sectionsList, b.instruction?.trim() || undefined, contextBlock);
       return json({ ok: true, correlationId, status: "complete", section: sectionKey });
     } catch (e) {
       return json({ ok: false, error: { code: "regenerate_failed", message: e instanceof Error ? e.message : "Unknown error" }, correlationId }, { status: 200 });
