@@ -12,7 +12,7 @@ import {
 } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
-import { canSeeDocumentsBeta, canSeeProposalsBeta } from '../../lib/feature-flags';
+import { canAccessArea } from '../../lib/access';
 
 interface SidebarProps {
   collapsed?: boolean;
@@ -47,9 +47,14 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
     if (collapsedProp === undefined) setCollapsedState(next);
   };
   const { user, hasRole, signOut } = useAuth();
+  // The three gated areas show only to users with access; Dashboard and
+  // Clients always show. Settings shows for everyone too, since the Line Item
+  // Catalog and API Connection inside it are open to all staff (the Users tab
+  // gates itself to admins on the page).
   const navItems = NAV_ITEMS.filter(item => {
-    if (item.to === '/proposals') return canSeeProposalsBeta(user?.email);
-    if (item.to === '/documents') return canSeeDocumentsBeta(user?.email);
+    if (item.to === '/audits') return canAccessArea(user, 'audits');
+    if (item.to === '/proposals') return canAccessArea(user, 'proposals');
+    if (item.to === '/documents') return canAccessArea(user, 'documents');
     return true;
   });
   const [profileMenuOpen, setProfileMenuOpen] = useState(false);
@@ -126,7 +131,11 @@ export default function Sidebar({ collapsed: collapsedProp, onCollapsedChange }:
           </NavLink>
         ))}
 
-        {hasRole('admin') && (
+        {/* Settings is for every staff account now: the Line Item Catalog and
+            API Connection tabs inside it are open to all, and the page itself
+            hides the Users tab from non-admins. Viewers keep no sidebar at all
+            (they never reach this shell). */}
+        {hasRole(['admin', 'auditor']) && (
           <>
             <div className={`pt-4 pb-1 ${collapsed ? 'px-0' : 'px-1'}`}>
               {!collapsed && <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-300">Settings</span>}

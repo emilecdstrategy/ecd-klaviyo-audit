@@ -3,7 +3,6 @@ import { useSearchParams } from 'react-router-dom';
 import {
   Users,
   Key,
-  Shield,
   Trash2,
   UserPlus,
   Image as ImageIcon,
@@ -22,6 +21,8 @@ import StatusBadge from '../components/ui/StatusBadge';
 import Modal from '../components/ui/Modal';
 import ImageUploadZone from '../components/ui/ImageUploadZone';
 import { useAuth } from '../contexts/AuthContext';
+import { ALL_AREAS, AREA_LABELS, canManageUsers } from '../lib/access';
+import type { AppAccess, AppArea } from '../lib/types';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useToast } from '../components/ui/Toast';
 import { supabase } from '../lib/supabase';
@@ -54,7 +55,8 @@ type AdminUserRow = {
   id: string;
   email: string | null;
   name: string | null;
-  role: 'admin' | 'viewer';
+  role: 'admin' | 'auditor' | 'viewer';
+  app_access?: AppAccess | null;
   created_at?: string | null;
 };
 
@@ -62,35 +64,27 @@ export default function AdminArea() {
   // Tab lives in the URL so external redirects can land on it (the Xero OAuth
   // callback returns to ?tab=settings), and so a refresh keeps your place.
   const [searchParams, setSearchParams] = useSearchParams();
+  const { user } = useAuth();
+  // Settings is open to every staff account: the Line Item Catalog and API
+  // Connection are shared tools. Only user management stays admin-only, so the
+  // Users tab simply is not there for members.
+  const isAdmin = canManageUsers(user);
+  const visibleTabs = isAdmin ? TABS : TABS.filter(t => t.id !== 'users');
   const tabParam = searchParams.get('tab') ?? '';
-  const tab = TABS.some(t => t.id === tabParam) ? tabParam : 'users';
+  const tab = visibleTabs.some(t => t.id === tabParam) ? tabParam : visibleTabs[0].id;
   const setTab = (next: string) => {
     const params = new URLSearchParams(searchParams);
     params.set('tab', next);
     setSearchParams(params, { replace: true });
   };
-  const { hasRole } = useAuth();
-
-  if (!hasRole('admin')) {
-    return (
-      <div>
-        <TopBar title="Settings" />
-        <div className="p-8 text-center">
-          <Shield className="w-12 h-12 text-gray-200 mx-auto mb-3" />
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Access Restricted</h2>
-          <p className="text-sm text-gray-500">You need admin permissions to access this area.</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div>
-      <TopBar title="Settings" subtitle="Manage users and platform settings" />
+      <TopBar title="Settings" subtitle={isAdmin ? 'Manage users and platform settings' : 'Platform settings'} />
 
       <div className="p-8 animate-fade-in">
         <div className="flex gap-2 mb-6 border-b border-gray-100 pb-3">
-          {TABS.map(t => (
+          {visibleTabs.map(t => (
             <button
               key={t.id}
               onClick={() => setTab(t.id)}
@@ -106,7 +100,7 @@ export default function AdminArea() {
           ))}
         </div>
 
-        {tab === 'users' && <UsersTab />}
+        {tab === 'users' && isAdmin && <UsersTab />}
         {tab === 'revenue_opportunities' && <RevenueOpportunitiesTab />}
         {tab === 'settings' && <SettingsTab />}
       </div>
@@ -141,7 +135,7 @@ function UsersTab() {
     try {
       const { data, error } = await supabase
         .from('profiles')
-        .select('id, email, name, role, created_at')
+        .select('id, email, name, role, app_access, created_at')
         .order('created_at', { ascending: true });
       if (error) throw error;
       setUsers((data ?? []) as AdminUserRow[]);
@@ -175,6 +169,30 @@ function UsersTab() {
 
   const roleBadgeStatus = (role: AdminUserRow['role']) =>
     role === 'admin' ? 'published' : 'draft';
+
+  // Flip one area checkbox for a member. Admins have everything by definition,
+  // so their boxes render checked and disabled rather than being editable state
+  // that silently means nothing.
+  const onToggleAccess = async (row: AdminUserRow, area: AppArea) => {
+    setError('');
+    const current: AppAccess = { audits: true, proposals: true, documents: true, ...(row.app_access ?? {}) };
+    const next: AppAccess = { ...current, [area]: !(current[area] !== false) };
+    const prev = users;
+    setUsers(u => u.map(x => (x.id === row.id ? { ...x, app_access: next } : x)));
+    try {
+      setSavingRoleFor(row.id);
+      const { data, error } = await supabase.functions.invoke('admin_users', {
+        body: { action: 'update_access', user_id: row.id, app_access: next },
+      });
+      if (error) throw error;
+      if (data?.ok !== true) throw new Error(data?.error?.message ?? 'Failed to save access');
+    } catch (e) {
+      setUsers(prev);
+      setError(e instanceof Error ? e.message : 'Failed to save access');
+    } finally {
+      setSavingRoleFor(null);
+    }
+  };
 
   const onInvite = async () => {
     setError('');
@@ -383,6 +401,40 @@ function UsersTab() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              {/* Which of the three areas this person can use. Everyone always
+                  has Clients, the Dashboard, the Line Item Catalog and API
+                  Connection, so those need no boxes. Admin boxes are shown
+                  checked and locked: admin means everything. */}
+              <div className="hidden md:flex items-center gap-1.5" title={user.role === 'admin' ? 'Admins have access to everything' : 'Areas this member can use'}>
+                {ALL_AREAS.map(area => {
+                  const isAdminRow = user.role === 'admin';
+                  const checked = isAdminRow || (user.app_access?.[area] !== false);
+                  return (
+                    <button
+                      key={area}
+                      type="button"
+                      role="checkbox"
+                      aria-checked={checked}
+                      disabled={isAdminRow || savingRoleFor === user.id}
+                      onClick={() => onToggleAccess(user, area)}
+                      className={`inline-flex items-center gap-1.5 rounded-lg border px-2 py-1.5 text-[11px] font-medium transition-colors ${
+                        checked
+                          ? 'border-brand-primary/40 bg-brand-primary/5 text-brand-primary'
+                          : 'border-gray-200 text-gray-400 hover:bg-gray-50'
+                      } ${isAdminRow ? 'opacity-60 cursor-default' : ''}`}
+                    >
+                      <span
+                        className={`flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded border ${
+                          checked ? 'border-brand-primary bg-brand-primary text-white' : 'border-gray-300 bg-white'
+                        }`}
+                      >
+                        {checked && <Check className="h-2.5 w-2.5" />}
+                      </span>
+                      {AREA_LABELS[area]}
+                    </button>
+                  );
+                })}
+              </div>
               <StatusBadge status={roleBadgeStatus(user.role)} />
               <div className="min-w-[140px]">
                 <Select value={user.role} onValueChange={v => onChangeRole(user.id, v as any)}>
@@ -391,6 +443,7 @@ function UsersTab() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="admin"><SelectItemText>Admin</SelectItemText></SelectItem>
+                    <SelectItem value="auditor"><SelectItemText>Member</SelectItemText></SelectItem>
                     <SelectItem value="viewer"><SelectItemText>Viewer</SelectItemText></SelectItem>
                   </SelectContent>
                 </Select>

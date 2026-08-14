@@ -38,7 +38,8 @@ import {
   type WebAuditReportBundle,
 } from '../lib/db';
 import { createProposalFromAudit } from '../lib/proposal-convert';
-import { canSeeProposalsBeta, WEB_AFTER_IMAGES_ENABLED } from '../lib/feature-flags';
+import { WEB_AFTER_IMAGES_ENABLED } from '../lib/feature-flags';
+import { canAccessArea } from '../lib/access';
 import { useAuth } from '../contexts/AuthContext';
 import { canUseWebAudits } from '../lib/web-audit-access';
 import { klaviyoScopePermissionWarnings } from '../lib/klaviyo-fetch-diagnostics';
@@ -445,7 +446,7 @@ export default function AuditWorkspace() {
 
   // One definition, placed either in the top bar (web audits) or in the bottom
   // publish bar (Klaviyo audits), so the two never drift apart.
-  const createProposalButton = client && canSeeProposalsBeta(user?.email) ? (
+  const createProposalButton = client && canAccessArea(user, 'proposals') ? (
     <button
       type="button"
       disabled={creatingProposal}

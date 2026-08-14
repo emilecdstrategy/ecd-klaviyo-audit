@@ -20,7 +20,7 @@ import { listAudits, listClients } from '../lib/db';
 import { listProposals } from '../lib/proposals-db';
 import { deriveProposalStatus, isProposalOpen } from '../lib/proposal-status';
 import { computeProposalTotals, proposalDiscountFromRow, proposalPipelineValue } from '../lib/proposal-pricing';
-import { canSeeProposalsBeta } from '../lib/feature-flags';
+import { canAccessArea } from '../lib/access';
 import { useAuth } from '../contexts/AuthContext';
 import AuditStatusBadge from '../components/ui/AuditStatusBadge';
 import type { Audit, Client, Proposal } from '../lib/types';
@@ -34,7 +34,11 @@ export default function Dashboard() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user } = useAuth();
-  const showProposals = canSeeProposalsBeta(user?.email);
+  // The dashboard shows only the areas this user can open: no audit KPIs for
+  // someone without Audits, no pipeline card or Create Proposal for someone
+  // without Proposals. Clients is always there, it is the one area everyone has.
+  const showAudits = canAccessArea(user, 'audits');
+  const showProposals = canAccessArea(user, 'proposals');
 
   const [clients, setClients] = useState<Client[]>([]);
   const [audits, setAudits] = useState<Audit[]>([]);
@@ -45,7 +49,12 @@ export default function Dashboard() {
     let cancelled = false;
     (async () => {
       try {
-        const [c, a, p] = await Promise.all([listClients(), listAudits(), listProposals()]);
+        // Blocked areas are not fetched at all rather than fetched and hidden.
+        const [c, a, p] = await Promise.all([
+          listClients(),
+          showAudits ? listAudits() : Promise.resolve([] as Audit[]),
+          showProposals ? listProposals() : Promise.resolve([] as Proposal[]),
+        ]);
         if (cancelled) return;
         setClients(c);
         setAudits(a);
@@ -57,7 +66,8 @@ export default function Dashboard() {
       }
     })();
     return () => { cancelled = true; };
-  }, []);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showAudits, showProposals]);
 
   const clientById = useMemo(() => new Map(clients.map(c => [c.id, c])), [clients]);
 
@@ -74,12 +84,20 @@ export default function Dashboard() {
       <div className="p-8 space-y-8 animate-fade-in">
         {loading ? (
           <SkeletonKPICards />
-        ) : (
-          <div className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${showProposals ? 'lg:grid-cols-5' : 'lg:grid-cols-4'}`}>
-            <KPICard icon={ClipboardCheck} label="Total Audits" value={totalAudits} accent="primary" />
-            <KPICard icon={Clock} label="Audits in Review" value={inReview} accent="warning" />
-            <KPICard icon={FileText} label="Audits Published" value={published} accent="success" />
-            <KPICard icon={TrendingUp} label="Revenue Identified" value={formatCurrency(totalRevOpp)} accent="secondary" />
+        ) : (showAudits || showProposals) && (
+          <div
+            className={`grid grid-cols-1 sm:grid-cols-2 gap-4 ${
+              showAudits && showProposals ? 'lg:grid-cols-5' : showAudits ? 'lg:grid-cols-4' : 'lg:grid-cols-1 sm:grid-cols-1 max-w-sm'
+            }`}
+          >
+            {showAudits && (
+              <>
+                <KPICard icon={ClipboardCheck} label="Total Audits" value={totalAudits} accent="primary" />
+                <KPICard icon={Clock} label="Audits in Review" value={inReview} accent="warning" />
+                <KPICard icon={FileText} label="Audits Published" value={published} accent="success" />
+                <KPICard icon={TrendingUp} label="Revenue Identified" value={formatCurrency(totalRevOpp)} accent="secondary" />
+              </>
+            )}
             {showProposals && (
               <KPICard
                 icon={FileSignature}
@@ -92,13 +110,15 @@ export default function Dashboard() {
         )}
 
         <div className="flex flex-wrap gap-3">
-          <button
-            onClick={() => navigate('/audits/new', { state: { backgroundLocation: location } })}
-            className="flex items-center gap-2 px-5 py-2.5 bg-brand-primary text-white text-sm font-medium rounded-lg hover:bg-brand-primary-dark transition-colors"
-          >
-            <Plus className="w-4 h-4" />
-            Start New Audit
-          </button>
+          {showAudits && (
+            <button
+              onClick={() => navigate('/audits/new', { state: { backgroundLocation: location } })}
+              className="flex items-center gap-2 px-5 py-2.5 bg-brand-primary text-white text-sm font-medium rounded-lg hover:bg-brand-primary-dark transition-colors"
+            >
+              <Plus className="w-4 h-4" />
+              Start New Audit
+            </button>
+          )}
           <button
             onClick={() => navigate('/clients/new', { state: { backgroundLocation: location } })}
             className="flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-200 text-sm font-medium text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
@@ -125,6 +145,7 @@ export default function Dashboard() {
         ) : (
         <div className="grid grid-cols-1 gap-6">
           <div className="space-y-6">
+            {showAudits && (
             <div className="bg-white rounded-xl card-shadow">
               <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">
                 <h2 className="text-sm font-semibold text-gray-900">Recent Audits</h2>
@@ -165,6 +186,7 @@ export default function Dashboard() {
                 })}
               </div>
             </div>
+            )}
 
             <div className="bg-white rounded-xl card-shadow">
               <div className="px-6 py-4 border-b border-gray-50 flex items-center justify-between">

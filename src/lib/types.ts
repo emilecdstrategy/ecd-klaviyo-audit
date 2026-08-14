@@ -2,9 +2,20 @@ export interface Profile {
   id: string;
   name: string;
   email: string;
-  role: 'admin' | 'viewer';
+  /** admin: everything, including user management. auditor ("Member" in the UI):
+   * works in the areas their app_access grants; the database write policies
+   * accept admin and auditor, so a member can actually save. viewer: legacy
+   * read-only accounts that land on the viewer page. */
+  role: 'admin' | 'auditor' | 'viewer';
+  /** Which app areas a member can use. Ignored for admins (they have all). */
+  app_access?: AppAccess | null;
   created_at: string;
 }
+
+/** The three gated areas of the app. Clients, the Dashboard, the Line Item
+ * Catalog and API Connection are open to every staff account. */
+export type AppArea = 'audits' | 'proposals' | 'documents';
+export type AppAccess = { [K in AppArea]?: boolean };
 
 export interface Client {
   id: string;
@@ -333,7 +344,7 @@ export interface AuditEmailDesign {
   ecd_example?: IndustryEmailLibrary | null;
 }
 
-export type UserRole = 'admin' | 'viewer';
+export type UserRole = 'admin' | 'auditor' | 'viewer';
 
 // ---------------------------------------------------------------------------
 // Proposals

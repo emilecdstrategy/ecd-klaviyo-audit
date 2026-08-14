@@ -14,7 +14,7 @@ interface AuthState {
 
 const AuthContext = createContext<AuthState | null>(null);
 
-const PROFILE_COLUMNS = 'id,name,email,role,created_at';
+const PROFILE_COLUMNS = 'id,name,email,role,app_access,created_at';
 const ADMIN_DOMAIN = 'ecdigitalstrategy.com';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -64,13 +64,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         }
 
         const defaultName = (email.split('@')[0] || '').replace(/\./g, ' ').trim();
+        // A first sign-in from the company domain self-provisions as a MEMBER
+        // with all three areas (the column default), not as an admin: this is
+        // exactly how every account ended up admin before roles existed. Admins
+        // are made by other admins in Settings, never by signing in.
         const { data: created, error: insertErr } = await supabase
           .from('profiles')
           .insert({
             id: sessionUser.id,
             name: defaultName,
             email,
-            role: 'admin',
+            role: 'auditor',
           })
           .select(PROFILE_COLUMNS)
           .single();

@@ -1,21 +1,6 @@
-// TEMPORARY: Proposals is still being tested and shouldn't be visible to the
-// rest of the team yet. Remove this gate (and its call sites) once it's ready
-// for a wider rollout.
-const PROPOSALS_BETA_EMAILS = new Set([
-  'emil@ecdigitalstrategy.com',
-  'zak@ecdigitalstrategy.com',
-  'xiomara@ecdigitalstrategy.com',
-]);
-
-export function canSeeProposalsBeta(email: string | null | undefined): boolean {
-  return PROPOSALS_BETA_EMAILS.has((email ?? '').trim().toLowerCase());
-}
-
-// Documents is available to all staff (no beta gate). Kept as a function so the
-// call sites don't need to change if we ever want to re-gate it.
-export function canSeeDocumentsBeta(_email: string | null | undefined): boolean {
-  return true;
-}
+// The Proposals/Documents beta email gates that used to live here were replaced
+// on 2026-08-14 by per-user area access (profiles.app_access, src/lib/access.ts):
+// admins see everything, members see the areas an admin checked for them.
 
 /** Web-audit "after" concept images: the report-side half of the kill switch.
  *

@@ -28,7 +28,7 @@ import { getClient, listAuditsByClient, updateClient } from '../lib/db';
 import { listProposalsByClient } from '../lib/proposals-db';
 import { deriveProposalStatus } from '../lib/proposal-status';
 import { computeProposalTotals, proposalDiscountFromRow, proposalPipelineValue } from '../lib/proposal-pricing';
-import { canSeeProposalsBeta } from '../lib/feature-flags';
+import { canAccessArea } from '../lib/access';
 import { supabase } from '../lib/supabase';
 import Modal from '../components/ui/Modal';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
@@ -38,7 +38,7 @@ export default function ClientDetail() {
   const navigate = useNavigate();
   const location = useLocation();
   const { user, hasRole } = useAuth();
-  const showProposals = canSeeProposalsBeta(user?.email);
+  const showProposals = canAccessArea(user, 'proposals');
 
   const [client, setClient] = useState<Client | null>(null);
   const [clientAudits, setClientAudits] = useState<Audit[]>([]);

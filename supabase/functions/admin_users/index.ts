@@ -19,18 +19,22 @@ function json(data: unknown, init: ResponseInit = {}) {
   });
 }
 
-type Role = "admin" | "viewer";
+// admin: everything including this function. auditor ("Member" in the UI):
+// works in the areas app_access grants. viewer: legacy read-only.
+type Role = "admin" | "auditor" | "viewer";
+type AppAccess = { audits?: boolean; proposals?: boolean; documents?: boolean };
 
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
   if (req.method !== "POST") return json({ ok: false, error: { code: "method_not_allowed" } }, { status: 405 });
 
   try {
-    await requireAdminUserId(req);
+    const callerId = await requireAdminUserId(req);
     const body = (await req.json()) as
       | { action: "list" }
       | { action: "invite"; email: string }
       | { action: "update_role"; user_id: string; role: Role }
+      | { action: "update_access"; user_id: string; app_access: AppAccess }
       | { action: "update_name"; user_id: string; name: string }
       | { action: "remove"; user_id: string };
 
@@ -53,11 +57,14 @@ serve(async (req) => {
       const { data, error } = await sb.auth.admin.inviteUserByEmail(email);
       if (error) throw error;
 
-      // Ensure profile exists (default role: viewer)
+      // New invites start as MEMBERS with all three areas (the column default),
+      // per the decision of 2026-08-14: they can work everywhere from day one
+      // and an admin unchecks areas per person. They do not start as viewers
+      // (locked out of everything) or as admins (able to manage users).
       const invitedId = data.user?.id;
       if (invitedId) {
         await sb.from("profiles").upsert(
-          { id: invitedId, email, name: email.split("@")[0], role: "viewer" },
+          { id: invitedId, email, name: email.split("@")[0], role: "auditor" },
           { onConflict: "id" },
         );
       }
@@ -66,10 +73,31 @@ serve(async (req) => {
 
     if (body.action === "update_role") {
       const role = body.role;
-      if (!["admin", "viewer"].includes(role)) {
+      if (!["admin", "auditor", "viewer"].includes(role)) {
         return json({ ok: false, error: { code: "bad_request", message: "Invalid role" } }, { status: 200 });
       }
+      // An admin demoting THEMSELVES is the classic lockout: with one admin
+      // left, nobody could manage users ever again. Demoting someone else to
+      // the last-admin position is impossible by construction (you must be an
+      // admin to call this), so guarding self-demotion is sufficient.
+      if (body.user_id === callerId && role !== "admin") {
+        return json({ ok: false, error: { code: "bad_request", message: "You cannot remove your own admin role. Ask another admin to change it." } }, { status: 200 });
+      }
       const { error } = await sb.from("profiles").update({ role }).eq("id", body.user_id);
+      if (error) throw error;
+      return json({ ok: true });
+    }
+
+    if (body.action === "update_access") {
+      const raw = (body.app_access ?? {}) as Record<string, unknown>;
+      // Only the three known areas, coerced to booleans; anything else is
+      // dropped so the column cannot accumulate junk keys.
+      const app_access = {
+        audits: raw.audits !== false,
+        proposals: raw.proposals !== false,
+        documents: raw.documents !== false,
+      };
+      const { error } = await sb.from("profiles").update({ app_access }).eq("id", body.user_id);
       if (error) throw error;
       return json({ ok: true });
     }

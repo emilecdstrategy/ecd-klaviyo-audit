@@ -2,6 +2,7 @@ import { lazy, Suspense } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { getZoneRedirectOrigin } from './lib/route-zones';
+import { canAccessArea } from './lib/access';
 import AppShell from './components/layout/AppShell';
 import Login from './pages/Login';
 import Modal from './components/ui/Modal';
@@ -91,7 +92,11 @@ function AppRoutes() {
     return <AppPreloader />;
   }
 
-  const isViewer = user && !hasRole('admin');
+  // Viewer means the read-only role, explicitly. This used to be "anyone who is
+  // not an admin", which was harmless while every staff account was an admin
+  // and would have dumped every newly-demoted member onto the viewer landing
+  // page the moment per-user roles shipped.
+  const isViewer = user && user.role === 'viewer';
 
   const closeAuditWizardModal = () => navigate(-1);
 
@@ -128,20 +133,35 @@ function AppRoutes() {
             <Route path="/clients" element={<Clients />} />
             <Route path="/clients/new" element={<NewClient />} />
             <Route path="/clients/:id" element={<ClientDetail />} />
-            <Route path="/audits" element={<Audits />} />
-            <Route path="/audits/new" element={<NewAudit />} />
-            <Route path="/audits/:id" element={<AuditWorkspace />} />
-            <Route path="/proposals" element={<Proposals />} />
-            <Route path="/proposals/new" element={<NewProposal />} />
-            <Route path="/proposals/:id" element={<ProposalDetail />} />
-            <Route path="/proposals/:id/edit" element={<ProposalEditor />} />
-            <Route path="/proposals/templates/:templateId/edit" element={<TemplateEditor />} />
-            <Route path="/documents" element={<Documents />} />
-            <Route path="/documents/new" element={<NewDocument />} />
-            <Route path="/documents/:id" element={<DocumentDetail />} />
-            {/* Legacy edit URL now resolves to the unified workspace. */}
-            <Route path="/documents/:id/edit" element={<DocumentDetail />} />
-            <Route path="/documents/templates/:templateId/edit" element={<DocumentTemplateEditor />} />
+            {/* Area routes exist only for users with access, so a pasted URL to
+                a blocked area falls through to the catch-all and lands on the
+                dashboard, the same as a route that does not exist. */}
+            {canAccessArea(user, 'audits') && (
+              <>
+                <Route path="/audits" element={<Audits />} />
+                <Route path="/audits/new" element={<NewAudit />} />
+                <Route path="/audits/:id" element={<AuditWorkspace />} />
+              </>
+            )}
+            {canAccessArea(user, 'proposals') && (
+              <>
+                <Route path="/proposals" element={<Proposals />} />
+                <Route path="/proposals/new" element={<NewProposal />} />
+                <Route path="/proposals/:id" element={<ProposalDetail />} />
+                <Route path="/proposals/:id/edit" element={<ProposalEditor />} />
+                <Route path="/proposals/templates/:templateId/edit" element={<TemplateEditor />} />
+              </>
+            )}
+            {canAccessArea(user, 'documents') && (
+              <>
+                <Route path="/documents" element={<Documents />} />
+                <Route path="/documents/new" element={<NewDocument />} />
+                <Route path="/documents/:id" element={<DocumentDetail />} />
+                {/* Legacy edit URL now resolves to the unified workspace. */}
+                <Route path="/documents/:id/edit" element={<DocumentDetail />} />
+                <Route path="/documents/templates/:templateId/edit" element={<DocumentTemplateEditor />} />
+              </>
+            )}
             <Route path="/admin" element={<AdminArea />} />
             <Route path="*" element={<Navigate to={deepLinkFrom || '/'} replace />} />
           </Route>
@@ -149,7 +169,11 @@ function AppRoutes() {
       </Routes>
     </Suspense>
 
-    {backgroundLocation && user && hasRole('admin') && (
+    {/* The "New X" modal overlays follow the same access rules as their full
+        pages: clients for all staff, audits and proposals per area access. This
+        was admin-only, which was invisible while everyone was an admin and
+        would have broken creating things for every member. */}
+    {backgroundLocation && user && hasRole(['admin', 'auditor']) && (
       <Suspense fallback={null}>
         <Routes>
           <Route
@@ -160,27 +184,31 @@ function AppRoutes() {
               </Modal>
             }
           />
-          <Route
-            path="/audits/new"
-            element={
-              <Modal
-                open
-                title="New Audit"
-                onClose={closeAuditWizardModal}
-                className="max-w-7xl"
-              >
-                <NewAudit asModal />
-              </Modal>
-            }
-          />
-          <Route
-            path="/proposals/new"
-            element={
-              <Modal open title="New Proposal" onClose={() => navigate(-1)} className="max-w-2xl">
-                <NewProposal asModal />
-              </Modal>
-            }
-          />
+          {canAccessArea(user, 'audits') && (
+            <Route
+              path="/audits/new"
+              element={
+                <Modal
+                  open
+                  title="New Audit"
+                  onClose={closeAuditWizardModal}
+                  className="max-w-7xl"
+                >
+                  <NewAudit asModal />
+                </Modal>
+              }
+            />
+          )}
+          {canAccessArea(user, 'proposals') && (
+            <Route
+              path="/proposals/new"
+              element={
+                <Modal open title="New Proposal" onClose={() => navigate(-1)} className="max-w-2xl">
+                  <NewProposal asModal />
+                </Modal>
+              }
+            />
+          )}
         </Routes>
       </Suspense>
     )}

@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { assertServiceRoleClient, requireAdminUserId } from "../_shared/auth.ts";
+import { assertServiceRoleClient, requireStaffUserId } from "../_shared/auth.ts";
 const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
 
@@ -72,7 +72,9 @@ serve(async (req) => {
   if (req.method !== "POST") return json({ ok: false, error: { code: "method_not_allowed" } }, { status: 405 });
 
   try {
-    await requireAdminUserId(req);
+    // API Connection is open to every staff account (admin + member), decided
+    // 2026-08-14: key management is a shared tool, not an admin privilege.
+    await requireStaffUserId(req);
     const body = (await req.json()) as {
       action?: "set" | "status";
       provider?: "openai" | "anthropic" | "hubspot" | "fireflies" | "gemini";
