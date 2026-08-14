@@ -73,7 +73,11 @@ serve(async (req) => {
 
     if (body.action === "update_role") {
       const role = body.role;
-      if (!["admin", "auditor", "viewer"].includes(role)) {
+      // 'viewer' is retired from the UI (2026-08-14): it was the pre-roles
+      // read-only value and nobody holds it. Legacy rows would still render
+      // (treated as members with no access), but new assignments are only
+      // admin or member.
+      if (!["admin", "auditor"].includes(role)) {
         return json({ ok: false, error: { code: "bad_request", message: "Invalid role" } }, { status: 200 });
       }
       // An admin demoting THEMSELVES is the classic lockout: with one admin

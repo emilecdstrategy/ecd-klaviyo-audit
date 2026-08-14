@@ -15,9 +15,9 @@ import {
   ChevronDown,
   RefreshCw,
   Check,
+  ShieldCheck,
 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
-import StatusBadge from '../components/ui/StatusBadge';
 import Modal from '../components/ui/Modal';
 import ImageUploadZone from '../components/ui/ImageUploadZone';
 import { useAuth } from '../contexts/AuthContext';
@@ -166,9 +166,6 @@ function UsersTab() {
     reload();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  const roleBadgeStatus = (role: AdminUserRow['role']) =>
-    role === 'admin' ? 'published' : 'draft';
 
   // Flip one area checkbox for a member. Admins have everything by definition,
   // so their boxes render checked and disabled rather than being editable state
@@ -435,19 +432,27 @@ function UsersTab() {
                   );
                 })}
               </div>
-              <StatusBadge status={roleBadgeStatus(user.role)} />
-              <div className="min-w-[140px]">
-                <Select value={user.role} onValueChange={v => onChangeRole(user.id, v as any)}>
-                  <SelectTrigger className="h-9 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="admin"><SelectItemText>Admin</SelectItemText></SelectItem>
-                    <SelectItem value="auditor"><SelectItemText>Member</SelectItemText></SelectItem>
-                    <SelectItem value="viewer"><SelectItemText>Viewer</SelectItemText></SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+              {/* Admin is a toggle, not a dropdown: with "admin means everything"
+                  there are only two states, member-with-checkboxes or admin. The
+                  old Viewer role is gone from the UI (nobody has it; it was the
+                  pre-roles read-only value). You cannot un-admin yourself, so
+                  there is always an admin left who can manage users. */}
+              <button
+                type="button"
+                role="switch"
+                aria-checked={user.role === 'admin'}
+                disabled={savingRoleFor === user.id || user.id === currentUserId}
+                onClick={() => onChangeRole(user.id, user.role === 'admin' ? 'auditor' : 'admin')}
+                title={user.id === currentUserId ? 'You cannot change your own admin role' : user.role === 'admin' ? 'Admin: full access, can manage users. Click to make Member.' : 'Member: works in the checked areas. Click to make Admin.'}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                  user.role === 'admin'
+                    ? 'border-brand-primary bg-brand-primary text-white'
+                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                } ${user.id === currentUserId ? 'opacity-60 cursor-default' : ''}`}
+              >
+                <ShieldCheck className="h-3.5 w-3.5" />
+                Admin
+              </button>
               <button
                 onClick={() => {
                   if (user.id === currentUserId) {
