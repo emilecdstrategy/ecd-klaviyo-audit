@@ -37,7 +37,10 @@ type SignaturePadProps = {
   typedName?: string;
   /** Uncontrolled initial typed text, used only when `typedName` is not set. */
   typedNameDefault?: string;
-  /** Which tab to open on first render. */
+  /** Which tab to open on first render. Defaults to type: most people sign on a
+   * trackpad or a mouse, where drawing produces a scrawl nobody is happy to put
+   * on a contract, and the typed signature is legible every time. Drawing is
+   * still one click away. */
   initialMode?: 'draw' | 'type';
 };
 
@@ -122,7 +125,7 @@ function typedSignatureDataUrl(text: string): string | null {
 
 /** Dependency-free signature pad: draw (mouse/touch/stylus) or type a stylized signature. */
 const SignaturePad = forwardRef<SignaturePadHandle, SignaturePadProps>(function SignaturePad(
-  { height = 160, onChange, className, typedName, typedNameDefault = '', initialMode = 'draw' },
+  { height = 160, onChange, className, typedName, typedNameDefault = '', initialMode = 'type' },
   ref,
 ) {
   const canvasRef = useRef<HTMLCanvasElement>(null);

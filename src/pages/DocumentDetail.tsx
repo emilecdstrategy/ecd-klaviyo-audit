@@ -71,11 +71,14 @@ function SenderSignatureModal({ open, defaultName, initialMeta, onClose, onSave 
         </div>
         <div>
           <label className="mb-1 block text-xs font-medium text-gray-600">Signature</label>
+          {/* A saved DRAWN signature reopens on the draw tab so redrawing matches
+              what you used before; everything else, including a first signature,
+              starts on type. */}
           <SignaturePad
             ref={padRef}
             onChange={setEmpty}
             typedName={name}
-            initialMode={initialMeta?.signature_type === 'type' ? 'type' : 'draw'}
+            initialMode={initialMeta?.signature_type === 'draw' ? 'draw' : 'type'}
           />
         </div>
         {error && <div className="rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</div>}
