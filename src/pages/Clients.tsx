@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { Users, Plus, Search, ArrowRight, Globe, Calendar, ChevronLeft, ChevronRight, ArrowUpDown, RefreshCw } from 'lucide-react';
+import { Users, Plus, Search, ArrowRight, Globe, Calendar, ChevronLeft, ChevronRight, RefreshCw } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import EmptyState from '../components/ui/EmptyState';
 import SiteFavicon from '../components/ui/SiteFavicon';
@@ -255,9 +255,10 @@ export default function Clients() {
               className="w-full pl-10 pr-4 py-2.5 bg-white border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
             />
           </div>
+          {/* No sort icon in the trigger: it wrapped onto its own line above the
+              label at some widths and the chevron already says "dropdown". */}
           <Select value={sort} onValueChange={v => setSort(v as SortOption)}>
             <SelectTrigger className="w-auto min-w-[168px] h-[42px] gap-2">
-              <ArrowUpDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
               <SelectValue>{SORT_LABELS[sort]}</SelectValue>
             </SelectTrigger>
             <SelectContent>

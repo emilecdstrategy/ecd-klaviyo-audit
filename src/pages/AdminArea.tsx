@@ -408,7 +408,16 @@ function UsersTab() {
                   has Clients, the Dashboard, the Line Item Catalog and API
                   Connection, so those need no boxes. Admin boxes are shown
                   checked and locked: admin means everything. */}
-              <div className="hidden md:flex items-center gap-1.5" title={user.role === 'admin' ? 'Admins have access to everything' : 'Areas this member can use'}>
+              <HoverTooltip
+                align="end"
+                label={user.role === 'admin' ? 'Full access' : 'Areas'}
+                description={
+                  user.role === 'admin'
+                    ? 'Admins always have access to every area, so these cannot be unchecked.'
+                    : 'The areas this member can use. Clients, the Dashboard, the Line Item Catalog and API Connection are always available to everyone.'
+                }
+              >
+              <div className="hidden md:flex items-center gap-1.5">
                 {ALL_AREAS.map(area => {
                   const isAdminRow = user.role === 'admin';
                   const checked = isAdminRow || (user.app_access?.[area] !== false);
@@ -438,6 +447,7 @@ function UsersTab() {
                   );
                 })}
               </div>
+              </HoverTooltip>
               {/* Admin is a toggle, not a dropdown: with "admin means everything"
                   there are only two states, member-with-checkboxes or admin. The
                   old Viewer role is gone from the UI (nobody has it; it was the
@@ -468,20 +478,24 @@ function UsersTab() {
                   Admin
                 </button>
               </HoverTooltip>
-              <button
-                onClick={() => {
-                  if (user.id === currentUserId) {
-                    setError("You can't remove your own account.");
-                    return;
-                  }
-                  setRemoveConfirmUser(user);
-                }}
-                disabled={removingFor === user.id || user.id === currentUserId}
-                className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-                title={user.id === currentUserId ? "You can't remove yourself" : 'Remove user'}
+              <HoverTooltip
+                align="end"
+                label={user.id === currentUserId ? "You can't remove yourself" : 'Remove user'}
               >
-                <Trash2 className="w-4 h-4" />
-              </button>
+                <button
+                  onClick={() => {
+                    if (user.id === currentUserId) {
+                      setError("You can't remove your own account.");
+                      return;
+                    }
+                    setRemoveConfirmUser(user);
+                  }}
+                  disabled={removingFor === user.id || user.id === currentUserId}
+                  className="h-9 w-9 inline-flex items-center justify-center rounded-lg border border-gray-200 text-gray-400 hover:text-red-600 hover:border-red-200 hover:bg-red-50 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </HoverTooltip>
             </div>
           </div>
           ))
