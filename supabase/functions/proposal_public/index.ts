@@ -11,7 +11,7 @@ import {
   proposalJson,
   serializePublicProposal,
 } from "../_shared/proposal-public.ts";
-import { proposalEmailHtml, resolveFromAddress, resolveOrigin, sendEmail } from "../_shared/mailer.ts";
+import { notificationRecipients, proposalEmailHtml, resolveFromAddress, resolveOrigin, sendEmail } from "../_shared/mailer.ts";
 import { escapeHtml, proposalReferenceLink } from "../_shared/proposal-links.ts";
 
 // Email link scanners (Outlook SafeLinks, security proxies) prefetch URLs and
@@ -135,11 +135,13 @@ serve(async (req) => {
           email?: { from_name?: string; from_email?: string; team_notification_emails?: string[] };
         };
         const teamEmails = (settings.email?.team_notification_emails ?? []).filter(Boolean);
-        if (teamEmails.length > 0) {
+        // The sender is always notified, whatever the team list says.
+        const recipients = await notificationRecipients(sb, teamEmails, "proposals", proposal.id);
+        if (recipients.length > 0) {
           const origin = resolveOrigin(req);
           const company = proposal.client?.company_name ?? "a client";
           await sendEmail({
-            to: teamEmails,
+            to: recipients,
             from: resolveFromAddress(settings.email),
             subject: `Proposal viewed by ${company}`,
             html: proposalEmailHtml({

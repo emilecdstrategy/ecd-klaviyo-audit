@@ -129,6 +129,10 @@ serve(async (req) => {
       }));
     }
 
+    // Whoever presses Send owns the deal: the viewed/signed notifications
+    // always include them, on top of the Team notifications list. Re-sending
+    // re-stamps, so the notification follows the latest sender.
+    updates.sent_by = userId;
     const { error: updateErr } = await sb.from("proposals").update(updates).eq("id", proposalId);
     if (updateErr) throw updateErr;
 

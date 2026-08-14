@@ -92,6 +92,43 @@ type EmailSettings = {
   team_notification_emails?: string[];
 };
 
+/** Everyone a viewed/signed notification goes to: the Team notifications list
+ * from Settings PLUS the person who sent this proposal or document.
+ *
+ * The sender is always notified, decided with Emil 2026-08-14: whoever pressed
+ * Send owns the deal and must hear the client opened or signed it, whether or
+ * not they are on the team list. sent_by is stamped by the send functions;
+ * created_by covers everything sent before that column existed and share-link
+ * flows where no send email happened. Deduped case-insensitively so the sender
+ * being on the team list does not email them twice. Best effort by design: a
+ * lookup failure falls back to the team list alone rather than blocking a
+ * notification that already has recipients. */
+export async function notificationRecipients(
+  // deno-lint-ignore no-explicit-any
+  sb: any,
+  teamEmails: string[],
+  table: "proposals" | "documents",
+  rowId: string,
+): Promise<string[]> {
+  const out = new Map<string, string>();
+  for (const e of teamEmails) {
+    const v = (e ?? "").trim();
+    if (v) out.set(v.toLowerCase(), v);
+  }
+  try {
+    const { data: row } = await sb.from(table).select("sent_by, created_by").eq("id", rowId).maybeSingle();
+    const senderId = (row?.sent_by ?? row?.created_by) as string | null | undefined;
+    if (senderId) {
+      const { data: prof } = await sb.from("profiles").select("email").eq("id", senderId).maybeSingle();
+      const email = (prof?.email ?? "").trim();
+      if (email) out.set(email.toLowerCase(), email);
+    }
+  } catch {
+    // fall back to the team list alone
+  }
+  return [...out.values()];
+}
+
 export function resolveFromAddress(settings: EmailSettings | null | undefined): string | undefined {
   const configuredAccount = (Deno.env.get("SMTP_USER") ?? "").trim();
   const email = settings?.from_email?.trim() || configuredAccount;

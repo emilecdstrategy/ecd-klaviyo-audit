@@ -4,7 +4,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { assertServiceRoleClient } from "../_shared/auth.ts";
 import { DOCUMENT_CORS_HEADERS, documentJson, fetchPublicDocument, hashContent, isDocumentExpired } from "../_shared/document-public.ts";
-import { proposalEmailHtml, resolveFromAddress, resolveOrigin, sendEmail } from "../_shared/mailer.ts";
+import { notificationRecipients, proposalEmailHtml, resolveFromAddress, resolveOrigin, sendEmail } from "../_shared/mailer.ts";
 import { escapeHtml } from "../_shared/proposal-links.ts";
 
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -89,10 +89,12 @@ serve(async (req) => {
       email?: { from_name?: string; from_email?: string; team_notification_emails?: string[] };
     };
     const teamEmails = (settings.email?.team_notification_emails ?? []).filter(Boolean);
-    if (teamEmails.length > 0) {
+    // The sender is always notified, whatever the team list says.
+    const recipients = await notificationRecipients(sb, teamEmails, "documents", document.id);
+    if (recipients.length > 0) {
       const origin = resolveOrigin(req);
       await sendEmail({
-        to: teamEmails,
+        to: recipients,
         from: resolveFromAddress(settings.email),
         subject: `Document signed: ${document.title || "Untitled"}`,
         html: proposalEmailHtml({

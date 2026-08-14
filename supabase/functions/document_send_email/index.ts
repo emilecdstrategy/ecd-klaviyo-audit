@@ -68,6 +68,9 @@ serve(async (req) => {
       valid_until: validUntil,
       recipient_email: recipientEmail,
       updated_at: now,
+      // Whoever presses Send always gets the viewed/signed notifications, on
+      // top of the Team notifications list. Re-sending re-stamps.
+      sent_by: userId,
     };
     if (recipientName) updates.recipient_name = recipientName;
     if (wasDraft) {

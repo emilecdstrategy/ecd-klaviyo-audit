@@ -15,7 +15,7 @@ import {
   proposalJson,
   requiredClientSigners,
 } from "../_shared/proposal-public.ts";
-import { proposalEmailHtml, resolveFromAddress, resolveOrigin, sendEmail } from "../_shared/mailer.ts";
+import { notificationRecipients, proposalEmailHtml, resolveFromAddress, resolveOrigin, sendEmail } from "../_shared/mailer.ts";
 import { escapeHtml, proposalReferenceLink } from "../_shared/proposal-links.ts";
 
 const MAX_SIGNATURE_LENGTH = 300000;
@@ -181,7 +181,9 @@ serve(async (req) => {
       email?: { from_name?: string; from_email?: string; team_notification_emails?: string[] };
     };
     const teamEmails = (settings.email?.team_notification_emails ?? []).filter(Boolean);
-    if (teamEmails.length > 0) {
+    // The sender is always notified, whatever the team list says.
+    const recipients = await notificationRecipients(sb, teamEmails, "proposals", proposal.id);
+    if (recipients.length > 0) {
       const origin = resolveOrigin(req);
       const company = proposal.client?.company_name ?? "a client";
       const proposalUrl = origin ? `${origin}/proposals/${proposal.id}` : null;
@@ -193,7 +195,7 @@ serve(async (req) => {
       // auto-sign failed) still need the countersign call to action.
       const alreadyCountersigned = Boolean(proposal.countersigned_at);
       await sendEmail({
-        to: teamEmails,
+        to: recipients,
         from: resolveFromAddress(settings.email),
         subject: complete
           ? `🎉 Proposal signed by ${company}`
