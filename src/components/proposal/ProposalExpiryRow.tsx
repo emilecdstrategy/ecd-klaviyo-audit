@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { CalendarClock, Check, Loader2, X } from 'lucide-react';
 import HoverTooltip from '../ui/HoverTooltip';
+import DatePicker from '../ui/DatePicker';
 import { useToast } from '../ui/Toast';
 import { extendProposalValidity } from '../../lib/proposals-db';
 import {
@@ -74,11 +75,10 @@ export default function ProposalExpiryRow({
   if (editing) {
     return (
       <div className="flex items-center justify-end gap-1.5">
-        <input
-          type="date"
+        <DatePicker
           value={draft}
-          onChange={e => setDraft(e.target.value)}
-          className="h-8 rounded-lg border border-gray-200 px-2 text-xs text-gray-900 focus:border-brand-primary focus:outline-none focus:ring-2 focus:ring-brand-primary/20"
+          onChange={setDraft}
+          ariaLabel="Expiry date for this proposal"
         />
         <button
           type="button"
