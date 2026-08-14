@@ -105,7 +105,29 @@ export default async ({ page, context }) => {
     } catch (e) {}
     await page.setViewport({ width, height, deviceScaleFactor: 1 });
   }
-  const resp = await page.goto(url, { waitUntil: "networkidle2", timeout: 55000 });
+  // networkidle2 is the ideal wait, but plenty of storefronts NEVER reach it:
+  // a chat widget, analytics beacon or live-view script keeps connections open
+  // indefinitely, and over the slower residential proxy (which every cart
+  // capture uses) the 55s ceiling then aborts the whole capture. Power Planter
+  // failed exactly this way on every cart attempt while its homepage, captured
+  // over the faster datacenter proxy, succeeded.
+  //
+  // So: ask for idle, and when it times out fall back to "the DOM is ready plus
+  // a moment to settle" rather than throwing away a page that is almost
+  // certainly rendered. Only a genuine navigation failure (DNS, connection
+  // refused, a real block) fails now, and the blocked-page check below still
+  // runs either way.
+  let resp = null;
+  try {
+    resp = await page.goto(url, { waitUntil: "networkidle2", timeout: 55000 });
+  } catch (navErr) {
+    try {
+      resp = await page.goto(url, { waitUntil: "domcontentloaded", timeout: 30000 });
+      await new Promise((r) => setTimeout(r, 3000));
+    } catch (navErr2) {
+      throw navErr;
+    }
+  }
 
   // Shopify storefronts IP-rate-limit rapid hits by serving a plain-text
   // "local_rate_limited" page (often with a 2xx render), which would otherwise
@@ -235,7 +257,12 @@ export default async ({ page, context }) => {
       //    storefront bot protection is far less likely to block it than
       //    /cart/add.js. This lands on /cart with the item in the cart cookie.
       if (variantId) {
-        try { await page.goto(new URL("/cart/" + variantId + ":1", url).href, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
+        // domcontentloaded, not networkidle2: this permalink commonly redirects
+        // to the Shopify CHECKOUT (verified on Power Planter, 2 redirects into
+        // /checkouts/cn/...), and a checkout page holds connections open so idle
+        // never arrives. We do not screenshot this page at all, we only need the
+        // cart cookie it sets, so waiting for the document is enough.
+        try { await page.goto(new URL("/cart/" + variantId + ":1", url).href, { waitUntil: "domcontentloaded", timeout: 25000 }); } catch (e) {}
       }
       // Belt-and-suspenders: also try the AJAX add in case the permalink did not stick.
       if (variantId) {
@@ -272,10 +299,19 @@ export default async ({ page, context }) => {
         const u = new URL(url);
         if (/^\\/cart(\\/|$)/.test(u.pathname)) drawerBase = u.origin + "/";
       } catch (e) {}
-      try { await page.goto(drawerBase, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
-      await page.evaluate(sweep).catch(() => {});
-      await page.keyboard.press("Escape").catch(() => {});
-      await page.evaluate(sweepPopups).catch(() => {});
+      // pageOnly = skip the drawer hunt entirely and screenshot the /cart page.
+      // The drawer route costs one navigation plus up to a dozen trigger clicks,
+      // each re-navigating when it misses, and that request storm is what makes
+      // bot-protected storefronts answer "your connection needs to be verified"
+      // (Power Planter did, on every attempt). The permalink plus /cart is two
+      // plain navigations and gets a real populated cart, so it is the retry
+      // route once the drawer has already failed for this page.
+      if (!cartAdd.pageOnly) {
+        try { await page.goto(drawerBase, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
+        await page.evaluate(sweep).catch(() => {});
+        await page.keyboard.press("Escape").catch(() => {});
+        await page.evaluate(sweepPopups).catch(() => {});
+      }
       // Prefer drawer-opening toggles (buttons) FIRST; the plain /cart links are
       // last because clicking them navigates to the cart page instead of opening
       // the slide-cart drawer.
@@ -334,6 +370,7 @@ export default async ({ page, context }) => {
       }).catch(() => false);
 
       let opened = false;
+      if (!cartAdd.pageOnly) {
       await blockLinkNav(true);
       for (const t of triggers) {
         try {
@@ -359,8 +396,9 @@ export default async ({ page, context }) => {
         } catch (e) {}
       }
       await blockLinkNav(false);
-      // No drawer on this theme (or none would open): fall back to the populated
-      // /cart page so we still show a real cart rather than an empty one.
+      }
+      // No drawer on this theme (or none would open, or pageOnly asked us not to
+      // try): screenshot the populated /cart page so we still show a real cart.
       if (!opened) {
         try { await page.goto(new URL("/cart", url).href, { waitUntil: "networkidle2", timeout: 30000 }); } catch (e) {}
         await page.evaluate(sweep).catch(() => {});
@@ -688,7 +726,14 @@ export async function captureWithBrowserless(input: {
   /** When set, add the variant to the cart and open the slide-cart drawer.
    * productUrl lets the capture read a real variant off the product page when no
    * variantId is known. */
-  cartAdd?: { variantId?: string | null; productUrl?: string | null };
+  cartAdd?: {
+    variantId?: string | null;
+    productUrl?: string | null;
+    /** Skip the drawer hunt and screenshot the populated /cart page instead.
+     * Far fewer requests, so it survives storefronts whose bot protection reacts
+     * to the drawer route's click storm. */
+    pageOnly?: boolean;
+  };
   /** Also capture the next viewport down, as context for the "after" generator. */
   secondFold?: boolean;
   /** Which proxy pool to use, when BROWSERLESS_PROXY=auto lets the caller tier

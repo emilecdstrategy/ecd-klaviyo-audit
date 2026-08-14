@@ -472,7 +472,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   // findings pin an actual element instead of a guessed coordinate. ScreenshotOne
   // remains the fallback below if Browserless is unset or a call fails.
   const isCart = row.page_type === "cart";
-  let cartAdd: { variantId: string | null; productUrl: string | null } | undefined = undefined;
+  let cartAdd: { variantId: string | null; productUrl: string | null; pageOnly?: boolean } | undefined = undefined;
   if (isCart) {
     // Pass the detected product page so the capture can read a real variant off it
     // when we have no variant id, and reliably add via the cart permalink.
@@ -483,9 +483,18 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       .eq("page_type", "product")
       .limit(1)
       .maybeSingle();
+    // Once the drawer route has failed a couple of times, stop repeating it. Its
+    // click storm (a dozen triggers, each re-navigating on a miss) is what makes
+    // bot-protected storefronts start demanding verification, so the retry asks
+    // for the lean route instead: cart permalink, then screenshot /cart. Proven
+    // against Power Planter, whose drawer route failed eleven times in a row
+    // while permalink-then-/cart populated the cart in about five seconds.
+    const rawNow = ((row as { raw?: Record<string, unknown> }).raw ?? {}) as Record<string, unknown>;
+    const cartTries = Number(rawNow.bl_attempts ?? 0) + Number(rawNow.cart_attempts ?? 0);
     cartAdd = {
       variantId: (row as { raw?: { variant_id?: string } }).raw?.variant_id ?? null,
       productUrl: (prod?.url as string | undefined) ?? null,
+      pageOnly: cartTries >= 2,
     };
   }
   if (browserlessEnabled()) {
@@ -564,6 +573,18 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   }
 
   // ScreenshotOne, only after Browserless has been retried and still failed.
+  // NEVER for the cart: ScreenshotOne cannot add a product or open a drawer, so
+  // it returns whatever the cart URL renders, which is the homepage with an empty
+  // cart. That is how a client report grew a "Cart" section describing the home
+  // page. A failed cart capture must stay failed, so the section hides instead.
+  if (!png && isCart && browserlessEnabled()) {
+    await sb.from("web_page_snapshots").update({
+      status: "error",
+      error_message: `cart_capture_failed: ${(browserlessError || captureError || "unknown").slice(0, 300)}`,
+      fetched_at: new Date().toISOString(),
+    }).eq("id", row.id);
+    return { processed: 1, remaining: await countRemaining() };
+  }
   if (!png) {
     const provider = getScreenshotProvider();
     const captureInput = {
