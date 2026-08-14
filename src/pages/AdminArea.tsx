@@ -21,6 +21,7 @@ import TopBar from '../components/layout/TopBar';
 import Modal from '../components/ui/Modal';
 import ImageUploadZone from '../components/ui/ImageUploadZone';
 import { useAuth } from '../contexts/AuthContext';
+import HoverTooltip from '../components/ui/HoverTooltip';
 import { ALL_AREAS, AREA_LABELS, canManageUsers } from '../lib/access';
 import type { AppAccess, AppArea } from '../lib/types';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
@@ -398,6 +399,11 @@ function UsersTab() {
               </div>
             </div>
             <div className="flex items-center gap-3">
+              {/* On the LEFT of the controls, so appearing and disappearing
+                  never shifts the checkboxes and buttons mid-click. */}
+              {savingRoleFor === user.id && (
+                <span className="text-xs text-gray-400">Saving...</span>
+              )}
               {/* Which of the three areas this person can use. Everyone always
                   has Clients, the Dashboard, the Line Item Catalog and API
                   Connection, so those need no boxes. Admin boxes are shown
@@ -437,22 +443,31 @@ function UsersTab() {
                   old Viewer role is gone from the UI (nobody has it; it was the
                   pre-roles read-only value). You cannot un-admin yourself, so
                   there is always an admin left who can manage users. */}
-              <button
-                type="button"
-                role="switch"
-                aria-checked={user.role === 'admin'}
-                disabled={savingRoleFor === user.id || user.id === currentUserId}
-                onClick={() => onChangeRole(user.id, user.role === 'admin' ? 'auditor' : 'admin')}
-                title={user.id === currentUserId ? 'You cannot change your own admin role' : user.role === 'admin' ? 'Admin: full access, can manage users. Click to make Member.' : 'Member: works in the checked areas. Click to make Admin.'}
-                className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
-                  user.role === 'admin'
-                    ? 'border-brand-primary bg-brand-primary text-white'
-                    : 'border-gray-200 text-gray-500 hover:bg-gray-50'
-                } ${user.id === currentUserId ? 'opacity-60 cursor-default' : ''}`}
+              <HoverTooltip
+                align="end"
+                label="Admin"
+                description={
+                  user.id === currentUserId
+                    ? 'Admins can invite, remove and manage users, and have full access to every area. You cannot change your own admin role, so there is always an admin left.'
+                    : 'Admins can invite, remove and manage users on this page, and have full access to every area. Turn it off to make this person a Member who works only in the checked areas.'
+                }
               >
-                <ShieldCheck className="h-3.5 w-3.5" />
-                Admin
-              </button>
+                <button
+                  type="button"
+                  role="switch"
+                  aria-checked={user.role === 'admin'}
+                  disabled={savingRoleFor === user.id || user.id === currentUserId}
+                  onClick={() => onChangeRole(user.id, user.role === 'admin' ? 'auditor' : 'admin')}
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-[11px] font-semibold transition-colors ${
+                    user.role === 'admin'
+                      ? 'border-brand-primary bg-brand-primary text-white'
+                      : 'border-gray-200 text-gray-500 hover:bg-gray-50'
+                  } ${user.id === currentUserId ? 'opacity-60 cursor-default' : ''}`}
+                >
+                  <ShieldCheck className="h-3.5 w-3.5" />
+                  Admin
+                </button>
+              </HoverTooltip>
               <button
                 onClick={() => {
                   if (user.id === currentUserId) {
@@ -467,9 +482,6 @@ function UsersTab() {
               >
                 <Trash2 className="w-4 h-4" />
               </button>
-              {savingRoleFor === user.id && (
-                <span className="text-xs text-gray-400">Saving...</span>
-              )}
             </div>
           </div>
           ))
