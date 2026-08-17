@@ -369,8 +369,12 @@ function analyzeBaskets(all: BasketOrder[], nowMs: number) {
     distinct_products_sold: ranked.length,
     top_product_revenue_share: topShare(1),
     top3_product_revenue_share: topShare(3),
-    // Enough for a product-card grid, and the lookup table a play uses when it
-    // names products (so a "bundle these two" card can show both).
+    // Ranked by REVENUE, which is why the key is no longer called
+    // ...by_units: it was, the cards showed only units, and a product with 3
+    // units at $200 sat above one with 5 units at $15, which reads as a broken
+    // sort. Both figures travel with each product so the card can show the
+    // revenue it is ranked on. Old key kept for the snapshots already stored.
+    top_products: ranked.slice(0, 6),
     top_products_by_units: ranked.slice(0, 6),
     discounted_order_share: round2((discounted.length / n) * 100),
     avg_discount_depth_pct: discountDepth,

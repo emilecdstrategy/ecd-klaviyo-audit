@@ -52,16 +52,20 @@ function ProductCard({
       <p className="mt-2 line-clamp-2 text-xs font-medium leading-snug text-gray-900 group-hover/prod:text-brand-primary">
         {product.title}
       </p>
-      <div className="mt-1 flex items-baseline gap-1.5">
-        {product.unit_price != null && (
-          <span className="text-xs font-semibold text-gray-900">{formatMoney(product.unit_price, currency)}</span>
-        )}
-        {product.units != null && product.units > 0 && (
-          <span className="text-[10px] text-gray-400">{product.units} sold</span>
-        )}
-      </div>
+      {/* Revenue leads, because that is what the grid is ordered by: showing
+          units alone made a $200 item with 3 sales look misplaced above a $15
+          item with 5. Units and unit price sit underneath as the supporting
+          detail, at a readable size rather than fine print. */}
+      <p className="mt-1.5 text-sm font-semibold tracking-tight text-gray-900">
+        {formatMoney(product.revenue, currency)}
+      </p>
+      <p className="mt-0.5 text-xs text-gray-500">
+        {product.units != null && product.units > 0 ? `${product.units} sold` : null}
+        {product.units != null && product.units > 0 && product.unit_price != null ? ' · ' : null}
+        {product.unit_price != null ? `${formatMoney(product.unit_price, currency)} each` : null}
+      </p>
       {href && (
-        <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-brand-primary opacity-0 transition-opacity group-hover/prod:opacity-100">
+        <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-brand-primary opacity-0 transition-opacity group-hover/prod:opacity-100">
           View <ExternalLink className="h-2.5 w-2.5" />
         </span>
       )}
@@ -172,9 +176,9 @@ export default function WebAnalyticsSection({
   // copies titles by hand.
   const catalog = useMemo(() => {
     const map = new Map<string, BasketProduct>();
-    for (const p of basket?.top_products_by_units ?? []) map.set(p.title.trim().toLowerCase(), p);
+    for (const p of basket?.top_products ?? basket?.top_products_by_units ?? []) map.set(p.title.trim().toLowerCase(), p);
     return map;
-  }, [basket?.top_products_by_units]);
+  }, [basket?.top_products, basket?.top_products_by_units]);
   const productsFor = (play: WebAnalyticsPlay): BasketProduct[] =>
     play.products.map((t) => catalog.get(t.trim().toLowerCase())).filter((p): p is BasketProduct => Boolean(p));
 
@@ -208,7 +212,7 @@ export default function WebAnalyticsSection({
     return formatDelta(map[key]);
   };
 
-  const topProducts = basket?.top_products_by_units ?? [];
+  const topProducts = basket?.top_products ?? basket?.top_products_by_units ?? [];
 
   return (
     <section className="rounded-2xl bg-white p-6 card-shadow sm:p-7">
@@ -296,7 +300,9 @@ export default function WebAnalyticsSection({
       {/* Best sellers as real cards, then the basket shape and channels beside them. */}
       {topProducts.length > 0 && (
         <div className="mt-6">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Best sellers</h3>
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+            Best sellers <span className="font-normal normal-case tracking-normal text-gray-300">by revenue</span>
+          </h3>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {topProducts.slice(0, 6).map((p) => (
               <ProductCard key={p.title} product={p} storeBase={storeBase} currency={currency} />

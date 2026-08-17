@@ -609,6 +609,7 @@ async function runStep(
         `- basket.frequent_pairs is the ONLY evidence for a "bundle these" play. When it is empty, no two products were bought together often enough to justify one, so do not suggest a specific bundle; a play about raising basket size in general is still fair if single_item_order_share supports it.`,
         `- If basket.confident is false there were too few orders to trust the basket figures: say so plainly in that play's insight rather than dressing thin data as a pattern.`,
         `- basket.order_history_limited true means Shopify only returned the last 60 days (the store's app lacks the read_all_orders scope), so basket.window_days is all the history there was. Never imply a longer trend than that.`,
+        `- basket.top_products is ranked by REVENUE, and each entry carries both its revenue and its units, so never call the first one the best seller by volume unless its units say so.`,
         `- Name real products when the data names them, and ALSO list their exact titles in the play's products array: the report turns each into a card with the product's real photo, price and a link to its live page. Copy the title character for character from the data, or the card cannot be built. A play showing the actual products is worth three that only describe them.`,
         `- Skip a lever with nothing to say. Three sharp plays beat five padded ones.`,
         `- The intro is ONE sentence. Findings about the storefront's design belong to other sections; this one is strictly about what the order data reveals.`,

@@ -279,6 +279,9 @@ export type OrdersRollup = {
     units_per_order?: number;
     single_item_order_share?: number | null;
     frequent_pairs?: Array<{ products: string[]; orders: number; revenue: number }>;
+    /** Ranked by revenue. `top_products_by_units` is the old key for the same
+     * list, kept for snapshots stored before the rename. */
+    top_products?: BasketProduct[];
     top_products_by_units?: BasketProduct[];
     distinct_products_sold?: number;
     order_history_limited?: boolean;
