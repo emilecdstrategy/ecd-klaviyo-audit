@@ -609,14 +609,21 @@ async function runStep(
         `- basket.frequent_pairs is the ONLY evidence for a "bundle these" play. When it is empty, no two products were bought together often enough to justify one, so do not suggest a specific bundle; a play about raising basket size in general is still fair if single_item_order_share supports it.`,
         `- If basket.confident is false there were too few orders to trust the basket figures: say so plainly in that play's insight rather than dressing thin data as a pattern.`,
         `- basket.order_history_limited true means Shopify only returned the last 60 days (the store's app lacks the read_all_orders scope), so basket.window_days is all the history there was. Never imply a longer trend than that.`,
-        `- Name real products when the data names them (top_products_by_units, frequent_pairs). A play naming a product is worth three that do not.`,
+        `- Name real products when the data names them, and ALSO list their exact titles in the play's products array: the report turns each into a card with the product's real photo, price and a link to its live page. Copy the title character for character from the data, or the card cannot be built. A play showing the actual products is worth three that only describe them.`,
         `- Skip a lever with nothing to say. Three sharp plays beat five padded ones.`,
         `- The intro is ONE sentence. Findings about the storefront's design belong to other sections; this one is strictly about what the order data reveals.`,
       ].filter(Boolean).join("\n\n") + contextBlock,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [ANALYTICS_TOOL], toolChoice: { type: "tool", name: "record_analytics_audit" } });
     if (turn.kind !== "tool_call") throw new Error("analytics: model did not call the tool");
+    logAuditShape("web_performance", "analytics", turn.input);
     const parsed = coerceAnalytics(turn.input);
+    // Same distinction the page steps log: did the model return nothing, or did
+    // the coercer discard what it returned? Without this, "plays: []" in the
+    // database is unattributable, which is exactly where the last hour went.
+    console.log(
+      `web_performance: model returned ${Array.isArray((turn.input as { plays?: unknown[] })?.plays) ? ((turn.input as { plays?: unknown[] }).plays as unknown[]).length : 0} play(s), ${parsed.plays.length} kept`,
+    );
     const details = { ...(section.section_details ?? {}) };
     (details as Record<string, unknown>).web_analytics = {
       timeframe_key: computed.timeframe_key ?? "30d_vs_prior_30d",

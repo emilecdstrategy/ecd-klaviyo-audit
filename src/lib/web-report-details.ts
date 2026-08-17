@@ -67,7 +67,37 @@ export type WebSectionDetail = {
 export type WebAnalyticsMetric = { key: string; commentary: string; recommendation: string };
 /** One shippable opportunity read out of the order data: what the numbers show,
  * and the thing to do about it. */
-export type WebAnalyticsPlay = { title: string; insight: string; action: string; metric: string; window: string };
+export type WebAnalyticsPlay = {
+  title: string;
+  insight: string;
+  /** The work, as bullets. Older audits stored one sentence; parsed into [one]. */
+  action_steps: string[];
+  /** Exact product titles this play is about, matched against the basket data. */
+  products: string[];
+  metric: string;
+  window: string;
+};
+
+/** A product as it appears in the order data, with what a card needs to show it. */
+export type BasketProduct = {
+  title: string;
+  revenue: number;
+  units?: number;
+  orders?: number;
+  handle?: string | null;
+  image?: string | null;
+  unit_price?: number | null;
+};
+
+/** The live product page for a card. Handles carry ® and ™ on some stores, and
+ * those MUST be percent-encoded: lazyleaf's raw handle 404s while the encoded
+ * one returns 200. */
+export function productUrl(base: string | null | undefined, handle: string | null | undefined): string | null {
+  const b = (base ?? '').replace(/\/$/, '');
+  const h = (handle ?? '').trim();
+  if (!b || !h) return null;
+  return `${b}/products/${encodeURIComponent(h)}`;
+}
 export type WebAnalyticsDetail = { timeframe_key: string; plays: WebAnalyticsPlay[]; metrics: WebAnalyticsMetric[] };
 
 export type WebRoadmapRow = {
@@ -185,10 +215,15 @@ export function parseWebAnalyticsDetail(sectionDetails: unknown): WebAnalyticsDe
   const plays: WebAnalyticsPlay[] = Array.isArray(a.plays)
     ? a.plays.map((p) => {
         const rec = asRecord(p);
+        const steps = Array.isArray(rec.action_steps)
+          ? rec.action_steps.map((s) => asString(s)).filter(Boolean)
+          : [];
+        const legacy = asString(rec.action);
         return {
           title: asString(rec.title),
           insight: asString(rec.insight),
-          action: asString(rec.action),
+          action_steps: steps.length > 0 ? steps : (legacy ? [legacy] : []),
+          products: Array.isArray(rec.products) ? rec.products.map((t) => asString(t)).filter(Boolean) : [],
           metric: asString(rec.metric),
           window: asString(rec.window),
         };
@@ -234,6 +269,8 @@ export type OrdersRollup = {
   channels?: Array<{ name: string; revenue: number; orders: number }>;
   currency?: string | null;
   returning_customer_rate_available?: boolean;
+  /** Customer-facing origin, for linking product cards to live pages. */
+  store_url_base?: string | null;
   /** Basket shape over an adaptive window; see analyzeBaskets in web_fetch_snapshot. */
   basket?: {
     window_days?: number;
@@ -242,6 +279,9 @@ export type OrdersRollup = {
     units_per_order?: number;
     single_item_order_share?: number | null;
     frequent_pairs?: Array<{ products: string[]; orders: number; revenue: number }>;
+    top_products_by_units?: BasketProduct[];
+    distinct_products_sold?: number;
+    order_history_limited?: boolean;
     top_product_revenue_share?: number;
     top3_product_revenue_share?: number;
     discounted_order_share?: number;

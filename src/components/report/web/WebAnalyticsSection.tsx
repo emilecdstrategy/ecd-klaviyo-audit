@@ -1,10 +1,12 @@
 import { useMemo } from 'react';
-import { ArrowUpRight, Info } from 'lucide-react';
+import { ArrowUpRight, ExternalLink, Info, TrendingDown, TrendingUp } from 'lucide-react';
 import type { AuditSection } from '../../../lib/types';
 import {
   formatDelta,
   formatMoney,
   parseWebAnalyticsDetail,
+  productUrl,
+  type BasketProduct,
   type OrdersRollup,
   type WebAnalyticsPlay,
 } from '../../../lib/web-report-details';
@@ -12,64 +14,138 @@ import { useReportEdit } from '../edit/ReportEditContext';
 import EditablePlainText from '../edit/EditablePlainText';
 import HoverTooltip from '../../ui/HoverTooltip';
 
-/** The store's backend performance, as a KPI strip plus a short list of plays.
+/** Store performance, as numbers worth knowing plus a few things to ship.
  *
- * This section used to be four metric cards each carrying a paragraph of
- * commentary and a paragraph of advice, which read as a wall of text saying
- * little: "revenue is down, consider reviewing your marketing". A strategist
- * opening it wants the opposite shape, a couple of numbers worth knowing and a
- * few things to actually ship, each anchored to a figure from the order data.
- * So the numbers are cards, the thinking is plays, and the prose is gone.
+ * Shape, in priority order: a KPI band, then each opportunity as a full-width
+ * card with its headline figure, one line of evidence, the work as bullets, and
+ * the ACTUAL products it concerns rendered as cards with their real photo, price
+ * and a link to the live page. A strategist should be able to read a card and
+ * brief someone from it without opening Shopify.
  */
 
 const KPIS: Array<{ key: string; label: string }> = [
   { key: 'revenue', label: 'Revenue' },
   { key: 'orders', label: 'Orders' },
-  { key: 'aov', label: 'Avg order' },
+  { key: 'aov', label: 'Avg order value' },
   { key: 'returning_customer_rate', label: 'Repeat rate' },
 ];
 
+function ProductCard({
+  product,
+  storeBase,
+  currency,
+}: {
+  product: BasketProduct;
+  storeBase?: string | null;
+  currency: string;
+}) {
+  const href = productUrl(storeBase, product.handle);
+  const body = (
+    <>
+      <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-50">
+        {product.image ? (
+          <img src={product.image} alt={product.title} loading="lazy" className="h-full w-full object-cover" />
+        ) : (
+          <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-300">no photo</div>
+        )}
+      </div>
+      <p className="mt-2 line-clamp-2 text-xs font-medium leading-snug text-gray-900 group-hover/prod:text-brand-primary">
+        {product.title}
+      </p>
+      <div className="mt-1 flex items-baseline gap-1.5">
+        {product.unit_price != null && (
+          <span className="text-xs font-semibold text-gray-900">{formatMoney(product.unit_price, currency)}</span>
+        )}
+        {product.units != null && product.units > 0 && (
+          <span className="text-[10px] text-gray-400">{product.units} sold</span>
+        )}
+      </div>
+      {href && (
+        <span className="mt-1 inline-flex items-center gap-1 text-[10px] font-medium text-brand-primary opacity-0 transition-opacity group-hover/prod:opacity-100">
+          View <ExternalLink className="h-2.5 w-2.5" />
+        </span>
+      )}
+    </>
+  );
+
+  return href ? (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer"
+      className="group/prod block rounded-xl border border-gray-100 p-2.5 transition-colors hover:border-brand-primary/40 hover:bg-brand-surface/40"
+    >
+      {body}
+    </a>
+  ) : (
+    <div className="group/prod block rounded-xl border border-gray-100 p-2.5">{body}</div>
+  );
+}
+
 function PlayCard({
   play,
-  index,
+  products,
+  storeBase,
+  currency,
   editMode,
   onEdit,
 }: {
   play: WebAnalyticsPlay;
-  index: number;
+  products: BasketProduct[];
+  storeBase?: string | null;
+  currency: string;
   editMode: boolean;
-  onEdit: (field: keyof WebAnalyticsPlay, value: string) => void;
-}) {
+  onEdit: (field: 'title' | 'insight' | 'metric' | 'window', value: string) => void;
+  }) {
   return (
-    <div className="rounded-xl border border-gray-100 bg-white p-4 transition-colors hover:border-brand-primary/30">
-      <div className="flex items-start justify-between gap-3">
-        <div className="min-w-0">
-          <p className="text-sm font-semibold text-gray-900">
-            <EditablePlainText value={play.title} onSave={(v) => onEdit('title', v)} placeholder="Play title…" />
-          </p>
-        </div>
+    <article className="rounded-2xl border border-gray-100 bg-white p-5">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <h4 className="min-w-0 text-base font-semibold leading-snug text-gray-900">
+          <EditablePlainText value={play.title} onSave={(v) => onEdit('title', v)} placeholder="Play title…" />
+        </h4>
         {(play.metric || editMode) && (
-          <span className="shrink-0 rounded-lg bg-brand-primary/5 px-2 py-1 text-[11px] font-semibold text-brand-primary">
-            <EditablePlainText value={play.metric} onSave={(v) => onEdit('metric', v)} placeholder="metric" />
-          </span>
+          <div className="shrink-0 text-right">
+            <p className="text-sm font-semibold text-brand-primary">
+              <EditablePlainText value={play.metric} onSave={(v) => onEdit('metric', v)} placeholder="headline figure" />
+            </p>
+            {(play.window || editMode) && (
+              <p className="text-[10px] uppercase tracking-wide text-gray-400">
+                <EditablePlainText value={play.window} onSave={(v) => onEdit('window', v)} placeholder="window" />
+              </p>
+            )}
+          </div>
         )}
       </div>
-      <p className="mt-1.5 text-sm leading-relaxed text-gray-600">
+
+      <p className="mt-2 text-sm leading-relaxed text-gray-600">
         <EditablePlainText value={play.insight} onSave={(v) => onEdit('insight', v)} placeholder="What the data shows…" />
       </p>
-      <div className="mt-2.5 flex items-start gap-2 rounded-lg bg-brand-surface px-3 py-2">
-        <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-primary" />
-        <p className="text-sm leading-relaxed text-gray-700">
-          <EditablePlainText value={play.action} onSave={(v) => onEdit('action', v)} placeholder="What to ship…" />
-        </p>
-      </div>
-      {(play.window || editMode) && (
-        <p className="mt-1.5 text-[11px] text-gray-400">
-          <EditablePlainText value={play.window} onSave={(v) => onEdit('window', v)} placeholder="window" />
-        </p>
+
+      {play.action_steps.length > 0 && (
+        <div className="mt-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">What to do</p>
+          <ul className="mt-1.5 space-y-1.5">
+            {play.action_steps.map((step, i) => (
+              <li key={i} className="flex gap-2 text-sm leading-relaxed text-gray-700">
+                <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-primary" />
+                <span>{step}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
       )}
-      <span className="sr-only">Play {index + 1}</span>
-    </div>
+
+      {products.length > 0 && (
+        <div className="mt-4 border-t border-gray-50 pt-3.5">
+          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Products in play</p>
+          <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+            {products.map((p) => (
+              <ProductCard key={p.title} product={p} storeBase={storeBase} currency={currency} />
+            ))}
+          </div>
+        </div>
+      )}
+    </article>
   );
 }
 
@@ -89,6 +165,18 @@ export default function WebAnalyticsSection({
   const legacyMetrics = detail?.metrics ?? [];
   const currency = rollup?.currency ?? 'USD';
   const basket = rollup?.basket;
+  const storeBase = rollup?.store_url_base ?? null;
+
+  // Products a play names, resolved against the order data so a card always has
+  // a real photo, price and link. Matched case-insensitively because the model
+  // copies titles by hand.
+  const catalog = useMemo(() => {
+    const map = new Map<string, BasketProduct>();
+    for (const p of basket?.top_products_by_units ?? []) map.set(p.title.trim().toLowerCase(), p);
+    return map;
+  }, [basket?.top_products_by_units]);
+  const productsFor = (play: WebAnalyticsPlay): BasketProduct[] =>
+    play.products.map((t) => catalog.get(t.trim().toLowerCase())).filter((p): p is BasketProduct => Boolean(p));
 
   const setPlay = (i: number, field: keyof WebAnalyticsPlay, value: string) => {
     const next = plays.map((p, idx) => (idx === i ? { ...p, [field]: value } : p));
@@ -120,32 +208,39 @@ export default function WebAnalyticsSection({
     return formatDelta(map[key]);
   };
 
+  const topProducts = basket?.top_products_by_units ?? [];
+
   return (
     <section className="rounded-2xl bg-white p-6 card-shadow sm:p-7">
       {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">Store Performance</h2>}
-      <p className={`text-xs text-gray-400${hideTitle ? '' : ' mt-0.5'}`}>Last 30 days vs the prior 30 days</p>
+      <p className={`text-xs text-gray-400${hideTitle ? '' : ' mt-0.5'}`}>
+        Shopify order data, last 30 days vs the prior 30 days
+      </p>
 
-      {/* KPI strip: numbers only. Anything worth saying about them is a play. */}
+      {/* KPI band */}
       <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {KPIS.map(({ key, label }) => {
           const delta = deltaFor(key);
           const isRepeat = key === 'returning_customer_rate';
           return (
-            <div key={key} className="rounded-xl border border-gray-100 px-3.5 py-3">
+            <div key={key} className="rounded-xl bg-brand-surface/60 px-4 py-3.5">
               <div className="flex items-center gap-1">
-                <p className="text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
                 {isRepeat && repeatUnavailable && editMode && (
                   <HoverTooltip
                     label="Not available yet"
-                    description="This store's Shopify custom app has not granted the read_customers scope, so repeat-purchase data cannot be read. Ticking it in the app's Admin API scopes fills this in on the next audit."
+                    description="This store's Shopify app has not granted the read_customers scope, so repeat-purchase data cannot be read. Ticking it in the app's Admin API scopes fills this in on the next audit."
                   >
                     <Info className="h-3 w-3 text-gray-300" />
                   </HoverTooltip>
                 )}
               </div>
-              <p className="mt-1 text-xl font-semibold tracking-tight text-gray-900">{displayValue(key)}</p>
+              <p className="mt-1 text-2xl font-semibold tracking-tight text-gray-900">{displayValue(key)}</p>
               {delta ? (
-                <p className={`mt-0.5 text-xs font-medium ${delta.positive ? 'text-emerald-600' : 'text-red-600'}`}>{delta.text}</p>
+                <p className={`mt-0.5 flex items-center gap-1 text-xs font-medium ${delta.positive ? 'text-emerald-600' : 'text-red-600'}`}>
+                  {delta.positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                  {delta.text}
+                </p>
               ) : (
                 <p className="mt-0.5 text-xs text-gray-300">no comparison</p>
               )}
@@ -154,7 +249,6 @@ export default function WebAnalyticsSection({
         })}
       </div>
 
-      {/* One-sentence framing, then the plays. */}
       {(editMode || section.summary_text) && (
         <div className="mt-4 text-sm leading-relaxed text-gray-600">
           <EditablePlainText
@@ -165,12 +259,21 @@ export default function WebAnalyticsSection({
         </div>
       )}
 
+      {/* Opportunities, one card per row so each has room for its bullets and products. */}
       {plays.length > 0 && (
-        <div className="mt-5 space-y-3">
-          <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Opportunities in the data</p>
-          <div className="grid grid-cols-1 gap-3 lg:grid-cols-2">
+        <div className="mt-6">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Opportunities in the data</h3>
+          <div className="mt-3 space-y-3">
             {plays.map((play, i) => (
-              <PlayCard key={i} play={play} index={i} editMode={editMode} onEdit={(f, v) => setPlay(i, f, v)} />
+              <PlayCard
+                key={i}
+                play={play}
+                products={productsFor(play)}
+                storeBase={storeBase}
+                currency={currency}
+                editMode={editMode}
+                onEdit={(f, v) => setPlay(i, f, v)}
+              />
             ))}
           </div>
         </div>
@@ -182,71 +285,82 @@ export default function WebAnalyticsSection({
           {legacyMetrics.map((m) => (
             <div key={m.key} className="rounded-lg border border-gray-100 p-3 text-sm text-gray-600">
               <p>{m.commentary}</p>
-              {m.recommendation && <p className="mt-1 text-gray-500"><span className="font-medium text-gray-700">Fix: </span>{m.recommendation}</p>}
+              {m.recommendation && (
+                <p className="mt-1 text-gray-500"><span className="font-medium text-gray-700">Fix: </span>{m.recommendation}</p>
+              )}
             </div>
           ))}
         </div>
       )}
 
-      {/* Supporting detail, kept compact: the shape of a typical basket, then the
-          products and channels behind the revenue. */}
-      <div className="mt-5 grid grid-cols-1 gap-3 sm:grid-cols-3">
+      {/* Best sellers as real cards, then the basket shape and channels beside them. */}
+      {topProducts.length > 0 && (
+        <div className="mt-6">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Best sellers</h3>
+          <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
+            {topProducts.slice(0, 6).map((p) => (
+              <ProductCard key={p.title} product={p} storeBase={storeBase} currency={currency} />
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {basket && basket.orders_analyzed ? (
-          <div className="rounded-xl border border-gray-100 px-3.5 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Typical basket</p>
-            <dl className="mt-1.5 space-y-1 text-sm text-gray-700">
-              <div className="flex justify-between gap-2">
-                <dt className="text-gray-500">Items per order</dt>
-                <dd className="font-medium text-gray-900">{basket.units_per_order ?? '—'}</dd>
-              </div>
+          <div className="rounded-xl border border-gray-100 px-4 py-3.5">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Typical basket</h3>
+            <ul className="mt-2 space-y-1.5 text-sm">
+              <li className="flex items-baseline justify-between gap-2">
+                <span className="text-gray-500">Items per order</span>
+                <span className="font-medium text-gray-900">{basket.units_per_order ?? '—'}</span>
+              </li>
               {basket.single_item_order_share != null && (
-                <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500">One-product orders</dt>
-                  <dd className="font-medium text-gray-900">{basket.single_item_order_share}%</dd>
-                </div>
+                <li className="flex items-baseline justify-between gap-2">
+                  <span className="text-gray-500">One-product orders</span>
+                  <span className="font-medium text-gray-900">{basket.single_item_order_share}%</span>
+                </li>
               )}
               {basket.order_value_percentiles?.p50 != null && (
-                <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500">Median order</dt>
-                  <dd className="font-medium text-gray-900">{formatMoney(basket.order_value_percentiles.p50, currency)}</dd>
-                </div>
+                <li className="flex items-baseline justify-between gap-2">
+                  <span className="text-gray-500">Median order</span>
+                  <span className="font-medium text-gray-900">{formatMoney(basket.order_value_percentiles.p50, currency)}</span>
+                </li>
+              )}
+              {basket.order_value_percentiles?.p90 != null && (
+                <li className="flex items-baseline justify-between gap-2">
+                  <span className="text-gray-500">Top 10% of orders above</span>
+                  <span className="font-medium text-gray-900">{formatMoney(basket.order_value_percentiles.p90, currency)}</span>
+                </li>
               )}
               {basket.discounted_order_share != null && (
-                <div className="flex justify-between gap-2">
-                  <dt className="text-gray-500">With a discount</dt>
-                  <dd className="font-medium text-gray-900">{basket.discounted_order_share}%</dd>
-                </div>
+                <li className="flex items-baseline justify-between gap-2">
+                  <span className="text-gray-500">Orders with a discount</span>
+                  <span className="font-medium text-gray-900">
+                    {basket.discounted_order_share}%
+                    {basket.avg_discount_depth_pct ? ` at ${basket.avg_discount_depth_pct}% off` : ''}
+                  </span>
+                </li>
               )}
-            </dl>
-            <p className="mt-1.5 text-[11px] text-gray-400">
+            </ul>
+            <p className="mt-2 text-[10px] text-gray-400">
               {basket.orders_analyzed} orders over {basket.window_days} days
               {basket.confident === false ? ', too few to be conclusive' : ''}
+              {basket.order_history_limited ? '. Shopify caps order history at 60 days without the read_all_orders scope.' : ''}
             </p>
           </div>
         ) : null}
 
-        {rollup?.top_products && rollup.top_products.length > 0 && (
-          <div className="rounded-xl border border-gray-100 px-3.5 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Top products</p>
-            <ul className="mt-1.5 space-y-1 text-sm text-gray-700">
-              {rollup.top_products.slice(0, 4).map((p, i) => (
-                <li key={i} className="flex items-center justify-between gap-2">
-                  <span className="truncate">{p.title}</span>
-                  <span className="shrink-0 font-medium text-gray-900">{formatMoney(p.revenue, currency)}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
-
         {rollup?.channels && rollup.channels.length > 0 && (
-          <div className="rounded-xl border border-gray-100 px-3.5 py-3">
-            <p className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">Channels</p>
-            <ul className="mt-1.5 space-y-1 text-sm text-gray-700">
-              {rollup.channels.slice(0, 4).map((c, i) => (
-                <li key={i} className="flex items-center justify-between gap-2">
-                  <span className="truncate capitalize">{c.name}</span>
-                  <span className="shrink-0 font-medium text-gray-900">{formatMoney(c.revenue, currency)}</span>
+          <div className="rounded-xl border border-gray-100 px-4 py-3.5">
+            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Where orders come from</h3>
+            <ul className="mt-2 space-y-1.5 text-sm">
+              {rollup.channels.slice(0, 5).map((c, i) => (
+                <li key={i} className="flex items-baseline justify-between gap-2">
+                  <span className="truncate capitalize text-gray-500">{c.name}</span>
+                  <span className="shrink-0 font-medium text-gray-900">
+                    {formatMoney(c.revenue, currency)}
+                    <span className="ml-1.5 text-[10px] font-normal text-gray-400">{c.orders} orders</span>
+                  </span>
                 </li>
               ))}
             </ul>

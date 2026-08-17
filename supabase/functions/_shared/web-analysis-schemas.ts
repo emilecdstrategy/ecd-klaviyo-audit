@@ -241,7 +241,7 @@ export const ANALYTICS_TOOL: LlmTool = {
           "Highest impact first. AOV levers before margin, margin before catalog. One play per idea; never two plays about the same lever.",
         items: {
           type: "object",
-          required: ["title", "insight", "action", "metric"],
+          required: ["title", "insight", "action_steps", "metric"],
           properties: {
             title: { type: "string", description: "3 to 6 words naming the opportunity, e.g. 'Lift the single-item basket'." },
             insight: {
@@ -249,10 +249,20 @@ export const ANALYTICS_TOOL: LlmTool = {
               description:
                 "ONE sentence stating what the data shows, and it MUST quote a real figure from the data provided (a percentage, a count, a money amount). No hedging, no advice here.",
             },
-            action: {
-              type: "string",
+            action_steps: {
+              type: "array",
+              minItems: 1,
+              maxItems: 3,
               description:
-                "ONE sentence naming the specific thing to ship, concrete enough to brief a developer or a merchandiser. Name real products when the data names them. No 'consider', no 'explore', no 'optimize'.",
+                "The work, as 1 to 3 short steps, each a single imperative clause under about 18 words, concrete enough to brief a developer or a merchandiser. No 'consider', no 'explore', no 'optimize'. Shown as a bullet list, so no numbering or leading dashes.",
+              items: { type: "string" },
+            },
+            products: {
+              type: "array",
+              maxItems: 3,
+              description:
+                "Titles of products this play is about, copied EXACTLY from basket.top_products_by_units or basket.frequent_pairs. The report renders each as a card with its real photo, price and a link to the live product page, so a title that does not match the data exactly renders nothing. Leave empty for plays that are not about specific products.",
+              items: { type: "string" },
             },
             metric: { type: "string", description: "The headline figure alone, for display on the card, e.g. '70% single-item orders' or '$100 threshold vs $38 median'." },
             window: { type: "string", description: "The window this figure came from, e.g. 'last 30 days' or 'last 90 days'. Use exactly the window the data says it used." },
@@ -264,10 +274,13 @@ export const ANALYTICS_TOOL: LlmTool = {
       // audits generated before plays existed keep displaying. Leaving it in the
       // schema without this note had the model dutifully writing five paragraphs
       // per audit that no reader ever sees.
+      // No maxItems: 0 here. It is legal JSON Schema but unusual enough that the
+      // provider rejected or mangled the tool definition, and the model came
+      // back with an intro and no plays at all. Deprecation is communicated in
+      // the description instead, which the model honours.
       metrics: {
         type: "array",
-        maxItems: 0,
-        description: "Deprecated. Leave this empty and put everything in plays.",
+        description: "Deprecated, always return an empty array. Put everything in plays.",
         items: {
           type: "object",
           properties: {
@@ -572,17 +585,26 @@ export function coerceAnalytics(input: unknown) {
   const plays = playsRaw
     .map((p) => {
       const rec = (p ?? {}) as Record<string, unknown>;
+      // action_steps is the current shape; `action` was the single-sentence
+      // version, kept so a play from an earlier audit still shows its work.
+      const steps = Array.isArray(rec.action_steps)
+        ? rec.action_steps.map((s) => sanitizeDash(s)).filter(Boolean).slice(0, 3)
+        : [];
+      const legacyAction = sanitizeDash(rec.action);
       return {
         title: sanitizeDash(rec.title),
         insight: sanitizeDash(rec.insight),
-        action: sanitizeDash(rec.action),
+        action_steps: steps.length > 0 ? steps : (legacyAction ? [legacyAction] : []),
+        products: Array.isArray(rec.products)
+          ? rec.products.map((t) => sanitizeDash(t)).filter(Boolean).slice(0, 3)
+          : [],
         metric: sanitizeDash(rec.metric),
         window: sanitizeDash(rec.window),
       };
     })
-    // A play with no insight or no action is half an idea and renders as an
+    // A play with no insight or nothing to do is half an idea and renders as an
     // empty card, so drop it rather than show it.
-    .filter((p) => p.title && p.insight && p.action)
+    .filter((p) => p.title && p.insight && p.action_steps.length > 0)
     .slice(0, 5);
   return { intro: sanitizeDash(o.intro), plays, metrics };
 }

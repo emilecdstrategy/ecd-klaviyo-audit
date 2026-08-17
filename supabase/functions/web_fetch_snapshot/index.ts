@@ -166,6 +166,8 @@ async function aggregateOrders(
                 quantity
                 title
                 originalTotalSet { shopMoney { amount } }
+                variant { price }
+                product { handle featuredImage { url } }
               }
             }
             ${customerField}
@@ -214,6 +216,14 @@ async function aggregateOrders(
         items: liNodes.map((li) => ({
           title: String(li?.title ?? "").trim(),
           revenue: Number.parseFloat(li?.originalTotalSet?.shopMoney?.amount ?? "0") || 0,
+          units: Number(li?.quantity) || 0,
+          // Handle, image and unit price so the report can show a real product
+          // card that links to the live storefront page, instead of a title in a
+          // list. Read off the line item rather than a separate products fetch:
+          // these are exactly the products that sell.
+          handle: String(li?.product?.handle ?? "").trim() || null,
+          image: String(li?.product?.featuredImage?.url ?? "").trim() || null,
+          unit_price: Number.parseFloat(li?.variant?.price ?? "0") || null,
         })).filter((i) => i.title),
       });
     }
@@ -234,7 +244,14 @@ type BasketOrder = {
   revenue: number;
   discount: number;
   units: number;
-  items: Array<{ title: string; revenue: number }>;
+  items: Array<{
+    title: string;
+    revenue: number;
+    units: number;
+    handle: string | null;
+    image: string | null;
+    unit_price: number | null;
+  }>;
 };
 
 function percentile(sorted: number[], p: number): number {
@@ -296,12 +313,36 @@ function analyzeBaskets(all: BasketOrder[], nowMs: number) {
     .slice(0, 5)
     .map((p) => ({ products: [p.a, p.b], orders: p.orders, revenue: round2(p.revenue) }));
 
-  // Revenue concentration, from line items rather than a sample of orders.
-  const byProduct = new Map<string, number>();
+  // Revenue concentration, from line items rather than a sample of orders. Each
+  // product carries its handle, image and price so the report can render it as a
+  // real card linking to the live product page.
+  const byProduct = new Map<string, {
+    revenue: number; units: number; orders: number;
+    handle: string | null; image: string | null; unit_price: number | null;
+  }>();
   for (const o of withItems) {
-    for (const i of o.items) byProduct.set(i.title, (byProduct.get(i.title) ?? 0) + i.revenue);
+    for (const i of o.items) {
+      const cur = byProduct.get(i.title) ??
+        { revenue: 0, units: 0, orders: 0, handle: null, image: null, unit_price: null };
+      cur.revenue += i.revenue;
+      cur.units += i.units;
+      cur.orders += 1;
+      cur.handle = cur.handle ?? i.handle;
+      cur.image = cur.image ?? i.image;
+      cur.unit_price = cur.unit_price ?? i.unit_price;
+      byProduct.set(i.title, cur);
+    }
   }
-  const ranked = [...byProduct.entries()].map(([title, revenue]) => ({ title, revenue: round2(revenue) }))
+  const ranked = [...byProduct.entries()]
+    .map(([title, v]) => ({
+      title,
+      revenue: round2(v.revenue),
+      units: v.units,
+      orders: v.orders,
+      handle: v.handle,
+      image: v.image,
+      unit_price: v.unit_price,
+    }))
     .sort((a, b) => b.revenue - a.revenue);
   const totalItemRevenue = ranked.reduce((s, p) => s + p.revenue, 0);
   const topShare = (k: number) =>
@@ -328,14 +369,16 @@ function analyzeBaskets(all: BasketOrder[], nowMs: number) {
     distinct_products_sold: ranked.length,
     top_product_revenue_share: topShare(1),
     top3_product_revenue_share: topShare(3),
-    top_products_by_units: ranked.slice(0, 5),
+    // Enough for a product-card grid, and the lookup table a play uses when it
+    // names products (so a "bundle these two" card can show both).
+    top_products_by_units: ranked.slice(0, 6),
     discounted_order_share: round2((discounted.length / n) * 100),
     avg_discount_depth_pct: discountDepth,
     order_value_percentiles: { p25: percentile(values, 25), p50: percentile(values, 50), p75: percentile(values, 75), p90: percentile(values, 90) },
   };
 }
 
-async function fetchOrdersRollup(shopDomain: string, token: string) {
+async function fetchOrdersRollup(shopDomain: string, token: string, storeUrlBase: string | null) {
   const nowMs = Date.now();
   const currentSince = new Date(nowMs - PERIOD_DAYS * DAY_MS).toISOString();
   const currentSinceMs = nowMs - PERIOD_DAYS * DAY_MS;
@@ -400,6 +443,10 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
       .sort((a, b) => b.revenue - a.revenue),
     currency,
     truncated,
+    // The customer-facing domain, so the report can link a product card straight
+    // to its live page. Prefer the storefront domain the shopper sees over the
+    // myshopify one, which redirects and looks wrong in a client report.
+    store_url_base: storeUrlBase,
     // Legacy fields (combined 60-day window) so the existing Store Metrics card keeps working.
     timeframe_days: 2 * PERIOD_DAYS,
     order_count: current.order_count + previous.order_count,
@@ -483,9 +530,12 @@ serve(async (req) => {
     } catch { /* non-fatal */ }
 
     // Stage 1: shop info
+    let storeUrlBase: string | null = null;
     const shopRes = await shopifyRest(shopDomain, token, "/shop.json");
     if (shopRes.ok) {
       const shop = shopRes.body?.shop ?? {};
+      const publicDomain = String(shop.domain ?? "").trim();
+      if (publicDomain) storeUrlBase = `https://${publicDomain.replace(/^https?:\/\//, "").replace(/\/$/, "")}`;
       await sb.from("shopify_data_snapshots").insert({
         audit_id: auditId,
         client_id: clientId,
@@ -507,7 +557,7 @@ serve(async (req) => {
 
     // Stage 2: orders rollup (protected data — may fail on scope)
     try {
-      const rollup = await fetchOrdersRollup(shopDomain, token);
+      const rollup = await fetchOrdersRollup(shopDomain, token, storeUrlBase);
       await sb.from("shopify_data_snapshots").insert({
         audit_id: auditId,
         client_id: clientId,
