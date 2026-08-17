@@ -395,7 +395,7 @@ export function coercePageAudit(
         return undefined;
       }).filter(Boolean),
     );
-    const viewport: WebViewportTag =
+    let viewport: WebViewportTag =
       rawViewport === "desktop" || rawViewport === "mobile"
         ? rawViewport
         : rawViewport === "both"
@@ -439,6 +439,33 @@ export function coercePageAudit(
           seenSnap.add(snapId);
           pinnedViewports.add(vp);
         }
+      }
+    }
+
+    // A "both" finding that can only be pinned on ONE viewport belongs to that
+    // viewport. Mirroring fails legitimately when the subject is not in the other
+    // shot at all: on a phone the product image fills the screen, so the price
+    // and the Notify me button sit below the fold and are absent from the mobile
+    // capture. Leaving the finding tagged "both" listed it under Mobile with no
+    // pin to point at, which is what the report looked like on lazyleaf's product
+    // page (three findings, one pin). Retagging keeps the finding, on the
+    // viewport whose screenshot can actually evidence it.
+    //
+    // Only when pins EXIST: a finding with no pins anywhere is a general
+    // observation that legitimately applies to both, so it keeps its tag.
+    if (viewport === "both" && highlights.length > 0) {
+      const pinnedVps = new Set<string>();
+      for (const h of highlights) {
+        for (const [ref, id] of imageRefToSnapshotId) {
+          if (id === h.snapshot_id) {
+            const vp = refToViewport?.get(ref);
+            if (vp) pinnedVps.add(vp);
+          }
+        }
+      }
+      if (pinnedVps.size === 1) {
+        const only = [...pinnedVps][0];
+        if (only === "desktop" || only === "mobile") viewport = only;
       }
     }
 
