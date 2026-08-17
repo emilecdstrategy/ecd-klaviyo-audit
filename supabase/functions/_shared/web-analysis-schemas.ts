@@ -259,11 +259,17 @@ export const ANALYTICS_TOOL: LlmTool = {
           },
         },
       },
+      // DEPRECATED, do not fill. Per-metric commentary was the old shape of this
+      // section and nothing renders it for new audits; the field remains only so
+      // audits generated before plays existed keep displaying. Leaving it in the
+      // schema without this note had the model dutifully writing five paragraphs
+      // per audit that no reader ever sees.
       metrics: {
         type: "array",
+        maxItems: 0,
+        description: "Deprecated. Leave this empty and put everything in plays.",
         items: {
           type: "object",
-          required: ["key", "commentary"],
           properties: {
             key: { type: "string", enum: ["revenue", "orders", "aov", "returning_customer_rate", "top_products", "sales_by_channel"] },
             commentary: { type: "string" },
