@@ -187,11 +187,20 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
   // have it, the whole query 4xxs — so retry once without it (revenue/AOV/orders
   // still work; only returning-customer rate is unavailable).
   let customerDataUnavailable = false;
+  // WHY it failed, kept rather than swallowed. This silently nulled the
+  // returning-customer rate on every audit and the reason was unknowable from
+  // the data, which cost an argument about whether Shopify approval was needed
+  // (it is not: custom apps always have protected customer data, levels 1 and 2,
+  // per shopify.dev/docs/apps/launch/protected-customer-data). Almost always the
+  // real cause is the custom app missing the read_customers access scope, which
+  // the merchant can add in one click, so the message has to reach us.
+  let customerDataError: string | null = null;
   let agg;
   try {
     agg = await aggregateOrders(shopDomain, token, priorSince, currentSinceMs, true);
-  } catch {
+  } catch (e) {
     customerDataUnavailable = true;
+    customerDataError = (e instanceof Error ? e.message : String(e)).slice(0, 300);
     agg = await aggregateOrders(shopDomain, token, priorSince, currentSinceMs, false);
   }
   const { current, previous, channels, currency, truncated } = agg;
@@ -217,6 +226,7 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
       returning_customer_rate: customerDataUnavailable ? null : pctDelta(cur.returning_customer_rate, prev.returning_customer_rate),
     },
     returning_customer_rate_available: !customerDataUnavailable,
+    returning_customer_rate_error: customerDataError,
     top_products: topProducts.items,
     top_products_note: topProducts.note,
     channels: [...channels.entries()]
@@ -282,6 +292,29 @@ serve(async (req) => {
 
     const now = new Date().toISOString();
     const results: Record<string, unknown> = {};
+
+    // Stage 0: which scopes the client's custom app actually granted us. Without
+    // this, a missing scope shows up only as a mysteriously absent metric, and
+    // the fix ("tick read_customers in your app's config") is one click for the
+    // merchant once somebody knows to ask. Recorded on the connection so any
+    // audit can explain what it could not see and why. Best effort.
+    try {
+      // Not under /admin/api/{version}: access_scopes lives at /admin/oauth/,
+      // unversioned, so shopifyRest's versioned prefix 404s here.
+      const scopeRes = await fetch(`https://${shopDomain}/admin/oauth/access_scopes.json`, {
+        headers: { "X-Shopify-Access-Token": token, "Accept": "application/json" },
+      });
+      if (scopeRes.ok) {
+        const body = await scopeRes.json().catch(() => ({}));
+        const granted = ((body?.access_scopes ?? []) as Array<{ handle?: string }>)
+          .map((s) => String(s.handle ?? "")).filter(Boolean).sort();
+        await sb.from("shopify_connections").update({
+          scopes: { granted, checked_at: now },
+          updated_at: now,
+        }).eq("client_id", clientId);
+        results.scopes = granted.length;
+      }
+    } catch { /* non-fatal */ }
 
     // Stage 1: shop info
     const shopRes = await shopifyRest(shopDomain, token, "/shop.json");
