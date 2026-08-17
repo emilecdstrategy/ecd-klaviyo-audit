@@ -65,7 +65,10 @@ export type WebSectionDetail = {
 };
 
 export type WebAnalyticsMetric = { key: string; commentary: string; recommendation: string };
-export type WebAnalyticsDetail = { timeframe_key: string; metrics: WebAnalyticsMetric[] };
+/** One shippable opportunity read out of the order data: what the numbers show,
+ * and the thing to do about it. */
+export type WebAnalyticsPlay = { title: string; insight: string; action: string; metric: string; window: string };
+export type WebAnalyticsDetail = { timeframe_key: string; plays: WebAnalyticsPlay[]; metrics: WebAnalyticsMetric[] };
 
 export type WebRoadmapRow = {
   priority: 'high' | 'medium' | 'low';
@@ -172,14 +175,26 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
 
 export function parseWebAnalyticsDetail(sectionDetails: unknown): WebAnalyticsDetail | null {
   const a = asRecord(asRecord(sectionDetails).web_analytics);
-  if (!a.metrics && !a.timeframe_key) return null;
+  if (!a.metrics && !a.plays && !a.timeframe_key) return null;
   const metrics: WebAnalyticsMetric[] = Array.isArray(a.metrics)
     ? a.metrics.map((m) => {
         const rec = asRecord(m);
         return { key: asString(rec.key), commentary: asString(rec.commentary), recommendation: asString(rec.recommendation) };
       })
     : [];
-  return { timeframe_key: asString(a.timeframe_key) || '30d_vs_prior_30d', metrics };
+  const plays: WebAnalyticsPlay[] = Array.isArray(a.plays)
+    ? a.plays.map((p) => {
+        const rec = asRecord(p);
+        return {
+          title: asString(rec.title),
+          insight: asString(rec.insight),
+          action: asString(rec.action),
+          metric: asString(rec.metric),
+          window: asString(rec.window),
+        };
+      }).filter((p) => p.title && p.insight)
+    : [];
+  return { timeframe_key: asString(a.timeframe_key) || '30d_vs_prior_30d', plays, metrics };
 }
 
 export function parseWebRoadmap(sectionDetails: unknown): WebRoadmapRow[] {
@@ -218,6 +233,21 @@ export type OrdersRollup = {
   top_products?: Array<{ title: string; revenue: number }>;
   channels?: Array<{ name: string; revenue: number; orders: number }>;
   currency?: string | null;
+  returning_customer_rate_available?: boolean;
+  /** Basket shape over an adaptive window; see analyzeBaskets in web_fetch_snapshot. */
+  basket?: {
+    window_days?: number;
+    orders_analyzed?: number;
+    confident?: boolean;
+    units_per_order?: number;
+    single_item_order_share?: number | null;
+    frequent_pairs?: Array<{ products: string[]; orders: number; revenue: number }>;
+    top_product_revenue_share?: number;
+    top3_product_revenue_share?: number;
+    discounted_order_share?: number;
+    avg_discount_depth_pct?: number;
+    order_value_percentiles?: { p25?: number; p50?: number; p75?: number; p90?: number };
+  };
 };
 
 export const METRIC_LABELS: Record<string, string> = {

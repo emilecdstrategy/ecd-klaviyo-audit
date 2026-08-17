@@ -568,15 +568,60 @@ async function runStep(
       await sb.from("audit_sections").update({ section_config: hideConfig(section) }).eq("id", section.id);
       return;
     }
+    // The free-shipping threshold, lifted from what the storefront itself says.
+    // It is the missing half of the strongest AOV play: lazyleaf asks $100 while
+    // nine orders in ten land under $78, so the incentive is unreachable for
+    // almost every shopper. Shopify's API will not tell us the threshold (it
+    // lives in shipping settings, and read_shipping is not granted), but the
+    // announcement bar and the cart drawer both print it, and we already
+    // captured that text.
+    const thresholdNote = await (async () => {
+      try {
+        const { data: snaps } = await sb
+          .from("web_page_snapshots")
+          .select("elements")
+          .eq("audit_id", auditId)
+          .eq("status", "success");
+        const amounts = new Set<string>();
+        for (const row of snaps ?? []) {
+          for (const el of ((row.elements ?? []) as ElementBox[])) {
+            const label = String(el.label ?? "");
+            if (!/free\s*ship/i.test(label)) continue;
+            const m = label.match(/\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)/);
+            if (m) amounts.add(m[1].replace(/,/g, ""));
+          }
+        }
+        if (amounts.size === 0) return "";
+        return `The storefront advertises free shipping at these amounts (read off its own announcement bar and cart): ${[...amounts].map((a) => "$" + a).join(", ")}. Compare that with basket.order_value_percentiles before suggesting a threshold change.`;
+      } catch {
+        return "";
+      }
+    })();
     const messages: LlmMessage[] = [{
       role: "user",
-      text: `Here is the store's Shopify performance for the last 30 days vs the prior 30 days (numbers are authoritative; do not restate them, interpret them):\n\n${JSON.stringify(computed)}\n\nCall record_analytics_audit exactly once with an intro and one entry per relevant metric (commentary + recommendation).${contextBlock}`,
+      text: [
+        `Backend data for this store, straight from its Shopify admin. Every figure is authoritative. The report shows the headline numbers as cards already, so do NOT narrate them back.`,
+        JSON.stringify(computed),
+        thresholdNote,
+        `Return 2 to 5 PLAYS via record_analytics_audit: things this team could ship this month to raise average order value, protect margin, or make the catalogue work harder. Rules:`,
+        `- Each play quotes a real figure from the data above. Never invent or round a number into something the data does not say.`,
+        `- basket.window_days tells you the window the basket figures came from; say it in the play's window field, and never present a 90 or 180 day pattern as this month's behaviour.`,
+        `- basket.frequent_pairs is the ONLY evidence for a "bundle these" play. When it is empty, no two products were bought together often enough to justify one, so do not suggest a specific bundle; a play about raising basket size in general is still fair if single_item_order_share supports it.`,
+        `- If basket.confident is false there were too few orders to trust the basket figures: say so plainly in that play's insight rather than dressing thin data as a pattern.`,
+        `- Name real products when the data names them (top_products_by_units, frequent_pairs). A play naming a product is worth three that do not.`,
+        `- Skip a lever with nothing to say. Three sharp plays beat five padded ones.`,
+        `- The intro is ONE sentence. Findings about the storefront's design belong to other sections; this one is strictly about what the order data reveals.`,
+      ].filter(Boolean).join("\n\n") + contextBlock,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [ANALYTICS_TOOL], toolChoice: { type: "tool", name: "record_analytics_audit" } });
     if (turn.kind !== "tool_call") throw new Error("analytics: model did not call the tool");
     const parsed = coerceAnalytics(turn.input);
     const details = { ...(section.section_details ?? {}) };
-    (details as Record<string, unknown>).web_analytics = { timeframe_key: computed.timeframe_key ?? "30d_vs_prior_30d", metrics: parsed.metrics };
+    (details as Record<string, unknown>).web_analytics = {
+      timeframe_key: computed.timeframe_key ?? "30d_vs_prior_30d",
+      plays: parsed.plays,
+      metrics: parsed.metrics,
+    };
     await sb.from("audit_sections").update({ summary_text: parsed.intro, section_details: details }).eq("id", section.id);
     return;
   }
@@ -850,8 +895,12 @@ serve(async (req) => {
   if (mode === "regenerate_section") {
     const b = body as { section_key?: string; instruction?: string };
     const sectionKey = (b.section_key ?? "").trim();
-    const step = STEPS.find((s) => s.key === sectionKey && s.kind === "page");
-    if (!step) return json({ ok: false, error: { code: "bad_request", message: "Unknown or non-page section_key" }, correlationId }, { status: 400 });
+    // Any section, not just a page: the performance, overview and roadmap
+    // sections are just as worth re-running on their own, and restricting this
+    // to pages meant the only way to refresh one of them was regenerating the
+    // whole audit and overwriting every other section with it.
+    const step = STEPS.find((s) => s.key === sectionKey);
+    if (!step) return json({ ok: false, error: { code: "bad_request", message: "Unknown section_key" }, correlationId }, { status: 400 });
     try {
       const sb = assertServiceClient();
       const { data: rows } = await sb

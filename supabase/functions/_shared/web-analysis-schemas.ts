@@ -226,12 +226,39 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
 
 export const ANALYTICS_TOOL: LlmTool = {
   name: "record_analytics_audit",
-  description: "Record commentary and recommendations for the store's performance metrics. Do not restate the raw numbers; interpret the trend and say what to do about it.",
+  description:
+    "Record the store's backend performance as a short set of PLAYS: things the team could ship this month, each anchored to a real number from the data. This section is read by a strategist deciding what to do next, not by someone who wants the numbers narrated back.",
   input_schema: {
     type: "object",
-    required: ["intro", "metrics"],
+    required: ["intro", "plays"],
     properties: {
-      intro: { type: "string" },
+      intro: { type: "string", description: "ONE sentence, max 25 words, on where the store stands. Never list the metrics; they are shown as cards." },
+      plays: {
+        type: "array",
+        minItems: 2,
+        maxItems: 5,
+        description:
+          "Highest impact first. AOV levers before margin, margin before catalog. One play per idea; never two plays about the same lever.",
+        items: {
+          type: "object",
+          required: ["title", "insight", "action", "metric"],
+          properties: {
+            title: { type: "string", description: "3 to 6 words naming the opportunity, e.g. 'Lift the single-item basket'." },
+            insight: {
+              type: "string",
+              description:
+                "ONE sentence stating what the data shows, and it MUST quote a real figure from the data provided (a percentage, a count, a money amount). No hedging, no advice here.",
+            },
+            action: {
+              type: "string",
+              description:
+                "ONE sentence naming the specific thing to ship, concrete enough to brief a developer or a merchandiser. Name real products when the data names them. No 'consider', no 'explore', no 'optimize'.",
+            },
+            metric: { type: "string", description: "The headline figure alone, for display on the card, e.g. '70% single-item orders' or '$100 threshold vs $38 median'." },
+            window: { type: "string", description: "The window this figure came from, e.g. 'last 30 days' or 'last 90 days'. Use exactly the window the data says it used." },
+          },
+        },
+      },
       metrics: {
         type: "array",
         items: {
@@ -533,7 +560,25 @@ export function coerceAnalytics(input: unknown) {
       };
     })
     .filter((m) => METRIC_KEYS.has(m.key) && m.commentary);
-  return { intro: sanitizeDash(o.intro), metrics };
+  // Plays are the section now; `metrics` stays so audits generated before this
+  // change keep rendering their commentary.
+  const playsRaw = Array.isArray(o.plays) ? o.plays : [];
+  const plays = playsRaw
+    .map((p) => {
+      const rec = (p ?? {}) as Record<string, unknown>;
+      return {
+        title: sanitizeDash(rec.title),
+        insight: sanitizeDash(rec.insight),
+        action: sanitizeDash(rec.action),
+        metric: sanitizeDash(rec.metric),
+        window: sanitizeDash(rec.window),
+      };
+    })
+    // A play with no insight or no action is half an idea and renders as an
+    // empty card, so drop it rather than show it.
+    .filter((p) => p.title && p.insight && p.action)
+    .slice(0, 5);
+  return { intro: sanitizeDash(o.intro), plays, metrics };
 }
 
 export function coerceOverview(input: unknown) {

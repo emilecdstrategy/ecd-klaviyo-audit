@@ -9,9 +9,21 @@ const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "
 
 const PERIOD_DAYS = 30;
 const ORDERS_PAGE_SIZE = 250;
-const ORDERS_MAX_PAGES = 8; // cap at 2000 orders across the 60-day window
+const ORDERS_MAX_PAGES = 8; // cap at 2000 orders across the fetched window
 const TOP_PRODUCTS_SAMPLE = 100; // recent current-period orders sampled for top-products ranking
 const DAY_MS = 24 * 60 * 60 * 1000;
+
+/** Basket analysis (what sells together, how many items an order holds) needs
+ * ORDERS, not days. lazyleaf takes 9 orders in 30 days, and "these two products
+ * are bought together" off 9 orders is noise dressed as insight. So the KPI
+ * comparison stays 30d vs prior 30d, while the basket stats widen to the
+ * narrowest window that clears BASKET_MIN_ORDERS, and the window used is
+ * reported alongside every number so nobody reads a 180-day pattern as this
+ * month's behaviour. */
+const BASKET_WINDOWS = [30, 90, 180];
+const BASKET_MIN_ORDERS = 40;
+/** Below this a co-occurrence is coincidence, not a pattern worth a bundle. */
+const MIN_PAIR_ORDERS = 3;
 
 function round2(n: number): number {
   return Math.round(n * 100) / 100;
@@ -110,7 +122,18 @@ async function fetchTopProducts(shopDomain: string, token: string, currentSince:
  * protected customer field (needed for returning-customer rate); when the app
  * lacks protected-customer-data access, that field is dropped. Throws on a hard
  * API error so the caller can retry without the customer field. */
-async function aggregateOrders(shopDomain: string, token: string, priorSince: string, currentSinceMs: number, includeCustomer: boolean) {
+async function aggregateOrders(
+  shopDomain: string,
+  token: string,
+  priorSince: string,
+  currentSinceMs: number,
+  includeCustomer: boolean,
+  /** Start of the PRIOR comparison period. Orders older than this are kept for
+   * basket analysis but counted in neither KPI bucket: the fetch window is much
+   * wider than the comparison window, and lumping six months into "previous"
+   * would make every delta nonsense. */
+  priorStartMs: number,
+) {
   const current = emptyPeriod();
   const previous = emptyPeriod();
   const channels = new Map<string, { revenue: number; orders: number }>();
@@ -120,6 +143,11 @@ async function aggregateOrders(shopDomain: string, token: string, priorSince: st
   let truncated = false;
 
   const customerField = includeCustomer ? "customer { numberOfOrders }" : "";
+  // Per-order records for the basket work, collected in the same pass as the
+  // KPI buckets: one Shopify page-through, not two. Line items and discounts
+  // both come under read_orders, which every connection already grants, so none
+  // of this needs a new scope.
+  const orders: BasketOrder[] = [];
 
   while (pages < ORDERS_MAX_PAGES) {
     const res = await shopifyGraphql(
@@ -132,6 +160,14 @@ async function aggregateOrders(shopDomain: string, token: string, priorSince: st
             createdAt
             sourceName
             currentTotalPriceSet { shopMoney { amount currencyCode } }
+            totalDiscountsSet { shopMoney { amount } }
+            lineItems(first: 25) {
+              nodes {
+                quantity
+                title
+                originalTotalSet { shopMoney { amount } }
+              }
+            }
             ${customerField}
           }
         }
@@ -149,13 +185,17 @@ async function aggregateOrders(shopDomain: string, token: string, priorSince: st
       const amount = Number.parseFloat(money?.amount ?? "0");
       const rev = Number.isFinite(amount) ? amount : 0;
       if (!currency && money?.currencyCode) currency = money.currencyCode;
-      const isCurrent = new Date(node?.createdAt ?? 0).getTime() >= currentSinceMs;
-      const bucket = isCurrent ? current : previous;
-      bucket.order_count += 1;
-      bucket.gross_revenue += rev;
-      if (includeCustomer) {
-        const lifetimeOrders = Number.parseInt(String(node?.customer?.numberOfOrders ?? "0"), 10);
-        if (Number.isFinite(lifetimeOrders) && lifetimeOrders > 1) bucket.returning_orders += 1;
+      const createdMs = new Date(node?.createdAt ?? 0).getTime();
+      const isCurrent = createdMs >= currentSinceMs;
+      // Older than the prior period: basket data only, no KPI bucket.
+      const bucket = isCurrent ? current : (createdMs >= priorStartMs ? previous : null);
+      if (bucket) {
+        bucket.order_count += 1;
+        bucket.gross_revenue += rev;
+        if (includeCustomer) {
+          const lifetimeOrders = Number.parseInt(String(node?.customer?.numberOfOrders ?? "0"), 10);
+          if (Number.isFinite(lifetimeOrders) && lifetimeOrders > 1) bucket.returning_orders += 1;
+        }
       }
       if (isCurrent) {
         const channel = String(node?.sourceName ?? "").trim() || "unknown";
@@ -164,6 +204,18 @@ async function aggregateOrders(shopDomain: string, token: string, priorSince: st
         c.orders += 1;
         channels.set(channel, c);
       }
+      const liNodes: any[] = node?.lineItems?.nodes ?? [];
+      const discount = Number.parseFloat(node?.totalDiscountsSet?.shopMoney?.amount ?? "0");
+      orders.push({
+        created_ms: new Date(node?.createdAt ?? 0).getTime(),
+        revenue: rev,
+        discount: Number.isFinite(discount) ? discount : 0,
+        units: liNodes.reduce((s, li) => s + (Number(li?.quantity) || 0), 0),
+        items: liNodes.map((li) => ({
+          title: String(li?.title ?? "").trim(),
+          revenue: Number.parseFloat(li?.originalTotalSet?.shopMoney?.amount ?? "0") || 0,
+        })).filter((i) => i.title),
+      });
     }
     pages += 1;
     if (conn?.pageInfo?.hasNextPage && conn?.pageInfo?.endCursor) {
@@ -174,14 +226,113 @@ async function aggregateOrders(shopDomain: string, token: string, priorSince: st
     }
   }
 
-  return { current, previous, channels, currency, truncated };
+  return { current, previous, channels, currency, truncated, orders };
+}
+
+type BasketOrder = {
+  created_ms: number;
+  revenue: number;
+  discount: number;
+  units: number;
+  items: Array<{ title: string; revenue: number }>;
+};
+
+function percentile(sorted: number[], p: number): number {
+  if (sorted.length === 0) return 0;
+  const idx = Math.min(sorted.length - 1, Math.max(0, Math.round((p / 100) * (sorted.length - 1))));
+  return round2(sorted[idx]);
+}
+
+/** Everything the AOV, margin and catalog plays are built from.
+ *
+ * Deliberately facts only, no advice: the analysis step turns these into plays.
+ * Each number carries the window and the order count behind it so a play can say
+ * "over 180 days" and a reader can judge the weight of it. */
+function analyzeBaskets(all: BasketOrder[], nowMs: number) {
+  const inWindow = (days: number) => all.filter((o) => o.created_ms >= nowMs - days * DAY_MS);
+  // Narrowest window with enough orders to mean something; the widest if none.
+  let days = BASKET_WINDOWS[BASKET_WINDOWS.length - 1];
+  for (const d of BASKET_WINDOWS) {
+    if (inWindow(d).length >= BASKET_MIN_ORDERS) { days = d; break; }
+  }
+  const orders = inWindow(days);
+  const n = orders.length;
+  if (n === 0) {
+    return { window_days: days, orders_analyzed: 0, confident: false };
+  }
+
+  const withItems = orders.filter((o) => o.items.length > 0);
+  const singleLine = withItems.filter((o) => o.items.length === 1).length;
+  const unitsTotal = orders.reduce((s, o) => s + o.units, 0);
+
+  // What actually gets bought together. Unordered pairs, counted per order, so
+  // buying two of the same thing is not a "pair".
+  const pairCounts = new Map<string, { a: string; b: string; orders: number; revenue: number }>();
+  for (const o of withItems) {
+    const titles = [...new Set(o.items.map((i) => i.title))].sort();
+    for (let i = 0; i < titles.length; i++) {
+      for (let j = i + 1; j < titles.length; j++) {
+        const key = titles[i] + " || " + titles[j];
+        const cur = pairCounts.get(key) ?? { a: titles[i], b: titles[j], orders: 0, revenue: 0 };
+        cur.orders += 1;
+        cur.revenue += o.revenue;
+        pairCounts.set(key, cur);
+      }
+    }
+  }
+  const pairs = [...pairCounts.values()]
+    .filter((p) => p.orders >= MIN_PAIR_ORDERS)
+    .sort((a, b) => b.orders - a.orders)
+    .slice(0, 5)
+    .map((p) => ({ products: [p.a, p.b], orders: p.orders, revenue: round2(p.revenue) }));
+
+  // Revenue concentration, from line items rather than a sample of orders.
+  const byProduct = new Map<string, number>();
+  for (const o of withItems) {
+    for (const i of o.items) byProduct.set(i.title, (byProduct.get(i.title) ?? 0) + i.revenue);
+  }
+  const ranked = [...byProduct.entries()].map(([title, revenue]) => ({ title, revenue: round2(revenue) }))
+    .sort((a, b) => b.revenue - a.revenue);
+  const totalItemRevenue = ranked.reduce((s, p) => s + p.revenue, 0);
+  const topShare = (k: number) =>
+    totalItemRevenue > 0 ? round2((ranked.slice(0, k).reduce((s, p) => s + p.revenue, 0) / totalItemRevenue) * 100) : 0;
+
+  const discounted = orders.filter((o) => o.discount > 0);
+  const discountDepth = discounted.length > 0
+    ? round2((discounted.reduce((s, o) => s + o.discount / Math.max(o.revenue + o.discount, 0.01), 0) / discounted.length) * 100)
+    : 0;
+
+  const values = orders.map((o) => o.revenue).sort((a, b) => a - b);
+
+  return {
+    window_days: days,
+    orders_analyzed: n,
+    confident: n >= BASKET_MIN_ORDERS,
+    units_per_order: round2(unitsTotal / n),
+    single_item_order_share: withItems.length > 0 ? round2((singleLine / withItems.length) * 100) : null,
+    multi_item_order_share: withItems.length > 0 ? round2(((withItems.length - singleLine) / withItems.length) * 100) : null,
+    frequent_pairs: pairs,
+    distinct_products_sold: ranked.length,
+    top_product_revenue_share: topShare(1),
+    top3_product_revenue_share: topShare(3),
+    top_products_by_units: ranked.slice(0, 5),
+    discounted_order_share: round2((discounted.length / n) * 100),
+    avg_discount_depth_pct: discountDepth,
+    order_value_percentiles: { p25: percentile(values, 25), p50: percentile(values, 50), p75: percentile(values, 75), p90: percentile(values, 90) },
+  };
 }
 
 async function fetchOrdersRollup(shopDomain: string, token: string) {
   const nowMs = Date.now();
   const currentSince = new Date(nowMs - PERIOD_DAYS * DAY_MS).toISOString();
-  const priorSince = new Date(nowMs - 2 * PERIOD_DAYS * DAY_MS).toISOString();
   const currentSinceMs = nowMs - PERIOD_DAYS * DAY_MS;
+  // Fetch far enough back for the widest basket window. The KPI buckets still
+  // only count the last 60 days (anything older simply falls in neither), so
+  // widening the fetch changes no headline number; it only gives the basket
+  // analysis enough orders to say something true on a low-volume store. The page
+  // cap still bounds the work for a busy one.
+  const priorSince = new Date(nowMs - BASKET_WINDOWS[BASKET_WINDOWS.length - 1] * DAY_MS).toISOString();
+  const priorStartMs = nowMs - 2 * PERIOD_DAYS * DAY_MS;
 
   // The customer field needs protected-customer-data access. If the app doesn't
   // have it, the whole query 4xxs — so retry once without it (revenue/AOV/orders
@@ -197,13 +348,14 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
   let customerDataError: string | null = null;
   let agg;
   try {
-    agg = await aggregateOrders(shopDomain, token, priorSince, currentSinceMs, true);
+    agg = await aggregateOrders(shopDomain, token, priorSince, currentSinceMs, true, priorStartMs);
   } catch (e) {
     customerDataUnavailable = true;
     customerDataError = (e instanceof Error ? e.message : String(e)).slice(0, 300);
-    agg = await aggregateOrders(shopDomain, token, priorSince, currentSinceMs, false);
+    agg = await aggregateOrders(shopDomain, token, priorSince, currentSinceMs, false, priorStartMs);
   }
-  const { current, previous, channels, currency, truncated } = agg;
+  const { current, previous, channels, currency, truncated, orders } = agg;
+  const basket = analyzeBaskets(orders, nowMs);
 
   const cur = summarizePeriod(current);
   const prev = summarizePeriod(previous);
@@ -227,6 +379,7 @@ async function fetchOrdersRollup(shopDomain: string, token: string) {
     },
     returning_customer_rate_available: !customerDataUnavailable,
     returning_customer_rate_error: customerDataError,
+    basket,
     top_products: topProducts.items,
     top_products_note: topProducts.note,
     channels: [...channels.entries()]
