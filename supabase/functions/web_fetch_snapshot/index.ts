@@ -261,6 +261,16 @@ function analyzeBaskets(all: BasketOrder[], nowMs: number) {
     return { window_days: days, orders_analyzed: 0, confident: false };
   }
 
+  // NEVER claim a window wider than the data. Shopify returns only the last 60
+  // days of orders unless the app holds read_all_orders, so asking for 180 days
+  // can quietly return 60 and the section would print "over 180 days" about two
+  // months of data. Report the span actually covered, and flag when the history
+  // was cut short so the audit can say what to switch on.
+  const oldestMs = Math.min(...orders.map((o) => o.created_ms));
+  const spanDays = Math.max(1, Math.ceil((nowMs - oldestMs) / DAY_MS));
+  const effectiveDays = Math.min(days, spanDays);
+  const historyLimited = days - spanDays > 2;
+
   const withItems = orders.filter((o) => o.items.length > 0);
   const singleLine = withItems.filter((o) => o.items.length === 1).length;
   const unitsTotal = orders.reduce((s, o) => s + o.units, 0);
@@ -305,9 +315,12 @@ function analyzeBaskets(all: BasketOrder[], nowMs: number) {
   const values = orders.map((o) => o.revenue).sort((a, b) => a - b);
 
   return {
-    window_days: days,
+    window_days: effectiveDays,
     orders_analyzed: n,
     confident: n >= BASKET_MIN_ORDERS,
+    // True when Shopify's 60-day order history cap (no read_all_orders scope)
+    // stopped us reaching further back than the analysis wanted.
+    order_history_limited: historyLimited,
     units_per_order: round2(unitsTotal / n),
     single_item_order_share: withItems.length > 0 ? round2((singleLine / withItems.length) * 100) : null,
     multi_item_order_share: withItems.length > 0 ? round2(((withItems.length - singleLine) / withItems.length) * 100) : null,

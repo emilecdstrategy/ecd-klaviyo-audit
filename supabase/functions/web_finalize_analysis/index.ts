@@ -608,6 +608,7 @@ async function runStep(
         `- basket.window_days tells you the window the basket figures came from; say it in the play's window field, and never present a 90 or 180 day pattern as this month's behaviour.`,
         `- basket.frequent_pairs is the ONLY evidence for a "bundle these" play. When it is empty, no two products were bought together often enough to justify one, so do not suggest a specific bundle; a play about raising basket size in general is still fair if single_item_order_share supports it.`,
         `- If basket.confident is false there were too few orders to trust the basket figures: say so plainly in that play's insight rather than dressing thin data as a pattern.`,
+        `- basket.order_history_limited true means Shopify only returned the last 60 days (the store's app lacks the read_all_orders scope), so basket.window_days is all the history there was. Never imply a longer trend than that.`,
         `- Name real products when the data names them (top_products_by_units, frequent_pairs). A play naming a product is worth three that do not.`,
         `- Skip a lever with nothing to say. Three sharp plays beat five padded ones.`,
         `- The intro is ONE sentence. Findings about the storefront's design belong to other sections; this one is strictly about what the order data reveals.`,
