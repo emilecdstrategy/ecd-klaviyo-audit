@@ -374,10 +374,33 @@ export default async ({ page, context }) => {
       await blockLinkNav(true);
       for (const t of triggers) {
         try {
-          const el = await page.$(t);
-          if (!el) continue;
+          // Click the first VISIBLE match, not the first match in the DOM.
+          // Themes ship a duplicate of the cart control for the other
+          // breakpoint, hidden at the current one: on lazyleaf's DESKTOP header
+          // the first a[href="/cart"] in document order is the mobile copy, a
+          // 0x0 box at 0,0, so page.$(sel).click() hit nothing, no drawer ever
+          // opened, and desktop silently fell back to the /cart page while
+          // mobile (where the visible control happens to come first) worked.
+          // A real mouse click at the element's centre also exercises the theme
+          // the way a shopper does, rather than a synthetic in-page event.
+          const box = await page.evaluate((sel) => {
+            const nodes = Array.from(document.querySelectorAll(sel));
+            for (const el of nodes) {
+              const r = el.getBoundingClientRect();
+              if (r.width < 6 || r.height < 6) continue;
+              if (r.bottom <= 0 || r.top >= window.innerHeight) continue;
+              if (r.right <= 0 || r.left >= window.innerWidth) continue;
+              const cs = getComputedStyle(el);
+              if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) continue;
+              if (typeof el.checkVisibility === "function" &&
+                  !el.checkVisibility({ opacityProperty: true, visibilityProperty: true })) continue;
+              return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+            }
+            return null;
+          }, t);
+          if (!box) continue;
           const before = page.url();
-          try { await el.click(); } catch (e) { continue; }
+          try { await page.mouse.click(box.x, box.y); } catch (e) { continue; }
           await new Promise((r) => setTimeout(r, 2200));
           if (await drawerVisible()) {
             opened = true;
