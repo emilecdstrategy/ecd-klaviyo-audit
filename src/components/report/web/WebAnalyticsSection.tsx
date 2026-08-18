@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useMemo, type ReactNode } from 'react';
 import { ArrowUpRight, ExternalLink, Info, TrendingDown, TrendingUp } from 'lucide-react';
 import type { AuditSection } from '../../../lib/types';
 import {
@@ -34,12 +34,49 @@ function ProductCard({
   product,
   storeBase,
   currency,
+  compact = false,
 }: {
   product: BasketProduct;
   storeBase?: string | null;
   currency: string;
+  /** Row layout with a thumbnail, for the one to three products a play names.
+   *  The tall grid card is for the best-seller wall, where the photo is the point. */
+  compact?: boolean;
 }) {
   const href = productUrl(storeBase, product.handle);
+  const meta = [
+    product.units != null && product.units > 0 ? `${product.units} sold` : null,
+    product.unit_price != null ? `${formatMoney(product.unit_price, currency)} each` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+
+  if (compact) {
+    return (
+      <ProductShell href={href} className="flex items-center gap-3 p-2">
+        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-50">
+          {product.image ? (
+            <img src={product.image} alt={product.title} loading="lazy" className="h-full w-full object-cover" />
+          ) : (
+            <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-300">no photo</div>
+          )}
+        </div>
+        <div className="min-w-0 flex-1">
+          <p className="line-clamp-2 text-xs font-medium leading-snug text-gray-900 group-hover/prod:text-brand-primary">
+            {product.title}
+          </p>
+          <p className="mt-1 flex items-baseline gap-1.5">
+            <span className="text-sm font-semibold tracking-tight text-gray-900">{formatMoney(product.revenue, currency)}</span>
+            {meta && <span className="truncate text-[11px] text-gray-500">{meta}</span>}
+          </p>
+        </div>
+        {href && (
+          <ExternalLink className="h-3 w-3 shrink-0 text-gray-300 transition-colors group-hover/prod:text-brand-primary" />
+        )}
+      </ProductShell>
+    );
+  }
+
   const body = (
     <>
       <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-50">
@@ -72,17 +109,36 @@ function ProductCard({
     </>
   );
 
+  return (
+    <ProductShell href={href} className="block p-2.5">
+      {body}
+    </ProductShell>
+  );
+}
+
+/** The bordered box a product card lives in, a link when the product has a live
+ *  page and a plain div when it does not. */
+function ProductShell({
+  href,
+  className,
+  children,
+}: {
+  href: string | null;
+  className: string;
+  children: ReactNode;
+}) {
+  const shell = `group/prod rounded-xl border border-gray-100 ${className}`;
   return href ? (
     <a
       href={href}
       target="_blank"
       rel="noopener noreferrer"
-      className="group/prod block rounded-xl border border-gray-100 p-2.5 transition-colors hover:border-brand-primary/40 hover:bg-brand-surface/40"
+      className={`${shell} transition-colors hover:border-brand-primary/40 hover:bg-brand-surface/40`}
     >
-      {body}
+      {children}
     </a>
   ) : (
-    <div className="group/prod block rounded-xl border border-gray-100 p-2.5">{body}</div>
+    <div className={shell}>{children}</div>
   );
 }
 
@@ -142,9 +198,9 @@ function PlayCard({
       {products.length > 0 && (
         <div className="mt-4 border-t border-gray-50 pt-3.5">
           <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Products in play</p>
-          <div className="mt-2 grid grid-cols-2 gap-2.5 sm:grid-cols-3">
+          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {products.map((p) => (
-              <ProductCard key={p.title} product={p} storeBase={storeBase} currency={currency} />
+              <ProductCard key={p.title} product={p} storeBase={storeBase} currency={currency} compact />
             ))}
           </div>
         </div>
@@ -265,8 +321,8 @@ export default function WebAnalyticsSection({
 
       {/* Opportunities, one card per row so each has room for its bullets and products. */}
       {plays.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Opportunities in the data</h3>
+        <div className="mt-7 border-t border-gray-100 pt-6">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Opportunities in the data</h3>
           <div className="mt-3 space-y-3">
             {plays.map((play, i) => (
               <PlayCard
@@ -299,9 +355,9 @@ export default function WebAnalyticsSection({
 
       {/* Best sellers as real cards, then the basket shape and channels beside them. */}
       {topProducts.length > 0 && (
-        <div className="mt-6">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
-            Best sellers <span className="font-normal normal-case tracking-normal text-gray-300">by revenue</span>
+        <div className="mt-7 border-t border-gray-100 pt-6">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">
+            Best sellers <span className="font-normal normal-case tracking-normal text-gray-400">by revenue</span>
           </h3>
           <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-6">
             {topProducts.slice(0, 6).map((p) => (
@@ -311,7 +367,7 @@ export default function WebAnalyticsSection({
         </div>
       )}
 
-      <div className="mt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
+      <div className="mt-7 border-t border-gray-100 pt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {basket && basket.orders_analyzed ? (
           <div className="rounded-xl border border-gray-100 px-4 py-3.5">
             <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Typical basket</h3>
