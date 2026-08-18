@@ -158,7 +158,7 @@ function PlayCard({
   onEdit: (field: 'title' | 'insight' | 'metric' | 'window', value: string) => void;
   }) {
   return (
-    <article className="rounded-2xl border border-gray-100 bg-white p-5">
+    <article className="rounded-2xl border border-gray-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h4 className="min-w-0 text-base font-semibold leading-snug text-gray-900">
           <EditablePlainText value={play.title} onSave={(v) => onEdit('title', v)} placeholder="Play title…" />
@@ -196,7 +196,7 @@ function PlayCard({
       )}
 
       {products.length > 0 && (
-        <div className="mt-4 border-t border-gray-50 pt-3.5">
+        <div className="mt-4 border-t border-gray-100 pt-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Products in play</p>
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {products.map((p) => (
@@ -333,7 +333,7 @@ export default function WebAnalyticsSection({
       {plays.length > 0 && (
         <div className="mt-7 border-t border-gray-100 pt-6">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Opportunities in the data</h3>
-          <div className="mt-3 space-y-3">
+          <div className="mt-3.5 space-y-4">
             {plays.map((play, i) => (
               <PlayCard
                 key={i}
