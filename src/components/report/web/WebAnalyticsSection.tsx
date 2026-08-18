@@ -426,7 +426,11 @@ export default function WebAnalyticsSection({
             <p className="mt-2.5 text-xs leading-relaxed text-gray-500">
               {basket.orders_analyzed} orders over {basket.window_days} days
               {basket.confident === false ? ', too few to be conclusive' : ''}
-              {basket.order_history_limited ? '. Shopify caps order history at 60 days without the read_all_orders scope.' : ''}
+              {basket.orders_truncated
+                ? '. Capped at the 2,000 most recent orders, so this is your busiest recent window rather than a longer trend.'
+                : basket.order_history_limited
+                  ? '. Shopify caps order history at 60 days without the read_all_orders scope.'
+                  : ''}
             </p>
           </div>
         ) : null}

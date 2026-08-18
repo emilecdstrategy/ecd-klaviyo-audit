@@ -303,7 +303,14 @@ function percentile(sorted: number[], p: number): number {
  * Deliberately facts only, no advice: the analysis step turns these into plays.
  * Each number carries the window and the order count behind it so a play can say
  * "over 180 days" and a reader can judge the weight of it. */
-function analyzeBaskets(all: BasketOrder[], nowMs: number) {
+function analyzeBaskets(
+  all: BasketOrder[],
+  nowMs: number,
+  /** Why a short window might be short, so the report never blames the wrong
+   * thing. "truncated" means WE stopped fetching at the page cap; "hasAllOrders"
+   * is whether the app actually holds read_all_orders. */
+  cause: { truncated: boolean; hasAllOrders: boolean | null },
+) {
   const inWindow = (days: number) => all.filter((o) => o.created_ms >= nowMs - days * DAY_MS);
   // Narrowest window with enough orders to mean something; the widest if none.
   let days = BASKET_WINDOWS[BASKET_WINDOWS.length - 1];
@@ -324,7 +331,15 @@ function analyzeBaskets(all: BasketOrder[], nowMs: number) {
   const oldestMs = Math.min(...orders.map((o) => o.created_ms));
   const spanDays = Math.max(1, Math.ceil((nowMs - oldestMs) / DAY_MS));
   const effectiveDays = Math.min(days, spanDays);
-  const historyLimited = days - spanDays > 2;
+  const shortWindow = days - spanDays > 2;
+  // A busy store hits our own 2000-order cap long before Shopify's history cap:
+  // Pipeliners came back with 2000 orders spanning 7 days and the report told
+  // them to switch on a scope they already had. Only blame the scope when the
+  // fetch was NOT capped and the scope is genuinely absent. With no scope
+  // reading available, fall back to the old guess rather than asserting either.
+  const ordersTruncated = shortWindow && cause.truncated;
+  const historyLimited = shortWindow && !cause.truncated
+    && (cause.hasAllOrders === null ? true : !cause.hasAllOrders);
 
   const withItems = orders.filter((o) => o.items.length > 0);
   const singleLine = withItems.filter((o) => o.items.length === 1).length;
@@ -400,6 +415,9 @@ function analyzeBaskets(all: BasketOrder[], nowMs: number) {
     // True when Shopify's 60-day order history cap (no read_all_orders scope)
     // stopped us reaching further back than the analysis wanted.
     order_history_limited: historyLimited,
+    // True when the window is short because the store is busy enough to fill
+    // our page cap, which is a fact about volume, not a missing permission.
+    orders_truncated: ordersTruncated,
     units_per_order: round2(unitsTotal / n),
     single_item_order_share: withItems.length > 0 ? round2((singleLine / withItems.length) * 100) : null,
     multi_item_order_share: withItems.length > 0 ? round2(((withItems.length - singleLine) / withItems.length) * 100) : null,
@@ -420,7 +438,13 @@ function analyzeBaskets(all: BasketOrder[], nowMs: number) {
   };
 }
 
-async function fetchOrdersRollup(shopDomain: string, token: string, storeUrlBase: string | null) {
+async function fetchOrdersRollup(
+  shopDomain: string,
+  token: string,
+  storeUrlBase: string | null,
+  /** From the Stage 0 scope probe. null when the probe could not answer. */
+  hasAllOrders: boolean | null,
+) {
   const nowMs = Date.now();
   const currentSince = new Date(nowMs - PERIOD_DAYS * DAY_MS).toISOString();
   const currentSinceMs = nowMs - PERIOD_DAYS * DAY_MS;
@@ -453,7 +477,7 @@ async function fetchOrdersRollup(shopDomain: string, token: string, storeUrlBase
     agg = await aggregateOrders(shopDomain, token, priorSince, currentSinceMs, false, priorStartMs);
   }
   const { current, previous, channels, currency, truncated, orders } = agg;
-  const basket = analyzeBaskets(orders, nowMs);
+  const basket = analyzeBaskets(orders, nowMs, { truncated, hasAllOrders });
 
   const cur = summarizePeriod(current);
   const prev = summarizePeriod(previous);
@@ -547,6 +571,9 @@ serve(async (req) => {
 
     const now = new Date().toISOString();
     const results: Record<string, unknown> = {};
+    // null until the probe answers: "unknown" must stay distinguishable from
+    // "checked and absent", or a failed probe silently becomes an accusation.
+    let hasAllOrders: boolean | null = null;
 
     // Stage 0: which scopes the client's custom app actually granted us. Without
     // this, a missing scope shows up only as a mysteriously absent metric, and
@@ -568,6 +595,7 @@ serve(async (req) => {
           updated_at: now,
         }).eq("client_id", clientId);
         results.scopes = granted.length;
+        hasAllOrders = granted.includes("read_all_orders");
       }
     } catch { /* non-fatal */ }
 
@@ -599,7 +627,7 @@ serve(async (req) => {
 
     // Stage 2: orders rollup (protected data — may fail on scope)
     try {
-      const rollup = await fetchOrdersRollup(shopDomain, token, storeUrlBase);
+      const rollup = await fetchOrdersRollup(shopDomain, token, storeUrlBase, hasAllOrders);
       await sb.from("shopify_data_snapshots").insert({
         audit_id: auditId,
         client_id: clientId,

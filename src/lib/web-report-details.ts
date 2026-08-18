@@ -320,6 +320,9 @@ export type OrdersRollup = {
     top_products_by_units?: BasketProduct[];
     distinct_products_sold?: number;
     order_history_limited?: boolean;
+    /** The window is short because the store filled our 2000-order page cap,
+     *  which is a fact about volume, not a missing permission. */
+    orders_truncated?: boolean;
     top_product_revenue_share?: number;
     top3_product_revenue_share?: number;
     discounted_order_share?: number;
