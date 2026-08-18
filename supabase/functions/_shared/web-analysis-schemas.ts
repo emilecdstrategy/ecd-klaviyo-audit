@@ -59,7 +59,59 @@ const GENERIC_TOKENS = new Set([
   "form", "field", "input", "page", "site", "cart", "bag", "search", "account",
   "login", "shop", "store", "home", "top", "bottom", "left", "right", "main",
   "first", "second", "card", "box", "list", "photo", "picture", "heading",
+  // "Subheadline text" shares "text" with half the DOM; "hero area" shares
+  // "area" with any container. Sharing one of these is not identity.
+  "text", "copy", "area", "space", "content", "icon", "image", "element",
+  "item", "items", "label", "title", "wrapper", "container", "region",
 ]);
+
+/** Does the model's own guessed box land on this element? Its coordinates are
+ * rough, so this asks only whether one centre sits inside the other rect. It is
+ * weak evidence on its own but strong CORROBORATION: agreeing twice, by id and
+ * by position, is unlikely to be a coincidence. */
+function boxAgreesWithElement(
+  hl: Record<string, unknown>,
+  el: ElementBox,
+): boolean {
+  const x = Number(hl.x);
+  const y = Number(hl.y);
+  const w = Number(hl.w);
+  const h = Number(hl.h);
+  if (![x, y, w, h].every((n) => Number.isFinite(n)) || w <= 0 || h <= 0) return false;
+  const inside = (px: number, py: number, r: ElementBox) =>
+    px >= r.x - 2 && px <= r.x + r.w + 2 && py >= r.y - 2 && py <= r.y + r.h + 2;
+  const hlCentre: [number, number] = [x + w / 2, y + h / 2];
+  const elCentre: [number, number] = [el.x + el.w / 2, el.y + el.h / 2];
+  return inside(hlCentre[0], hlCentre[1], el)
+    || inside(elCentre[0], elCentre[1], { ...el, x, y, w, h });
+}
+
+/** The element the model named by id, with anonymous elements held to a higher
+ * bar.
+ *
+ * The model picks ids out of a numbered list of element labels, so when a label
+ * carries text the choice is checkable and has held up in practice. When the
+ * label is nothing but a tag name the model is choosing blind, and on a live
+ * report a finding about the hero's missing trust line came back as element_id
+ * el_7: the LOGO link, captured as the bare tag "a". Nothing in that label could
+ * contradict the choice, so the pin sat on the logo.
+ *
+ * The label scorer already refuses bare-tag elements; the id path skipped it and
+ * inherited none of that caution. Now an anonymous element needs the model's own
+ * rough box to land on it too, which means it pointed there twice, by id and by
+ * position. A logo finding still pins the logo; a hero finding no longer can. */
+function resolveElementById(
+  elId: string,
+  els: ElementBox[],
+  hl: Record<string, unknown>,
+): ElementBox | undefined {
+  if (!elId) return undefined;
+  const el = els.find((e) => e.id === elId);
+  if (!el) return undefined;
+  const raw = String(el.label ?? "").trim().toLowerCase();
+  if (raw && !TYPE_ONLY_LABELS.has(raw)) return el;
+  return boxAgreesWithElement(hl, el) ? el : undefined;
+}
 
 /** The model names elements well ("Sold out button", "Breadcrumb", "Price") but
  * estimates pixel coordinates poorly, which lands pins on the wrong thing. When
@@ -379,7 +431,7 @@ export function coercePageAudit(
       // like row only shows two products"), and the scorer already demands most
       // of a concise element label be present, so a long sentence cannot snap on
       // one weak token.
-      const el = (elId ? els.find((e) => e.id === elId) : undefined) ??
+      const el = resolveElementById(elId, els, hl) ??
         snapToElementByLabel(hl.label, els) ??
         snapToElementByLabel(rec.text, els);
       let box: { x: number; y: number; w: number; h: number; label?: string } | null = null;
