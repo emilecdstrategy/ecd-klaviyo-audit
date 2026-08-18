@@ -58,7 +58,7 @@ function ProductCard({
           {product.image ? (
             <img src={product.image} alt={product.title} loading="lazy" className="h-full w-full object-cover" />
           ) : (
-            <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-300">no photo</div>
+            <div className="flex h-full w-full items-center justify-center text-xs text-gray-300">no photo</div>
           )}
         </div>
         <div className="min-w-0 flex-1">
@@ -67,7 +67,7 @@ function ProductCard({
           </p>
           <p className="mt-1 flex items-baseline gap-1.5">
             <span className="text-sm font-semibold tracking-tight text-gray-900">{formatMoney(product.revenue, currency)}</span>
-            {meta && <span className="truncate text-[11px] text-gray-500">{meta}</span>}
+            {meta && <span className="truncate text-xs text-gray-500">{meta}</span>}
           </p>
         </div>
         {href && (
@@ -83,7 +83,7 @@ function ProductCard({
         {product.image ? (
           <img src={product.image} alt={product.title} loading="lazy" className="h-full w-full object-cover" />
         ) : (
-          <div className="flex h-full w-full items-center justify-center text-[10px] text-gray-300">no photo</div>
+          <div className="flex h-full w-full items-center justify-center text-xs text-gray-300">no photo</div>
         )}
       </div>
       <p className="mt-2 line-clamp-2 text-xs font-medium leading-snug text-gray-900 group-hover/prod:text-brand-primary">
@@ -102,7 +102,7 @@ function ProductCard({
         {product.unit_price != null ? `${formatMoney(product.unit_price, currency)} each` : null}
       </p>
       {href && (
-        <span className="mt-1 inline-flex items-center gap-1 text-[11px] font-medium text-brand-primary opacity-0 transition-opacity group-hover/prod:opacity-100">
+        <span className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-brand-primary opacity-0 transition-opacity group-hover/prod:opacity-100">
           View <ExternalLink className="h-2.5 w-2.5" />
         </span>
       )}
@@ -169,7 +169,7 @@ function PlayCard({
               <EditablePlainText value={play.metric} onSave={(v) => onEdit('metric', v)} placeholder="headline figure" />
             </p>
             {(play.window || editMode) && (
-              <p className="text-[10px] uppercase tracking-wide text-gray-400">
+              <p className="text-xs uppercase tracking-wide text-gray-400">
                 <EditablePlainText value={play.window} onSave={(v) => onEdit('window', v)} placeholder="window" />
               </p>
             )}
@@ -183,7 +183,7 @@ function PlayCard({
 
       {play.action_steps.length > 0 && (
         <div className="mt-3.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">What to do</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">What to do</p>
           <ul className="mt-1.5 space-y-1.5">
             {play.action_steps.map((step, i) => (
               <li key={i} className="flex gap-2 text-sm leading-relaxed text-gray-700">
@@ -197,7 +197,7 @@ function PlayCard({
 
       {products.length > 0 && (
         <div className="mt-4 border-t border-gray-50 pt-3.5">
-          <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Products in play</p>
+          <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Products in play</p>
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {products.map((p) => (
               <ProductCard key={p.title} product={p} storeBase={storeBase} currency={currency} compact />
@@ -207,6 +207,16 @@ function PlayCard({
       )}
     </article>
   );
+}
+
+/** Snapshots taken before the fetcher learned to name apps stored Shopify's raw
+ *  sourceName, which for an app-placed order is that app's numeric id. */
+function channelName(raw: string): string {
+  const v = (raw ?? '').trim();
+  if (/^d+$/.test(v)) return 'Other app';
+  if (v.toLowerCase() === 'web') return 'Online store';
+  if (v.toLowerCase() === 'pos') return 'Point of sale';
+  return v.replace(/_/g, ' ');
 }
 
 export default function WebAnalyticsSection({
@@ -285,7 +295,7 @@ export default function WebAnalyticsSection({
           return (
             <div key={key} className="rounded-xl bg-brand-surface/60 px-4 py-3.5">
               <div className="flex items-center gap-1">
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{label}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{label}</p>
                 {isRepeat && repeatUnavailable && editMode && (
                   <HoverTooltip
                     label="Not available yet"
@@ -370,7 +380,7 @@ export default function WebAnalyticsSection({
       <div className="mt-7 border-t border-gray-100 pt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {basket && basket.orders_analyzed ? (
           <div className="rounded-xl border border-gray-100 px-4 py-3.5">
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Typical basket</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Typical basket</h3>
             <ul className="mt-2 space-y-1.5 text-sm">
               <li className="flex items-baseline justify-between gap-2">
                 <span className="text-gray-500">Items per order</span>
@@ -404,7 +414,7 @@ export default function WebAnalyticsSection({
                 </li>
               )}
             </ul>
-            <p className="mt-2 text-[10px] text-gray-400">
+            <p className="mt-2.5 text-xs leading-relaxed text-gray-500">
               {basket.orders_analyzed} orders over {basket.window_days} days
               {basket.confident === false ? ', too few to be conclusive' : ''}
               {basket.order_history_limited ? '. Shopify caps order history at 60 days without the read_all_orders scope.' : ''}
@@ -414,14 +424,14 @@ export default function WebAnalyticsSection({
 
         {rollup?.channels && rollup.channels.length > 0 && (
           <div className="rounded-xl border border-gray-100 px-4 py-3.5">
-            <h3 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Where orders come from</h3>
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Where orders come from</h3>
             <ul className="mt-2 space-y-1.5 text-sm">
               {rollup.channels.slice(0, 5).map((c, i) => (
                 <li key={i} className="flex items-baseline justify-between gap-2">
-                  <span className="truncate capitalize text-gray-500">{c.name}</span>
+                  <span className="truncate capitalize text-gray-500">{channelName(c.name)}</span>
                   <span className="shrink-0 font-medium text-gray-900">
                     {formatMoney(c.revenue, currency)}
-                    <span className="ml-1.5 text-[10px] font-normal text-gray-400">{c.orders} orders</span>
+                    <span className="ml-1.5 text-xs font-normal text-gray-400">{c.orders} orders</span>
                   </span>
                 </li>
               ))}

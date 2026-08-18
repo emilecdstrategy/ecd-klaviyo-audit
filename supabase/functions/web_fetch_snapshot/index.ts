@@ -118,6 +118,33 @@ async function fetchTopProducts(shopDomain: string, token: string, currentSince:
   }
 }
 
+/** Shopify's sourceName codes, as a merchant would name them. Anything not
+ * listed is either an app (named via order.app) or a channel we pass through
+ * as-is; a bare numeric id is an app we could not name, and "Other app" beats
+ * printing the id at a client. */
+const SOURCE_LABELS: Record<string, string> = {
+  web: "Online store",
+  pos: "Point of sale",
+  shopify_draft_order: "Draft order",
+  draft_order: "Draft order",
+  iphone: "Shopify mobile",
+  android: "Shopify mobile",
+  shopify_payments_checkout: "Online store",
+  subscription_contract: "Subscriptions",
+};
+
+export function channelLabel(sourceName: unknown, appName?: unknown): string {
+  const src = String(sourceName ?? "").trim();
+  const mapped = SOURCE_LABELS[src.toLowerCase()];
+  if (mapped) return mapped;
+  const app = String(appName ?? "").trim();
+  if (app) return app;
+  if (!src) return "Unknown";
+  // An id, not a name. Never show it.
+  if (/^d+$/.test(src)) return "Other app";
+  return src.replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
+}
+
 /** Paginate the orders window and aggregate. `includeCustomer` pulls the
  * protected customer field (needed for returning-customer rate); when the app
  * lacks protected-customer-data access, that field is dropped. Throws on a hard
@@ -143,6 +170,12 @@ async function aggregateOrders(
   let truncated = false;
 
   const customerField = includeCustomer ? "customer { numberOfOrders }" : "";
+  // sourceName is a code, and for orders placed through an app it is that app's
+  // numeric id: the report was printing "3890849" as if it were a sales channel.
+  // The app's own name is the readable version. Dropped and retried without it
+  // if the field is ever refused, since a channel label is not worth losing the
+  // whole orders pass over.
+  let includeApp = true;
   // Per-order records for the basket work, collected in the same pass as the
   // KPI buckets: one Shopify page-through, not two. Line items and discounts
   // both come under read_orders, which every connection already grants, so none
@@ -159,6 +192,7 @@ async function aggregateOrders(
           nodes {
             createdAt
             sourceName
+            ${includeApp ? "app { name }" : ""}
             currentTotalPriceSet { shopMoney { amount currencyCode } }
             totalDiscountsSet { shopMoney { amount } }
             lineItems(first: 25) {
@@ -178,6 +212,10 @@ async function aggregateOrders(
     );
     if (!res.ok) {
       const message = res.body?.errors?.[0]?.message ?? `Orders query failed (${res.status})`;
+      if (includeApp && /app/i.test(message)) {
+        includeApp = false;
+        continue;
+      }
       throw Object.assign(new Error(message), { code: mapShopifyErrorCode(res.status) });
     }
     const conn = res.body?.data?.orders;
@@ -200,7 +238,7 @@ async function aggregateOrders(
         }
       }
       if (isCurrent) {
-        const channel = String(node?.sourceName ?? "").trim() || "unknown";
+        const channel = channelLabel(node?.sourceName, node?.app?.name);
         const c = channels.get(channel) ?? { revenue: 0, orders: 0 };
         c.revenue += rev;
         c.orders += 1;
