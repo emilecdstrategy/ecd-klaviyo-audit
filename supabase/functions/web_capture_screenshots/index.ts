@@ -472,6 +472,10 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   // findings pin an actual element instead of a guessed coordinate. ScreenshotOne
   // remains the fallback below if Browserless is unset or a call fails.
   const isCart = row.page_type === "cart";
+  // Pages with a product grid: whether a quick-add exists behind :hover is a
+  // real finding either way, and it cannot be read off a screenshot.
+  const hasProductGrid = row.page_type === "collection" || row.page_type === "homepage";
+  let hoverProbe: { hovered: boolean; target?: string; revealed: string[]; quickAdd: boolean } | null = null;
   let cartAdd: { variantId: string | null; productUrl: string | null; pageOnly?: boolean } | undefined = undefined;
   if (isCart) {
     // Pass the detected product page so the capture can read a real variant off it
@@ -516,6 +520,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       // The cart drawer is a viewport overlay, so never full-page for cart.
       fullPage: !isViewport && !isCart,
       withElements: isViewport,
+      hoverProbe: isViewport && hasProductGrid && !isCart,
       // The second-fold shot is context for the after-image generator and
       // nothing else reads fold2_url, so it is pure waste while afters are off:
       // one extra screenshot per viewport page, six per audit.
@@ -540,6 +545,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       elements = bl.elements;
       photos = bl.photos ?? [];
       textLocks = bl.textLocks ?? [];
+      hoverProbe = bl.hover ?? null;
       if (isUsableOutline(bl.probe)) domOutline = bl.probe;
       usedBrowserless = true;
       if (typeof bl.cartCount === "number") cartCount = bl.cartCount;
@@ -676,9 +682,10 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       const withText = textLocks.length ? { ...withPhotos, text_locks: textLocks } : withPhotos;
       // Which proxy pool served this capture, so the datacenter-vs-residential
       // savings are verifiable from the rows rather than guessed.
+      const withHover = hoverProbe ? { ...withText, hover: hoverProbe } : withText;
       const raw = proxyTierUsed && usedBrowserless
-        ? { ...withText, proxy_tier: proxyTierUsed, proxy_used: proxyUsed ?? "none" }
-        : withText;
+        ? { ...withHover, proxy_tier: proxyTierUsed, proxy_used: proxyUsed ?? "none" }
+        : withHover;
       await sb.from("web_page_snapshots").update({
         status: "success",
         screenshot_path: path,

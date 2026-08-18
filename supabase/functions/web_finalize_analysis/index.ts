@@ -220,11 +220,36 @@ function buildPageImages(
       elementLines.push(`${ref} elements: ${listed}`);
     }
   });
+  // What a real mouse found when it hovered a product card. Without this the
+  // model reasons from a resting screenshot and calls a hover-only quick-add
+  // missing, which is exactly what happened on a live report.
+  const hoverLines: string[] = [];
+  ordered.forEach((s, i) => {
+    const raw = (s as { raw?: Record<string, unknown> }).raw ?? {};
+    const hv = raw.hover as { hovered?: boolean; target?: string; revealed?: unknown; quickAdd?: boolean } | undefined;
+    if (!hv || typeof hv !== "object") return;
+    const ref = `IMG_${i + 1}`;
+    if (!hv.hovered) {
+      hoverLines.push(`${ref}: no product card was found to hover, so hover behaviour on this page is UNKNOWN.`);
+      return;
+    }
+    const revealed = Array.isArray(hv.revealed) ? hv.revealed.map(String) : [];
+    hoverLines.push(
+      revealed.length
+        ? `${ref}: hovering the product card "${hv.target ?? "card"}" revealed: ${revealed.join(" | ")}. Quick add to cart present: ${hv.quickAdd ? "YES" : "no"}.`
+        : `${ref}: hovering the product card "${hv.target ?? "card"}" revealed NOTHING new, so there is no hover-only control on these cards.`,
+    );
+  });
+  const hoverText = hoverLines.length
+    ? "\n\nHOVER EVIDENCE. A real mouse was moved over the first product card and the controls before and after were compared, so this is measured, not inferred:\n" + hoverLines.join("\n")
+      + "\n\nUse it. Never claim a card has no quick add, no hover state or no secondary image unless the evidence above says nothing was revealed. Where hover behaviour is UNKNOWN, say nothing about hover at all."
+    : "\n\nNo hover evidence was captured for this page, so make NO claim about what does or does not appear on hover.";
+
   const primaryId = ordered.find((s) => s.viewport === "desktop")?.id ?? ordered[0]?.id ?? null;
   const elementsText = elementLines.length
     ? `\n\nReal page elements detected on these screenshots (use element_id in a finding's highlight to pin exactly, it maps to the element's true on-page box). ALWAYS prefer element_id over x/y/w/h: your coordinate estimates land pins on the wrong element, while these boxes are exact. If you truly must fall back to coordinates, word the highlight's label using the same wording as the closest listed element so it can still be matched:\n${elementLines.join("\n")}`
     : "";
-  return { images, refToId, refToElements, refToViewport, primaryId, elementsText };
+  return { images, refToId, refToElements, refToViewport, primaryId, elementsText: elementsText + hoverText };
 }
 
 async function ensureJob(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
@@ -418,7 +443,7 @@ async function runStep(
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
     if (turn.kind !== "tool_call") throw new Error(`${step.key}: model did not call the tool`);
     logAuditShape(step.key, "first", turn.input);
-    let parsed = coercePageAudit(turn.input, refToId, refToElements, refToViewport);
+    let parsed = coercePageAudit(turn.input, refToId, refToElements, refToViewport, step.page_type);
     logCoercionLoss(step.key, "first", turn.input, parsed.findings.length);
     // The model sometimes returns an empty audit for a page that clearly
     // rendered, and it often skips the intro entirely (which left the report's
@@ -480,7 +505,7 @@ async function runStep(
       const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
       if (retry.kind === "tool_call") {
         logAuditShape(step.key, "retry", retry.input);
-        const retryParsed = coercePageAudit(retry.input, refToId, refToElements, refToViewport);
+        const retryParsed = coercePageAudit(retry.input, refToId, refToElements, refToViewport, step.page_type);
         logCoercionLoss(step.key, "retry", retry.input, retryParsed.findings.length);
         // Only take what was actually missing, so a retry cannot throw away good
         // findings from the first pass. `tooFew` is handled alongside

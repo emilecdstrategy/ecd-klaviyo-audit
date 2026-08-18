@@ -102,3 +102,86 @@ Deno.test("a label that only shares a content-type word snaps to nothing", () =>
     "content-type words only",
   );
 });
+
+// --- Self-cancelling findings ---------------------------------------------
+
+/** Coerce one finding and report whether it survived. */
+function survives(text: string, recommendation: string): boolean {
+  const out = coercePageAudit(
+    { findings: [{ text, recommendation, viewport: "desktop" }] },
+    new Map([["IMG_1", "snap-desktop"]]),
+    new Map([["IMG_1", HOMEPAGE_ELEMENTS]]),
+    new Map([["IMG_1", "desktop"]]),
+  );
+  return (out.findings ?? []).length > 0;
+}
+
+Deno.test("a finding that retracts itself mid-sentence is dropped", () => {
+  // Shipped in a live report: the fix admitted the gap was an artifact of the
+  // single test item we added ourselves, then asked for a change anyway.
+  const kept = survives(
+    "The cart has a lot of empty space between the single item and the total on desktop.",
+    "This is only because we tested with one item in the cart, so no change is needed for that specific gap, but consider whether the recommended items panel could shift up.",
+  );
+  if (kept) throw new Error("kept a finding whose own fix says no change is needed");
+});
+
+Deno.test("a real finding with a real fix survives", () => {
+  const kept = survives(
+    "The desktop navigation wraps onto a second row.",
+    "Shorten the longest labels so every category fits on one row.",
+  );
+  if (!kept) throw new Error("dropped a legitimate finding");
+});
+
+Deno.test("a fix that merely mentions a test elsewhere still survives", () => {
+  // Guard against the new patterns being too greedy.
+  const kept = survives(
+    "The hero has two equally weighted buttons.",
+    "Make one button primary and test the wording against the current pair.",
+  );
+  if (!kept) throw new Error("the no-op filter is too greedy");
+});
+
+/** Coerce one finding for a given page type. */
+function survivesOn(pageType: string, text: string, recommendation: string): boolean {
+  const out = coercePageAudit(
+    { findings: [{ text, recommendation, viewport: "desktop" }] },
+    new Map([["IMG_1", "snap-desktop"]]),
+    new Map([["IMG_1", HOMEPAGE_ELEMENTS]]),
+    new Map([["IMG_1", "desktop"]]),
+    pageType,
+  );
+  return (out.findings ?? []).length > 0;
+}
+
+Deno.test("'nothing to fix here, but...' is still a retraction", () => {
+  // Second wording the model reached for after the first was blocked.
+  const kept = survives(
+    "The cart has a lot of empty black space between the single line item and the totals.",
+    "Nothing to fix here since a real shopper's basket will naturally fill this space, but if you want to tighten it visually, cap the line-item area's minimum height.",
+  );
+  if (kept) throw new Error("kept a finding whose fix opens with nothing to fix");
+});
+
+Deno.test("cart emptiness is refused outright, however it is worded", () => {
+  // No retraction to catch this time: a confident, actionable fix for a gap that
+  // only exists because we added one test item.
+  const kept = survivesOn(
+    "cart",
+    "The drawer looks sparse with a large gap under the single item.",
+    "Cap the line-item area's minimum height so the totals sit closer to the product.",
+  );
+  if (kept) throw new Error("kept a cart emptiness finding");
+});
+
+Deno.test("the same wording is allowed on a page that is not the cart", () => {
+  // A homepage hero really can have too much dead space; the refusal is
+  // cart-specific because only the cart's contents are ours.
+  const kept = survivesOn(
+    "homepage",
+    "The hero leaves a large gap between the headline and the buttons.",
+    "Tighten the vertical spacing so the buttons sit within the first screen.",
+  );
+  if (!kept) throw new Error("the cart refusal leaked onto other pages");
+});

@@ -398,11 +398,20 @@ export type WebFinding = { text: string; recommendation: string; viewport: WebVi
 
 export type ElementBox = { id: string; x: number; y: number; w: number; h: number; label?: string };
 
+/** The cart is photographed with ONE item we added ourselves, so its blank space
+ * is an artifact of our capture and never a defect of the store. The KB has said
+ * so for a while and the model kept submitting it anyway, twice with a fix that
+ * admitted it was a non-issue, so the topic is now refused in code. */
+const CART_EMPTINESS_RE =
+  /empty (black |blank |dead |white )?space|whitespace|blank space|large gap|big gap|lot of (empty|blank|dead) space|looks (sparse|empty|bare)|feels (sparse|empty|unbalanced)|unbalanced|sparse/i;
+
 export function coercePageAudit(
   input: unknown,
   imageRefToSnapshotId: Map<string, string>,
   refToElements?: Map<string, ElementBox[]>,
   refToViewport?: Map<string, string>,
+  /** Which page this is, so page-specific refusals can apply. */
+  pageType?: string,
 ) {
   const o = (input ?? {}) as Record<string, unknown>;
   const findingsRaw = Array.isArray(o.findings) ? o.findings : [];
@@ -595,10 +604,28 @@ export function coercePageAudit(
       const noop = /^(keep|leave)\b.{0,24}\bas[ -]?is\b/.test(rec) ||
         /^no (change|changes|fix|action|edits?) (needed|required|necessary)/.test(rec) ||
         /^(keep|leave) (this|it|them) (as is|the same|unchanged)/.test(rec) ||
-        (/\bkeep (this|it|as is)\b/.test(rec) && rec.length < 60);
+        (/\bkeep (this|it|as is)\b/.test(rec) && rec.length < 60) ||
+        // These clauses were anchored to the START of the recommendation, so a
+        // finding that buried its own retraction mid-sentence sailed through: a
+        // live report shipped "the cart has a lot of empty space" whose fix read
+        // "this is only because we tested with one item in the cart, so no change
+        // is needed for that specific gap, but consider...". A finding that admits
+        // it is not a problem is not a finding, wherever it admits it.
+        /\bno (change|changes|fix|action|edits?) (is |are )?(needed|required|necessary)\b/.test(rec) ||
+        /\bnot (really )?(an|a real) (issue|problem)\b/.test(rec) ||
+        // Artifacts of OUR capture rather than the store: the single test item we
+        // added in order to photograph the cart, and the viewport crop.
+        /\b(we|you) (only )?tested with\b/.test(rec) ||
+        /\bartifact of (our|the) (test|capture)\b/.test(rec) ||
+        /\bnothing to (fix|change|do|address)\b/.test(rec) ||
+        /\bwill (naturally |simply )?fill (this|that|the) space\b/.test(rec);
       // Also drop a finding that reads purely as praise with no problem stated.
       const praiseOnly = /(works well|looks great|is (a )?nice|does exactly what|is doing exactly)/.test(txt) &&
         (/^(keep|leave|maintain)\b/.test(rec) || rec.length === 0);
+      // The cart is photographed with one item WE added, so its blank space is
+      // an artifact of our capture. Refused in code because the KB rule saying
+      // so was ignored three times running.
+      if (pageType === "cart" && CART_EMPTINESS_RE.test(txt)) return false;
       // Drop grow-zone / planting-location widget findings: it is automatic
       // zip-based detection and 'n/a' before a zip is entered is expected. The
       // model renames it ("location fields", "personalization bar", "location

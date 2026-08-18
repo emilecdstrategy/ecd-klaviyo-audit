@@ -252,7 +252,10 @@ export default function WebPageSection({
           right. The numbered pins on the shot match the numbered findings. */}
       <div className="mt-5 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
         {/* Left: reference screenshot (before) with optional AI "after" concept */}
-        <div className="lg:sticky lg:top-6">
+        {/* Clears the report's sticky section nav, which is ~46px tall and would
+            otherwise crop the top of the pinned screenshot as you scroll. Same
+            72px the anchor links already scroll to. */}
+        <div className="lg:sticky lg:top-[4.5rem]">
           {shown ? (
             <div className={afterUrl || viewport === 'desktop' ? 'w-full' : 'mx-auto w-full max-w-[360px]'}>
               {/* Editor-only generate / regenerate control. */}

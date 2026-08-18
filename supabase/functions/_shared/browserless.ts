@@ -32,6 +32,23 @@ export type CapturedPhoto = {
  * or total, a review count, or the brand mark with its tagline. The compositor
  * locks these the same way it locks photos, because the model kept corrupting
  * exactly this class of content (misspelled titles, invented totals). */
+/** Evidence about hover-revealed controls, so an audit never has to guess.
+ * A quick-add button that only exists on :hover is invisible to a screenshot,
+ * and a report claimed a store had none when it did. */
+export type HoverProbe = {
+  /** Whether a product card was found and hovered at all. */
+  hovered: boolean;
+  /** Label of the card that was hovered, for the record. */
+  target?: string;
+  /** Controls that became visible on hover and were not visible before. */
+  revealed: string[];
+  /** True when one of the revealed controls is an add-to-cart affordance. */
+  quickAdd: boolean;
+  /** Why the probe failed, when it did. Recorded rather than swallowed: a null
+   * probe reads identically to one that never ran. */
+  error?: string;
+};
+
 export type CapturedTextLock = {
   kind: string;
   /** The actual text, kept so a lock can be skipped when a fix explicitly
@@ -50,6 +67,10 @@ export type BrowserlessResult =
     photos: CapturedPhoto[];
     /** Must-not-change text in the shot; the compositor locks these too. */
     textLocks: CapturedTextLock[];
+    /** What appeared when a real mouse hovered the first product card. Absent
+     * when the probe did not run, EMPTY when it ran and nothing appeared. The
+     * difference matters: absent means unknown, empty means checked. */
+    hover?: HoverProbe;
     cartCount?: number | null;
     /** The proxy pool that actually served this capture ("" for none). Recorded
      * per snapshot so the datacenter-vs-residential spend is auditable rather
@@ -82,9 +103,11 @@ function b64ToBytes(b64: string): Uint8Array {
 // /function as-is. blockAds/blockConsentModals (launch params on the URL) handle
 // ads + cookie banners; this code adds a chat-widget / leftover-overlay sweep, an
 // optional cart-drawer click, and (for the viewport shot) element-box collection.
-const FUNCTION_CODE = `
+// Exported so a test can parse-check it: a syntax error in this string is
+// invisible to deno check and surfaces only as every capture failing.
+export const FUNCTION_CODE = `
 export default async ({ page, context }) => {
-  const { url, width, height, fullPage, withElements, cartAdd, isMobile, secondFold, editScript, probeScript } = context;
+  const { url, width, height, fullPage, withElements, hoverProbe, cartAdd, isMobile, secondFold, editScript, probeScript } = context;
   if (editScript) {
     // Must be set before navigation; lets our injected edits run on stores
     // whose CSP would otherwise reject evaluated scripts.
@@ -515,6 +538,109 @@ export default async ({ page, context }) => {
     });
   }
 
+  // Hover the first product card with a REAL mouse and record what appears.
+  // Themes hide quick-add behind :hover, which no screenshot can show, and an
+  // audit once told a client they had no quick-add when they did. Dispatching
+  // mouseover would not do: only a real pointer triggers CSS :hover.
+  let hover = null;
+  if (hoverProbe) {
+    try {
+      // Find the first product card: the smallest sensible ancestor of a
+      // /products/ link that is big enough to be the card itself.
+      const card = await page.evaluate(() => {
+        const vw = window.innerWidth, vh = window.innerHeight;
+        // NOT simply the first /products/ link on the page: on a live store that
+        // was the ANNOUNCEMENT BAR ("NEW SNAKE LEATHER HOODS"), so the probe
+        // hovered the top banner, found nothing, and reported the grid had no
+        // quick add. Chrome first, then a node that looks like a card.
+        const CHROME = 'header,nav,footer,[class*="announcement" i],[class*="menu" i],[class*="drawer" i],[class*="splide" i]';
+        const CARD_RE = /(^|[^a-z])card|product-item|product_item|grid-item|grid__item|product-card/i;
+        const links = Array.from(document.querySelectorAll('a[href*="/products/"]'))
+          .filter((l) => !l.closest(CHROME));
+        for (const link of links) {
+          let best = null;
+          let node = link;
+          for (let up = 0; up < 6 && node; up++) {
+            const r = node.getBoundingClientRect();
+            const onScreen = r.top >= -4 && r.top < vh && r.width > 80 && r.height > 80;
+            const stillOneCard = r.width < vw * 0.62 && r.height < vh * 1.6;
+            if (onScreen && stillOneCard) {
+              const cls = (node.className || "").toString();
+              const looksLikeCard = CARD_RE.test(cls);
+              const t = ((node.innerText || "").replace(/\\s+/g, " ")).trim();
+              // A node the theme itself calls a card wins outright; otherwise
+              // take the biggest box that is still one card, since the anchor
+              // around the image alone excludes any control under it.
+              const better = !best
+                || (looksLikeCard && !best.looksLikeCard)
+                || (looksLikeCard === best.looksLikeCard && r.width * r.height > best.w * best.h);
+              if (better) {
+                best = { x: r.left + r.width / 2, y: r.top + r.height / 2, w: r.width, h: r.height,
+                         left: r.left, top: r.top, looksLikeCard: looksLikeCard,
+                         label: (t.slice(0, 60) || cls.slice(0, 40) || "product card") };
+              }
+            }
+            node = node.parentElement;
+          }
+          if (best && best.looksLikeCard) return best;
+          if (best) return best;
+        }
+        return null;
+      });
+
+      if (!card) {
+        hover = { hovered: false, revealed: [], quickAdd: false };
+      } else {
+        // Actionable controls visible inside the card's box, before and after.
+        const controlsIn = (box) => page.evaluate((b) => {
+          const out = [];
+          const nodes = Array.from(document.querySelectorAll('button,a,[role="button"],input[type="submit"]'));
+          for (const el of nodes) {
+            const r = el.getBoundingClientRect();
+            const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+            if (cx < b.left - 4 || cx > b.left + b.w + 4 || cy < b.top - 4 || cy > b.top + b.h + 4) continue;
+            if (r.width < 8 || r.height < 8) continue;
+            if (typeof el.checkVisibility === "function") {
+              if (!el.checkVisibility({ opacityProperty: true, visibilityProperty: true, contentVisibilityAuto: true })) continue;
+            } else {
+              const cs = getComputedStyle(el);
+              if (cs.visibility === "hidden" || cs.display === "none" || Number(cs.opacity) === 0) continue;
+            }
+            const text = ((el.getAttribute("aria-label") || el.innerText || el.getAttribute("title") || "")
+              .replace(/\\s+/g, " ")).trim().slice(0, 60);
+            out.push(el.tagName.toLowerCase() + (text ? ": " + text : ""));
+          }
+          return out;
+        }, box);
+
+        const before = await controlsIn(card);
+        // Park the mouse away from the grid first, so a control already under
+        // the pointer is not counted as revealed by our own hover.
+        await page.mouse.move(2, 2);
+        await new Promise((r) => setTimeout(r, 150));
+        await page.mouse.move(card.x, card.y);
+        // Hover transitions are usually 150-300ms; give them room to finish.
+        await new Promise((r) => setTimeout(r, 700));
+        const after = await controlsIn(card);
+
+        const revealed = after.filter((label) => before.indexOf(label) === -1);
+        const ADD_RE = /add to (cart|bag)|quick add|quick shop|quick view|quick buy|add \\+|\\+ add/i;
+        hover = {
+          hovered: true,
+          target: card.label,
+          revealed: revealed.slice(0, 8),
+          quickAdd: revealed.some((l) => ADD_RE.test(l)),
+        };
+        // Leave the pointer off the grid so the screenshot is not taken with a
+        // card in its hover state, which would misrepresent the resting page.
+        await page.mouse.move(2, 2);
+        await new Promise((r) => setTimeout(r, 300));
+      }
+    } catch (e) {
+      hover = { hovered: false, revealed: [], quickAdd: false, error: String((e && e.message) || e).slice(0, 200) };
+    }
+  }
+
   // A COMPLETE inventory of the photographs in the shot, which the elements
   // list above is not: that one exists to place finding pins, so it filters by
   // tag and text and caps itself, and it recorded ONE image on a homepage whose
@@ -737,7 +863,7 @@ export default async ({ page, context }) => {
       await page.evaluate(() => { window.scrollTo(0, 0); });
     } catch (e) {}
   }
-  return { data: { screenshot, screenshot2, elements, photos, textLocks, cartCount, probe, editReport }, type: "application/json" };
+  return { data: { screenshot, screenshot2, elements, photos, textLocks, hover, cartCount, probe, editReport }, type: "application/json" };
 };
 `;
 
@@ -757,6 +883,9 @@ export async function captureWithBrowserless(input: {
      * to the drawer route's click storm. */
     pageOnly?: boolean;
   };
+  /** Hover the first product card with a real mouse and record what appears.
+   * Only worth doing on pages with a product grid. */
+  hoverProbe?: boolean;
   /** Also capture the next viewport down, as context for the "after" generator. */
   secondFold?: boolean;
   /** Which proxy pool to use, when BROWSERLESS_PROXY=auto lets the caller tier
@@ -820,6 +949,7 @@ export async function captureWithBrowserless(input: {
           height: dim.height,
           fullPage: input.fullPage,
           withElements: input.withElements,
+          hoverProbe: Boolean(input.hoverProbe),
           cartAdd: input.cartAdd ?? null,
           isMobile: input.viewport === "mobile",
           secondFold: Boolean(input.secondFold),
@@ -851,6 +981,7 @@ export async function captureWithBrowserless(input: {
         textLocks?: CapturedTextLock[];
         error?: string;
         cartCount?: number | null;
+        hover?: HoverProbe | null;
         probe?: unknown;
         editReport?: unknown;
       }
@@ -864,6 +995,17 @@ export async function captureWithBrowserless(input: {
     const elements = Array.isArray(payload.elements) ? payload.elements.slice(0, 90) : [];
     const photos = Array.isArray(payload.photos) ? payload.photos.slice(0, 40) : [];
     const textLocks = Array.isArray(payload.textLocks) ? payload.textLocks.slice(0, 12) : [];
+    // Kept null when the probe did not run, so "not checked" never reads as
+    // "checked and found nothing".
+    const hover: HoverProbe | undefined = payload.hover && typeof payload.hover === "object"
+      ? {
+        hovered: Boolean(payload.hover.hovered),
+        target: typeof payload.hover.target === "string" ? payload.hover.target : undefined,
+        revealed: Array.isArray(payload.hover.revealed) ? payload.hover.revealed.map(String).slice(0, 8) : [],
+        quickAdd: Boolean(payload.hover.quickAdd),
+        error: typeof payload.hover.error === "string" ? payload.hover.error : undefined,
+      }
+      : undefined;
     let png2: Uint8Array | null = null;
     if (payload.screenshot2) {
       const b = b64ToBytes(payload.screenshot2);
@@ -876,6 +1018,7 @@ export async function captureWithBrowserless(input: {
       elements,
       photos,
       textLocks,
+      hover,
       cartCount: payload.cartCount ?? null,
       proxyUsed: proxy,
       probe: payload.probe ?? null,
