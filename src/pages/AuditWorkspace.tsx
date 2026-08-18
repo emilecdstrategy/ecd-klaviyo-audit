@@ -476,7 +476,8 @@ export default function AuditWorkspace() {
       onAuditChange={setAudit}
       onSectionsChange={setSections}
     >
-      <div className="pb-24">
+      <div className="flex min-h-screen">
+      <div className="min-w-0 flex-1 pb-24">
         <TopBar
           title={audit.title}
           subtitle={client?.company_name}
@@ -757,6 +758,8 @@ export default function AuditWorkspace() {
             )}
           </div>
         </Modal>
+
+      </div>
 
         {audit.audit_type === 'web' && !webGenerating && webBundle && (
           <WebAuditAgentPanel

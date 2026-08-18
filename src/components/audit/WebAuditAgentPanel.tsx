@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { cn } from '../../lib/utils';
 import { Sparkles, Send, X, Loader2, Check, Wand2, RefreshCw, Paperclip } from 'lucide-react';
 import type { ProposalAgentAttachment } from '../../lib/types';
 import { imagesFromClipboard, isImageFile, uploadChatImage, MAX_CHAT_IMAGES_PER_MESSAGE } from '../../lib/chat-image-upload';
@@ -235,12 +236,8 @@ export default function WebAuditAgentPanel({
     }
   };
 
-  if (!open) return null;
-
-  return (
-    <>
-      <div className="fixed inset-0 z-40 bg-black/20 lg:hidden" onClick={onClose} />
-      <div className="fixed right-0 top-0 z-50 flex h-screen w-full max-w-[420px] flex-col border-l border-gray-200 bg-white shadow-2xl print:hidden">
+  const body = (
+    <div className="flex h-full flex-col bg-white">
         <div className="flex items-center gap-2 border-b border-gray-100 px-4 py-3">
           <Sparkles className="h-4 w-4 text-brand-primary" />
           <p className="flex-1 text-sm font-semibold text-gray-900">Web audit assistant</p>
@@ -388,7 +385,36 @@ export default function WebAuditAgentPanel({
             </button>
           </div>
         </form>
+    </div>
+  );
+
+  return (
+    <>
+      {/* Desktop: a spacer that reserves width, so the report is pushed aside
+          rather than hidden under the panel. */}
+      <div
+        aria-hidden
+        className={cn(
+          'hidden shrink-0 transition-[width] duration-300 ease-in-out lg:block print:hidden',
+          open ? 'w-[420px]' : 'w-0',
+        )}
+      />
+      <div
+        className={cn(
+          'fixed right-0 top-0 z-30 hidden h-screen w-[420px] transform border-l border-gray-200 bg-white shadow-sm transition-transform duration-300 ease-in-out lg:block print:hidden',
+          open ? 'translate-x-0' : 'translate-x-full',
+        )}
+      >
+        {body}
       </div>
+
+      {/* Mobile: there is no room to push anything, so it stays an overlay. */}
+      {open && (
+        <div className="lg:hidden print:hidden">
+          <div className="fixed inset-0 z-40 bg-black/20" onClick={onClose} />
+          <div className="fixed inset-y-0 right-0 z-50 w-full max-w-[400px] shadow-xl">{body}</div>
+        </div>
+      )}
     </>
   );
 }

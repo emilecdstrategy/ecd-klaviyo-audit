@@ -144,6 +144,7 @@ function ProductShell({
 
 function PlayCard({
   play,
+  number,
   products,
   storeBase,
   currency,
@@ -151,6 +152,8 @@ function PlayCard({
   onEdit,
 }: {
   play: WebAnalyticsPlay;
+  /** Its position in the list, so a play can be pointed at on a call. */
+  number: number;
   products: BasketProduct[];
   storeBase?: string | null;
   currency: string;
@@ -160,8 +163,13 @@ function PlayCard({
   return (
     <article className="rounded-2xl border border-gray-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
       <div className="flex flex-wrap items-start justify-between gap-3">
-        <h4 className="min-w-0 text-base font-semibold leading-snug text-gray-900">
-          <EditablePlainText value={play.title} onSave={(v) => onEdit('title', v)} placeholder="Play title…" />
+        <h4 className="flex min-w-0 items-start gap-2.5 text-base font-semibold leading-snug text-gray-900">
+          <span className="mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-surface text-xs font-bold tabular-nums text-brand-primary">
+            {number}
+          </span>
+          <span className="min-w-0">
+            <EditablePlainText value={play.title} onSave={(v) => onEdit('title', v)} placeholder="Play title…" />
+          </span>
         </h4>
         {(play.metric || editMode) && (
           <div className="shrink-0 text-right">
@@ -338,6 +346,7 @@ export default function WebAnalyticsSection({
               <PlayCard
                 key={i}
                 play={play}
+                number={i + 1}
                 products={productsFor(play)}
                 storeBase={storeBase}
                 currency={currency}
