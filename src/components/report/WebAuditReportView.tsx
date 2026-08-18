@@ -101,8 +101,13 @@ export default function WebAuditReportView({
 
   // Customer Agent and Helpdesk share one demo app, so selecting both gets a
   // single combined section rather than the same embed twice.
+  const addOnItems = useMemo(
+    () => getAddOnItemsFromLayout(audit.layout).filter(item => !item.is_hidden),
+    [audit.layout],
+  );
+
   const demoKind = useMemo<AgentDemoKind | null>(() => {
-    const items = getAddOnItemsFromLayout(audit.layout).filter(item => !item.is_hidden);
+    const items = addOnItems;
     const hasAgent = items.some(item => addOnIsCustomerAgent(item.template_slug, item.name));
     const hasHelpdesk = items.some(item => addOnIsHelpdesk(item.template_slug, item.name));
     if (hasAgent && hasHelpdesk) return 'both';
@@ -297,7 +302,7 @@ export default function WebAuditReportView({
             separate piece of analysis. */}
         {roadmap && !isHidden(roadmap) && !parseWebRoadmapDetail(roadmap.section_details).investment_hidden && (
           <div id="web_investment_summary">
-            <WebInvestmentSummary section={roadmap} />
+            <WebInvestmentSummary section={roadmap} addOns={addOnItems} />
           </div>
         )}
 

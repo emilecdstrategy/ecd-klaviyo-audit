@@ -98,7 +98,5 @@ export function computeWebInvestmentTotals(rows: WebRoadmapRow[], hourlyRate: nu
 export function formatHours(hours: number | null | undefined): string {
   const h = normalizeHours(hours);
   if (h == null) return '—';
-  if (h === 0.5) return 'half an hour';
-  if (h === 1) return '1 hr';
-  return `${h % 1 === 0 ? h : h.toFixed(1)} hrs`;
+  return `${h % 1 === 0 ? h : h.toFixed(1)} ${h === 1 ? 'hr' : 'hrs'}`;
 }

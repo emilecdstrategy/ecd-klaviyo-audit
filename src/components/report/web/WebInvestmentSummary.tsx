@@ -1,7 +1,12 @@
 import { useMemo } from 'react';
 import { Receipt } from 'lucide-react';
 import { cn } from '../../../lib/utils';
-import type { AuditSection } from '../../../lib/types';
+import type { AuditSection, RevenueOpportunityAddOnItem } from '../../../lib/types';
+import {
+  buildInvestmentLineItems,
+  computeInvestmentTotals,
+  groupInvestmentLinesByItem,
+} from '../../../lib/investment-summary';
 import { parseWebRoadmapDetail, type WebRoadmapRow } from '../../../lib/web-report-details';
 import {
   computeWebInvestmentTotals,
@@ -81,13 +86,29 @@ function TotalRow({
   );
 }
 
-export default function WebInvestmentSummary({ section }: { section: AuditSection }) {
-  const { editMode, updateSectionDetailValue } = useReportEdit();
+export default function WebInvestmentSummary({
+  section,
+  addOns,
+}: {
+  section: AuditSection;
+  /** Priced extras attached to this audit (Customer Agent, Helpdesk and the
+   *  rest). They are quoted work like any roadmap row, so they belong in the
+   *  same total rather than in a separate bill nobody adds up. */
+  addOns: RevenueOpportunityAddOnItem[];
+}) {
+  const { editMode, updateSectionDetailValue, toggleAddOnInvestmentIncluded } = useReportEdit();
   const detail = useMemo(() => parseWebRoadmapDetail(section.section_details), [section.section_details]);
   const rows = detail.rows;
   const hourlyRate = detail.hourly_rate ?? 0;
 
   const totals = useMemo(() => computeWebInvestmentTotals(rows, hourlyRate), [rows, hourlyRate]);
+  const addOnGroups = useMemo(() => groupInvestmentLinesByItem(buildInvestmentLineItems(addOns)), [addOns]);
+  const addOnTotals = useMemo(() => computeInvestmentTotals(addOnGroups.flatMap((g) => g.lines)), [addOnGroups]);
+
+  const oneTimeTotal = totals.oneTimeTotal + addOnTotals.oneTimeTotal;
+  const monthlyTotal = totals.monthlyTotal + addOnTotals.monthlyTotal;
+  const oneTimeLabelOnly = totals.unpricedCount > 0 || addOnTotals.oneTimeHasLabelOnly;
+  const monthlyLabelOnly = totals.ongoingLabelOnly || addOnTotals.monthlyHasLabelOnly;
 
   // Hidden roadmap items never appear here, even in edit mode: they are not part
   // of the report the client reads, so pricing them would be a lie.
@@ -113,8 +134,9 @@ export default function WebInvestmentSummary({ section }: { section: AuditSectio
     return label && !/^[—-]$/.test(label) ? `plus ${label} ongoing` : undefined;
   };
 
-  const showOneTime = totals.oneTimeTotal > 0 || totals.unpricedCount > 0;
-  const showMonthly = totals.monthlyTotal > 0 || totals.ongoingLabelOnly;
+  const showOneTime = oneTimeTotal > 0 || oneTimeLabelOnly;
+  const showMonthly = monthlyTotal > 0 || monthlyLabelOnly;
+  const hasAnything = listed.length > 0 || addOnGroups.length > 0;
 
   return (
     <section className="rounded-2xl bg-white card-shadow">
@@ -149,13 +171,13 @@ export default function WebInvestmentSummary({ section }: { section: AuditSectio
       </div>
 
       <div className="px-6 py-5">
-        {listed.length === 0 ? (
+        {!hasAnything ? (
           <p className="py-6 text-center text-sm text-gray-500">No roadmap items to price yet.</p>
         ) : (
           <div>
             <div className="mb-1 flex items-center gap-2 text-xs font-bold uppercase tracking-wide text-gray-400">
               {editMode ? <span className="w-8 shrink-0" aria-hidden /> : null}
-              <span className="flex-1">Item</span>
+              <span className="flex-1">{addOnGroups.length > 0 ? 'Roadmap' : 'Item'}</span>
               <span className="shrink-0">Investment</span>
             </div>
 
@@ -186,7 +208,50 @@ export default function WebInvestmentSummary({ section }: { section: AuditSectio
               })}
             </div>
 
-            {(showOneTime || showMonthly) && included.length > 0 && (
+            {addOnGroups.length > 0 && (
+              <div className="mt-5">
+                <p className="mb-1 text-xs font-bold uppercase tracking-wide text-gray-400">Add-ons</p>
+                <div className="divide-y divide-gray-100">
+                  {addOnGroups.map((group) => (
+                    <div key={group.itemKey} className={cn('flex gap-3', !group.included && 'opacity-60')}>
+                      {editMode ? (
+                        <div className="flex w-8 shrink-0 justify-center pt-2.5">
+                          <div className="flex h-6 items-center">
+                            <BrandedCheckbox
+                              size="lg"
+                              checked={group.included}
+                              onChange={(checked) => toggleAddOnInvestmentIncluded(group.itemKey, checked)}
+                              aria-label={`Include ${group.name} in the total`}
+                            />
+                          </div>
+                        </div>
+                      ) : null}
+                      {group.included || editMode ? (
+                        <div className="min-w-0 flex-1">
+                          {group.lines.map((line, lineIndex) => (
+                            <PriceRow
+                              key={`${line.itemKey}-${line.unit}`}
+                              label={
+                                lineIndex === 0
+                                  ? group.name
+                                  : line.unit === 'monthly'
+                                    ? 'Monthly retainer'
+                                    : 'One-time implementation'
+                              }
+                              amount={line.headline}
+                              caption={line.caption}
+                              muted={!group.included}
+                            />
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {(showOneTime || showMonthly) && (included.length > 0 || addOnGroups.some((g) => g.included)) && (
               <div className="mt-6 border-t border-gray-200 pt-5">
                 <div className="mt-1 rounded-xl border border-gray-200 bg-gray-50/80 px-4 py-4">
                   <p className="mb-3 text-xs font-bold uppercase tracking-wide text-gray-500">Total investment</p>
@@ -195,8 +260,8 @@ export default function WebInvestmentSummary({ section }: { section: AuditSectio
                       <TotalRow
                         label="One-time"
                         amount={
-                          totals.oneTimeTotal > 0
-                            ? `${formatCurrency(totals.oneTimeTotal)}${totals.unpricedCount > 0 ? '+' : ''}`
+                          oneTimeTotal > 0
+                            ? `${formatCurrency(oneTimeTotal)}${oneTimeLabelOnly ? '+' : ''}`
                             : 'Custom'
                         }
                         suffix="total"
@@ -207,8 +272,8 @@ export default function WebInvestmentSummary({ section }: { section: AuditSectio
                       <TotalRow
                         label="Monthly"
                         amount={
-                          totals.monthlyTotal > 0
-                            ? `${formatCurrency(totals.monthlyTotal)}${totals.ongoingLabelOnly ? '+' : ''}`
+                          monthlyTotal > 0
+                            ? `${formatCurrency(monthlyTotal)}${monthlyLabelOnly ? '+' : ''}`
                             : 'Custom'
                         }
                         suffix="/mo"

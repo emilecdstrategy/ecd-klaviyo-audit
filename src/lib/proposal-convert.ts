@@ -121,11 +121,16 @@ export async function createProposalFromAudit(audit: Audit, client: Client): Pro
 
   // A web audit prices its work on the roadmap, not on revenue-opportunity
   // add-ons, so reading audit.layout there produced an empty proposal.
+  // A web audit prices roadmap work AND any add-ons attached to it, in that
+  // order, so the proposal lists what the investment summary totalled.
   const base = audit.audit_type === 'web'
-    ? webRoadmapToLineItems(
-        (await listAuditSections(audit.id)).find(s => s.section_key === 'web_revenue_summary')?.section_details,
-        serviceKeyBySlug,
-      )
+    ? [
+        ...webRoadmapToLineItems(
+          (await listAuditSections(audit.id)).find(s => s.section_key === 'web_revenue_summary')?.section_details,
+          serviceKeyBySlug,
+        ),
+        ...auditAddOnsToLineItems(audit.layout, serviceKeyBySlug),
+      ].map((item, index) => ({ ...item, display_order: (index + 1) * 10 }))
     : auditAddOnsToLineItems(audit.layout, serviceKeyBySlug);
 
   const lineItems = base.map(item => ({ ...item, proposal_id: proposal.id }));
