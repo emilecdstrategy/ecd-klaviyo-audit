@@ -479,6 +479,17 @@ async function fetchOrdersRollup(
   const { current, previous, channels, currency, truncated, orders } = agg;
   const basket = analyzeBaskets(orders, nowMs, { truncated, hasAllOrders });
 
+  // The fetch stops at ORDERS_MAX_PAGES. A store doing more than that inside the
+  // comparison window therefore returns only its most recent slice, and the
+  // prior period is never reached at all. Publishing that as "last 30 days"
+  // understated Pipeliner's Cloud by roughly 4x in a client-facing report, with
+  // an empty baseline beside it. So say what was actually covered, and drop a
+  // comparison we cannot make rather than showing zeroes as if they were real.
+  const currentSpanDays = truncated && orders.length > 0
+    ? Math.max(1, Math.ceil((nowMs - Math.min(...orders.map((o) => o.created_ms))) / DAY_MS))
+    : PERIOD_DAYS;
+  const comparisonUsable = !truncated && previous.order_count > 0;
+
   const cur = summarizePeriod(current);
   const prev = summarizePeriod(previous);
   // Without customer data we can't compute the returning-customer rate; null it
@@ -490,10 +501,17 @@ async function fetchOrdersRollup(
   return {
     // Two-period comparison for the Data & Analytics section.
     timeframe_key: "30d_vs_prior_30d",
-    period_days: PERIOD_DAYS,
+    period_days: currentSpanDays,
+    /** True when period_days is the span we could reach, not the 30 asked for. */
+    period_truncated: truncated,
     current: { ...cur, returning_customer_rate: curReturning },
-    previous: { ...prev, returning_customer_rate: prevReturning },
-    deltas: {
+    previous: comparisonUsable ? { ...prev, returning_customer_rate: prevReturning } : null,
+    deltas: !comparisonUsable ? {
+      gross_revenue: null,
+      order_count: null,
+      aov: null,
+      returning_customer_rate: null,
+    } : {
       gross_revenue: pctDelta(cur.gross_revenue, prev.gross_revenue),
       order_count: pctDelta(cur.order_count, prev.order_count),
       aov: pctDelta(cur.aov, prev.aov),

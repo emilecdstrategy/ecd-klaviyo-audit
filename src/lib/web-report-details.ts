@@ -298,7 +298,13 @@ export type PeriodMetrics = {
 
 export type OrdersRollup = {
   current?: PeriodMetrics;
-  previous?: PeriodMetrics;
+  /** Null when the fetch never reached the prior period, so the report shows no
+   *  comparison rather than a zero baseline. */
+  previous?: PeriodMetrics | null;
+  /** Days the current figures actually cover. Below 30 when the order fetch hit
+   *  its page cap on a high-volume store. */
+  period_days?: number;
+  period_truncated?: boolean;
   deltas?: Record<string, number | null>;
   top_products?: Array<{ title: string; revenue: number }>;
   channels?: Array<{ name: string; revenue: number; orders: number }>;

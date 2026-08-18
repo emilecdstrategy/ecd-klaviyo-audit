@@ -288,11 +288,19 @@ export default function WebAnalyticsSection({
 
   const topProducts = basket?.top_products ?? basket?.top_products_by_units ?? [];
 
+  // Never claim a window the data does not cover. On a store doing more than
+  // 2,000 orders a month the fetch reaches only its most recent days, and
+  // labelling that "last 30 days" quartered a client's real revenue.
+  const periodDays = rollup?.period_days ?? 30;
+  const windowLabel = rollup?.period_truncated
+    ? `Shopify order data, the most recent ${periodDays} ${periodDays === 1 ? 'day' : 'days'} (2,000-order fetch limit reached, so there is no prior-period comparison)`
+    : 'Shopify order data, last 30 days vs the prior 30 days';
+
   return (
     <section className="rounded-2xl bg-white p-6 card-shadow sm:p-7">
       {!hideTitle && <h2 className="text-lg font-semibold text-gray-900">Store Performance</h2>}
       <p className={`text-xs text-gray-400${hideTitle ? '' : ' mt-0.5'}`}>
-        Shopify order data, last 30 days vs the prior 30 days
+        {windowLabel}
       </p>
 
       {/* KPI band */}
