@@ -520,7 +520,10 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       // The cart drawer is a viewport overlay, so never full-page for cart.
       fullPage: !isViewport && !isCart,
       withElements: isViewport,
-      hoverProbe: isViewport && hasProductGrid && !isCart,
+      // Desktop only. A headless mouse triggers :hover at any viewport size, but
+      // a phone shopper cannot hover at all, so probing the mobile shot would
+      // report a control no real visitor can reach as if it were available.
+      hoverProbe: isViewport && hasProductGrid && !isCart && row.viewport === "desktop",
       // The second-fold shot is context for the after-image generator and
       // nothing else reads fold2_url, so it is pure waste while afters are off:
       // one extra screenshot per viewport page, six per audit.
