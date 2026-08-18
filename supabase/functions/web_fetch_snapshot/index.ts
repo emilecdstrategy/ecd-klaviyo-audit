@@ -3,6 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest, shopifyGraphql, mapShopifyErrorCode, exchangeClientCredentials } from "../_shared/shopify-api.ts";
+import { currentBulk, ingestBulkOrders, pollBulk, startBulkOrders, type BulkOrderRow } from "../_shared/shopify-bulk.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -438,6 +439,65 @@ function analyzeBaskets(
   };
 }
 
+/** How far back the bulk read goes when it takes over. */
+const BULK_WINDOW_DAYS = 90;
+/** Wall clock we are willing to spend waiting for Shopify to finish the job.
+ * Measured: 23k orders over 90 days completed in under 20s. The cap exists so a
+ * pathological store degrades to the paginated numbers instead of timing out the
+ * whole function. */
+const BULK_WAIT_MS = 75_000;
+const BULK_POLL_MS = 4_000;
+
+/**
+ * Read the whole window with a bulk operation.
+ *
+ * Only called when the paginated fetch truncated, which is the exact signal that
+ * the store is too busy for it: Pipeliner's Cloud filled 8 pages in 7 days, so
+ * the report published a quarter of their real month as if it were all of it.
+ * Bulk has no page cap, so the window is decided by the window rather than by
+ * volume. Returns null on any failure, and the caller keeps the paginated
+ * numbers, because degraded data beats a failed audit.
+ */
+async function bulkOrders(
+  shopDomain: string,
+  token: string,
+  includeCustomer: boolean,
+): Promise<{ orders: BulkOrderRow[]; windowDays: number; objectCount: number; fileSize: number } | null> {
+  const sinceIso = new Date(Date.now() - BULK_WINDOW_DAYS * DAY_MS).toISOString();
+  let operationId: string | null = null;
+
+  // Adopt an operation already in flight rather than colliding with it: only one
+  // query operation runs per shop on older API versions, and a previous audit
+  // may still be finishing.
+  const running = await currentBulk(shopDomain, token).catch(() => null);
+  if (running && (running.status === "CREATED" || running.status === "RUNNING")) {
+    operationId = running.id;
+  } else {
+    const started = await startBulkOrders(shopDomain, token, sinceIso, includeCustomer);
+    if (!started.ok) return null;
+    operationId = started.id;
+  }
+
+  const deadline = Date.now() + BULK_WAIT_MS;
+  while (Date.now() < deadline) {
+    const status = await pollBulk(shopDomain, token, operationId);
+    if (status.state === "failed") return null;
+    if (status.state === "complete") {
+      if (!status.url) return null;
+      const ingested = await ingestBulkOrders(status.url);
+      if (!ingested.ok) return null;
+      return {
+        orders: ingested.orders,
+        windowDays: BULK_WINDOW_DAYS,
+        objectCount: status.objectCount,
+        fileSize: status.fileSize,
+      };
+    }
+    await new Promise((r) => setTimeout(r, BULK_POLL_MS));
+  }
+  return null;
+}
+
 async function fetchOrdersRollup(
   shopDomain: string,
   token: string,
@@ -476,7 +536,48 @@ async function fetchOrdersRollup(
     customerDataError = (e instanceof Error ? e.message : String(e)).slice(0, 300);
     agg = await aggregateOrders(shopDomain, token, priorSince, currentSinceMs, false, priorStartMs);
   }
-  const { current, previous, channels, currency, truncated, orders } = agg;
+  let { current, previous, channels, currency, truncated, orders } = agg;
+  let bulkMeta: { object_count: number; file_size: number; window_days: number } | null = null;
+
+  if (truncated) {
+    const bulk = await bulkOrders(shopDomain, token, !customerDataUnavailable);
+    if (bulk) {
+      // Rebuild every bucket from the full window. Same arithmetic as the
+      // paginated pass, just over orders it could never have reached.
+      const rebuiltCurrent = emptyPeriod();
+      const rebuiltPrevious = emptyPeriod();
+      const rebuiltChannels = new Map<string, { revenue: number; orders: number }>();
+      for (const o of bulk.orders) {
+        const isCurrent = o.created_ms >= currentSinceMs;
+        const bucket = isCurrent ? rebuiltCurrent : (o.created_ms >= priorStartMs ? rebuiltPrevious : null);
+        if (bucket) {
+          bucket.order_count += 1;
+          bucket.gross_revenue += o.revenue;
+          if (o.returning === true) bucket.returning_orders += 1;
+        }
+        if (isCurrent) {
+          const name = channelLabel(o.channel, o.appName);
+          const c = rebuiltChannels.get(name) ?? { revenue: 0, orders: 0 };
+          c.revenue += o.revenue;
+          c.orders += 1;
+          rebuiltChannels.set(name, c);
+        }
+      }
+      current = rebuiltCurrent;
+      previous = rebuiltPrevious;
+      channels = rebuiltChannels;
+      orders = bulk.orders.map((o) => ({
+        created_ms: o.created_ms,
+        revenue: o.revenue,
+        discount: o.discount,
+        units: o.units,
+        items: o.items,
+      }));
+      truncated = false;
+      bulkMeta = { object_count: bulk.objectCount, file_size: bulk.fileSize, window_days: bulk.windowDays };
+    }
+  }
+
   const basket = analyzeBaskets(orders, nowMs, { truncated, hasAllOrders });
 
   // The fetch stops at ORDERS_MAX_PAGES. A store doing more than that inside the
@@ -504,6 +605,9 @@ async function fetchOrdersRollup(
     period_days: currentSpanDays,
     /** True when period_days is the span we could reach, not the 30 asked for. */
     period_truncated: truncated,
+    /** Present when a bulk operation supplied the orders instead of the paginated
+     * fetch, with the size of the read for the record. */
+    bulk: bulkMeta,
     current: { ...cur, returning_customer_rate: curReturning },
     previous: comparisonUsable ? { ...prev, returning_customer_rate: prevReturning } : null,
     deltas: !comparisonUsable ? {
