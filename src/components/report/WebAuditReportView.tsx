@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Globe, Settings2 } from 'lucide-react';
 import type { Audit, AuditSection, Client, ShopifyDataSnapshot, WebPageSnapshot, WebPageType } from '../../lib/types';
-import { type OrdersRollup } from '../../lib/web-report-details';
+import { parseWebRoadmapDetail, type OrdersRollup } from '../../lib/web-report-details';
 import { getAddOnItemsFromLayout } from '../../lib/addon-highlight';
 import { addOnIsCustomerAgent, addOnIsHelpdesk } from '../../lib/customer-agent-demo';
 import { useReportEdit } from './edit/ReportEditContext';
@@ -9,6 +9,7 @@ import EditablePlainText from './edit/EditablePlainText';
 import WebPageSection from './web/WebPageSection';
 import WebAnalyticsSection from './web/WebAnalyticsSection';
 import WebRoadmapTable from './web/WebRoadmapTable';
+import WebInvestmentSummary from './web/WebInvestmentSummary';
 import WebAgentDemoSection, { type AgentDemoKind } from './web/WebAgentDemoSection';
 
 export interface WebAuditReportViewData {
@@ -289,6 +290,15 @@ export default function WebAuditReportView({
           <WebSectionShell id="web_revenue_summary" number={nextNumber()} label="Prioritized Roadmap" setRef={setRef}>
             <WebRoadmapTable section={roadmap} title="Prioritized Roadmap" hideTitle />
           </WebSectionShell>
+        )}
+
+        {/* What the ticked roadmap rows add up to. Not its own numbered section:
+            it is the bill for the section above, and numbering it would imply a
+            separate piece of analysis. */}
+        {roadmap && !isHidden(roadmap) && !parseWebRoadmapDetail(roadmap.section_details).investment_hidden && (
+          <div id="web_investment_summary">
+            <WebInvestmentSummary section={roadmap} />
+          </div>
         )}
 
         {editMode && onManageAddOns && (

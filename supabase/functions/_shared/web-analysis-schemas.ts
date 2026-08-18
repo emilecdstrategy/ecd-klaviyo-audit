@@ -309,7 +309,7 @@ export const OVERVIEW_TOOL: LlmTool = {
 
 export const ROADMAP_TOOL: LlmTool = {
   name: "record_roadmap",
-  description: "Turn the findings into a prioritized roadmap. Match each item to a catalog service by its slug when one fits; otherwise leave template_slug null. Never state prices; they are filled from the catalog.",
+  description: "Turn the findings into a prioritized roadmap. Match each item to a catalog service by its slug when one fits; otherwise leave template_slug null. Never state prices: setup cost is calculated from your setup_hours estimate at the agency's hourly rate.",
   input_schema: {
     type: "object",
     required: ["rows"],
@@ -325,6 +325,12 @@ export const ROADMAP_TOOL: LlmTool = {
             item_name: { type: "string" },
             template_slug: { type: ["string", "null"] },
             note: { type: "string" },
+            setup_hours: {
+              type: "number",
+              minimum: 0.5,
+              maximum: 40,
+              description: "Implementation effort for one competent developer, in half-hour steps (0.5, 1, 1.5, 2.5...). Estimate the build only: not discovery, QA rounds or client meetings. A copy or CSS tweak is 0.5, a new section or component is 2 to 4, a page rebuilt or a flow reworked is 8 or more.",
+            },
           },
         },
       },
@@ -634,10 +640,20 @@ export type RoadmapRow = {
   item_name: string;
   template_slug: string | null;
   note: string;
+  /** Effort in half-hour steps. Setup price is this times the roadmap's rate. */
+  setup_hours: number | null;
   setup_cost_label: string;
   ongoing_cost_label: string;
   hidden: boolean;
+  investment_included: boolean;
 };
+
+/** Snap an estimate to the half hour, inside bounds the schema also enforces. */
+function normalizeHours(value: unknown): number | null {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return null;
+  return Math.min(40, Math.max(0.5, Math.round(n * 2) / 2));
+}
 
 export function coerceRoadmap(input: unknown, catalog: CatalogRow[]): RoadmapRow[] {
   const o = (input ?? {}) as Record<string, unknown>;
@@ -663,9 +679,11 @@ export function coerceRoadmap(input: unknown, catalog: CatalogRow[]): RoadmapRow
       item_name: sanitizeDash(rec.item_name) || (match?.name ?? "Untitled item"),
       template_slug: match ? slug : null,
       note: sanitizeDash(rec.note),
+      setup_hours: normalizeHours(rec.setup_hours),
       setup_cost_label: setup,
       ongoing_cost_label: ongoing,
       hidden: false,
+      investment_included: true,
     };
   }).filter((r) => r.item_name);
 }

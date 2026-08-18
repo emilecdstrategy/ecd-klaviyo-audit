@@ -1,5 +1,7 @@
 import { getAddOnItemsFromLayout } from './addon-highlight';
-import { listRevenueOpportunityTemplates } from './db';
+import { listAuditSections, listRevenueOpportunityTemplates } from './db';
+import { parseWebRoadmapDetail, type WebRoadmapRow } from './web-report-details';
+import { investmentRows, parseMonthly, setupCost } from './web-audit-pricing';
 import { addOnHasPricing } from './addon-pricing';
 import { isAddOnInvestmentIncluded } from './investment-summary';
 import { resolveRevenueOpportunityContent } from './revenue-opportunity-content';
@@ -49,6 +51,42 @@ export function auditAddOnsToLineItems(
   }));
 }
 
+/**
+ * Snapshot a web audit's ticked roadmap rows as proposal line items. Setup is
+ * priced from hours at the rate the roadmap was built with, so a proposal always
+ * quotes what the client already read in the report rather than re-deriving it
+ * from today's platform rate. An ongoing cost only becomes a monthly price when
+ * it is an actual figure; free text stays a label so nobody invents a retainer.
+ */
+export function webRoadmapToLineItems(
+  sectionDetails: unknown,
+  serviceKeyBySlug: Map<string, string | null> = new Map(),
+): Omit<CreateProposalLineItemInput, 'proposal_id'>[] {
+  const detail = parseWebRoadmapDetail(sectionDetails);
+  const rate = detail.hourly_rate ?? 0;
+
+  return investmentRows(detail.rows).map((row: WebRoadmapRow, index) => {
+    const oneTime = rate > 0 ? setupCost(row, rate) : null;
+    const monthly = parseMonthly(row.ongoing_cost_label);
+    const ongoingLabel = (row.ongoing_cost_label ?? '').trim();
+    return {
+      template_slug: row.template_slug || null,
+      xero_service_key: serviceKeyBySlug.get(row.template_slug ?? '') ?? null,
+      name: row.item_name,
+      description: row.note ?? '',
+      content: '',
+      one_time_price: oneTime,
+      // No hours estimated yet: carry whatever the roadmap showed instead of
+      // quoting zero.
+      one_time_label: oneTime == null ? (row.setup_cost_label?.trim() || null) : null,
+      monthly_price: monthly,
+      monthly_label: monthly == null && ongoingLabel && !/^[—-]$/.test(ongoingLabel) ? ongoingLabel : null,
+      image_url: null,
+      display_order: (index + 1) * 10,
+    };
+  });
+}
+
 async function resolveDefaultTemplate(): Promise<ProposalTemplate | null> {
   try {
     const templates = await listProposalTemplates({ activeOnly: true });
@@ -81,11 +119,17 @@ export async function createProposalFromAudit(audit: Audit, client: Client): Pro
     }
   } catch { /* leave lines uncoded */ }
 
-  const lineItems = auditAddOnsToLineItems(audit.layout, serviceKeyBySlug).map(item => ({
-    ...item,
-    proposal_id: proposal.id,
-  }));
-  await createProposalLineItems(lineItems);
+  // A web audit prices its work on the roadmap, not on revenue-opportunity
+  // add-ons, so reading audit.layout there produced an empty proposal.
+  const base = audit.audit_type === 'web'
+    ? webRoadmapToLineItems(
+        (await listAuditSections(audit.id)).find(s => s.section_key === 'web_revenue_summary')?.section_details,
+        serviceKeyBySlug,
+      )
+    : auditAddOnsToLineItems(audit.layout, serviceKeyBySlug);
+
+  const lineItems = base.map(item => ({ ...item, proposal_id: proposal.id }));
+  if (lineItems.length > 0) await createProposalLineItems(lineItems);
 
   return proposal;
 }

@@ -674,14 +674,42 @@ async function runStep(
   const catalogList = catalog.map((c) => `- ${c.slug}: ${c.name}`).join("\n");
   const messages: LlmMessage[] = [{
     role: "user",
-    text: `Turn these audit findings into a prioritized roadmap of work items. Match an item to a catalog service by slug when one clearly fits; otherwise set template_slug null. Do not state prices. Call record_roadmap exactly once.${contextBlock}\n\nFINDINGS:\n${findingsDigest}\n\nCATALOG SERVICES (slug: name):\n${catalogList}`,
+    text: `Turn these audit findings into a prioritized roadmap of work items. Match an item to a catalog service by slug when one clearly fits; otherwise set template_slug null. Estimate setup_hours for every row: the build effort for one competent developer, in half-hour steps. Do not state prices, they are calculated from those hours. Call record_roadmap exactly once.${contextBlock}\n\nFINDINGS:\n${findingsDigest}\n\nCATALOG SERVICES (slug: name):\n${catalogList}`,
   }];
   const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [ROADMAP_TOOL], toolChoice: { type: "tool", name: "record_roadmap" } });
   if (turn.kind !== "tool_call") throw new Error("roadmap: model did not call the tool");
   const rows = coerceRoadmap(turn.input, catalog);
   const details = { ...(section.section_details ?? {}) };
-  (details as Record<string, unknown>).web_roadmap = { rows };
+  const prevRoadmap = ((section.section_details ?? {}) as Record<string, unknown>).web_roadmap as
+    | { hourly_rate?: unknown; investment_title?: unknown; investment_subtitle?: unknown; investment_hidden?: unknown }
+    | undefined;
+  // Regenerating a section must not silently reprice it: an existing roadmap
+  // keeps the rate it was built at, and only a first run reads the platform
+  // setting. Same for whatever the strategist retitled the summary to.
+  const priorRate = Number(prevRoadmap?.hourly_rate);
+  const hourlyRate = Number.isFinite(priorRate) && priorRate > 0 ? priorRate : await loadHourlyRate(sb);
+  (details as Record<string, unknown>).web_roadmap = {
+    rows,
+    hourly_rate: hourlyRate,
+    ...(prevRoadmap?.investment_title ? { investment_title: prevRoadmap.investment_title } : {}),
+    ...(prevRoadmap?.investment_subtitle ? { investment_subtitle: prevRoadmap.investment_subtitle } : {}),
+    ...(prevRoadmap?.investment_hidden != null ? { investment_hidden: prevRoadmap.investment_hidden } : {}),
+  };
   await sb.from("audit_sections").update({ section_details: details }).eq("id", section.id);
+}
+
+/** The agency's implementation rate, used to price roadmap hours. Falls back to
+ * the same default the frontend uses rather than failing a whole run over a
+ * missing settings row. */
+const FALLBACK_HOURLY_RATE = 175;
+async function loadHourlyRate(sb: ReturnType<typeof assertServiceClient>): Promise<number> {
+  try {
+    const { data } = await sb.from("platform_settings").select("web_audit_settings").eq("id", "default").maybeSingle();
+    const rate = Number((data?.web_audit_settings as { hourly_rate?: unknown } | null)?.hourly_rate);
+    return Number.isFinite(rate) && rate > 0 ? Math.round(rate) : FALLBACK_HOURLY_RATE;
+  } catch {
+    return FALLBACK_HOURLY_RATE;
+  }
 }
 
 /** What the strategist told us about this client, plus the facts we already

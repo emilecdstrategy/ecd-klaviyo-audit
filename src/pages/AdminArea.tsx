@@ -27,6 +27,7 @@ import type { AppAccess, AppArea } from '../lib/types';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
 import { useToast } from '../components/ui/Toast';
 import { supabase } from '../lib/supabase';
+import { DEFAULT_HOURLY_RATE, getWebAuditHourlyRate, updateWebAuditHourlyRate } from '../lib/web-audit-pricing';
 import SimpleRichEditor from '../components/ui/SimpleRichEditor';
 import {
   uploadAuditAssetFile,
@@ -1270,6 +1271,91 @@ function RevenueOpportunitiesTab() {
   );
 }
 
+/** The rate a web audit's roadmap hours are priced at. Only new roadmaps read
+ *  this: each one stamps the rate it was built with, so changing it here never
+ *  reprices a report a client has already read. */
+function WebAuditRateCard() {
+  const [rate, setRate] = useState('');
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const value = await getWebAuditHourlyRate();
+        if (!cancelled) setRate(String(value));
+      } finally {
+        if (!cancelled) setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const onSave = async () => {
+    const n = Number(rate);
+    if (!Number.isFinite(n) || n <= 0) {
+      setError('Enter an hourly rate above zero.');
+      return;
+    }
+    setSaving(true);
+    setError('');
+    setSuccess('');
+    try {
+      await updateWebAuditHourlyRate(n);
+      setSuccess('Saved. New web audit roadmaps will price setup at this rate.');
+    } catch (e) {
+      setError(e instanceof Error ? e.message : 'Could not save the rate');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-100 p-6">
+      <h3 className="text-base font-semibold text-gray-900">Web Audit Hourly Rate</h3>
+      <p className="mt-1 text-sm text-gray-500">
+        Setup cost on a web audit roadmap is the hours you estimate times this rate. Clients see the money, never the hours.
+      </p>
+      <div className="mt-4">
+        <label className="block text-sm font-medium text-gray-700 mb-1" htmlFor="web-audit-rate">Rate per hour</label>
+        <div className="flex items-center gap-2">
+          <span className="text-gray-400">$</span>
+          <input
+            id="web-audit-rate"
+            type="number"
+            min={1}
+            step={5}
+            disabled={loading}
+            placeholder={String(DEFAULT_HOURLY_RATE)}
+            className="w-32 px-3 py-2.5 border border-gray-200 rounded-lg text-sm tabular-nums focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20 disabled:opacity-50"
+            value={rate}
+            onChange={e => { setRate(e.target.value); setSuccess(''); }}
+          />
+        </div>
+        <p className="text-xs text-gray-400 mt-1">
+          Each roadmap stamps the rate it was generated with, so raising this never reprices an audit already sent. Override a
+          single audit from its roadmap section.
+        </p>
+      </div>
+      {error && <div className="mt-3 text-sm text-red-600 bg-red-50 px-3 py-2 rounded-lg">{error}</div>}
+      {success && <div className="mt-3 text-sm text-emerald-700 bg-emerald-50 px-3 py-2 rounded-lg">{success}</div>}
+      <div className="mt-4">
+        <button
+          type="button"
+          onClick={onSave}
+          disabled={saving || loading}
+          className="px-4 py-2 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {saving ? 'Saving...' : 'Save'}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 function ApiKeyCard({
   provider,
   title,
@@ -1528,6 +1614,8 @@ function SettingsTab() {
         <div className="lg:col-span-2">
           <XeroSettingsPanel />
         </div>
+
+        <WebAuditRateCard />
 
         <ApiKeyCard
           provider="openai"

@@ -105,9 +105,28 @@ export type WebRoadmapRow = {
   item_name: string;
   template_slug: string | null;
   note: string;
+  /** Implementation effort in half-hour steps. The setup price is this times
+   *  the roadmap's hourly rate; the client sees the money, never the hours. */
+  setup_hours: number | null;
+  /** Pre-hours audits priced setup as free text from the catalogue. Kept so an
+   *  old report still shows what it always showed. */
   setup_cost_label: string;
   ongoing_cost_label: string;
   hidden?: boolean;
+  /** Unticked in the investment summary. Absent means counted, so rows written
+   *  before the summary existed are all in by default. */
+  investment_included?: boolean;
+};
+
+/** The roadmap section as stored, including the rate its prices were built at. */
+export type WebRoadmapDetail = {
+  rows: WebRoadmapRow[];
+  /** Stamped when the roadmap is generated so raising the platform rate never
+   *  reprices an audit a client has already read. */
+  hourly_rate: number | null;
+  investment_title: string;
+  investment_subtitle: string;
+  investment_hidden: boolean;
 };
 
 function asRecord(v: unknown): Record<string, unknown> {
@@ -233,23 +252,39 @@ export function parseWebAnalyticsDetail(sectionDetails: unknown): WebAnalyticsDe
 }
 
 export function parseWebRoadmap(sectionDetails: unknown): WebRoadmapRow[] {
+  return parseWebRoadmapDetail(sectionDetails).rows;
+}
+
+export function parseWebRoadmapDetail(sectionDetails: unknown): WebRoadmapDetail {
   const r = asRecord(asRecord(sectionDetails).web_roadmap);
-  if (!Array.isArray(r.rows)) return [];
-  return r.rows.map((row) => {
-    const rec = asRecord(row);
-    const priority = (['high', 'medium', 'low'] as const).includes(rec.priority as never)
-      ? (rec.priority as WebRoadmapRow['priority'])
-      : 'medium';
-    return {
-      priority,
-      item_name: asString(rec.item_name),
-      template_slug: rec.template_slug ? asString(rec.template_slug) : null,
-      note: asString(rec.note),
-      setup_cost_label: asString(rec.setup_cost_label) || 'Custom / TBD',
-      ongoing_cost_label: asString(rec.ongoing_cost_label) || '—',
-      hidden: rec.hidden === true,
-    };
-  });
+  const rawRate = Number(r.hourly_rate);
+  const rows: WebRoadmapRow[] = Array.isArray(r.rows)
+    ? r.rows.map((row) => {
+        const rec = asRecord(row);
+        const priority = (['high', 'medium', 'low'] as const).includes(rec.priority as never)
+          ? (rec.priority as WebRoadmapRow['priority'])
+          : 'medium';
+        const hours = Number(rec.setup_hours);
+        return {
+          priority,
+          item_name: asString(rec.item_name),
+          template_slug: rec.template_slug ? asString(rec.template_slug) : null,
+          note: asString(rec.note),
+          setup_hours: Number.isFinite(hours) && hours > 0 ? hours : null,
+          setup_cost_label: asString(rec.setup_cost_label) || 'Custom / TBD',
+          ongoing_cost_label: asString(rec.ongoing_cost_label) || '—',
+          hidden: rec.hidden === true,
+          investment_included: rec.investment_included !== false,
+        };
+      })
+    : [];
+  return {
+    rows,
+    hourly_rate: Number.isFinite(rawRate) && rawRate > 0 ? rawRate : null,
+    investment_title: asString(r.investment_title) || 'Investment Summary',
+    investment_subtitle: asString(r.investment_subtitle),
+    investment_hidden: r.investment_hidden === true,
+  };
 }
 
 // --- Analytics computed (from shopify_data_snapshots orders_rollup) ---------
