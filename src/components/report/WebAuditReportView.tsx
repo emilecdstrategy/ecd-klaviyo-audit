@@ -87,6 +87,25 @@ function OverviewBlock({ section, companyName }: { section: AuditSection; compan
   );
 }
 
+/** The most recently fetched snapshot of a kind.
+ *
+ * Every refetch inserts a new row rather than replacing one, so picking with a
+ * plain find() meant the report showed whichever row its caller's query happened
+ * to return first. The internal view ordered newest-first and looked right; the
+ * public link did not order at all and served a client a stale window. Deciding
+ * it here means no caller can get this wrong again. */
+function newestSnapshot<T extends { snapshot_kind: string; fetched_at?: string | null }>(
+  rows: T[],
+  kind: string,
+): T | undefined {
+  let best: T | undefined;
+  for (const row of rows) {
+    if (row.snapshot_kind !== kind) continue;
+    if (!best || String(row.fetched_at ?? '') > String(best.fetched_at ?? '')) best = row;
+  }
+  return best;
+}
+
 export default function WebAuditReportView({
   data,
   onManageAddOns,
@@ -125,7 +144,7 @@ export default function WebAuditReportView({
   const roadmap = byKey.get('web_revenue_summary');
 
   const rollup =
-    (shopifySnapshots.find((s) => s.snapshot_kind === 'orders_rollup')?.computed as OrdersRollup | undefined) ?? null;
+    (newestSnapshot(shopifySnapshots, 'orders_rollup')?.computed as OrdersRollup | undefined) ?? null;
 
   // Only sections that actually render get a nav entry, so the nav never points
   // at an anchor that is not on the page.

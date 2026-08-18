@@ -84,7 +84,11 @@ serve(async (req) => {
         sb.from("clients").select("*").eq("id", audit.client_id).maybeSingle(),
         sb.from("audit_sections").select("*").eq("audit_id", audit.id),
         sb.from("web_page_snapshots").select("*").eq("audit_id", audit.id).order("page_type").order("viewport"),
-        sb.from("shopify_data_snapshots").select("id, audit_id, client_id, snapshot_kind, timeframe_key, computed, fetched_at").eq("audit_id", audit.id),
+        // Newest first. Every refetch inserts another row, so without an order
+        // the public link served an arbitrary one: Pipeliner's Cloud showed a
+        // client $407,324 of a 7-day window days after the real 30-day figure of
+        // $1.9M had been fetched.
+        sb.from("shopify_data_snapshots").select("id, audit_id, client_id, snapshot_kind, timeframe_key, computed, fetched_at").eq("audit_id", audit.id).order("fetched_at", { ascending: false }),
       ]);
       if (webClient.error) throw webClient.error;
       if (webSections.error) throw webSections.error;
