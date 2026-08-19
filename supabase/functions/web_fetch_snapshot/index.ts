@@ -596,7 +596,16 @@ async function fetchOrdersRollup(
   // Without customer data we can't compute the returning-customer rate; null it
   // out (rather than reporting a misleading 0%).
   const curReturning = customerDataUnavailable ? null : cur.returning_customer_rate;
-  const prevReturning = customerDataUnavailable ? null : prev.returning_customer_rate;
+  // The PRIOR period's rate is never published, and neither is a trend built from
+  // it. An order counts as returning when its customer's LIFETIME order count is
+  // above one, and that count is read now rather than as of the order date, so an
+  // order from seven weeks ago counts as returning if the customer has bought
+  // since, even when it was their first purchase ever. Older periods are
+  // therefore inflated by construction: Power Planter came back as 43.5% then
+  // against 23.9% now, a 45% "collapse" that is mostly the measurement aging.
+  // The current period is the least affected and still worth reporting; the
+  // comparison is not salvageable without per-order customer history.
+  const prevReturning = null;
   const topProducts = await fetchTopProducts(shopDomain, token, currentSince);
 
   return {
@@ -619,7 +628,8 @@ async function fetchOrdersRollup(
       gross_revenue: pctDelta(cur.gross_revenue, prev.gross_revenue),
       order_count: pctDelta(cur.order_count, prev.order_count),
       aov: pctDelta(cur.aov, prev.aov),
-      returning_customer_rate: customerDataUnavailable ? null : pctDelta(cur.returning_customer_rate, prev.returning_customer_rate),
+      // Deliberately null: see prevReturning above.
+      returning_customer_rate: null,
     },
     returning_customer_rate_available: !customerDataUnavailable,
     returning_customer_rate_error: customerDataError,
