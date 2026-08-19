@@ -206,7 +206,9 @@ export default function WebAuditReportView({
   const nextNumber = () => String(++sectionNumber).padStart(2, '0');
 
   return (
-    <div>
+    // Light surface behind the white cards, matching the Klaviyo report. On pure
+    // white the cards had no edge at all and the whole page read as one sheet.
+    <div className="min-h-screen bg-brand-surface">
       {navItems.length > 1 && (
         <div className="sticky top-0 z-40 bg-white">
           <div className="border-b border-gray-100">
