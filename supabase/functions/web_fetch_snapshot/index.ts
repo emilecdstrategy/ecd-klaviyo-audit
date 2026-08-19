@@ -3,7 +3,9 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest, shopifyGraphql, mapShopifyErrorCode, exchangeClientCredentials } from "../_shared/shopify-api.ts";
-import { currentBulk, ingestBulkOrders, pollBulk, startBulkOrders, type BulkOrderRow } from "../_shared/shopify-bulk.ts";
+import {
+  BULK_WINDOW_DAYS, currentBulk, ingestBulkOrders, pollBulk, startBulkOrders, type BulkOrderRow } from "../_shared/shopify-bulk.ts";
+import { computeRepeat, repeatRate, REPEAT_LOOKBACK_DAYS } from "../_shared/repeat-rate.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -170,7 +172,7 @@ async function aggregateOrders(
   let pages = 0;
   let truncated = false;
 
-  const customerField = includeCustomer ? "customer { numberOfOrders }" : "";
+  const customerField = includeCustomer ? "customer { id }" : "";
   // sourceName is a code, and for orders placed through an app it is that app's
   // numeric id: the report was printing "3890849" as if it were a sales channel.
   // The app's own name is the readable version. Dropped and retried without it
@@ -233,10 +235,9 @@ async function aggregateOrders(
       if (bucket) {
         bucket.order_count += 1;
         bucket.gross_revenue += rev;
-        if (includeCustomer) {
-          const lifetimeOrders = Number.parseInt(String(node?.customer?.numberOfOrders ?? "0"), 10);
-          if (Number.isFinite(lifetimeOrders) && lifetimeOrders > 1) bucket.returning_orders += 1;
-        }
+        // returning_orders is filled in afterwards by computeRepeat: whether an
+        // order is a repeat depends on the customer's OTHER orders, so it cannot
+        // be decided while walking one order at a time.
       }
       if (isCurrent) {
         const channel = channelLabel(node?.sourceName, node?.app?.name);
@@ -247,8 +248,10 @@ async function aggregateOrders(
       }
       const liNodes: any[] = node?.lineItems?.nodes ?? [];
       const discount = Number.parseFloat(node?.totalDiscountsSet?.shopMoney?.amount ?? "0");
+      const customerNodeId = node?.customer?.id;
       orders.push({
         created_ms: new Date(node?.createdAt ?? 0).getTime(),
+        customerId: typeof customerNodeId === "string" ? customerNodeId : null,
         revenue: rev,
         discount: Number.isFinite(discount) ? discount : 0,
         units: liNodes.reduce((s, li) => s + (Number(li?.quantity) || 0), 0),
@@ -283,6 +286,8 @@ type BasketOrder = {
   revenue: number;
   discount: number;
   units: number;
+  /** Null on guest checkouts and when read_customers is absent. */
+  customerId?: string | null;
   items: Array<{
     title: string;
     revenue: number;
@@ -439,14 +444,19 @@ function analyzeBaskets(
   };
 }
 
-/** How far back the bulk read goes when it takes over. */
-const BULK_WINDOW_DAYS = 90;
 /** Wall clock we are willing to spend waiting for Shopify to finish the job.
- * Measured: 23k orders over 90 days completed in under 20s. The cap exists so a
- * pathological store degrades to the paginated numbers instead of timing out the
- * whole function. */
-const BULK_WAIT_MS = 75_000;
-const BULK_POLL_MS = 4_000;
+ *
+ * Measured on a high-volume store: a 180-day read is 150k objects and 53MB, and
+ * Shopify took 55s to build it. The 90-day read it replaced took 11s, which is
+ * why a 75s ceiling looked generous and then silently was not. The fetch gave up,
+ * fell back to the paginated numbers, and put a report back on the truncated
+ * 7-day figure it had just been fixed out of.
+ *
+ * 110s leaves headroom over the measured 55s while still fitting the 150s function
+ * budget alongside the other stages, which take about 15s together. It is a
+ * ceiling, not a cost: the usual path is 55s of waiting and 2s of ingest. */
+const BULK_WAIT_MS = 110_000;
+const BULK_POLL_MS = 3_000;
 
 /**
  * Read the whole window with a bulk operation.
@@ -553,7 +563,6 @@ async function fetchOrdersRollup(
         if (bucket) {
           bucket.order_count += 1;
           bucket.gross_revenue += o.revenue;
-          if (o.returning === true) bucket.returning_orders += 1;
         }
         if (isCurrent) {
           const name = channelLabel(o.channel, o.appName);
@@ -568,6 +577,7 @@ async function fetchOrdersRollup(
       channels = rebuiltChannels;
       orders = bulk.orders.map((o) => ({
         created_ms: o.created_ms,
+        customerId: o.customerId,
         revenue: o.revenue,
         discount: o.discount,
         units: o.units,
@@ -591,21 +601,24 @@ async function fetchOrdersRollup(
     : PERIOD_DAYS;
   const comparisonUsable = !truncated && previous.order_count > 0;
 
+  // Repeat purchase, on identical footing for both periods. Runs over every
+  // order retained for the window, including the history months that are never
+  // reported on their own but are exactly what makes the lookback possible.
+  const repeat = computeRepeat(orders, currentSinceMs, priorStartMs);
+  current.returning_orders = repeat.current.returning;
+  previous.returning_orders = repeat.previous.returning;
+
   const cur = summarizePeriod(current);
   const prev = summarizePeriod(previous);
+  const curRate = repeatRate(repeat.current);
+  const prevRate = repeatRate(repeat.previous);
   // Without customer data we can't compute the returning-customer rate; null it
   // out (rather than reporting a misleading 0%).
-  const curReturning = customerDataUnavailable ? null : cur.returning_customer_rate;
-  // The PRIOR period's rate is never published, and neither is a trend built from
-  // it. An order counts as returning when its customer's LIFETIME order count is
-  // above one, and that count is read now rather than as of the order date, so an
-  // order from seven weeks ago counts as returning if the customer has bought
-  // since, even when it was their first purchase ever. Older periods are
-  // therefore inflated by construction: Power Planter came back as 43.5% then
-  // against 23.9% now, a 45% "collapse" that is mostly the measurement aging.
-  // The current period is the least affected and still worth reporting; the
-  // comparison is not salvageable without per-order customer history.
-  const prevReturning = null;
+  const curReturning = customerDataUnavailable ? null : curRate;
+  // Now comparable: both periods are measured with the same fixed lookback over
+  // per-order customer identity, so this is a like-for-like trend rather than the
+  // artefact the lifetime counter produced.
+  const prevReturning = customerDataUnavailable ? null : prevRate;
   const topProducts = await fetchTopProducts(shopDomain, token, currentSince);
 
   return {
@@ -614,6 +627,13 @@ async function fetchOrdersRollup(
     period_days: currentSpanDays,
     /** True when period_days is the span we could reach, not the 30 asked for. */
     period_truncated: truncated,
+    /** How the repeat rate was measured, so the number is never read as something
+     * it is not. Both periods use this same lookback. */
+    repeat_basis: customerDataUnavailable ? null : {
+      lookback_days: REPEAT_LOOKBACK_DAYS,
+      current_identified_orders: repeat.current.identified,
+      previous_identified_orders: repeat.previous.identified,
+    },
     /** Present when a bulk operation supplied the orders instead of the paginated
      * fetch, with the size of the read for the record. */
     bulk: bulkMeta,
@@ -628,8 +648,11 @@ async function fetchOrdersRollup(
       gross_revenue: pctDelta(cur.gross_revenue, prev.gross_revenue),
       order_count: pctDelta(cur.order_count, prev.order_count),
       aov: pctDelta(cur.aov, prev.aov),
-      // Deliberately null: see prevReturning above.
-      returning_customer_rate: null,
+      // Both rates are nullable: a period with no attributable orders has no rate,
+      // and therefore no trend either.
+      returning_customer_rate: curReturning != null && prevReturning != null
+        ? pctDelta(curReturning, prevReturning)
+        : null,
     },
     returning_customer_rate_available: !customerDataUnavailable,
     returning_customer_rate_error: customerDataError,

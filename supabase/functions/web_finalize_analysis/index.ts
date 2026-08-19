@@ -17,6 +17,7 @@ import {
   PAGE_AUDIT_TOOL,
   ROADMAP_TOOL,
 } from "../_shared/web-analysis-schemas.ts";
+import { REPEAT_LOOKBACK_DAYS } from "../_shared/repeat-rate.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -629,12 +630,13 @@ async function runStep(
         JSON.stringify(computed),
         thresholdNote,
         `Return 2 to 5 PLAYS via record_analytics_audit: things this team could ship this month to raise average order value, protect margin, or make the catalogue work harder. Rules:`,
+        `- Every value under deltas is a RELATIVE percent change, never percentage points. A repeat rate moving 16.54 to 18.24 is a delta of 10.28, which is "up 10%", not "up 10.28 points". Say "from X to Y" when you want to be unambiguous.`,
         `- Each play quotes a real figure from the data above. Never invent or round a number into something the data does not say.`,
         `- basket.window_days tells you the window the basket figures came from; say it in the play's window field, and never present a 90 or 180 day pattern as this month's behaviour.`,
         `- basket.frequent_pairs is the ONLY evidence for a "bundle these" play. When it is empty, no two products were bought together often enough to justify one, so do not suggest a specific bundle; a play about raising basket size in general is still fair if single_item_order_share supports it.`,
         `- If basket.confident is false there were too few orders to trust the basket figures: say so plainly in that play's insight rather than dressing thin data as a pattern.`,
         `- basket.order_history_limited true means Shopify only returned the last 60 days (the store's app lacks the read_all_orders scope), so basket.window_days is all the history there was. Never imply a longer trend than that.`,
-        `- returning_customer_rate is a snapshot of the CURRENT period only. There is no prior figure and no delta on purpose, because the underlying count ages: never describe repeat purchase as rising or falling, and never compare it to a period the data does not carry.`,
+        `- returning_customer_rate is the share of orders placed by someone who had already bought within the previous ${REPEAT_LOOKBACK_DAYS} days, and repeat_basis says how many orders in each period could be attributed to a customer. Both periods use that same lookback, so the delta IS a real trend and worth a play when it moved. Describe it as repeat purchase within ${REPEAT_LOOKBACK_DAYS} days rather than as lifetime loyalty, and never quote it for a period whose rate is null.`,
         `- period_truncated true means the KPI figures cover only period_days, NOT 30 days, because the store fills our 2000-order fetch cap sooner than that, and previous is null so there is no comparison to draw. Never describe those totals as a month, never invent a trend, and quote the window as period_days.`,
         `- basket.orders_truncated true means the window is short because the store is BUSY: it filled our 2000-order fetch cap in basket.window_days. That is a volume fact, not a permissions problem, so never suggest changing a scope or reading further back. Treat the window as a recent snapshot of a high-volume store.`,
         `- basket.top_products is ranked by REVENUE, and each entry carries both its revenue and its units, so never call the first one the best seller by volume unless its units say so.`,

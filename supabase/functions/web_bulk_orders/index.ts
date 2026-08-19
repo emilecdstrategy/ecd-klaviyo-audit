@@ -9,6 +9,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, exchangeClientCredentials } from "../_shared/shopify-api.ts";
 import {
+  BULK_WINDOW_DAYS,
   cancelBulk,
   currentBulk,
   ingestBulkOrders,
@@ -32,9 +33,6 @@ const json = (body: unknown, init?: ResponseInit) =>
     headers: { "content-type": "application/json", ...corsHeaders, ...(init?.headers ?? {}) },
   });
 
-/** How far back a bulk read goes. Wide enough for a real trend, and the whole
- * point of using bulk is that volume no longer decides the window. */
-const BULK_WINDOW_DAYS = 90;
 const DAY_MS = 86_400_000;
 
 function serviceClient() {

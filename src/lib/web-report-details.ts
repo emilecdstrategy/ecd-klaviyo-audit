@@ -310,6 +310,13 @@ export type OrdersRollup = {
   channels?: Array<{ name: string; revenue: number; orders: number }>;
   currency?: string | null;
   returning_customer_rate_available?: boolean;
+  /** How the repeat rate was measured. Both periods share the lookback, which is
+   *  what makes the comparison honest; see repeat-rate.ts. */
+  repeat_basis?: {
+    lookback_days?: number;
+    current_identified_orders?: number;
+    previous_identified_orders?: number;
+  } | null;
   /** Customer-facing origin, for linking product cards to live pages. */
   store_url_base?: string | null;
   /** Basket shape over an adaptive window; see analyzeBaskets in web_fetch_snapshot. */

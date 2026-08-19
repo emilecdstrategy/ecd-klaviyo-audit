@@ -274,6 +274,9 @@ export default function WebAnalyticsSection({
   };
 
   const repeatUnavailable = rollup?.returning_customer_rate_available === false;
+  // Published with the figure so the tile can say what the number actually means
+  // rather than leaving "repeat rate" to be read as lifetime loyalty.
+  const repeatLookbackDays = rollup?.repeat_basis?.lookback_days ?? 90;
 
   const displayValue = (key: string): string => {
     const cur = rollup?.current;
@@ -325,6 +328,14 @@ export default function WebAnalyticsSection({
             <div key={key} className="rounded-xl bg-brand-surface/60 px-4 py-3.5">
               <div className="flex items-center gap-1">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{label}</p>
+                {isRepeat && !repeatUnavailable && (
+                  <HoverTooltip
+                    label="How this is measured"
+                    description={`The share of orders placed by someone who had already bought from you in the previous ${repeatLookbackDays} days. Both periods are measured the same way, so the comparison is like for like.`}
+                  >
+                    <Info className="h-3 w-3 text-gray-300" />
+                  </HoverTooltip>
+                )}
                 {isRepeat && repeatUnavailable && editMode && (
                   <HoverTooltip
                     label="Not available yet"

@@ -23,8 +23,15 @@ export type BulkOrderRow = {
   }>;
   channel: string;
   appName: string;
-  returning: boolean | null;
+  /** Who placed it. Null on guest checkouts and when read_customers is absent.
+   *  A repeat rate needs identity per order, not a lifetime counter: see
+   *  computeRepeat in web_fetch_snapshot. */
+  customerId: string | null;
 };
+
+/** How far back a bulk read goes. Matches what the paginated path asks for, so
+ * both produce the same windows and the same repeat-rate definition. */
+export const BULK_WINDOW_DAYS = 180;
 
 export type BulkStatus =
   | { state: "running"; id: string; objectCount: number }
@@ -35,7 +42,10 @@ export type BulkStatus =
  * two nesting levels and five connections. No first, no pageInfo: bulk rejects
  * both. */
 export function ordersBulkQuery(sinceIso: string, includeCustomer: boolean): string {
-  const customer = includeCustomer ? "customer { numberOfOrders }" : "";
+  // id, not numberOfOrders: that counter is the customer's lifetime total as it
+  // stands today, so it says nothing about whether they had bought before THIS
+  // order. Identity plus order dates answers that properly.
+  const customer = includeCustomer ? "customer { id }" : "";
   return `
     {
       orders(query: "created_at:>='${sinceIso}'", sortKey: CREATED_AT) {
@@ -181,6 +191,15 @@ export async function ingestBulkOrders(
   if (!res.ok || !res.body) return { ok: false, error: `bulk_download_http_${res.status}` };
 
   const byId = new Map<string, BulkOrderRow>();
+  // See note above the intern() call sites: without this, a 180-day window on a
+  // high-volume store spends most of its memory on duplicate product strings.
+  const pool = new Map<string, string>();
+  const intern = (v: string): string => {
+    const hit = pool.get(v);
+    if (hit !== undefined) return hit;
+    pool.set(v, v);
+    return v;
+  };
   const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
   let carry = "";
   let lines = 0;
@@ -209,11 +228,11 @@ export async function ingestBulkOrders(
       const unitPrice = Number.parseFloat(String((node.variant as { price?: unknown } | null)?.price ?? ""));
       const product = node.product as { handle?: unknown; featuredImage?: { url?: unknown } | null } | null;
       parent.items.push({
-        title,
+        title: intern(title),
         revenue: Number.isFinite(lineRevenue) ? lineRevenue : 0,
         units: qty,
-        handle: typeof product?.handle === "string" ? product.handle : null,
-        image: typeof product?.featuredImage?.url === "string" ? product.featuredImage.url : null,
+        handle: typeof product?.handle === "string" ? intern(product.handle) : null,
+        image: typeof product?.featuredImage?.url === "string" ? intern(product.featuredImage.url) : null,
         unit_price: Number.isFinite(unitPrice) ? unitPrice : null,
       });
       return;
@@ -225,19 +244,16 @@ export async function ingestBulkOrders(
     const discount = Number.parseFloat(
       String((node.totalDiscountsSet as { shopMoney?: { amount?: unknown } } | null)?.shopMoney?.amount ?? "0"),
     );
-    const lifetime = Number.parseInt(
-      String((node.customer as { numberOfOrders?: unknown } | null)?.numberOfOrders ?? ""),
-      10,
-    );
+    const customerId = (node.customer as { id?: unknown } | null)?.id;
     byId.set(id, {
       created_ms: new Date(String(node.createdAt ?? 0)).getTime(),
       revenue: Number.isFinite(revenue) ? revenue : 0,
       discount: Number.isFinite(discount) ? discount : 0,
       units: 0,
       items: [],
-      channel: String(node.sourceName ?? ""),
-      appName: String((node.app as { name?: unknown } | null)?.name ?? ""),
-      returning: Number.isFinite(lifetime) ? lifetime > 1 : null,
+      channel: intern(String(node.sourceName ?? "")),
+      appName: intern(String((node.app as { name?: unknown } | null)?.name ?? "")),
+      customerId: typeof customerId === "string" ? intern(customerId) : null,
     });
   };
 
