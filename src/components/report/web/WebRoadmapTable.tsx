@@ -125,11 +125,14 @@ export default function WebRoadmapTable({
                   </HoverTooltip>
                 </th>
               )}
-              <th className="py-2 pr-3">Priority</th>
+              {/* Item is the only column that should wrap. The rest are short
+                  labels over narrow values, and letting "Setup Cost" break onto a
+                  second line made the header twice as tall as it needed to be. */}
+              <th className="whitespace-nowrap py-2 pr-3">Priority</th>
               <th className="py-2 pr-3">Item</th>
-              {editMode && <th className="py-2 pr-3">Hours</th>}
-              <th className="py-2 pr-3">Setup Cost</th>
-              <th className="py-2 pr-3">Ongoing</th>
+              {editMode && <th className="whitespace-nowrap py-2 pr-3">Hours</th>}
+              <th className="whitespace-nowrap py-2 pr-4">Setup Cost</th>
+              <th className="whitespace-nowrap py-2 pr-3">Ongoing</th>
               {editMode && <th className="py-2" />}
             </tr>
           </thead>
@@ -189,7 +192,7 @@ export default function WebRoadmapTable({
                       />
                     </td>
                   )}
-                  <td className="py-2.5 pr-3 align-top font-medium tabular-nums text-gray-900">
+                  <td className="whitespace-nowrap py-2.5 pr-4 align-top font-medium tabular-nums text-gray-900">
                     {setupDisplay(r)}
                     {editMode && r.setup_hours != null && (
                       <span className="ml-1.5 text-xs font-normal text-gray-400">{formatHours(r.setup_hours)}</span>
