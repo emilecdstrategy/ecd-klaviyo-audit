@@ -1,17 +1,19 @@
 import { getAddOnItemsFromLayout } from './addon-highlight';
 import { listAuditSections, listRevenueOpportunityTemplates } from './db';
 import { parseWebRoadmapDetail, type WebRoadmapRow } from './web-report-details';
+import { publicReportOrigin } from './public-origin';
 import { investmentRows, parseMonthly, setupCost } from './web-audit-pricing';
 import { addOnHasPricing } from './addon-pricing';
 import { isAddOnInvestmentIncluded } from './investment-summary';
 import { resolveRevenueOpportunityContent } from './revenue-opportunity-content';
 import {
+  DEFAULT_INCLUDED_CONTRACTS,
   createProposal,
   createProposalLineItems,
-  listProposalTemplates,
   type CreateProposalLineItemInput,
 } from './proposals-db';
 import type {
+  ProposalBlock,
   Audit,
   Client,
   Proposal,
@@ -87,25 +89,73 @@ export function webRoadmapToLineItems(
   });
 }
 
-async function resolveDefaultTemplate(): Promise<ProposalTemplate | null> {
-  try {
-    const templates = await listProposalTemplates({ activeOnly: true });
-    return templates[0] ?? null;
-  } catch {
-    return null;
-  }
+/**
+ * The blocks every audit-created proposal starts with.
+ *
+ * Wording lifted verbatim from the parts of the old SMS template that were never
+ * SMS-specific, so the voice is unchanged. The service-specific blocks that used
+ * to come with it (Why ECD, Scope of Work, Timeline) are deliberately absent: a
+ * proposal built from a website audit was arriving with an SMS migration scope
+ * and a claim that ECD is a dedicated Klaviyo team, because the code adopted the
+ * first active template regardless of what the audit was about.
+ */
+const BASE_INTRO: ProposalBlock = {
+  key: 'intro',
+  title: 'Introduction',
+  content:
+    "Thank you for the opportunity to put this proposal together. Below you'll find the services we're recommending, "
+    + "what each one costs, and the terms of the engagement. We've built this based on what we've seen in your account "
+    + 'and where we believe the highest-impact opportunities are.',
+};
+
+const BASE_TERMS: ProposalBlock = {
+  key: 'terms',
+  title: 'Terms & Next Steps',
+  content:
+    "Once this proposal is signed, we'll schedule a kickoff call within 3-5 business days to align on access, "
+    + 'timelines, and priorities. One-time fees are invoiced upon signature; monthly retainers begin at kickoff and '
+    + 'renew automatically each month. Full terms are covered in the attached agreements.',
+};
+
+/**
+ * A block linking back to the audit the proposal came out of.
+ *
+ * The client has already read the audit; a proposal that cannot point at it
+ * makes them hunt for the email it arrived in. Only built once the audit has a
+ * share token, which publishing creates: inventing one here would publish the
+ * audit as a side effect of drafting a proposal.
+ */
+export function auditReportBlock(audit: Audit): ProposalBlock | null {
+  const token = (audit.public_share_token ?? '').trim();
+  if (!token) return null;
+  const url = `${publicReportOrigin()}/report/${token}`;
+  const kind = audit.audit_type === 'web' ? 'website audit' : 'Klaviyo audit';
+  return {
+    key: 'audit_report_link',
+    title: 'The audit behind this proposal',
+    content: `Everything proposed here comes out of the ${kind} we walked through together. You can revisit it at any time: [${url}](${url})`,
+  };
 }
 
 /** Create a draft proposal prefilled from an audit's revenue opportunity add-ons. */
 export async function createProposalFromAudit(audit: Audit, client: Client): Promise<Proposal> {
-  const template = await resolveDefaultTemplate();
+  // No template: the proposal is about THIS audit, and adopting an unrelated
+  // template's scope and timeline is worse than starting from the shared base.
+  const linkBlock = auditReportBlock(audit);
   const proposal = await createProposal({
     client_id: client.id,
     audit_id: audit.id,
-    template_id: template?.id ?? null,
+    template_id: null,
     title: `Proposal for ${client.company_name}`,
-    content_blocks: template?.content_blocks?.map(b => ({ ...b })) ?? [],
-    include_contracts: template?.default_contracts ? [...template.default_contracts] : [],
+    content_blocks: [
+      { ...BASE_INTRO },
+      ...(linkBlock ? [linkBlock] : []),
+      { ...BASE_TERMS },
+    ],
+    // The MSA and operating agreement are not service-specific, and the Terms
+    // block above refers to "the attached agreements", so dropping the template
+    // must not drop these with it.
+    include_contracts: [...DEFAULT_INCLUDED_CONTRACTS],
     recipient_name: client.name ?? '',
     recipient_email: '',
   });

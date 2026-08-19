@@ -227,6 +227,18 @@ function channelName(raw: string): string {
   return v.replace(/_/g, ' ');
 }
 
+/** A figure on a dotted leader, the way a menu prices a dish. Reads faster down
+ *  a column than label-left/value-right separated by empty space. */
+function LeaderRow({ label, value }: { label: string; value: string | number }) {
+  return (
+    <li className="flex items-baseline gap-2">
+      <span className="shrink-0 text-gray-600">{label}</span>
+      <span className="min-w-[1rem] flex-1 translate-y-[-0.2em] border-b border-dotted border-gray-300" aria-hidden />
+      <span className="shrink-0 font-medium tabular-nums text-gray-900">{value}</span>
+    </li>
+  );
+}
+
 export default function WebAnalyticsSection({
   section,
   rollup,
@@ -287,6 +299,7 @@ export default function WebAnalyticsSection({
   };
 
   const topProducts = basket?.top_products ?? basket?.top_products_by_units ?? [];
+  const channelTotal = (rollup?.channels ?? []).slice(0, 5).reduce((sum, c) => sum + (c.revenue || 0), 0);
 
   // Never claim a window the data does not cover. On a store doing more than
   // 2,000 orders a month the fetch reaches only its most recent days, and
@@ -328,7 +341,11 @@ export default function WebAnalyticsSection({
                   {delta.text}
                 </p>
               ) : (
-                <p className="mt-0.5 text-xs text-gray-300">no comparison</p>
+                <p className="mt-0.5 text-xs text-gray-300">
+                  {isRepeat && repeatUnavailable
+                    ? (editMode ? 'needs read_customers' : 'not available')
+                    : 'no comparison'}
+                </p>
               )}
             </div>
           );
@@ -398,37 +415,22 @@ export default function WebAnalyticsSection({
         {basket && basket.orders_analyzed ? (
           <div className="rounded-xl border border-gray-100 px-4 py-3.5">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Typical basket</h3>
-            <ul className="mt-2 space-y-1.5 text-sm">
-              <li className="flex items-baseline justify-between gap-2">
-                <span className="text-gray-500">Items per order</span>
-                <span className="font-medium text-gray-900">{basket.units_per_order ?? '—'}</span>
-              </li>
+            <ul className="mt-2.5 space-y-2 text-sm">
+              <LeaderRow label="Items per order" value={basket.units_per_order ?? '—'} />
               {basket.single_item_order_share != null && (
-                <li className="flex items-baseline justify-between gap-2">
-                  <span className="text-gray-500">One-product orders</span>
-                  <span className="font-medium text-gray-900">{basket.single_item_order_share}%</span>
-                </li>
+                <LeaderRow label="One-product orders" value={basket.single_item_order_share + '%'} />
               )}
               {basket.order_value_percentiles?.p50 != null && (
-                <li className="flex items-baseline justify-between gap-2">
-                  <span className="text-gray-500">Median order</span>
-                  <span className="font-medium text-gray-900">{formatMoney(basket.order_value_percentiles.p50, currency)}</span>
-                </li>
+                <LeaderRow label="Median order" value={formatMoney(basket.order_value_percentiles.p50, currency)} />
               )}
               {basket.order_value_percentiles?.p90 != null && (
-                <li className="flex items-baseline justify-between gap-2">
-                  <span className="text-gray-500">Top 10% of orders above</span>
-                  <span className="font-medium text-gray-900">{formatMoney(basket.order_value_percentiles.p90, currency)}</span>
-                </li>
+                <LeaderRow label="Top 10% of orders above" value={formatMoney(basket.order_value_percentiles.p90, currency)} />
               )}
               {basket.discounted_order_share != null && (
-                <li className="flex items-baseline justify-between gap-2">
-                  <span className="text-gray-500">Orders with a discount</span>
-                  <span className="font-medium text-gray-900">
-                    {basket.discounted_order_share}%
-                    {basket.avg_discount_depth_pct ? ` at ${basket.avg_discount_depth_pct}% off` : ''}
-                  </span>
-                </li>
+                <LeaderRow
+                  label="Orders with a discount"
+                  value={basket.discounted_order_share + '%' + (basket.avg_discount_depth_pct ? ' at ' + basket.avg_discount_depth_pct + '% off' : '')}
+                />
               )}
             </ul>
             <p className="mt-2.5 text-xs leading-relaxed text-gray-500">
@@ -446,16 +448,29 @@ export default function WebAnalyticsSection({
         {rollup?.channels && rollup.channels.length > 0 && (
           <div className="rounded-xl border border-gray-100 px-4 py-3.5">
             <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Where orders come from</h3>
-            <ul className="mt-2 space-y-1.5 text-sm">
-              {rollup.channels.slice(0, 5).map((c, i) => (
-                <li key={i} className="flex items-baseline justify-between gap-2">
-                  <span className="truncate capitalize text-gray-500">{channelName(c.name)}</span>
-                  <span className="shrink-0 font-medium text-gray-900">
-                    {formatMoney(c.revenue, currency)}
-                    <span className="ml-1.5 text-xs font-normal text-gray-400">{c.orders} orders</span>
-                  </span>
-                </li>
-              ))}
+            <ul className="mt-2.5 space-y-2.5 text-sm">
+              {rollup.channels.slice(0, 5).map((c, i) => {
+                const share = channelTotal > 0 ? (c.revenue / channelTotal) * 100 : 0;
+                return (
+                  <li key={i}>
+                    <div className="flex items-baseline justify-between gap-2">
+                      <span className="truncate capitalize text-gray-600">{channelName(c.name)}</span>
+                      <span className="shrink-0 font-medium tabular-nums text-gray-900">
+                        {formatMoney(c.revenue, currency)}
+                        <span className="ml-1.5 text-xs font-normal text-gray-400">{c.orders} orders</span>
+                      </span>
+                    </div>
+                    {/* Share of the channels shown, so the bars fill the row
+                        rather than shrinking against an unseen long tail. */}
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
+                      <div
+                        className="h-full rounded-full bg-brand-primary/70"
+                        style={{ width: (share > 0 ? Math.max(share, 1.5) : 0) + '%' }}
+                      />
+                    </div>
+                  </li>
+                );
+              })}
             </ul>
           </div>
         )}

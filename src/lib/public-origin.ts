@@ -7,6 +7,7 @@
 const PRODUCTION_ROOT_DOMAIN = 'ecdigitalstrategy.com';
 const PROPOSAL_PUBLIC_ORIGIN = 'https://proposal.ecdigitalstrategy.com';
 const DOCUMENT_PUBLIC_ORIGIN = 'https://docs.ecdigitalstrategy.com';
+const REPORT_PUBLIC_ORIGIN = 'https://audit.ecdigitalstrategy.com';
 
 export function publicProposalOrigin(): string {
   if (typeof window === 'undefined') return PROPOSAL_PUBLIC_ORIGIN;
@@ -21,5 +22,15 @@ export function publicDocumentOrigin(): string {
   if (typeof window === 'undefined') return DOCUMENT_PUBLIC_ORIGIN;
   return window.location.hostname.endsWith(PRODUCTION_ROOT_DOMAIN)
     ? DOCUMENT_PUBLIC_ORIGIN
+    : window.location.origin;
+}
+
+/** Client-facing audit report links. Shared reports are served from the audit
+ * subdomain, so a proposal that points back at its audit uses the same host the
+ * client was given when the report was shared. */
+export function publicReportOrigin(): string {
+  if (typeof window === 'undefined') return REPORT_PUBLIC_ORIGIN;
+  return window.location.hostname.endsWith(PRODUCTION_ROOT_DOMAIN)
+    ? REPORT_PUBLIC_ORIGIN
     : window.location.origin;
 }
