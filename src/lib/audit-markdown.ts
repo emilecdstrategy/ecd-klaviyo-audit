@@ -12,14 +12,20 @@ import {
 
 const ENTITY_TYPES = ['flow', 'campaign', 'segment', 'form'] as const;
 
+// A BARE url, not [label](href): markdown link syntax cannot survive the
+// contentEditable round trip (auditTextToEditorHtml -> innerHTML -> htmlToMd),
+// so a link written that way would be mangled the first time someone edited the
+// block. A plain URL is just text on the way in and out, and only becomes an
+// anchor when rendered, which is lossless.
 const INLINE_MARKDOWN_REGEX =
-  /(`(flow|campaign|segment|form):([^`]+)`|\*\*([^*]+?)\*\*|\*([^*]+?)\*)/g;
+  /(`(flow|campaign|segment|form):([^`]+)`|\*\*([^*]+?)\*\*|\*([^*]+?)\*|(https?:\/\/[^\s<>()\[\]]+))/g;
 
 export type InlineMarkdownToken =
   | { type: 'text'; value: string }
   | { type: 'bold'; value: string }
   | { type: 'italic'; value: string }
-  | { type: 'entity'; entityType: EntityType; name: string };
+  | { type: 'entity'; entityType: EntityType; name: string }
+  | { type: 'link'; href: string; value: string };
 
 /** Fix legacy triple-asterisk bold markers (e.g. ***Why Upgrade:***) to standard **bold**. */
 export function normalizeInlineMarkdown(text: string): string {
@@ -52,6 +58,14 @@ export function tokenizeInlineMarkdown(text: string): InlineMarkdownToken[] {
       tokens.push({ type: 'bold', value: match[4] });
     } else if (match[5] !== undefined) {
       tokens.push({ type: 'italic', value: match[5] });
+    } else if (match[6] !== undefined) {
+      // Trailing sentence punctuation is not part of the URL.
+      const raw = match[6];
+      const trimmed = raw.replace(/[.,;:!?]+$/, '');
+      tokens.push({ type: 'link', href: trimmed, value: trimmed });
+      if (trimmed.length !== raw.length) {
+        tokens.push({ type: 'text', value: raw.slice(trimmed.length) });
+      }
     }
     last = INLINE_MARKDOWN_REGEX.lastIndex;
   }
@@ -86,6 +100,10 @@ function inlineMdToHtml(md: string): string {
           return `<strong>${token.value}</strong>`;
         case 'italic':
           return `<em>${token.value}</em>`;
+        case 'link':
+          // Plain text while editing: an anchor here would come back through
+          // htmlToMd as something other than the URL that went in.
+          return token.value;
         default:
           return token.value;
       }

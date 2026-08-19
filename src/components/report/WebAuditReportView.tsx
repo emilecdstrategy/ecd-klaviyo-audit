@@ -212,7 +212,7 @@ export default function WebAuditReportView({
       {navItems.length > 1 && (
         <div className="sticky top-0 z-40 bg-white">
           <div className="border-b border-gray-100">
-            <div className="mx-auto max-w-[85rem] px-6">
+            <div className="mx-auto max-w-[81rem] px-6">
               <nav className="flex overflow-x-auto">
                 {navItems.map(item => (
                   <a
@@ -248,7 +248,7 @@ export default function WebAuditReportView({
         </div>
       )}
 
-      <div className="mx-auto max-w-[85rem] space-y-14 px-6 py-10">
+      <div className="mx-auto max-w-[81rem] space-y-14 px-6 py-10">
         {/* Hero */}
         <div className="relative overflow-hidden rounded-2xl gradient-bg px-8 py-12 text-white sm:px-10 sm:py-14">
           <div

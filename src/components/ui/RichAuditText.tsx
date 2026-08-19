@@ -41,6 +41,19 @@ export function renderInlineMarkdown(
       case 'italic':
         nodes.push(<em key={key++}>{token.value}</em>);
         break;
+      case 'link':
+        nodes.push(
+          <a
+            key={key++}
+            href={token.href}
+            target="_blank"
+            rel="noopener noreferrer"
+            className="break-all font-medium text-brand-primary underline decoration-brand-primary/30 underline-offset-2 hover:decoration-brand-primary"
+          >
+            {token.value}
+          </a>,
+        );
+        break;
       default:
         nodes.push(token.value);
         break;

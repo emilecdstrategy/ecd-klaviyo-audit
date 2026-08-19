@@ -2,6 +2,7 @@ import { getAddOnItemsFromLayout } from './addon-highlight';
 import { listAuditSections, listRevenueOpportunityTemplates } from './db';
 import { parseWebRoadmapDetail, type WebRoadmapRow } from './web-report-details';
 import { publicReportOrigin } from './public-origin';
+import { supabase } from './supabase';
 import { investmentRows, parseMonthly, setupCost } from './web-audit-pricing';
 import { addOnHasPricing } from './addon-pricing';
 import { isAddOnInvestmentIncluded } from './investment-summary';
@@ -133,7 +134,9 @@ export function auditReportBlock(audit: Audit): ProposalBlock | null {
   return {
     key: 'audit_report_link',
     title: 'The audit behind this proposal',
-    content: `Everything proposed here comes out of the ${kind} we walked through together. You can revisit it at any time: [${url}](${url})`,
+    // Bare URL, no markdown link syntax: the renderer autolinks it and the
+    // editor round-trips it untouched.
+    content: `Everything proposed here comes out of the ${kind} we walked through together. You can revisit it at any time:\n\n${url}`,
   };
 }
 
@@ -187,6 +190,36 @@ export async function createProposalFromAudit(audit: Audit, client: Client): Pro
   if (lineItems.length > 0) await createProposalLineItems(lineItems);
 
   return proposal;
+}
+
+export type ProposalDraftResult = { blocks_written: number; block_titles: string[]; questions: string[] };
+
+/**
+ * Ask the drafting function to write the scope sections from the audit.
+ *
+ * Called after creation rather than inside it, because the line items are the
+ * scope the narrative describes and they only exist once the proposal does.
+ * Returns null on any failure, including a missing API key: a proposal with
+ * boilerplate and no scope is still usable, and losing the proposal that was
+ * just created would be far worse.
+ */
+export async function draftProposalFromAudit(
+  auditId: string,
+  proposalId: string,
+): Promise<ProposalDraftResult | null> {
+  try {
+    const { data, error } = await supabase.functions.invoke('proposal_draft_from_audit', {
+      body: { audit_id: auditId, proposal_id: proposalId },
+    });
+    if (error || !data?.ok) return null;
+    return {
+      blocks_written: Number(data.blocks_written ?? 0),
+      block_titles: Array.isArray(data.block_titles) ? data.block_titles.map(String) : [],
+      questions: Array.isArray(data.questions) ? data.questions.map(String) : [],
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Create a draft proposal from scratch, optionally seeded from a template. */

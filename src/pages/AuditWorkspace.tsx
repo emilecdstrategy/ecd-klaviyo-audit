@@ -37,7 +37,7 @@ import {
   listAuditSections,
   type WebAuditReportBundle,
 } from '../lib/db';
-import { createProposalFromAudit } from '../lib/proposal-convert';
+import { createProposalFromAudit, draftProposalFromAudit } from '../lib/proposal-convert';
 import { WEB_AFTER_IMAGES_ENABLED } from '../lib/feature-flags';
 import { canAccessArea } from '../lib/access';
 import { useAuth } from '../contexts/AuthContext';
@@ -455,6 +455,17 @@ export default function AuditWorkspace() {
         setCreatingProposal(true);
         try {
           const proposal = await createProposalFromAudit(audit, client);
+          // Drafting reads the audit and writes the scope sections. It can take a
+          // few seconds, so the button stays in its pending state until it lands
+          // rather than dropping the user into a proposal that is still filling in.
+          const draft = await draftProposalFromAudit(audit.id, proposal.id);
+          if (draft && draft.questions.length > 0) {
+            toast(
+              `Drafted from the audit. ${draft.questions.length} question${draft.questions.length === 1 ? '' : 's'} waiting in the AI assistant.`,
+            );
+          } else if (draft) {
+            toast('Drafted from the audit.');
+          }
           navigate(`/proposals/${proposal.id}/edit`);
         } catch (e) {
           toast(e instanceof Error ? e.message : 'Failed to create proposal');
@@ -464,7 +475,7 @@ export default function AuditWorkspace() {
       className="inline-flex h-10 items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 text-sm font-medium text-gray-700 transition-colors hover:bg-gray-50 disabled:opacity-50"
     >
       <FileSignature className="h-4 w-4" />
-      {creatingProposal ? 'Creating…' : 'Create Proposal'}
+      {creatingProposal ? 'Drafting…' : 'Create Proposal'}
     </button>
   ) : null;
 
