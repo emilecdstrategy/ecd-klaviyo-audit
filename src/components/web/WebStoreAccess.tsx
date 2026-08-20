@@ -17,12 +17,75 @@ const PROMO_APP_URL = 'https://promo.ecdigitalstrategy.com';
 
 /** The redirect Shopify sends the merchant back to. Registered on the app itself,
  *  so it has to be exactly this and it is the same for every client. */
+/** What Shopify calls the App URL. Where staff use the tool, not the callback. */
+function appUrl(): string {
+  return `${window.location.origin}/`;
+}
+
 function callbackUrl(): string {
   const base = (import.meta.env.VITE_SUPABASE_URL ?? '').replace(/\/$/, '');
   return `${base}/functions/v1/shopify_oauth_callback`;
 }
 
-const REQUIRED_SCOPES = 'read_orders, read_all_orders, read_products, read_customers, read_analytics';
+const DEV_DASHBOARD_APPS = 'https://dev.shopify.com/dashboard/129438360/apps';
+
+/**
+ * The scopes to install with, copied from the promo calendar app's list
+ * (promo-calendar lib/integrations/shopify-oauth.ts) and kept in its order.
+ *
+ * Deliberately identical: a store connected here and a store connected there
+ * should end up with the same access, or the audit's own behaviour would depend
+ * on which route somebody happened to take. It is also cheaper to ask for a
+ * scope now than to add one later, because adding one means going back to every
+ * store and reinstalling.
+ */
+const SHOPIFY_SCOPES = [
+  'read_analytics',
+  'read_customers',
+  'read_channels',
+  'read_price_rules',
+  'read_discounts',
+  'read_inventory',
+  'read_marketing_integrated_campaigns',
+  'read_marketing_events',
+  'read_orders',
+  'read_all_orders',
+  'read_product_listings',
+  'read_products',
+  'read_publications',
+  'read_reports',
+];
+const SCOPE_PARAM = SHOPIFY_SCOPES.join(',');
+
+/** A value that exists to be pasted into Shopify, with the copy button on it. */
+function CopyBox({ value, label }: { value: string; label: string }) {
+  const [done, setDone] = useState(false);
+  return (
+    <div>
+      <p className="mb-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">{label}</p>
+      <div className="flex items-start gap-2">
+        <code className="min-w-0 flex-1 break-all rounded border border-gray-200 bg-white px-2 py-1.5 text-[11px] leading-relaxed text-gray-700">
+          {value}
+        </code>
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              await navigator.clipboard.writeText(value);
+              setDone(true);
+              setTimeout(() => setDone(false), 2000);
+            } catch { /* denied; the text is selectable */ }
+          }}
+          aria-label={`Copy ${label}`}
+          className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
+        >
+          {done ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
+          {done ? 'Copied' : 'Copy'}
+        </button>
+      </div>
+    </div>
+  );
+}
 
 type CheckState =
   | { status: 'idle' }
@@ -39,6 +102,8 @@ export type WebStoreAccessProps = {
   websiteUrl: string;
   shopDomain: string;
   onShopDomainChange: (value: string) => void;
+  /** True when the domain was read from the live storefront rather than guessed. */
+  domainVerified?: boolean;
   /** Creates or finds the client record, returning its id. */
   ensureClient: () => Promise<string>;
   /** Whether a usable connection exists, so the wizard can gate on it. */
@@ -54,6 +119,7 @@ export default function WebStoreAccess({
   websiteUrl,
   shopDomain,
   onShopDomainChange,
+  domainVerified = false,
   ensureClient,
   onConnectedChange,
   proceedWithoutStore,
@@ -65,7 +131,6 @@ export default function WebStoreAccess({
   const [appSecret, setAppSecret] = useState('');
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
-  const [copied, setCopied] = useState(false);
   const [installOutcome, setInstallOutcome] = useState<{ ok: boolean; reason?: string } | null>(null);
 
   /** Is this store connected in the promo calendar? Returns the shop name if so.
@@ -228,13 +293,6 @@ export default function WebStoreAccess({
     }
   };
 
-  const copyCallback = async () => {
-    try {
-      await navigator.clipboard.writeText(callbackUrl());
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    } catch { /* clipboard denied; the field is selectable */ }
-  };
 
   const appName = `${companyName || 'Client Name'} - ECD Web Audit`;
 
@@ -382,35 +440,65 @@ export default function WebStoreAccess({
                 </p>
               </div>
 
-              <ol className="list-decimal space-y-3 pl-5 text-sm text-gray-700 marker:font-semibold marker:text-brand-primary">
+              {/* The same six steps as the promo calendar's setup guide, so whichever
+                  tool somebody sets a store up in, the process is the one they
+                  already know. */}
+              <ol className="space-y-3.5 text-sm text-gray-700">
                 <li>
-                  In the Shopify <span className="font-medium text-gray-900">Dev Dashboard</span>, create an app named{' '}
-                  <span className="font-mono text-xs text-gray-900">{appName}</span>.
+                  <p className="font-medium text-gray-900">1. Open the Dev Dashboard and create the app</p>
+                  <a
+                    href={DEV_DASHBOARD_APPS}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-brand-primary hover:underline"
+                  >
+                    Open ECD's apps <ExternalLink className="h-3 w-3" />
+                  </a>
+                  <p className="mt-1 text-xs text-gray-600">Click <span className="text-gray-900">Develop App</span>.</p>
                 </li>
+
                 <li>
-                  Set its Admin API scopes to:
-                  <span className="mt-1 block font-mono text-xs text-gray-900">{REQUIRED_SCOPES}</span>
-                  <span className="mt-1 block text-xs text-gray-500">
-                    Read-only. The audit never writes to a store.
-                  </span>
+                  <p className="font-medium text-gray-900">2. Name it after the client</p>
+                  <div className="mt-1.5">
+                    <CopyBox value={appName} label="Suggested name" />
+                  </div>
+                  <p className="mt-1 text-xs text-gray-400">Only a suggestion, any name works.</p>
                 </li>
+
                 <li>
-                  Add this exact redirect URL to the app:
-                  <div className="mt-1.5 flex items-center gap-2">
-                    <code className="min-w-0 flex-1 truncate rounded border border-gray-200 bg-white px-2 py-1.5 text-[11px] text-gray-700">
-                      {callbackUrl()}
-                    </code>
-                    <button
-                      type="button"
-                      onClick={copyCallback}
-                      className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 bg-white px-2.5 py-1.5 text-xs font-medium text-gray-700 hover:bg-gray-50"
-                    >
-                      {copied ? <Check className="h-3.5 w-3.5 text-emerald-600" /> : <Copy className="h-3.5 w-3.5" />}
-                      {copied ? 'Copied' : 'Copy'}
-                    </button>
+                  <p className="font-medium text-gray-900">3. Set the app URL and redirect URL</p>
+                  <p className="mt-1 text-xs text-gray-600">Under <span className="text-gray-900">Configuration</span>:</p>
+                  <div className="mt-1.5 space-y-2">
+                    <CopyBox value={appUrl()} label="App URL" />
+                    <CopyBox value={callbackUrl()} label="Allowed redirection URL" />
                   </div>
                 </li>
-                <li>Copy the app's Client ID and Client secret from its credentials page, and paste them below.</li>
+
+                <li>
+                  <p className="font-medium text-gray-900">4. Add every scope</p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    Paste the whole list into the app's access scopes. All of them are required.
+                  </p>
+                  <div className="mt-1.5">
+                    <CopyBox value={SCOPE_PARAM} label="Access scopes" />
+                  </div>
+                </li>
+
+                <li>
+                  <p className="font-medium text-gray-900">5. Release the version</p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    Save, then <span className="text-gray-900">Release</span> so the configuration is the active
+                    version. An unreleased change is not what the store installs.
+                  </p>
+                </li>
+
+                <li>
+                  <p className="font-medium text-gray-900">6. Copy the Client ID and Secret back here</p>
+                  <p className="mt-1 text-xs text-gray-600">
+                    <span className="text-gray-900">Settings, then Credentials</span> in the app. Paste both below and
+                    press <span className="text-gray-900">Install on store</span>.
+                  </p>
+                </li>
               </ol>
 
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -423,6 +511,11 @@ export default function WebStoreAccess({
                     placeholder="their-store.myshopify.com"
                     className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm focus:border-brand-primary focus:outline-none focus:ring-1 focus:ring-brand-primary/20"
                   />
+                  <p className={domainVerified ? "mt-1 text-[11px] text-emerald-600" : "mt-1 text-[11px] text-amber-600"}>
+                    {domainVerified
+                      ? "Read from the live storefront, so this is the real one."
+                      : "Guessed from the website. Check it against the store before installing."}
+                  </p>
                 </div>
                 <div>
                   <label className="mb-1 block text-xs font-medium text-gray-700">Client ID</label>

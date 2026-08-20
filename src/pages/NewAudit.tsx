@@ -113,6 +113,11 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   // whether the audit can include performance data, and whether running without
   // it was an actual decision.
   const [storeConnected, setStoreConnected] = useState(false);
+  // Whether the store domain shown was READ from the storefront or is still the
+  // naive guess off the website host. The two disagree often (powerplanter.com is
+  // power-planter-augers.myshopify.com), and an install against the wrong domain
+  // simply fails, so the step says which one it is holding.
+  const [domainVerified, setDomainVerified] = useState(false);
   const [proceedWithoutStore, setProceedWithoutStore] = useState(false);
 
   const selectedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
@@ -143,6 +148,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
       setForm(prev => {
         if (prev.shopifyDomain.trim() && prev.shopifyDomain !== autoDomainRef.current) return prev;
         autoDomainRef.current = real;
+        setDomainVerified(true);
         return { ...prev, shopifyDomain: real };
       });
     });
@@ -658,7 +664,8 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 companyName={form.companyName}
                 websiteUrl={form.websiteUrl}
                 shopDomain={form.shopifyDomain}
-                onShopDomainChange={v => updateField('shopifyDomain', v)}
+                onShopDomainChange={v => { updateField('shopifyDomain', v); setDomainVerified(false); }}
+                domainVerified={domainVerified}
                 ensureClient={ensureClientRecord}
                 onConnectedChange={setStoreConnected}
                 proceedWithoutStore={proceedWithoutStore}
