@@ -430,7 +430,7 @@ export default function WebStoreAccess({
             </div>
           </div>
 
-          {mode === 'here' && (
+          {mode === 'here' && !proceedWithoutStore && (
             <div className="space-y-4 rounded-xl border border-brand-primary/20 bg-brand-primary/[0.03] p-4">
               <div>
                 <p className="text-sm font-semibold text-gray-900">Create the app, then install it</p>
@@ -566,7 +566,12 @@ export default function WebStoreAccess({
             <label className="flex cursor-pointer items-center gap-2.5">
               <BrandedCheckbox
                 checked={proceedWithoutStore}
-                onChange={onProceedWithoutStoreChange}
+                onChange={checked => {
+                  onProceedWithoutStoreChange(checked);
+                  // Collapse the steps too, so the toggle label matches what is
+                  // actually on screen when the box is unticked again.
+                  if (checked) setMode('none');
+                }}
                 aria-label="Run the audit without store data"
               />
               <span className="text-sm text-gray-700">Run the audit without store data.</span>
