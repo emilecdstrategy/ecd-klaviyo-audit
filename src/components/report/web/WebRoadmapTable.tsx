@@ -14,6 +14,7 @@ import { useReportEdit } from '../edit/ReportEditContext';
 import EditablePlainText from '../edit/EditablePlainText';
 import BrandedCheckbox from '../../ui/BrandedCheckbox';
 import HoverTooltip from '../../ui/HoverTooltip';
+import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../../ui/select';
 
 const PRIORITY_STYLES: Record<WebRoadmapRow['priority'], string> = {
   high: 'bg-red-50 text-red-700',
@@ -152,15 +153,25 @@ export default function WebRoadmapTable({
                   )}
                   <td className="py-2.5 pr-3 align-top">
                     {editMode ? (
-                      <select
+                      <Select
                         value={r.priority}
-                        onChange={(e) => setRow(i, { priority: e.target.value as WebRoadmapRow['priority'] })}
-                        className="rounded border border-gray-200 px-1.5 py-0.5 text-xs"
+                        onValueChange={(v) => setRow(i, { priority: v as WebRoadmapRow['priority'] })}
                       >
-                        <option value="high">High</option>
-                        <option value="medium">Medium</option>
-                        <option value="low">Low</option>
-                      </select>
+                        <SelectTrigger className="h-8 w-[7.5rem] text-xs">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {(['high', 'medium', 'low'] as const).map((p) => (
+                            <SelectItem key={p} value={p}>
+                              <SelectItemText>
+                                <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${PRIORITY_STYLES[p]}`}>
+                                  {p}
+                                </span>
+                              </SelectItemText>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
                     ) : (
                       <span className={`inline-block rounded-full px-2 py-0.5 text-xs font-semibold uppercase ${PRIORITY_STYLES[r.priority]}`}>
                         {r.priority}
