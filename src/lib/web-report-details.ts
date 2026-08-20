@@ -69,6 +69,9 @@ export type WebAnalyticsMetric = { key: string; commentary: string; recommendati
  * and the thing to do about it. */
 export type WebAnalyticsPlay = {
   title: string;
+  /** Kept out of the client's report while staying in the data, the same way a
+   *  page finding or a roadmap row is hidden rather than deleted. */
+  hidden?: boolean;
   insight: string;
   /** The work, as bullets. Older audits stored one sentence; parsed into [one]. */
   action_steps: string[];
@@ -245,8 +248,13 @@ export function parseWebAnalyticsDetail(sectionDetails: unknown): WebAnalyticsDe
           products: Array.isArray(rec.products) ? rec.products.map((t) => asString(t)).filter(Boolean) : [],
           metric: asString(rec.metric),
           window: asString(rec.window),
+          hidden: rec.hidden === true,
         };
-      }).filter((p) => p.title && p.insight)
+      })
+      // A play written by hand starts empty, so an empty one is only dropped when
+      // it came from the model. Requiring a title here would delete the row the
+      // moment someone added it.
+      .filter((p) => p.title || p.insight || p.action_steps.length > 0 || p.metric)
     : [];
   return { timeframe_key: asString(a.timeframe_key) || '30d_vs_prior_30d', plays, metrics };
 }

@@ -532,7 +532,7 @@ export default function ClientDetail() {
                       </div>
                       <div className="flex items-center gap-3 shrink-0 ml-4">
                         <span className="text-sm font-semibold text-emerald-700">
-                          {formatCurrency(audit.total_revenue_opportunity)}
+                          {audit.audit_type === 'web' ? '—' : formatCurrency(audit.total_revenue_opportunity)}
                         </span>
                         <div className="flex items-center gap-2">
                           <StatusBadge status={audit.status} />

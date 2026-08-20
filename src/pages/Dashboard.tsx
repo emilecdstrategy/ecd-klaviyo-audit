@@ -173,9 +173,12 @@ export default function Dashboard() {
                         </div>
                       </div>
                       <div className="flex items-center gap-4 shrink-0 ml-4">
-                        <span className="text-sm font-semibold text-emerald-700">
-                          {formatCurrency(audit.total_revenue_opportunity)}
-                        </span>
+                        {/* Web audits carry no revenue estimate, so this was always $0. */}
+                        {audit.audit_type !== 'web' && (
+                          <span className="text-sm font-semibold text-emerald-700">
+                            {formatCurrency(audit.total_revenue_opportunity)}
+                          </span>
+                        )}
                         <div className="flex items-center gap-2">
                           <StatusBadge status={audit.status} />
                           <AuditStatusBadge audit={audit} />

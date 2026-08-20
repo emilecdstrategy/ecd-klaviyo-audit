@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Globe, Settings2 } from 'lucide-react';
+import { Settings2 } from 'lucide-react';
 import type { Audit, AuditSection, Client, ShopifyDataSnapshot, WebPageSnapshot, WebPageType } from '../../lib/types';
 import { parseWebRoadmapDetail, type OrdersRollup } from '../../lib/web-report-details';
 import { getAddOnItemsFromLayout } from '../../lib/addon-highlight';
@@ -10,6 +10,7 @@ import WebPageSection from './web/WebPageSection';
 import WebAnalyticsSection from './web/WebAnalyticsSection';
 import WebRoadmapTable from './web/WebRoadmapTable';
 import WebInvestmentSummary from './web/WebInvestmentSummary';
+import ReportCover from './ReportCover';
 import WebAgentDemoSection, { type AgentDemoKind } from './web/WebAgentDemoSection';
 
 export interface WebAuditReportViewData {
@@ -249,33 +250,14 @@ export default function WebAuditReportView({
       )}
 
       <div className="mx-auto max-w-[81rem] space-y-14 px-6 py-10">
-        {/* Hero */}
-        <div className="relative overflow-hidden rounded-2xl gradient-bg px-8 py-12 text-white sm:px-10 sm:py-14">
-          <div
-            className="pointer-events-none absolute -right-16 -top-16 h-64 w-64 rounded-full bg-white/10 blur-2xl"
-            aria-hidden
-          />
-          <div className="relative">
-            <div className="mb-4 flex items-center gap-2 text-[10px] font-semibold uppercase tracking-[0.18em] text-white/70">
-              <Globe className="h-4 w-4" />
-              Website Audit
-            </div>
-            <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">{client.company_name}</h1>
-            {client.website_url && (
-              <a
-                href={client.website_url}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="mt-2 inline-block text-sm text-white/80 transition-colors hover:text-white hover:underline"
-              >
-                {client.website_url}
-              </a>
-            )}
-            <p className="mt-6 text-xs text-white/60">
-              Prepared {new Date(audit.created_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
-            </p>
-          </div>
-        </div>
+        <ReportCover
+          companyName={client.company_name}
+          preparedDate={new Date(audit.created_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
+          websiteUrl={client.website_url}
+          brandSubtitle="Website Audit Report"
+          deliverable="Website UX Audit"
+          description="A page-by-page review of your storefront on desktop and mobile. What is working, what is costing you orders, and what to fix first."
+        />
 
         {overview && !isHidden(overview) && (
           <WebSectionShell id="web_overview" number={nextNumber()} label="Overview" setRef={setRef}>

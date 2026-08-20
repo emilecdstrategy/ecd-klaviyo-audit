@@ -1,5 +1,5 @@
 import { useMemo, type ReactNode } from 'react';
-import { ArrowUpRight, ExternalLink, Info, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowUpRight, Eye, EyeOff, ExternalLink, Info, Plus, TrendingDown, TrendingUp, Trash2 } from 'lucide-react';
 import type { AuditSection } from '../../../lib/types';
 import {
   formatDelta,
@@ -150,6 +150,8 @@ function PlayCard({
   currency,
   editMode,
   onEdit,
+  onPatch,
+  onRemove,
 }: {
   play: WebAnalyticsPlay;
   /** Its position in the list, so a play can be pointed at on a call. */
@@ -159,9 +161,41 @@ function PlayCard({
   currency: string;
   editMode: boolean;
   onEdit: (field: 'title' | 'insight' | 'metric' | 'window', value: string) => void;
+  onPatch: (patch: Partial<WebAnalyticsPlay>) => void;
+  onRemove: () => void;
   }) {
+  const setStep = (index: number, value: string) =>
+    onPatch({ action_steps: play.action_steps.map((s, i) => (i === index ? value : s)) });
+  const addStep = () => onPatch({ action_steps: [...play.action_steps, ''] });
+  const removeStep = (index: number) =>
+    onPatch({ action_steps: play.action_steps.filter((_, i) => i !== index) });
+
   return (
-    <article className="rounded-2xl border border-gray-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)]">
+    <article
+      className={`relative rounded-2xl border border-gray-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${
+        play.hidden ? 'opacity-50' : ''
+      }`}
+    >
+      {editMode && (
+        <div className="absolute right-3 top-3 flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => onPatch({ hidden: !play.hidden })}
+            title={play.hidden ? 'Show in the report' : 'Hide from the report'}
+            className="rounded p-1 text-gray-300 transition-colors hover:bg-gray-50 hover:text-gray-600"
+          >
+            {play.hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+          </button>
+          <button
+            type="button"
+            onClick={onRemove}
+            title="Delete this opportunity"
+            className="rounded p-1 text-gray-300 transition-colors hover:bg-red-50 hover:text-red-500"
+          >
+            <Trash2 className="h-3.5 w-3.5" />
+          </button>
+        </div>
+      )}
       <div className="flex flex-wrap items-start justify-between gap-3">
         <h4 className="flex min-w-0 items-start gap-2.5 text-base font-semibold leading-snug text-gray-900">
           <span className="mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-surface text-xs font-bold tabular-nums text-brand-primary">
@@ -189,17 +223,42 @@ function PlayCard({
         <EditablePlainText value={play.insight} onSave={(v) => onEdit('insight', v)} placeholder="What the data shows…" />
       </p>
 
-      {play.action_steps.length > 0 && (
+      {(play.action_steps.length > 0 || editMode) && (
         <div className="mt-3.5">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">What to do</p>
           <ul className="mt-1.5 space-y-1.5">
             {play.action_steps.map((step, i) => (
               <li key={i} className="flex gap-2 text-sm leading-relaxed text-gray-700">
                 <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-primary" />
-                <span>{step}</span>
+                <span className="min-w-0 flex-1">
+                  <EditablePlainText
+                    value={step}
+                    onSave={editMode ? v => setStep(i, v) : undefined}
+                    placeholder="What to ship…"
+                  />
+                </span>
+                {editMode && (
+                  <button
+                    type="button"
+                    onClick={() => removeStep(i)}
+                    title="Remove this step"
+                    className="shrink-0 rounded p-0.5 text-gray-300 hover:text-red-500"
+                  >
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                )}
               </li>
             ))}
           </ul>
+          {editMode && (
+            <button
+              type="button"
+              onClick={addStep}
+              className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-brand-primary hover:underline"
+            >
+              <Plus className="h-3 w-3" /> Add a step
+            </button>
+          )}
         </div>
       )}
 
@@ -268,10 +327,28 @@ export default function WebAnalyticsSection({
   const productsFor = (play: WebAnalyticsPlay): BasketProduct[] =>
     play.products.map((t) => catalog.get(t.trim().toLowerCase())).filter((p): p is BasketProduct => Boolean(p));
 
-  const setPlay = (i: number, field: keyof WebAnalyticsPlay, value: string) => {
-    const next = plays.map((p, idx) => (idx === i ? { ...p, [field]: value } : p));
+  const writePlays = (next: WebAnalyticsPlay[]) =>
     updateSectionDetailValue(section.section_key, ['web_analytics', 'plays'], next);
+
+  const setPlay = (i: number, field: keyof WebAnalyticsPlay, value: string) => {
+    writePlays(plays.map((p, idx) => (idx === i ? { ...p, [field]: value } : p)));
   };
+
+  const patchPlay = (i: number, patch: Partial<WebAnalyticsPlay>) => {
+    writePlays(plays.map((p, idx) => (idx === i ? { ...p, ...patch } : p)));
+  };
+
+  const removePlay = (i: number) => writePlays(plays.filter((_, idx) => idx !== i));
+
+  const addPlay = () =>
+    writePlays([
+      ...plays,
+      { title: '', insight: '', action_steps: [''], products: [], metric: '', window: '', hidden: false },
+    ]);
+
+  // Hidden plays stay visible while editing, dimmed, so hiding one is reversible
+  // without hunting through the data.
+  const visiblePlays = plays.map((p, i) => ({ p, i })).filter(({ p }) => editMode || !p.hidden);
 
   const repeatUnavailable = rollup?.returning_customer_rate_available === false;
   // Published with the figure so the tile can say what the number actually means
@@ -378,19 +455,45 @@ export default function WebAnalyticsSection({
         <div className="mt-7 border-t border-gray-100 pt-6">
           <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Opportunities in the data</h3>
           <div className="mt-3.5 space-y-4">
-            {plays.map((play, i) => (
+            {visiblePlays.map(({ p: play, i }, position) => (
               <PlayCard
                 key={i}
                 play={play}
-                number={i + 1}
+                number={position + 1}
                 products={productsFor(play)}
                 storeBase={storeBase}
                 currency={currency}
                 editMode={editMode}
-                onEdit={(f, v) => setPlay(i, f, v)}
+                onEdit={(field, v) => setPlay(i, field, v)}
+                onPatch={patch => patchPlay(i, patch)}
+                onRemove={() => removePlay(i)}
               />
             ))}
           </div>
+          {editMode && (
+            <button
+              type="button"
+              onClick={addPlay}
+              className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand-primary hover:underline"
+            >
+              <Plus className="h-3 w-3" /> Add an opportunity
+            </button>
+          )}
+        </div>
+      )}
+
+      {/* With no plays at all there is nothing to add one to, so the button lives
+          here as well rather than the section vanishing in edit mode. */}
+      {editMode && plays.length === 0 && (
+        <div className="mt-7 border-t border-gray-100 pt-6">
+          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Opportunities in the data</h3>
+          <button
+            type="button"
+            onClick={addPlay}
+            className="mt-3 inline-flex items-center gap-1 text-xs font-medium text-brand-primary hover:underline"
+          >
+            <Plus className="h-3 w-3" /> Add an opportunity
+          </button>
         </div>
       )}
 

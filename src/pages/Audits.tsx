@@ -335,9 +335,14 @@ export default function Audits() {
                         </div>
                       </td>
                       <td className="px-6 py-4">
-                        <span className="text-sm font-semibold text-emerald-700">
-                          {formatCurrency(audit.total_revenue_opportunity)}
-                        </span>
+                        {/* A web audit has no revenue estimate; the cell read $0 always. */}
+                        {audit.audit_type === 'web' ? (
+                          <span className="text-sm text-gray-300">&mdash;</span>
+                        ) : (
+                          <span className="text-sm font-semibold text-emerald-700">
+                            {formatCurrency(audit.total_revenue_opportunity)}
+                          </span>
+                        )}
                       </td>
                       <td className="px-6 py-4">
                         <div className="flex items-center gap-2">
