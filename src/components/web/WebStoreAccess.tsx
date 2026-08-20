@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { AlertTriangle, Check, Copy, ExternalLink, Loader2, RefreshCw, Store } from 'lucide-react';
+import { AlertTriangle, Check, Copy, ExternalLink, Info, Loader2, RefreshCw, Store } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import HoverTooltip from '../ui/HoverTooltip';
+import BrandedCheckbox from '../ui/BrandedCheckbox';
 
 /**
  * Store access for a web audit.
@@ -468,23 +469,24 @@ export default function WebStoreAccess({
           )}
 
           {/* The way past, on purpose rather than by accident. */}
-          <label className="flex cursor-pointer items-start gap-2.5 rounded-lg border border-gray-200 px-4 py-3">
-            <input
-              type="checkbox"
-              checked={proceedWithoutStore}
-              onChange={e => onProceedWithoutStoreChange(e.target.checked)}
-              className="mt-0.5 h-4 w-4 rounded border-gray-300 text-brand-primary focus:ring-brand-primary/30"
-            />
-            <span className="text-sm text-gray-700">
-              Run the audit without store data.{' '}
-              <HoverTooltip
-                label="What you lose"
-                description="The storefront review, findings and roadmap all run as normal. The performance section is dropped entirely: no revenue, orders, AOV, repeat rate, best sellers or basket analysis, and no pricing evidence from the store's own numbers."
-              >
-                <span className="underline decoration-dotted">What this leaves out</span>
-              </HoverTooltip>
-            </span>
-          </label>
+          <div className="flex items-center gap-2.5 rounded-lg border border-gray-200 px-4 py-3">
+            <label className="flex cursor-pointer items-center gap-2.5">
+              <BrandedCheckbox
+                checked={proceedWithoutStore}
+                onChange={onProceedWithoutStoreChange}
+                aria-label="Run the audit without store data"
+              />
+              <span className="text-sm text-gray-700">Run the audit without store data.</span>
+            </label>
+            {/* The consequence sits behind an icon rather than a second sentence:
+                it matters at the moment of ticking and nowhere else. */}
+            <HoverTooltip
+              label="What this leaves out"
+              description="The storefront review, findings and roadmap all run as normal. The performance section is dropped entirely: no revenue, orders, AOV, repeat rate, best sellers or basket analysis, and no pricing evidence from the store's own numbers."
+            >
+              <Info className="h-3.5 w-3.5 shrink-0 text-gray-400 transition-colors hover:text-brand-primary" />
+            </HoverTooltip>
+          </div>
         </div>
       )}
 
