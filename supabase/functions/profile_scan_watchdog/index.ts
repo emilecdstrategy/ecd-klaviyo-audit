@@ -105,13 +105,34 @@ serve(async (req) => {
     // stays meaningful either way. Transient statuses now park rather than
     // fail, so this branch mainly rescues legacy failed rows.
     if (job.status === "failed") {
-      const transient = /(429|500|502|503|504)|timeout|bad gateway|temporarily|overloaded/i
-        .test(String(job.error_message ?? ""));
+      // Written without a backslash-b on purpose. The previous version carried
+      // literal backspace bytes where word boundaries were meant, so the 4xx/5xx
+      // could never match and NO status-code failure was ever retried: only the
+      // words timeout, bad gateway, temporarily and overloaded worked. Proven by
+      // evaluating the old expression against "upstream 502" and getting false.
+      //
+      // Connection-level failures are in the list too. A dropped TCP connection
+      // throws instead of returning a status, so the most transient failure
+      // there is went unrescued: a HigherDOSE scan died on "connection reset"
+      // and the report claimed a scan was running that had been dead for 16
+      // minutes.
+      const message = String(job.error_message ?? "");
+      const transient =
+        /(^|[^0-9])(429|500|502|503|504)([^0-9]|$)/.test(message)
+        || /timeout|timed out|bad gateway|temporarily|overloaded|rate limit/i.test(message)
+        || /connection (reset|closed|refused|error)|econnreset|epipe|socket hang ?up|error sending request|fetch failed|network error|sendrequest/i.test(message);
       const attempts = Number(job.resume_attempts ?? 0);
-      if (!transient || !job.next_path || attempts >= 4) continue;
+      if (!transient || attempts >= 4) continue;
+      // No cursor means there is nowhere to resume from, so the scan restarts.
+      // Its running totals must go back to zero with it, or the restarted pass
+      // would add its counts on top of the abandoned one.
+      const restarting = !job.next_path;
       await sb.from("klaviyo_profile_scan_jobs").update({
         status: "pending",
         resume_attempts: attempts + 1,
+        ...(restarting
+          ? { subscribed: 0, sms_subscribed: 0, active90d: 0, suppressed: 0, total_profiles: 0 }
+          : {}),
         updated_at: new Date().toISOString(),
       }).eq("audit_id", job.audit_id);
       chainResumeProfileScan(String(job.audit_id));
@@ -144,7 +165,7 @@ serve(async (req) => {
     if (job.status === "failed") {
       const msg = String(job.error_message ?? "");
       const transient =
-        /timed out|timeout|overloaded|rate.?limit|(429|500|502|503|504|529)|download|temporarily|unavailable|econnreset|fetch failed/i
+        /timed out|timeout|overloaded|rate.?limit|(^|[^0-9])(429|500|502|503|504|529)([^0-9]|$)|download|temporarily|unavailable|econnreset|fetch failed|connection (reset|closed|refused|error)|error sending request/i
           .test(msg);
       const resumes = Number(partial.autoResumes ?? 0);
       if (!transient || resumes >= 3) continue;

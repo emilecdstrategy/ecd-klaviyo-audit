@@ -215,7 +215,7 @@ async function aggregateOrders(
     );
     if (!res.ok) {
       const message = res.body?.errors?.[0]?.message ?? `Orders query failed (${res.status})`;
-      if (includeApp && /app/i.test(message)) {
+      if (includeApp && /(^|[^a-z])app([^a-z]|$)/i.test(message)) {
         includeApp = false;
         continue;
       }
