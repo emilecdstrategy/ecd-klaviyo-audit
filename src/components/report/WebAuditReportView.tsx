@@ -255,7 +255,7 @@ export default function WebAuditReportView({
           preparedDate={new Date(audit.created_at).toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}
           websiteUrl={client.website_url}
           brandSubtitle="Website Audit Report"
-          deliverable="Website UX Audit"
+          deliverable="Website Audit"
           description="A page-by-page review of your storefront on desktop and mobile. What is working, what is costing you orders, and what to fix first."
         />
 
