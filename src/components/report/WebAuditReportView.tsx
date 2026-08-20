@@ -295,6 +295,17 @@ export default function WebAuditReportView({
           );
         })}
 
+        {/* Why the performance section is absent, stated once for whoever picks
+            this audit up later. Editor-only: a client never needs to read about
+            a connection they were not part of. */}
+        {editMode && !rollup && (
+          <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <span className="font-medium">No store data on this audit.</span> It was run without a Shopify connection,
+            so there is no performance section: no revenue, orders, AOV, repeat rate or best sellers. Connect the store
+            and re-run the fetch to add it.
+          </div>
+        )}
+
         {performance && !isHidden(performance) && (
           <WebSectionShell id="web_performance" number={nextNumber()} label="Performance" setRef={setRef}>
             <WebAnalyticsSection section={performance} rollup={rollup} hideTitle />

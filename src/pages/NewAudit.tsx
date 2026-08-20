@@ -20,7 +20,7 @@ import { KLAVIYO_AUDIT_SECTION_KEYS, WEB_AUDIT_SECTION_KEYS } from '../lib/audit
 import { canUseWebAudits } from '../lib/web-audit-access';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
-import { ShopifyTokenHelpTrigger } from '../components/web/ShopifyTokenHelpModal';
+import WebStoreAccess from '../components/web/WebStoreAccess';
 import ImageUploadZone from '../components/ui/ImageUploadZone';
 import { supabase } from '../lib/supabase';
 
@@ -100,17 +100,21 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     shopifyClientId: '',
     shopifyClientSecret: '',
   });
-  const [shopifyTest, setShopifyTest] = useState<{ status: 'idle' | 'testing' | 'ok' | 'failed'; message?: string }>({ status: 'idle' });
   // 'installed' reuses the offline token from the app already installed on the
   // store (works cross-org); 'credentials' uses a Dev Dashboard app's Client
   // ID + secret (same-org only).
-  const [shopifyAuthMode, setShopifyAuthMode] = useState<'installed' | 'credentials'>('installed');
 
   const [attributionScreenshot, setAttributionScreenshot] = useState<File | null>(null);
   const [attributionPreviewUrl, setAttributionPreviewUrl] = useState<string | null>(null);
 
   const [clients, setClients] = useState<Client[]>([]);
   const [revenueTemplates, setRevenueTemplates] = useState<RevenueOpportunityTemplate[]>([]);
+  // Store access, reported by the step itself. The wizard only needs to know
+  // whether the audit can include performance data, and whether running without
+  // it was an actual decision.
+  const [storeConnected, setStoreConnected] = useState(false);
+  const [proceedWithoutStore, setProceedWithoutStore] = useState(false);
+
   const selectedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
   const hasSavedKlaviyoConnection = Boolean((selectedClient as any)?.klaviyo_connected);
   const hasSavedShopifyConnection = Boolean(selectedClient?.shopify_connected);
@@ -243,30 +247,6 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   }, []);
 
 
-  const testShopifyConnection = async () => {
-    setShopifyTest({ status: 'testing' });
-    try {
-      const { data, error: fnErr } = await supabase.functions.invoke<any>('shopify_test_connection', {
-        body: shopifyAuthMode === 'installed'
-          ? { shopDomain: form.shopifyDomain, useInstalledApp: true, websiteUrl: form.websiteUrl }
-          : { shopDomain: form.shopifyDomain, clientId: form.shopifyClientId, clientSecret: form.shopifyClientSecret },
-      });
-      if (fnErr) throw new Error(fnErr.message);
-      if (!data?.ok) {
-        setShopifyTest({ status: 'failed', message: data?.error?.message || data?.error || 'Connection failed' });
-        return;
-      }
-      const warnings: string[] = Array.isArray(data.warnings) ? data.warnings : [];
-      setShopifyTest({
-        status: 'ok',
-        message: warnings.length > 0
-          ? `Connected to ${data.shop?.name ?? form.shopifyDomain}, but: ${warnings.join(' ')}`
-          : `Connected to ${data.shop?.name ?? form.shopifyDomain}.`,
-      });
-    } catch (e) {
-      setShopifyTest({ status: 'failed', message: e instanceof Error ? e.message : 'Connection failed' });
-    }
-  };
 
   // Create a DRAFT audit (client + audit row + sections + persisted connections)
   // and open its workspace. Context and the actual run happen there.
@@ -292,6 +272,35 @@ export default function NewAudit({ asModal }: NewAuditProps) {
         highlighted: false,
       }));
     return items.length > 0 ? { revenue_summary: { blocks: { addOns: { items } } } } : {};
+  };
+
+  /**
+   * The client record for this form, created if it does not exist yet.
+   *
+   * Store access needs one before Shopify is involved at all: the merchant
+   * approves an install and the token has to land against a client, and coming
+   * back from Shopify to discover there was nowhere to put it would waste their
+   * approval.
+   */
+  const ensureClientRecord = async (): Promise<string> => {
+    if (form.clientId) return form.clientId;
+    const existing = await findClientByCompanyName(form.companyName);
+    if (existing) {
+      setForm(prev => ({ ...prev, clientId: existing.id }));
+      return existing.id;
+    }
+    const created = await createClient(await ensureClientCreator(user, {
+      name: form.clientName || form.companyName,
+      company_name: form.companyName,
+      website_url: form.websiteUrl,
+      industry: form.industry,
+      esp_platform: 'Klaviyo',
+      api_key_placeholder: '',
+      notes: '',
+    }) as Omit<Client, 'id' | 'created_at'>);
+    setClients(prev => [created, ...prev]);
+    setForm(prev => ({ ...prev, clientId: created.id }));
+    return created.id;
   };
 
   const createDraftKlaviyo = async () => {
@@ -411,24 +420,19 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
       await createAuditSections(audit.id, [...WEB_AUDIT_SECTION_KEYS]);
 
-      // Persist the Shopify connection now so the workspace run can use it.
-      const wantsInstalled = shopifyAuthMode === 'installed' && form.shopifyDomain.trim();
-      const wantsCredentials = shopifyAuthMode === 'credentials' && form.shopifyClientId.trim() && form.shopifyClientSecret.trim();
-      if (!hasSavedShopifyConnection && (wantsInstalled || wantsCredentials)) {
+      // The store is normally connected on the previous step, either by installing
+      // the app here or in the promo calendar. This is the last-chance pickup for
+      // a store that exists in the promo calendar but was never linked to this
+      // client, so coming straight back from there still works.
+      const canTryPromoPickup = Boolean(form.shopifyDomain.trim()) && !proceedWithoutStore;
+      if (!hasSavedShopifyConnection && !storeConnected && canTryPromoPickup) {
         // Non-fatal. The audit and its sections already exist by this point, and
         // Shopify is optional for a web audit (the screenshots do not need it).
         // Throwing here used to abandon a perfectly good audit and leave an
         // orphan draft behind on every retry.
         try {
           const { data: connData, error: connErr } = await supabase.functions.invoke<any>('shopify_connect_client', {
-            body: wantsInstalled
-              ? { client_id: clientId, shop_domain: form.shopifyDomain, use_installed_app: true, website_url: form.websiteUrl }
-              : {
-                  client_id: clientId,
-                  shop_domain: form.shopifyDomain,
-                  shopify_client_id: form.shopifyClientId,
-                  shopify_client_secret: form.shopifyClientSecret,
-                },
+            body: { client_id: clientId, shop_domain: form.shopifyDomain, use_installed_app: true, website_url: form.websiteUrl },
           });
           if (connErr) throw new Error(connErr.message);
           if (!connData?.ok) throw new Error(connData?.error?.message || 'Shopify connection failed');
@@ -454,11 +458,11 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     if (stepKey === 'klaviyo_connection') return hasSavedKlaviyoConnection || form.apiKey;
     if (stepKey === 'web_setup') {
       const hasWebsite = /^(https?:\/\/)?[^\s.]+\.[^\s]{2,}/i.test(form.websiteUrl.trim());
-      // Shopify is optional. Only block if the credentials path is half-filled.
-      const credsStarted = form.shopifyClientId.trim() !== '' || form.shopifyClientSecret.trim() !== '';
-      const credsComplete = form.shopifyDomain.trim() !== '' && form.shopifyClientId.trim() !== '' && form.shopifyClientSecret.trim() !== '';
-      const credsPartial = !hasSavedShopifyConnection && shopifyAuthMode === 'credentials' && credsStarted && !credsComplete;
-      return hasWebsite && !credsPartial;
+      // A connection, or a deliberate decision to go without one. Store data is
+      // the difference between an audit with a performance section and one
+      // without, so it is worth one tick rather than being discovered later.
+      const storeSettled = storeConnected || hasSavedShopifyConnection || proceedWithoutStore;
+      return hasWebsite && storeSettled;
     }
     return true;
   };
@@ -648,103 +652,18 @@ export default function NewAudit({ asModal }: NewAuditProps) {
               </details>
             </div>
 
-            <div className="border-t border-gray-100 pt-5 space-y-4">
-              <div>
-                <h3 className="text-sm font-semibold text-gray-900">Shopify backend metrics</h3>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  Optional. Pull orders, AOV, and revenue for the audit from the store's Shopify Admin API.
-                </p>
-              </div>
-              {hasSavedShopifyConnection ? (
-                <div className="text-sm text-emerald-800 bg-emerald-50 border border-emerald-100 px-4 py-3 rounded-lg">
-                  This client is already connected to Shopify. We'll use the saved connection automatically.
-                </div>
-              ) : (
-                <>
-                  {/* Connection method */}
-                  <div className="inline-flex rounded-lg border border-gray-200 bg-gray-50 p-0.5 text-sm">
-                    <button
-                      type="button"
-                      onClick={() => { setShopifyAuthMode('installed'); setShopifyTest({ status: 'idle' }); }}
-                      className={`rounded-md px-3 py-1.5 font-medium transition-colors ${shopifyAuthMode === 'installed' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      Installed app
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => { setShopifyAuthMode('credentials'); setShopifyTest({ status: 'idle' }); }}
-                      className={`rounded-md px-3 py-1.5 font-medium transition-colors ${shopifyAuthMode === 'credentials' ? 'bg-white text-gray-900 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
-                    >
-                      API credentials
-                    </button>
-                  </div>
-
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Store domain</label>
-                    <input
-                      type="text"
-                      value={form.shopifyDomain}
-                      onChange={e => { updateField('shopifyDomain', e.target.value); setShopifyTest({ status: 'idle' }); }}
-                      className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                      placeholder="my-store.myshopify.com"
-                    />
-                    <p className="mt-1 text-[11px] text-gray-400">Auto-detected from the website. Edit if it's different.</p>
-                  </div>
-
-                  {shopifyAuthMode === 'installed' ? (
-                    <p className="text-xs text-gray-500 leading-relaxed">
-                      Reuses the Shopify app already installed on this store (via the promo calendar app), no credentials needed. Make sure the store is connected there first.
-                    </p>
-                  ) : (
-                    <>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Client ID</label>
-                          <input
-                            type="text"
-                            value={form.shopifyClientId}
-                            onChange={e => { updateField('shopifyClientId', e.target.value); setShopifyTest({ status: 'idle' }); }}
-                            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                            placeholder="e.g. 97291692e4cd7addba0f..."
-                          />
-                        </div>
-                        <div>
-                          <label className="block text-sm font-medium text-gray-700 mb-1">Client secret</label>
-                          <input
-                            type="password"
-                            value={form.shopifyClientSecret}
-                            onChange={e => { updateField('shopifyClientSecret', e.target.value); setShopifyTest({ status: 'idle' }); }}
-                            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm font-mono focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                            placeholder="shpss_xxxxxxxxxxxxxxxxxxxx"
-                          />
-                        </div>
-                      </div>
-                      <ShopifyTokenHelpTrigger className="inline-flex items-center gap-1.5 text-sm font-medium text-brand-primary transition-colors hover:text-brand-primary-dark hover:underline" />
-                    </>
-                  )}
-
-                  <div className="flex items-center gap-3">
-                    <button
-                      type="button"
-                      disabled={
-                        !form.shopifyDomain.trim() ||
-                        shopifyTest.status === 'testing' ||
-                        (shopifyAuthMode === 'credentials' && (!form.shopifyClientId.trim() || !form.shopifyClientSecret.trim()))
-                      }
-                      onClick={testShopifyConnection}
-                      className="text-sm font-medium text-brand-primary hover:underline disabled:opacity-40 disabled:no-underline"
-                    >
-                      {shopifyTest.status === 'testing' ? 'Testing…' : 'Test connection'}
-                    </button>
-                    {shopifyTest.status === 'ok' && (
-                      <span className="text-xs text-emerald-700">{shopifyTest.message}</span>
-                    )}
-                    {shopifyTest.status === 'failed' && (
-                      <span className="text-xs text-red-600">{shopifyTest.message}</span>
-                    )}
-                  </div>
-                </>
-              )}
+            <div className="border-t border-gray-100 pt-5">
+              <WebStoreAccess
+                clientId={form.clientId}
+                companyName={form.companyName}
+                websiteUrl={form.websiteUrl}
+                shopDomain={form.shopifyDomain}
+                onShopDomainChange={v => updateField('shopifyDomain', v)}
+                ensureClient={ensureClientRecord}
+                onConnectedChange={setStoreConnected}
+                proceedWithoutStore={proceedWithoutStore}
+                onProceedWithoutStoreChange={setProceedWithoutStore}
+              />
             </div>
           </div>
         )}
