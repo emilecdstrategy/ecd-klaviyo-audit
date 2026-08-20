@@ -233,6 +233,14 @@ export default function PublicProposal() {
   const [signing, setSigning] = useState(false);
   const [signError, setSignError] = useState('');
   const [justSigned, setJustSigned] = useState(false);
+  // Whether the real Accept and sign button is on screen. The sticky shortcut
+  // exists to reach it from anywhere in a long proposal, so once the button is
+  // visible the shortcut is a duplicate sitting beside it.
+  //
+  // Declared here with the rest of the state, ABOVE the loading and not-found
+  // returns. A hook placed after an early return runs on some renders and not
+  // others, which is React error #310 and took every proposal page down.
+  const [signButtonInView, setSignButtonInView] = useState(false);
 
   const load = useCallback(async () => {
     if (!token) {
@@ -249,6 +257,34 @@ export default function PublicProposal() {
   useEffect(() => {
     load();
   }, [load]);
+
+  useEffect(() => {
+    if (typeof IntersectionObserver === 'undefined') return;
+    let observer: IntersectionObserver | null = null;
+    // One frame, so the commit that mounted the sign area has painted and the
+    // button exists to be observed. canSign is computed further down the render,
+    // so this cannot depend on it.
+    const frame = requestAnimationFrame(() => {
+      const el = document.getElementById(SIGN_BUTTON_ID);
+      if (!el) {
+        // No signable form on this render. Visible is the safe default: a
+        // redundant shortcut beats no route to the signature form.
+        setSignButtonInView(false);
+        return;
+      }
+      observer = new IntersectionObserver(
+        ([entry]) => setSignButtonInView(entry.isIntersecting),
+        // A sliver counts, but not while it sits under the sticky bar itself.
+        { threshold: 0.4, rootMargin: '0px 0px -96px 0px' },
+      );
+      observer.observe(el);
+    });
+    return () => {
+      cancelAnimationFrame(frame);
+      observer?.disconnect();
+    };
+    // Re-run on any render that could mount or unmount the sign area.
+  }, [payload, justSigned, signing]);
 
   const handleSign = async (typedName: string, email: string, signatureImage: string) => {
     if (!token) return;
@@ -327,35 +363,6 @@ export default function PublicProposal() {
     totalParts.push(formatProposalTotal(totals.oneTimeTotal, totals.oneTimeHasLabelOnly));
   }
   if (totals.monthlyTotal > 0) totalParts.push(`${formatProposalTotal(totals.monthlyTotal, false)}/mo`);
-
-  // Whether the real Accept and sign button is currently on screen. The sticky
-  // shortcut exists to reach it from anywhere in a long proposal, so once it is
-  // visible the shortcut is just a duplicate of the button next to it.
-  //
-  // Defaults to false: if the observer never attaches, or the browser lacks
-  // IntersectionObserver, the shortcut stays visible. A redundant button is a
-  // much smaller problem than no route to the signature form.
-  const [signButtonInView, setSignButtonInView] = useState(false);
-
-  useEffect(() => {
-    if (!canSign || typeof IntersectionObserver === 'undefined') {
-      setSignButtonInView(false);
-      return;
-    }
-    const el = document.getElementById(SIGN_BUTTON_ID);
-    if (!el) {
-      setSignButtonInView(false);
-      return;
-    }
-    const observer = new IntersectionObserver(
-      ([entry]) => setSignButtonInView(entry.isIntersecting),
-      // A sliver counts as visible, but not while it is under the sticky bar
-      // itself: the bottom margin keeps the shortcut until the button clears it.
-      { threshold: 0.4, rootMargin: '0px 0px -96px 0px' },
-    );
-    observer.observe(el);
-    return () => observer.disconnect();
-  }, [canSign]);
 
   const scrollToSignature = () => {
     document.getElementById('proposal-signatures')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
