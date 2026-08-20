@@ -115,6 +115,10 @@ function AgreedItems({ contracts }: { contracts: Array<{ slug: string; name: str
   );
 }
 
+/** The real submit button, watched by the sticky bar so the two are never both
+ *  on screen offering the same thing. */
+const SIGN_BUTTON_ID = 'proposal-sign-button';
+
 function ClientSignArea({
   recipientName,
   recipientEmail,
@@ -122,8 +126,6 @@ function ClientSignArea({
   onSign,
   signing,
   error,
-  onReadyChange,
-  registerSubmit,
 }: {
   recipientName: string;
   recipientEmail: string;
@@ -131,11 +133,6 @@ function ClientSignArea({
   onSign: (typedName: string, email: string, signatureImage: string) => void;
   signing: boolean;
   error: string;
-  /** Told to the sticky bar, so it can stop pretending to be a sign button while
-   *  the real one is disabled. */
-  onReadyChange?: (ready: boolean) => void;
-  /** Lets the sticky bar submit this form once it is genuinely signable. */
-  registerSubmit?: (submit: () => void) => void;
 }) {
   const padRef = useRef<SignaturePadHandle>(null);
   const [typedName, setTypedName] = useState(recipientName);
@@ -143,14 +140,6 @@ function ClientSignArea({
   const [padEmpty, setPadEmpty] = useState(true);
   const [agreed, setAgreed] = useState(false);
   const [localError, setLocalError] = useState('');
-
-  // Exactly the condition the button below is disabled on, published upward so
-  // the sticky bar cannot disagree with it.
-  const ready = !signing && !padEmpty && agreed;
-
-  useEffect(() => {
-    onReadyChange?.(ready);
-  }, [ready, onReadyChange]);
 
   const submit = () => {
     setLocalError('');
@@ -173,10 +162,6 @@ function ClientSignArea({
     }
     onSign(typedName.trim(), email.trim(), image);
   };
-
-  // Re-registered on every render, which is the point: the sticky bar must call
-  // the submit that closes over the current name, email and pad, not a stale one.
-  registerSubmit?.(submit);
 
   return (
     <div className="space-y-3">
@@ -222,6 +207,7 @@ function ClientSignArea({
       )}
       <button
         type="button"
+        id={SIGN_BUTTON_ID}
         disabled={signing || padEmpty || !agreed}
         onClick={submit}
         className="inline-flex w-full items-center justify-center gap-2 rounded-lg gradient-bg px-5 py-3 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 sm:w-auto"
@@ -245,11 +231,6 @@ export default function PublicProposal() {
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [signing, setSigning] = useState(false);
-  // The sticky bar used to render the primary sign button unconditionally while
-  // the real one sat disabled behind an unticked agreement box, so it read as a
-  // live sign action that did nothing but scroll.
-  const [signReady, setSignReady] = useState(false);
-  const signSubmitRef = useRef<(() => void) | null>(null);
   const [signError, setSignError] = useState('');
   const [justSigned, setJustSigned] = useState(false);
 
@@ -347,6 +328,35 @@ export default function PublicProposal() {
   }
   if (totals.monthlyTotal > 0) totalParts.push(`${formatProposalTotal(totals.monthlyTotal, false)}/mo`);
 
+  // Whether the real Accept and sign button is currently on screen. The sticky
+  // shortcut exists to reach it from anywhere in a long proposal, so once it is
+  // visible the shortcut is just a duplicate of the button next to it.
+  //
+  // Defaults to false: if the observer never attaches, or the browser lacks
+  // IntersectionObserver, the shortcut stays visible. A redundant button is a
+  // much smaller problem than no route to the signature form.
+  const [signButtonInView, setSignButtonInView] = useState(false);
+
+  useEffect(() => {
+    if (!canSign || typeof IntersectionObserver === 'undefined') {
+      setSignButtonInView(false);
+      return;
+    }
+    const el = document.getElementById(SIGN_BUTTON_ID);
+    if (!el) {
+      setSignButtonInView(false);
+      return;
+    }
+    const observer = new IntersectionObserver(
+      ([entry]) => setSignButtonInView(entry.isIntersecting),
+      // A sliver counts as visible, but not while it is under the sticky bar
+      // itself: the bottom margin keeps the shortcut until the button clears it.
+      { threshold: 0.4, rootMargin: '0px 0px -96px 0px' },
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [canSign]);
+
   const scrollToSignature = () => {
     document.getElementById('proposal-signatures')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
   };
@@ -399,8 +409,6 @@ export default function PublicProposal() {
             clientSignArea={
               canSign ? (
                 <ClientSignArea
-                  onReadyChange={setSignReady}
-                  registerSubmit={fn => { signSubmitRef.current = fn; }}
                   recipientName={myIdentity.name}
                   recipientEmail={myIdentity.email}
                   contracts={includedContracts}
@@ -439,30 +447,16 @@ export default function PublicProposal() {
                     {totalParts.join(' + ') || '—'}
                   </p>
                 </div>
-                {/* Two different actions wearing one label was the bug. Until the
-                    agreement box is ticked and a signature exists, this is a jump
-                    to the form and is styled as one; after that it signs, and
-                    looks like the primary action it now is.
-
-                    Deliberately not disabled while unready: someone who has not
-                    scrolled to the form yet would be left with a dead button and
-                    no route to the thing it is gating. */}
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (signReady && signSubmitRef.current) signSubmitRef.current();
-                    else scrollToSignature();
-                  }}
-                  aria-label={signReady ? 'Accept and sign' : 'Go to the signature form'}
-                  className={
-                    signReady
-                      ? 'inline-flex shrink-0 items-center gap-2 rounded-lg gradient-bg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90'
-                      : 'inline-flex shrink-0 items-center gap-2 rounded-lg border border-brand-primary/30 bg-white px-5 py-2.5 text-sm font-semibold text-brand-primary transition-colors hover:bg-brand-primary/5'
-                  }
-                >
-                  <PenLine className="h-4 w-4" />
-                  {signReady ? 'Accept & sign' : 'Review & sign'}
-                </button>
+                {!signButtonInView && (
+                  <button
+                    type="button"
+                    onClick={scrollToSignature}
+                    className="inline-flex shrink-0 items-center gap-2 rounded-lg gradient-bg px-5 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90"
+                  >
+                    <PenLine className="h-4 w-4" />
+                    Accept & sign
+                  </button>
+                )}
               </>
             )}
           </div>
