@@ -4,6 +4,7 @@ import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shar
 import { getScreenshotProvider } from "../_shared/screenshot-provider.ts";
 import { browserlessEnabled, captureWithBrowserless, type CapturedElement, type CapturedPhoto, type CapturedTextLock } from "../_shared/browserless.ts";
 import { DOM_OUTLINE_PROBE, isUsableOutline } from "../_shared/html-after.ts";
+import { BELOW_FOLD_PROBE, composeProbes, isBelowFoldReport } from "../_shared/below-fold-probe.ts";
 import { afterImagesEnabled } from "../_shared/after-images-enabled.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest, exchangeClientCredentials } from "../_shared/shopify-api.ts";
@@ -464,6 +465,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   // like it does.
   let proxyUsed: string | null = null;
   let domOutline: unknown = null;
+  let belowFold: unknown = null;
   let cartCount: number | null = null;
 
   // When Browserless is configured it handles every capture (full-page and
@@ -533,10 +535,14 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       // The cart flow chains up to five navigations; 90s aborted it mid-flow on
       // slower stores even over a healthy residential connection.
       timeoutMs: isCart ? 150_000 : undefined,
-      // The DOM outline for the HTML "after" engine. Taken in the SAME page load
-      // as the screenshot, so it describes exactly the page the client sees in
-      // the Before, and it saves the after pass a whole extra page load.
-      probeScript: isViewport ? DOM_OUTLINE_PROBE : undefined,
+      // Two read-only probes of the settled page, in the SAME load as the
+      // screenshot. The outline describes exactly the page the client sees in
+      // the Before, and saves the after pass a whole extra page load. The
+      // below-fold report is what the screenshot cannot show: the crop stops at
+      // the first screen, so without it the audit was guessing about reviews,
+      // cross-sells, the FAQ and the footer. Both are free here; a second
+      // screenshot would not be.
+      probeScript: isViewport ? composeProbes(DOM_OUTLINE_PROBE, BELOW_FOLD_PROBE) : undefined,
     };
     // One attempt per invocation — retries happen across requeue passes below,
     // so a single capture_one never risks the edge runtime's wall-clock limit.
@@ -550,6 +556,8 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       textLocks = bl.textLocks ?? [];
       hoverProbe = bl.hover ?? null;
       if (isUsableOutline(bl.probe)) domOutline = bl.probe;
+      const bf = (bl.probe as { below_fold?: unknown } | null)?.below_fold;
+      if (isBelowFoldReport(bf)) belowFold = bf;
       usedBrowserless = true;
       if (typeof bl.cartCount === "number") cartCount = bl.cartCount;
     } else {
@@ -679,8 +687,10 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       // Stored per snapshot: the "after" engine reuses it instead of reloading
       // the page, and it is the record of what the page looked like when shot.
       const withOutline = domOutline ? { ...withFold, dom_outline: domOutline } : withFold;
+      // What the crop cut off, so the analysis can stop guessing about it.
+      const withBelow = belowFold ? { ...withOutline, below_fold: belowFold } : withOutline;
       // Every photo painted in this shot, for the after-image compositor.
-      const withPhotos = photos.length ? { ...withOutline, photos } : withOutline;
+      const withPhotos = photos.length ? { ...withBelow, photos } : withBelow;
       // And the text that must never change (titles, prices, ratings, brand).
       const withText = textLocks.length ? { ...withPhotos, text_locks: textLocks } : withPhotos;
       // Which proxy pool served this capture, so the datacenter-vs-residential

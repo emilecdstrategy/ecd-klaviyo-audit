@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { belowFoldEvidence } from "../_shared/below-fold-probe.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { createLlmClient, type LlmImage, type LlmMessage } from "../_shared/llm-adapter.ts";
@@ -184,7 +185,14 @@ type SectionRow = {
 type ElementBox = { id: string; x: number; y: number; w: number; h: number; label?: string };
 
 function buildPageImages(
-  snaps: Array<{ id: string; viewport: string; variant: string; screenshot_url: string | null; elements?: ElementBox[] }>,
+  snaps: Array<{
+    id: string;
+    viewport: string;
+    variant: string;
+    screenshot_url: string | null;
+    elements?: ElementBox[];
+    raw?: Record<string, unknown> | null;
+  }>,
   pageLabel: string,
 ): {
   images: LlmImage[];
@@ -247,10 +255,20 @@ function buildPageImages(
     : "\n\nNo hover evidence was captured for this page, so make NO claim about what does or does not appear on hover.";
 
   const primaryId = ordered.find((s) => s.viewport === "desktop")?.id ?? ordered[0]?.id ?? null;
+  // What the crop cut off. Measured on the live page, so the model can say a
+  // section is missing without inventing it, and cannot claim one is missing
+  // when it is there.
+  const belowFoldText = belowFoldEvidence(
+    ordered.map((s, i) => ({
+      ref: "IMG_" + (i + 1),
+      report: ((s as { raw?: Record<string, unknown> }).raw ?? {}).below_fold,
+    })),
+  );
+
   const elementsText = elementLines.length
     ? `\n\nReal page elements detected on these screenshots (use element_id in a finding's highlight to pin exactly, it maps to the element's true on-page box). ALWAYS prefer element_id over x/y/w/h: your coordinate estimates land pins on the wrong element, while these boxes are exact. If you truly must fall back to coordinates, word the highlight's label using the same wording as the closest listed element so it can still be matched:\n${elementLines.join("\n")}`
     : "";
-  return { images, refToId, refToElements, refToViewport, primaryId, elementsText: elementsText + hoverText };
+  return { images, refToId, refToElements, refToViewport, primaryId, elementsText: elementsText + hoverText + belowFoldText };
 }
 
 async function ensureJob(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
