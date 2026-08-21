@@ -256,14 +256,14 @@ export const PAGE_AUDIT_TOOL: LlmTool = {
                 "REQUIRED for almost every finding: pinpoint the exact element this finding is about so the reader sees a numbered pin on each screenshot. Provide ONE entry PER image the finding is visible on: for a 'both' finding, give an entry on the desktop IMG_n AND an entry on the matching mobile IMG_n (the same element on each device), so the pin shows on both viewports. For a desktop-only or mobile-only finding, give a single entry on that device's IMG_n. Only omit entirely when the finding has no single on-screen location (e.g. a sitewide or structural issue). Do not leave locatable findings unpinned.",
               items: {
                 type: "object",
-                required: ["image_ref", "label"],
+                required: ["image_ref", "label", "x", "y", "w", "h"],
                 properties: {
                   image_ref: { type: "string", description: "The IMG_n label of the screenshot this entry refers to" },
-                  element_id: { type: "string", description: "PREFERRED: the id (e.g. el_12) of the element from the listed page elements for THIS image whose label actually matches the thing this finding is about (match on the label text, e.g. an 'a: SHOP NOW' element for a finding about the hero button). Its real on-page box is used automatically. If no listed element genuinely matches the finding's subject, omit element_id and give x/y/w/h instead, or omit the highlight entirely. NEVER attach the pin to an unrelated element (for example the cart or search icon) just to have one." },
-                  x: { type: "number", description: "Fallback only: left edge of a tight box, % of image width (0-100)" },
-                  y: { type: "number", description: "Fallback only: top edge of a tight box, % of image height (0-100)" },
-                  w: { type: "number", description: "Fallback only: box width, % of image width" },
-                  h: { type: "number", description: "Fallback only: box height, % of image height" },
+                  element_id: { type: "string", description: "PREFERRED alongside x/y/w/h, never instead of them: the id (e.g. el_12) of the element from the listed page elements for THIS image whose label actually matches the thing this finding is about (match on the label text, e.g. an 'a: SHOP NOW' element for a finding about the hero button). Its real on-page box is used automatically. If no listed element genuinely matches the finding's subject, omit element_id and give x/y/w/h instead, or omit the highlight entirely. NEVER attach the pin to an unrelated element (for example the cart or search icon) just to have one." },
+                  x: { type: "number", description: "ALWAYS REQUIRED, even when you give element_id: left edge of a tight box around the thing, % of image width (0-100). Your box is what confirms the element_id really is the thing you mean, and it is what the pin falls back to when no listed element matches. A highlight with no box may be dropped entirely." },
+                  y: { type: "number", description: "ALWAYS REQUIRED: top edge of the box, % of image height (0-100)" },
+                  w: { type: "number", description: "ALWAYS REQUIRED: box width, % of image width" },
+                  h: { type: "number", description: "ALWAYS REQUIRED: box height, % of image height" },
                   label: { type: "string", description: "Short label naming the element, max 6 words" },
                 },
               },
@@ -498,6 +498,25 @@ export function coercePageAudit(
           highlights.push(resolved);
         }
       }
+    }
+
+    if (rawHls.length > 0 && highlights.length === 0) {
+      // Every pin on this finding was refused. That is sometimes right (an
+      // anonymous id with nothing to corroborate it), but it is invisible in the
+      // report, so it goes in the log rather than passing quietly.
+      console.warn(JSON.stringify({
+        event: "pins_all_dropped",
+        finding: String(rec.text ?? "").slice(0, 80),
+        raw: rawHls.map((h) => {
+          const o = (h ?? {}) as Record<string, unknown>;
+          return {
+            ref: String(o.image_ref ?? ""),
+            element_id: String(o.element_id ?? ""),
+            has_box: Number(o.w) > 0 && Number(o.h) > 0,
+            label: String(o.label ?? "").slice(0, 40),
+          };
+        }),
+      }));
     }
 
     const rawViewport = String(rec.viewport ?? "").toLowerCase();

@@ -592,8 +592,7 @@ export default async ({ page, context }) => {
         const w = right - left, h = bottom - top;
         if (w < 24 || h < 12 || w * h < 700) continue;
         const key = [Math.round(left/8), Math.round(top/8), Math.round(w/8), Math.round(h/8)].join(",");
-        if (seen.indexOf(key) !== -1) continue;
-        seen.push(key);
+        const dupeAt = seen.indexOf(key);
         const tag = el.tagName.toLowerCase();
         // innerText = visible text only (skips <style>/<script> content that
         // textContent would leak into labels).
@@ -601,11 +600,26 @@ export default async ({ page, context }) => {
         if (text.indexOf("{") !== -1 && text.indexOf("}") !== -1) text = ""; // leaked CSS
         text = text.slice(0, 60);
         if (!text && tag === "img") text = "image";
-        out.push({
+        const entry = {
           tag, text, chip: isChip,
           x: +(left / vw * 100).toFixed(2), y: +(top / vh * 100).toFixed(2),
           w: +(w / vw * 100).toFixed(2), h: +(h / vh * 100).toFixed(2),
-        });
+        };
+        // Two elements on the same box: keep whichever one has a NAME.
+        //
+        // This used to keep whichever came first in document order, which is the
+        // wrapper. A phone header therefore offered the model "div" where the
+        // cart link sat, and the cart's own "icon-cart" label was thrown away as
+        // a duplicate. The model can only point at what it can name, an
+        // anonymous id is refused downstream on purpose, and the result was a
+        // mobile screenshot with no pins on it at all.
+        if (dupeAt !== -1) {
+          const prev = out[dupeAt];
+          if (prev && !prev.text && text) out[dupeAt] = entry;
+          continue;
+        }
+        seen.push(key);
+        out.push(entry);
       }
       // Cap each pass separately. A single area-sorted cap would shed exactly
       // the small text chips pass 2 exists to catch, since they are the

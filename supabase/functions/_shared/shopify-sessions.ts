@@ -210,19 +210,29 @@ export function sessionsEvidence(report: SessionsReport | null): string {
   }
   if (report.devices.length > 0) {
     const total = report.devices.reduce((s, d) => s + d.sessions, 0);
+    // One clause per device, each number labelled with what it measures.
+    //
+    // The compact version ("desktop 58% of sessions converting at 0.09%, mobile
+    // 40% ...") got compressed into "mobile carries 40% of sessions and converts
+    // far better than desktop's 58%", which reads desktop's SHARE as its rate.
+    // Both numbers were right and the sentence was wrong, so the format changed
+    // rather than the data.
     lines.push(
-      "By device: " +
+      "By device:\n" +
         report.devices
           .map((d) => {
             const share = total > 0 ? Math.round((d.sessions / total) * 100) : 0;
-            return `${d.device} ${share}% of sessions${d.conversion_rate === null ? "" : ` converting at ${d.conversion_rate}%`}`;
+            const cr = d.conversion_rate === null
+              ? "conversion rate unavailable"
+              : `converts at ${d.conversion_rate}% (that is its conversion RATE, not its share)`;
+            return `- ${d.device}: ${share}% of all sessions (that is its SHARE of traffic), and it ${cr}`;
           })
-          .join(", ") + ".",
+          .join("\n"),
     );
   }
   return (
     "\n\nTRAFFIC AND CONVERSION. Shopify's own analytics for this store, so these are measured:\n" +
     lines.join("\n") +
-    "\n\nUse them to aim the findings. The device carrying the most sessions, and the step losing the most people, are where the work is worth most: say so with the figure rather than in general terms. Never round a conversion rate into a claim the number does not support, and never compare it to an industry average, because none was measured here."
+    "\n\nUse them to aim the findings. The device carrying the most sessions, and the step losing the most people, are where the work is worth most: say so with the figure rather than in general terms. Never round a conversion rate into a claim the number does not support, and never compare it to an industry average, because none was measured here.\n\nA share of traffic and a conversion rate are different measures and must never be set against each other. Never write a sentence that compares one device's share with another device's rate. When you name a percentage, say which it is: \"40% of sessions\" or \"converts at 0.47%\", never a bare percentage that could be read as either."
   );
 }

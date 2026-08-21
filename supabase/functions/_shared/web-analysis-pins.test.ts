@@ -3,7 +3,7 @@
 // Every case here is a pin that once landed on the wrong thing in a report a
 // client read. A wrong pin is worse than no pin, because it is a claim about
 // where the problem is and the reader checks it against the screenshot.
-import { coercePageAudit, type ElementBox } from "./web-analysis-schemas.ts";
+import { coercePageAudit, PAGE_AUDIT_TOOL, type ElementBox } from "./web-analysis-schemas.ts";
 
 /** A Shopify homepage header, as the capture actually records it. The logo lives
  * in an anonymous <a> inside an <h1>, so both carry bare tag names for labels. */
@@ -184,4 +184,69 @@ Deno.test("the same wording is allowed on a page that is not the cart", () => {
     "Tighten the vertical spacing so the buttons sit within the first screen.",
   );
   if (!kept) throw new Error("the cart refusal leaked onto other pages");
+});
+
+// --- the mobile "no pins at all" failure -----------------------------------
+//
+// A live audit shipped a mobile screenshot with zero pins on six findings. Two
+// causes met: the capture handed the model anonymous ids for the header icons,
+// and an anonymous id with no box of its own is refused on purpose. Refusing is
+// right; arriving with no box is what had to change.
+
+/** A phone header as the capture records it once labelled elements win a box
+ *  collision: the cart keeps its own name instead of losing it to a wrapper. */
+const PHONE_ELEMENTS: ElementBox[] = [
+  { id: "el_1", label: "a: FREE SHIPPING ON US ORDERS $100+", x: 12, y: 1, w: 76, h: 2.2 },
+  { id: "el_2", label: "header", x: 0, y: 3.5, w: 100, h: 6 },
+  { id: "el_3", label: "a: search", x: 47, y: 4, w: 12, h: 5 },
+  { id: "el_4", label: "a: Log in", x: 60, y: 4, w: 12, h: 5 },
+  { id: "el_5", label: "a: icon-cart", x: 73, y: 4, w: 12, h: 5 },
+  { id: "el_6", label: "button: menu", x: 86, y: 4, w: 12, h: 5 },
+];
+
+function phonePin(highlight: Record<string, unknown>, findingText: string): string {
+  const out = coercePageAudit(
+    { findings: [{ text: findingText, recommendation: "x", viewport: "mobile", highlights: [highlight] }] },
+    new Map([["IMG_1", "snap-mobile"]]),
+    new Map([["IMG_1", PHONE_ELEMENTS]]),
+    new Map([["IMG_1", "mobile"]]),
+  );
+  const hl = out.findings[0]?.highlights?.[0];
+  return hl ? `${hl.label} @ ${Math.round(hl.x)},${Math.round(hl.y)}` : "NO PIN";
+}
+
+const HEADER_FINDING = "The phone header bunches search, account, cart and menu all on the right, leaving the left side empty.";
+
+Deno.test("a header finding pins to the cart once the cart keeps its own label", () => {
+  // Before the capture fix this element arrived as a bare "div" and the pin was
+  // refused, which is how a whole section shipped with nothing on it.
+  const pin = phonePin(
+    { image_ref: "IMG_1", element_id: "el_5", label: "Cart icon", x: 73, y: 4, w: 12, h: 5 },
+    HEADER_FINDING,
+  );
+  if (pin === "NO PIN") throw new Error("the cart is named and boxed, so this must pin");
+  if (!pin.includes("73")) throw new Error(`expected the cart's own box, got ${pin}`);
+});
+
+Deno.test("a finding about something with no matching element still gets its box", () => {
+  // Nothing in the list is the overflowing hero image, so the model's own box is
+  // all there is. Dropping it leaves the reader with a claim and no pin.
+  const pin = phonePin(
+    { image_ref: "IMG_1", label: "Hero promo cropped at the right edge", x: 20, y: 22, w: 78, h: 40 },
+    "On phones, the hero banner opens on a promo that is cropped off screen so the offer and button are unreadable.",
+  );
+  if (pin === "NO PIN") throw new Error("a boxed highlight with no element must still pin");
+});
+
+Deno.test("the highlight schema demands a box on every entry", () => {
+  // The resolver needs a box to check an element_id against, and needs one to
+  // fall back to. The schema used to call x/y/w/h "fallback only", which told
+  // the model not to send them, and an anonymous id then resolved to nothing at
+  // all. Contract and resolver have to agree.
+  const props = (PAGE_AUDIT_TOOL.input_schema as {
+    properties: { findings: { items: { properties: { highlights: { items: { required?: string[] } } } } } };
+  }).properties.findings.items.properties.highlights.items;
+  for (const key of ["image_ref", "x", "y", "w", "h"]) {
+    if (!props.required?.includes(key)) throw new Error(`highlights must require ${key}`);
+  }
 });
