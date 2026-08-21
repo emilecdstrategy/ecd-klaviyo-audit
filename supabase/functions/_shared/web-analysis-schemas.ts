@@ -589,7 +589,7 @@ export function coercePageAudit(
     // Accept both the new `highlights` array (one pin per viewport) and the legacy
     // single `highlight`. De-dupe by snapshot so each shot gets at most one pin.
     const rawHls = [
-      ...(Array.isArray(rec.highlights) ? rec.highlights : []),
+      ...asArray(rec.highlights),
       ...(rec.highlight ? [rec.highlight] : []),
     ];
     const highlights: WebHighlight[] = [];
@@ -885,7 +885,7 @@ function normalizeHours(value: unknown): number | null {
 
 export function coerceRoadmap(input: unknown, catalog: CatalogRow[]): RoadmapRow[] {
   const o = (input ?? {}) as Record<string, unknown>;
-  const rowsRaw = Array.isArray(o.rows) ? o.rows : [];
+  const rowsRaw = asArray(o.rows);
   const bySlug = new Map(catalog.map((c) => [c.slug, c]));
   return rowsRaw.slice(0, 12).map((r) => {
     const rec = (r ?? {}) as Record<string, unknown>;

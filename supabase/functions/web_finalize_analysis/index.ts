@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { freeShippingNote, labelsFromSnapshots, readFreeShippingOffer } from "../_shared/free-shipping.ts";
 import { sessionsEvidence } from "../_shared/shopify-sessions.ts";
 import { belowFoldEvidence, popupEvidence } from "../_shared/below-fold-probe.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
@@ -736,19 +737,13 @@ async function runStep(
           .select("elements")
           .eq("audit_id", auditId)
           .eq("status", "success");
-        const amounts = new Set<string>();
-        for (const row of snaps ?? []) {
-          for (const el of ((row.elements ?? []) as ElementBox[])) {
-            const label = String(el.label ?? "");
-            if (!/free\s*ship/i.test(label)) continue;
-            const m = label.match(/\$\s?([0-9][0-9,]*(?:\.[0-9]{2})?)/);
-            if (m) amounts.add(m[1].replace(/,/g, ""));
-          }
-        }
-        if (amounts.size === 0) return "";
-        return `The storefront advertises free shipping at these amounts (read off its own announcement bar and cart): ${[...amounts].map((a) => "$" + a).join(", ")}. Compare that with basket.order_value_percentiles before suggesting a threshold change.`;
+        const offer = readFreeShippingOffer(labelsFromSnapshots(snaps ?? []));
+        const aov = Number((computed.current as { aov?: unknown } | undefined)?.aov);
+        return freeShippingNote(offer, Number.isFinite(aov) ? aov : null);
       } catch {
-        return "";
+        // Even the fallback says something, because saying nothing is what let
+        // the model invent a threshold this store does not have.
+        return freeShippingNote({ state: "none" }, null);
       }
     })();
     const messages: LlmMessage[] = [{
@@ -760,7 +755,7 @@ async function runStep(
         sessionsEvidence(computed.sessions as Parameters<typeof sessionsEvidence>[0]),
         `- The traffic figures above are the denominator for everything else in this section. When the funnel names a step that loses most people, a play about that step beats a play about a product mix. Never present a conversion rate as good or bad against an industry average: none was measured.`,
         `- ORDER: the most concrete, quantified change the team could ship this week goes FIRST. A play whose steps are things to look into is not shippable and must not exist at all: every step is a change to make, with the change named. Never write a step that tells them to audit, review, analyse, investigate or measure something. They are reading the audit; handing the work back is the opposite of the job.`,
-        `- SPECIFICALLY: when the free-shipping threshold sits at or below the median order value, almost every order already clears it, so it is pulling nobody's basket upward. That is the strongest and cheapest lever in this data and its play goes first, with the new threshold named as a number set against the median and the 75th percentile.`,
+        `- SPECIFICALLY: free shipping is usually the strongest and cheapest lever here, so its play goes first, but WHICH play depends entirely on the FREE SHIPPING note above. When a threshold is advertised and sits at or below the median order, almost every order already clears it and is pulling nobody's basket upward: raise it, naming the new number against the median and the 75th percentile. When none is advertised, there is nothing to raise: introduce one just above the average order value. When one is advertised but its amount was never captured, write neither play, because both need a number you do not have.`,
         `- NEVER recommend page speed, load time, image compression, lazy loading, caching or Core Web Vitals work. None of it is measured in this audit and none of it is what this team ships. If the data points at a step losing people, write the merchandising, copy, layout or pricing change that addresses it.`,
         `- One instruction per step, written as an instruction. Do not reason inside a step, do not correct yourself mid-sentence, and never write two alternatives joined by "isn't right" or "actually". Decide, then say the thing to do.`,
         `Return 2 to 5 PLAYS via record_analytics_audit: things this team could ship this month to raise average order value, protect margin, or make the catalogue work harder. Rules:`,
