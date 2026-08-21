@@ -235,28 +235,79 @@ export function parseWebAnalyticsDetail(sectionDetails: unknown): WebAnalyticsDe
       })
     : [];
   const plays: WebAnalyticsPlay[] = Array.isArray(a.plays)
-    ? a.plays.map((p) => {
-        const rec = asRecord(p);
-        const steps = Array.isArray(rec.action_steps)
-          ? rec.action_steps.map((s) => asString(s)).filter(Boolean)
-          : [];
-        const legacy = asString(rec.action);
-        return {
-          title: asString(rec.title),
-          insight: asString(rec.insight),
-          action_steps: steps.length > 0 ? steps : (legacy ? [legacy] : []),
-          products: Array.isArray(rec.products) ? rec.products.map((t) => asString(t)).filter(Boolean) : [],
-          metric: asString(rec.metric),
-          window: asString(rec.window),
-          hidden: rec.hidden === true,
-        };
-      })
-      // A play written by hand starts empty, so an empty one is only dropped when
-      // it came from the model. Requiring a title here would delete the row the
-      // moment someone added it.
-      .filter((p) => p.title || p.insight || p.action_steps.length > 0 || p.metric)
+    ? a.plays
+        .map((p) => {
+          const rec = asRecord(p);
+          const rawSteps = Array.isArray(rec.action_steps) ? rec.action_steps : [];
+          const steps = rawSteps.map((s) => asString(s)).filter(Boolean);
+          const legacy = asString(rec.action);
+          const play: WebAnalyticsPlay = {
+            title: asString(rec.title),
+            insight: asString(rec.insight),
+            action_steps: steps.length > 0 ? steps : (legacy ? [legacy] : []),
+            products: Array.isArray(rec.products) ? rec.products.map((t) => asString(t)).filter(Boolean) : [],
+            metric: asString(rec.metric),
+            window: asString(rec.window),
+            hidden: rec.hidden === true,
+          };
+          // A play added by hand IS empty: it is the row someone just created,
+          // and it arrives with one blank step slot. The old check ran after
+          // blank steps had been stripped, so it saw nothing at all and deleted
+          // the row on the next read: the button appeared to do nothing while
+          // quietly saving a play that could never come back. The blank slot is
+          // the tell, and the model can never produce one, because the edge
+          // function requires a title, an insight and a step before a play is
+          // stored at all.
+          const empty = !play.title && !play.insight && !play.metric && play.action_steps.length === 0;
+          return empty && rawSteps.length === 0 ? null : play;
+        })
+        .filter((p): p is WebAnalyticsPlay => p !== null)
     : [];
   return { timeframe_key: asString(a.timeframe_key) || '30d_vs_prior_30d', plays, metrics };
+}
+
+/** Normalised for matching: trademark marks and punctuation gone, single
+ *  spaces, lower case. */
+function matchKey(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[®™©]/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim();
+}
+
+/** The distinctive part of a product title.
+ *
+ *  Catalog titles carry a brand or collection after a pipe, as in
+ *  "Mega Pazzaz™ Red Portulaca | Creekside Champions™", and anyone writing a
+ *  sentence drops it along with the trademark marks. Matching on the head is
+ *  what actually finds the product the sentence is about. */
+function titleHead(title: string): string {
+  return matchKey(title.split('|')[0] ?? title);
+}
+
+/**
+ * The products a play names in its own text.
+ *
+ * A play is told to list the products it discusses so the report can show their
+ * real photo, price and link. When it names them in a step and leaves the list
+ * empty, the reader gets a recommendation about two products and no way to see
+ * them. This finds them instead of asking again.
+ *
+ * It can only ever return products that are already in the order data, so it
+ * cannot invent one. Short or single-word heads are skipped, because those
+ * match by accident.
+ */
+export function productsNamedIn(text: string, catalog: BasketProduct[]): BasketProduct[] {
+  const haystack = matchKey(text);
+  if (!haystack) return [];
+  const found: BasketProduct[] = [];
+  for (const product of catalog) {
+    const head = titleHead(product.title);
+    if (head.length < 10 || head.split(' ').length < 2) continue;
+    if (haystack.includes(head)) found.push(product);
+  }
+  return found;
 }
 
 export function parseWebRoadmap(sectionDetails: unknown): WebRoadmapRow[] {

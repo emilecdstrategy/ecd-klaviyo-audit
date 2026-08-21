@@ -5,6 +5,7 @@ import {
   formatDelta,
   formatMoney,
   parseWebAnalyticsDetail,
+  productsNamedIn,
   productUrl,
   type BasketProduct,
   type OrdersRollup,
@@ -326,13 +327,26 @@ export default function WebAnalyticsSection({
   // Products a play names, resolved against the order data so a card always has
   // a real photo, price and link. Matched case-insensitively because the model
   // copies titles by hand.
+  const catalogList = basket?.top_products ?? basket?.top_products_by_units ?? [];
   const catalog = useMemo(() => {
     const map = new Map<string, BasketProduct>();
-    for (const p of basket?.top_products ?? basket?.top_products_by_units ?? []) map.set(p.title.trim().toLowerCase(), p);
+    for (const p of catalogList) map.set(p.title.trim().toLowerCase(), p);
     return map;
   }, [basket?.top_products, basket?.top_products_by_units]);
-  const productsFor = (play: WebAnalyticsPlay): BasketProduct[] =>
-    play.products.map((t) => catalog.get(t.trim().toLowerCase())).filter((p): p is BasketProduct => Boolean(p));
+  /** What the play listed, plus anything it named in its own sentences and
+   *  forgot to list. A play that says "feature X and Y" and shows no cards
+   *  leaves the reader with advice about two products they cannot see. */
+  const productsFor = (play: WebAnalyticsPlay): BasketProduct[] => {
+    const listed = play.products
+      .map((t) => catalog.get(t.trim().toLowerCase()))
+      .filter((p): p is BasketProduct => Boolean(p));
+    const seen = new Set(listed.map((p) => p.title));
+    const spoken = productsNamedIn(
+      [play.title, play.insight, ...play.action_steps].join(' \n '),
+      catalogList,
+    ).filter((p) => !seen.has(p.title));
+    return [...listed, ...spoken].slice(0, 4);
+  };
 
   const writePlays = (next: WebAnalyticsPlay[]) =>
     updateSectionDetailValue(section.section_key, ['web_analytics', 'plays'], next);
@@ -353,9 +367,17 @@ export default function WebAnalyticsSection({
       { title: '', insight: '', action_steps: [''], products: [], metric: '', window: '', hidden: false },
     ]);
 
+  // A play with nothing written in it yet is the row someone just added. It has
+  // to be on screen to be filled in, and it must never reach a client, so it
+  // lives in edit mode only. Without this the blank row would print as an empty
+  // card in the report.
+  const hasContent = (p: WebAnalyticsPlay) =>
+    Boolean(p.title.trim() || p.insight.trim() || p.metric.trim() || p.action_steps.some((s) => s.trim()));
   // Hidden plays stay visible while editing, dimmed, so hiding one is reversible
   // without hunting through the data.
-  const visiblePlays = plays.map((p, i) => ({ p, i })).filter(({ p }) => editMode || !p.hidden);
+  const visiblePlays = plays
+    .map((p, i) => ({ p, i }))
+    .filter(({ p }) => (editMode ? true : !p.hidden && hasContent(p)));
 
   const repeatUnavailable = rollup?.returning_customer_rate_available === false;
   // Published with the figure so the tile can say what the number actually means
@@ -557,7 +579,7 @@ export default function WebAnalyticsSection({
             <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Opportunities in the data</h3>
             {/* A count turns a wall of cards into a known quantity before reading. */}
             <span className="text-xs text-gray-400">
-              {visiblePlays.filter(({ p }) => !p.hidden).length} to ship
+              {visiblePlays.filter(({ p }) => !p.hidden && hasContent(p)).length} to ship
             </span>
           </div>
           <div className="mt-3.5 space-y-3">
