@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ChevronDown, Plus, Send, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown, Plus, Send, X } from 'lucide-react';
 import Modal from '../ui/Modal';
 import { sendProposalEmail } from '../../lib/proposals-db';
 import { listAdminProfiles, updateClient } from '../../lib/db';
@@ -131,6 +131,8 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
     [recipientName, message, client?.company_name, proposal.client?.company_name, proposal.valid_until],
   );
 
+  const steps = ['Details', 'Review and send'];
+
   return (
     <Modal
       open={open}
@@ -138,6 +140,36 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
       onClose={() => (sending ? undefined : onClose())}
       className={step === 'confirm' ? 'max-w-2xl' : 'max-w-lg'}
     >
+      {/* Nothing here sends until the second stage, and a button called Continue
+          does not say that on its own. The rail names both stages and marks the
+          current one, so the cost of pressing on is visible before pressing. */}
+      <ol className="flex items-center gap-2 border-b border-gray-100 px-5 py-3">
+        {steps.map((name, i) => {
+          const index = step === 'edit' ? 0 : 1;
+          const current = i === index;
+          const done = i < index;
+          return (
+            <li key={name} className="flex items-center gap-2">
+              <span
+                className={
+                  current
+                    ? 'flex h-5 w-5 items-center justify-center rounded-full bg-brand-primary text-[11px] font-bold text-white'
+                    : done
+                      ? 'flex h-5 w-5 items-center justify-center rounded-full bg-brand-primary/15 text-[11px] font-bold text-brand-primary'
+                      : 'flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[11px] font-bold text-gray-400'
+                }
+              >
+                {i + 1}
+              </span>
+              <span className={current ? 'text-xs font-semibold text-gray-900' : 'text-xs font-medium text-gray-400'}>
+                {name}
+              </span>
+              {i < steps.length - 1 && <span className="mx-1 h-px w-6 bg-gray-200" aria-hidden />}
+            </li>
+          );
+        })}
+      </ol>
+
       {step === 'edit' ? (
         <div className="space-y-4 p-5">
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -227,7 +259,8 @@ export default function SendProposalModal({ open, proposal, client, onClose, onS
               onClick={continueToConfirm}
               className="inline-flex items-center gap-2 rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90"
             >
-              Continue
+              Next
+              <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>

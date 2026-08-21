@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ArrowLeft, ChevronDown, Plus, Send, X } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ChevronDown, Plus, Send, X } from 'lucide-react';
 import Modal from '../ui/Modal';
 import { sendDocumentEmail, getDocumentSettings } from '../../lib/documents-db';
 import { listAdminProfiles } from '../../lib/db';
@@ -109,6 +109,8 @@ export default function SendDocumentModal({
     }
   };
 
+  const steps = ['Details', 'Review and send'];
+
   return (
     <Modal
       open={open}
@@ -116,6 +118,35 @@ export default function SendDocumentModal({
       onClose={() => !sending && onClose()}
       className={step === 'confirm' ? 'max-w-2xl' : 'max-w-lg'}
     >
+      {/* Same two stages as sending a proposal, so the same rail: nothing sends
+          until stage two, and Continue alone never said that. */}
+      <ol className="flex items-center gap-2 border-b border-gray-100 px-5 py-3">
+        {steps.map((name, i) => {
+          const index = step === 'edit' ? 0 : 1;
+          const current = i === index;
+          const done = i < index;
+          return (
+            <li key={name} className="flex items-center gap-2">
+              <span
+                className={
+                  current
+                    ? 'flex h-5 w-5 items-center justify-center rounded-full bg-brand-primary text-[11px] font-bold text-white'
+                    : done
+                      ? 'flex h-5 w-5 items-center justify-center rounded-full bg-brand-primary/15 text-[11px] font-bold text-brand-primary'
+                      : 'flex h-5 w-5 items-center justify-center rounded-full bg-gray-100 text-[11px] font-bold text-gray-400'
+                }
+              >
+                {i + 1}
+              </span>
+              <span className={current ? 'text-xs font-semibold text-gray-900' : 'text-xs font-medium text-gray-400'}>
+                {name}
+              </span>
+              {i < steps.length - 1 && <span className="mx-1 h-px w-6 bg-gray-200" aria-hidden />}
+            </li>
+          );
+        })}
+      </ol>
+
       {step === 'edit' ? (
         <div className="space-y-4 p-5">
           <div>
@@ -154,9 +185,10 @@ export default function SendDocumentModal({
               type="button"
               onClick={() => { setError(''); if (!emailValid) { setError('Please enter a valid email address.'); return; } setStep('confirm'); }}
               disabled={!emailValid}
-              className="rounded-lg gradient-bg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              className="inline-flex items-center gap-2 rounded-lg gradient-bg px-4 py-2 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
             >
-              Continue
+              Next
+              <ArrowRight className="h-3.5 w-3.5" />
             </button>
           </div>
         </div>
