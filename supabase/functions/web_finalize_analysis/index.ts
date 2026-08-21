@@ -336,7 +336,7 @@ function buildPageImages(
     : "";
 
   const elementsText = elementLines.length
-    ? `\n\nReal page elements detected on these screenshots (use element_id in a finding's highlight to pin exactly, it maps to the element's true on-page box). ALWAYS prefer element_id over x/y/w/h: your coordinate estimates land pins on the wrong element, while these boxes are exact. If you truly must fall back to coordinates, word the highlight's label using the same wording as the closest listed element so it can still be matched:\n${elementLines.join("\n")}`
+    ? `\n\nReal page elements detected on these screenshots. THESE LABELS ARE THE WORDS ACTUALLY ON THE PAGE, so never claim the page does not mention, say or show something that appears in them: an audit told a client their cart said nothing about shipping cost while the line under the total read "Taxes and shipping calculated at checkout". If the words are there but too small, too quiet or too late, say that instead. (Use element_id in a finding's highlight to pin exactly, it maps to the element's true on-page box). ALWAYS prefer element_id over x/y/w/h: your coordinate estimates land pins on the wrong element, while these boxes are exact. If you truly must fall back to coordinates, word the highlight's label using the same wording as the closest listed element so it can still be matched:\n${elementLines.join("\n")}`
     : "";
   return { images, refToId, refToElements, refToViewport, primaryId, elementsText: elementsText + styleText + hoverText + belowFoldText + popupText };
 }
@@ -786,12 +786,46 @@ async function runStep(
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [ANALYTICS_TOOL], toolChoice: { type: "tool", name: "record_analytics_audit" } });
     if (turn.kind !== "tool_call") throw new Error("analytics: model did not call the tool");
     logAuditShape("web_performance", "analytics", turn.input);
-    const parsed = coerceAnalytics(turn.input);
+    let parsed = coerceAnalytics(turn.input);
+
+    // Zero plays means the section renders as a heading with nothing under it,
+    // which is how a live report shipped with no "Opportunities in the data" at
+    // all. The page steps have always retried; this one never did, so a single
+    // malformed reply was the end of it. If the reply was mis-shaped, say so:
+    // that is what the page steps learned to do and it is what fixes it.
+    if (parsed.plays.length === 0) {
+      const badShape = shapeProblems(turn.input);
+      const playsType = Array.isArray((turn.input as { plays?: unknown })?.plays)
+        ? "array"
+        : typeof (turn.input as { plays?: unknown })?.plays;
+      console.warn(JSON.stringify({
+        event: "analytics_no_plays",
+        plays_type: playsType,
+        sample: JSON.stringify((turn.input as { plays?: unknown })?.plays ?? null).slice(0, 400),
+      }));
+      const shapeNote = playsType !== "array"
+        ? ` Your last reply sent "plays" as a ${playsType} instead of an array. Send it as a real JSON array of objects; never put an array inside a string.`
+        : badShape.length > 0
+          ? ` Your last reply sent ${badShape.map((p) => `"${p.field}" as a ${p.got}`).join(" and ")} instead of arrays.`
+          : "";
+      const retryMessages: LlmMessage[] = [{
+        role: "user",
+        text: `Your plays for this store came back empty.${shapeNote} This store has real order data and there is always something worth shipping in it. Return 2 to 4 plays, each with a title, an insight quoting a real figure from the data, and 2 or 3 steps that each name a change to make. Call record_analytics_audit exactly once.\n\n${JSON.stringify(computed)}`,
+      }];
+      const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [ANALYTICS_TOOL], toolChoice: { type: "tool", name: "record_analytics_audit" } });
+      if (retry.kind === "tool_call") {
+        logAuditShape("web_performance", "analytics_retry", retry.input);
+        const retryParsed = coerceAnalytics(retry.input);
+        if (retryParsed.plays.length > 0) {
+          parsed = { ...retryParsed, intro: retryParsed.intro.trim() ? retryParsed.intro : parsed.intro };
+        }
+      }
+    }
     // Same distinction the page steps log: did the model return nothing, or did
     // the coercer discard what it returned? Without this, "plays: []" in the
     // database is unattributable, which is exactly where the last hour went.
     console.log(
-      `web_performance: model returned ${Array.isArray((turn.input as { plays?: unknown[] })?.plays) ? ((turn.input as { plays?: unknown[] }).plays as unknown[]).length : 0} play(s), ${parsed.plays.length} kept`,
+      `web_performance: model sent plays as ${Array.isArray((turn.input as { plays?: unknown })?.plays) ? `array(${((turn.input as { plays?: unknown[] }).plays as unknown[]).length})` : typeof (turn.input as { plays?: unknown })?.plays}, ${parsed.plays.length} kept`,
     );
     const details = { ...(section.section_details ?? {}) };
     (details as Record<string, unknown>).web_analytics = {

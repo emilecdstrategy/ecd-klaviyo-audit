@@ -409,3 +409,111 @@ Deno.test("a play keeps its shippable steps and loses only the rest", () => {
   if (out.plays[0].action_steps.length !== 1) throw new Error(`expected 1 step, got ${JSON.stringify(out.plays[0].action_steps)}`);
   if (!out.plays[0].action_steps[0].includes("frequently bought")) throw new Error("kept the wrong step");
 });
+
+// --- the cart that "says nothing about shipping" ---------------------------
+//
+// A live cart finding read "The cart total shows no mention of how shipping
+// cost or speed will affect the price before checkout" while the line directly
+// under the total read "Taxes and shipping calculated at checkout". The words
+// were in the captured labels; the audit said they were not there.
+
+const CART_ELEMENTS: ElementBox[] = [
+  { id: "el_1", label: "div: Subtotal $14.99 USD", x: 5, y: 70, w: 90, h: 4 },
+  { id: "el_2", label: "p: Taxes and shipping calculated at checkout", x: 5, y: 75, w: 90, h: 3 },
+  { id: "el_3", label: "button: CHECKOUT $14.99", x: 5, y: 80, w: 90, h: 6 },
+];
+
+function cartFindings(text: string, recommendation: string) {
+  return coercePageAudit(
+    { intro: "x", findings: [{ text, recommendation, viewport: "mobile" }] },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map([["IMG_1", CART_ELEMENTS]]),
+    new Map([["IMG_1", "mobile"]]),
+    "cart",
+  ).findings;
+}
+
+Deno.test("a cart finding claiming no shipping information is refused", () => {
+  const kept = cartFindings(
+    "The cart total shows no mention of how shipping cost or speed will affect the price before checkout.",
+    "Add a short delivery estimate next to the total, such as 'Arrives in X business days'.",
+  );
+  if (kept.length !== 0) throw new Error("the claim of absence must be refused");
+});
+
+Deno.test("a finding that acknowledges the line and asks for more still stands", () => {
+  // "It only says calculated at checkout, give them a real estimate" is a
+  // different and fair point. Refusing it would cost a genuine finding.
+  const kept = cartFindings(
+    "The cart only says taxes and shipping are calculated at checkout, so the delivery cost is still unknown here.",
+    "Show a live shipping estimate in the cart so the total is not a surprise at checkout.",
+  );
+  if (kept.length !== 1) throw new Error("an acknowledged-disclosure finding must survive");
+});
+
+Deno.test("the refusal does not fire on a cart without the disclosure", () => {
+  const kept = coercePageAudit(
+    {
+      intro: "x",
+      findings: [{
+        text: "The cart says nothing about shipping cost before checkout.",
+        recommendation: "Add a delivery estimate near the total.",
+        viewport: "mobile",
+      }],
+    },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map([["IMG_1", [CART_ELEMENTS[0], CART_ELEMENTS[2]]]]),
+    new Map([["IMG_1", "mobile"]]),
+    "cart",
+  ).findings;
+  if (kept.length !== 1) throw new Error("with no disclosure on the page the claim is fair");
+});
+
+Deno.test("the refusal is scoped to the cart", () => {
+  const kept = coercePageAudit(
+    {
+      intro: "x",
+      findings: [{
+        text: "The product page says nothing about shipping cost.",
+        recommendation: "Add a delivery line under the buy button.",
+        viewport: "mobile",
+      }],
+    },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map([["IMG_1", CART_ELEMENTS]]),
+    new Map([["IMG_1", "mobile"]]),
+    "product",
+  ).findings;
+  if (kept.length !== 1) throw new Error("a product page finding is not the cart's business");
+});
+
+// --- plays arriving as a string --------------------------------------------
+
+Deno.test("plays JSON-encoded into a string are recovered", () => {
+  // The whole "Opportunities in the data" block vanished from a live report
+  // because this path used a bare Array.isArray while findings had already been
+  // fixed. Same bug, one line away, missed.
+  const real = [
+    { title: "Raise the free shipping bar", insight: "The threshold sits below the median order.", action_steps: ["Move it to $150"], metric: "$100" },
+    { title: "Lift the basket", insight: "Most orders carry one item.", action_steps: ["Add a bundle row"], metric: "64%" },
+  ];
+  const out = coerceAnalytics({ intro: "x", plays: JSON.stringify(real) });
+  if (out.plays.length !== 2) throw new Error(`expected 2 plays, got ${out.plays.length}`);
+  if (out.plays[0].title !== "Raise the free shipping bar") throw new Error("wrong play order");
+});
+
+Deno.test("a play's steps and products survive being sent as strings", () => {
+  const out = coerceAnalytics({
+    intro: "x",
+    plays: [{
+      title: "Pair the adapters",
+      insight: "Bought together in 19 orders.",
+      action_steps: '["Add Adapter Pins as an add-on","Bundle both at a discount"]',
+      products: '["Adapter Pins","Auger Adapters"]',
+      metric: "19 orders",
+    }],
+  });
+  if (out.plays.length !== 1) throw new Error("the play should survive");
+  if (out.plays[0].action_steps.length !== 2) throw new Error(`steps: ${JSON.stringify(out.plays[0].action_steps)}`);
+  if (out.plays[0].products.length !== 2) throw new Error(`products: ${JSON.stringify(out.plays[0].products)}`);
+});

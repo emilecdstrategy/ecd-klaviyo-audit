@@ -496,6 +496,19 @@ export function isDiagnosticStep(text: unknown): boolean {
   return DIAGNOSTIC_STEP.some((re) => re.test(t));
 }
 
+/** Shopify prints this under the cart total on essentially every store. */
+const SHIPPING_DISCLOSURE_RE =
+  /(tax(es)?|duties)[^.]{0,60}(shipping|delivery)[^.]{0,60}(calculated|estimated|added|applied)|(shipping|delivery)[^.]{0,60}calculated at (the )?checkout|calculated at (the )?checkout/i;
+
+/** A finding claiming the cart says nothing about what shipping will cost. */
+const NO_SHIPPING_INFO_RE =
+  /\b(no|not|never|nothing|none|without|missing|absent|lacks?|fails? to|does ?n[o']?t|do ?n[o']?t|is ?n[o']?t)\b[^.]{0,90}\b(shipping|delivery|tax(es)?|duties|freight)\b/i;
+
+/** The finding is allowed to stand when it ACKNOWLEDGES the disclosure and asks
+ *  for something more, such as a real delivery estimate. That is a different
+ *  and legitimate point; what is refused is claiming the line is not there. */
+const ACKNOWLEDGES_DISCLOSURE_RE = /calculated at (the )?checkout/i;
+
 const CART_EMPTINESS_RE =
   /empty (black |blank |dead |white )?space|whitespace|blank space|large gap|big gap|lot of (empty|blank|dead) space|looks (sparse|empty|bare)|feels (sparse|empty|unbalanced)|unbalanced|sparse/i;
 
@@ -508,6 +521,13 @@ export function coercePageAudit(
   pageType?: string,
 ) {
   const o = (input ?? {}) as Record<string, unknown>;
+  // Every word the capture found on these screenshots. A claim that the page
+  // does not mention something is checkable against this.
+  const pageText = [...(refToElements?.values() ?? [])]
+    .flat()
+    .map((el) => el.label ?? "")
+    .join(" | ")
+    .toLowerCase();
   const findingsRaw = asArray(o.findings);
   const findings: WebFinding[] = findingsRaw.slice(0, 8).map((f) => {
     const rec = (f ?? {}) as Record<string, unknown>;
@@ -714,6 +734,7 @@ export function coercePageAudit(
     .filter((f) => {
       const rec = (f.recommendation || "").toLowerCase().trim();
       const txt = (f.text || "").toLowerCase().trim();
+      const blob = txt + " " + rec;
       const noop = /^(keep|leave)\b.{0,24}\bas[ -]?is\b/.test(rec) ||
         /^no (change|changes|fix|action|edits?) (needed|required|necessary)/.test(rec) ||
         /^(keep|leave) (this|it|them) (as is|the same|unchanged)/.test(rec) ||
@@ -739,13 +760,24 @@ export function coercePageAudit(
       // an artifact of our capture. Refused in code because the KB rule saying
       // so was ignored three times running.
       if (pageType === "cart" && CART_EMPTINESS_RE.test(txt)) return false;
+      // "The cart says nothing about shipping" when the line under the total
+      // says taxes and shipping are calculated at checkout. Shopify prints that
+      // on nearly every store, it was in the captured labels, and the audit
+      // said it was not there. A finding that ACKNOWLEDGES the line and asks
+      // for a real delivery estimate is a different and fair point, so only the
+      // claim of absence is refused.
+      if (
+        pageType === "cart" &&
+        SHIPPING_DISCLOSURE_RE.test(pageText) &&
+        NO_SHIPPING_INFO_RE.test(blob) &&
+        !ACKNOWLEDGES_DISCLOSURE_RE.test(blob)
+      ) return false;
       // Drop grow-zone / planting-location widget findings: it is automatic
       // zip-based detection and 'n/a' before a zip is entered is expected. The
       // model renames it ("location fields", "personalization bar", "location
       // detector"), so match those phrasings too, not just the literal labels.
       // Still scoped to widget-ish wording so a product 'hardiness zone' care
       // detail, a legitimate recommendation, is not dropped.
-      const blob = txt + " " + rec;
       // A single floating widget in a corner is normal, not a defect.
       const loneWidget = isLoneFloatingWidgetNitpick(txt, rec);
       const growZone =
@@ -779,27 +811,27 @@ export function coerceAnalytics(input: unknown) {
     .filter((m) => METRIC_KEYS.has(m.key) && m.commentary);
   // Plays are the section now; `metrics` stays so audits generated before this
   // change keep rendering their commentary.
-  const playsRaw = Array.isArray(o.plays) ? o.plays : [];
+  // Same recovery findings already had. A JSON-encoded array read through a
+  // bare Array.isArray is an empty section: the whole "Opportunities in the
+  // data" block vanished from a live report because this one line was missed
+  // when the findings path was fixed.
+  const playsRaw = asArray(o.plays);
   const plays = playsRaw
     .map((p) => {
       const rec = (p ?? {}) as Record<string, unknown>;
       // action_steps is the current shape; `action` was the single-sentence
       // version, kept so a play from an earlier audit still shows its work.
-      const steps = Array.isArray(rec.action_steps)
-        ? rec.action_steps
-            .map((s) => sanitizeDash(s))
-            .filter(Boolean)
-            .filter((step) => !isBannedWork(step) && !isDiagnosticStep(step))
-            .slice(0, 3)
-        : [];
+      const steps = asArray(rec.action_steps)
+        .map((s) => sanitizeDash(s))
+        .filter(Boolean)
+        .filter((step) => !isBannedWork(step) && !isDiagnosticStep(step))
+        .slice(0, 3);
       const legacyAction = sanitizeDash(rec.action);
       return {
         title: sanitizeDash(rec.title),
         insight: sanitizeDash(rec.insight),
         action_steps: steps.length > 0 ? steps : (legacyAction ? [legacyAction] : []),
-        products: Array.isArray(rec.products)
-          ? rec.products.map((t) => sanitizeDash(t)).filter(Boolean).slice(0, 3)
-          : [],
+        products: asArray(rec.products).map((t) => sanitizeDash(t)).filter(Boolean).slice(0, 3),
         metric: sanitizeDash(rec.metric),
         window: sanitizeDash(rec.window),
       };
