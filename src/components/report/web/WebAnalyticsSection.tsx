@@ -54,7 +54,7 @@ function ProductCard({
   if (compact) {
     return (
       <ProductShell href={href} className="flex items-center gap-3 p-2">
-        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg bg-gray-50">
+        <div className="h-14 w-14 shrink-0 overflow-hidden rounded-lg border border-gray-100 bg-gray-50">
           {product.image ? (
             <img src={product.image} alt={product.title} loading="lazy" className="h-full w-full object-cover" />
           ) : (
@@ -79,7 +79,7 @@ function ProductCard({
 
   const body = (
     <>
-      <div className="aspect-square w-full overflow-hidden rounded-lg bg-gray-50">
+      <div className="aspect-square w-full overflow-hidden rounded-lg border border-gray-100 bg-gray-50">
         {product.image ? (
           <img src={product.image} alt={product.title} loading="lazy" className="h-full w-full object-cover" />
         ) : (
@@ -127,7 +127,7 @@ function ProductShell({
   className: string;
   children: ReactNode;
 }) {
-  const shell = `group/prod rounded-xl border border-gray-100 ${className}`;
+  const shell = `group/prod rounded-xl border border-gray-200 bg-white shadow-[0_1px_2px_rgba(16,24,40,0.05)] transition-shadow hover:shadow-[0_2px_8px_rgba(16,24,40,0.08)] ${className}`;
   return href ? (
     <a
       href={href}
@@ -172,13 +172,10 @@ function PlayCard({
 
   return (
     <article
-      className={`relative overflow-hidden rounded-2xl border border-gray-200/70 bg-brand-surface/50 pl-6 pr-5 py-5 ${
+      className={`relative overflow-hidden rounded-2xl border border-gray-200/70 bg-brand-surface/50 p-5 ${
         play.hidden ? 'opacity-50' : ''
       }`}
     >
-      {/* Accent rail. Ties the card to its number and gives the eye a left edge
-          to run down, which is what makes four of these scan as four things. */}
-      <span className="absolute inset-y-0 left-0 w-1 bg-brand-primary/70" aria-hidden />
       {editMode && (
         <div className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-lg bg-white/90 p-0.5 backdrop-blur-sm">
           <button
@@ -405,9 +402,9 @@ export default function WebAnalyticsSection({
           const delta = deltaFor(key);
           const isRepeat = key === 'returning_customer_rate';
           return (
-            <div key={key} className="rounded-xl border border-gray-100 bg-white px-4 py-3.5 shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
+            <div key={key} className="rounded-xl border border-gray-200 bg-white px-4 py-4 shadow-[0_1px_3px_rgba(16,24,40,0.06)]">
               <div className="flex items-center gap-1">
-                <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{label}</p>
+                <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
                 {isRepeat && !repeatUnavailable && (
                   <HoverTooltip
                     label="How this is measured"
@@ -425,14 +422,20 @@ export default function WebAnalyticsSection({
                   </HoverTooltip>
                 )}
               </div>
-              <p className="mt-1 text-2xl font-semibold tracking-tight text-gray-900">{displayValue(key)}</p>
+              <p className="mt-1.5 text-[1.75rem] font-bold leading-none tracking-tight tabular-nums text-gray-900">
+                {displayValue(key)}
+              </p>
               {delta ? (
-                <p className={`mt-0.5 flex items-center gap-1 text-xs font-medium ${delta.positive ? 'text-emerald-600' : 'text-red-600'}`}>
+                <p
+                  className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
+                    delta.positive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                  }`}
+                >
                   {delta.positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                   {delta.text}
                 </p>
               ) : (
-                <p className="mt-0.5 text-xs text-gray-300">
+                <p className="mt-2 text-xs text-gray-400">
                   {isRepeat && repeatUnavailable
                     ? (editMode ? 'needs read_customers' : 'not available')
                     : 'no comparison'}
