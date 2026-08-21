@@ -5,6 +5,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { isServiceRoleAuthorization } from "../_shared/auth.ts";
+import { isTransientError } from "../_shared/transient-errors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -116,11 +117,7 @@ serve(async (req) => {
       // there is went unrescued: a HigherDOSE scan died on "connection reset"
       // and the report claimed a scan was running that had been dead for 16
       // minutes.
-      const message = String(job.error_message ?? "");
-      const transient =
-        /(^|[^0-9])(429|500|502|503|504)([^0-9]|$)/.test(message)
-        || /timeout|timed out|bad gateway|temporarily|overloaded|rate limit/i.test(message)
-        || /connection (reset|closed|refused|error)|econnreset|epipe|socket hang ?up|error sending request|fetch failed|network error|sendrequest/i.test(message);
+      const transient = isTransientError(job.error_message);
       const attempts = Number(job.resume_attempts ?? 0);
       if (!transient || attempts >= 4) continue;
       // No cursor means there is nowhere to resume from, so the scan restarts.
@@ -163,10 +160,7 @@ serve(async (req) => {
     // human click for no reason. Budgeted via partial_state so a genuinely
     // broken audit stops instead of looping.
     if (job.status === "failed") {
-      const msg = String(job.error_message ?? "");
-      const transient =
-        /timed out|timeout|overloaded|rate.?limit|(^|[^0-9])(429|500|502|503|504|529)([^0-9]|$)|download|temporarily|unavailable|econnreset|fetch failed|connection (reset|closed|refused|error)|error sending request/i
-          .test(msg);
+      const transient = isTransientError(job.error_message);
       const resumes = Number(partial.autoResumes ?? 0);
       if (!transient || resumes >= 3) continue;
       const updatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
