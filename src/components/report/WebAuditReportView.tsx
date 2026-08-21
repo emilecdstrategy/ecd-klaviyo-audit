@@ -43,12 +43,16 @@ function WebSectionShell({
   label,
   setRef,
   children,
+  action,
 }: {
   id: string;
   number: string;
   label: string;
   setRef: (id: string, el: HTMLElement | null) => void;
   children: React.ReactNode;
+  /** Editor-only control belonging to this section, sat on the right of its
+   *  heading rather than floating at the end of the report. */
+  action?: React.ReactNode;
 }) {
   return (
     <section id={id} ref={el => setRef(id, el)} className="scroll-mt-24">
@@ -62,9 +66,25 @@ function WebSectionShell({
           </p>
           <h2 className="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">{label}</h2>
         </div>
+        {action ? <div className="ml-auto shrink-0 print:hidden">{action}</div> : null}
       </div>
       {children}
     </section>
+  );
+}
+
+/** Opens the shared add-ons drawer. Lives in two places depending on whether
+ *  there is an add-on section to sit beside, so it is defined once. */
+function ManageAddOnsButton({ onClick, label }: { onClick: () => void; label: string }) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
+    >
+      <Settings2 className="h-3.5 w-3.5" aria-hidden />
+      {label}
+    </button>
   );
 }
 
@@ -300,6 +320,10 @@ export default function WebAuditReportView({
             number={nextNumber()}
             label={demoKind === 'helpdesk' ? 'Helpdesk' : demoKind === 'both' ? 'Customer Agent and Helpdesk' : 'Customer Agent'}
             setRef={setRef}
+            // The add-ons ARE this section, so the control sits on its heading
+            // rather than at the foot of the report, where it was a long scroll
+            // from the thing it edits.
+            action={editMode && onManageAddOns ? <ManageAddOnsButton onClick={onManageAddOns} label="Manage add-ons" /> : undefined}
           >
             <WebAgentDemoSection kind={demoKind} websiteUrl={client.website_url} />
           </WebSectionShell>
@@ -320,16 +344,11 @@ export default function WebAuditReportView({
           </div>
         )}
 
-        {editMode && onManageAddOns && (
+        {/* With no demo section there is no heading to hang this off, so the
+            invitation to add one stays at the foot of the report. */}
+        {editMode && onManageAddOns && !demoKind && (
           <div className="flex justify-center">
-            <button
-              type="button"
-              onClick={onManageAddOns}
-              className="inline-flex items-center gap-2 rounded-lg border border-gray-200 bg-white px-4 py-2 text-xs font-semibold text-gray-700 transition-colors hover:bg-gray-50"
-            >
-              <Settings2 className="h-3.5 w-3.5" aria-hidden />
-              {demoKind ? 'Manage add-ons' : 'Add Customer Agent or Helpdesk'}
-            </button>
+            <ManageAddOnsButton onClick={onManageAddOns} label="Add Customer Agent or Helpdesk" />
           </div>
         )}
 
