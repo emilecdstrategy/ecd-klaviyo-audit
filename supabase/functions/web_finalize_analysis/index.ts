@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { sessionsEvidence } from "../_shared/shopify-sessions.ts";
 import { belowFoldEvidence } from "../_shared/below-fold-probe.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
@@ -183,6 +184,25 @@ type SectionRow = {
 };
 
 type ElementBox = { id: string; x: number; y: number; w: number; h: number; label?: string };
+
+/** The store's traffic and conversion figures, for whichever step is running.
+ *  Both the page sections and the data section want them: a finding about the
+ *  phone layout means something different when phones are 71% of sessions. */
+async function loadSessions(sb: ReturnType<typeof assertServiceClient>, auditId: string): Promise<unknown> {
+  try {
+    const { data } = await sb
+      .from("shopify_data_snapshots")
+      .select("computed")
+      .eq("audit_id", auditId)
+      .eq("snapshot_kind", "orders_rollup")
+      .order("fetched_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    return ((data?.computed ?? null) as Record<string, unknown> | null)?.sessions ?? null;
+  } catch {
+    return null;
+  }
+}
 
 function buildPageImages(
   snaps: Array<{
@@ -430,6 +450,9 @@ async function runStep(
       }
     }
     const { images, refToId, refToElements, refToViewport, primaryId, elementsText } = buildPageImages(rows, step.label);
+    const trafficText = sessionsEvidence(
+      (await loadSessions(sb, auditId)) as Parameters<typeof sessionsEvidence>[0],
+    );
 
     // Memory of what earlier page sections already reported. Sitewide furniture
     // (header, nav, announcement bar, floating chat/loyalty widgets) looks the
@@ -456,7 +479,7 @@ async function runStep(
       : "";
     const messages: LlmMessage[] = [{
       role: "user_images",
-      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. ALWAYS write the intro field first: it is this section's summary paragraph in the report, 2-3 sentences on where this page stands, what it does well, and what is holding it back. Never leave it blank. Then return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${priorText}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${contextBlock}${elementsText}`,
+      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. ALWAYS write the intro field first: it is this section's summary paragraph in the report, 2-3 sentences on where this page stands, what it does well, and what is holding it back. Never leave it blank. Then return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${priorText}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${contextBlock}${elementsText}${trafficText}`,
       images,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
@@ -647,6 +670,8 @@ async function runStep(
         `Backend data for this store, straight from its Shopify admin. Every figure is authoritative. The report shows the headline numbers as cards already, so do NOT narrate them back.`,
         JSON.stringify(computed),
         thresholdNote,
+        sessionsEvidence(computed.sessions as Parameters<typeof sessionsEvidence>[0]),
+        `- The traffic figures above are the denominator for everything else in this section. When the funnel names a step that loses most people, a play about that step beats a play about a product mix. Never present a conversion rate as good or bad against an industry average: none was measured.`,
         `Return 2 to 5 PLAYS via record_analytics_audit: things this team could ship this month to raise average order value, protect margin, or make the catalogue work harder. Rules:`,
         `- Every value under deltas is a RELATIVE percent change, never percentage points. A repeat rate moving 16.54 to 18.24 is a delta of 10.28, which is "up 10%", not "up 10.28 points". Say "from X to Y" when you want to be unambiguous.`,
         `- Each play quotes a real figure from the data above. Never invent or round a number into something the data does not say.`,

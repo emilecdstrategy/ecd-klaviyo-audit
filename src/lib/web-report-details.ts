@@ -304,6 +304,15 @@ export type PeriodMetrics = {
   returning_customer_rate: number;
 };
 
+export type SessionFunnel = {
+  sessions: number;
+  cart_additions: number;
+  reached_checkout: number;
+  completed_checkout: number;
+  /** Whole-number percent, already converted from the fraction Shopify sends. */
+  conversion_rate: number | null;
+};
+
 export type OrdersRollup = {
   current?: PeriodMetrics;
   /** Null when the fetch never reached the prior period, so the report shows no
@@ -314,6 +323,17 @@ export type OrdersRollup = {
   period_days?: number;
   period_truncated?: boolean;
   deltas?: Record<string, number | null>;
+  /** Traffic and the checkout funnel, from Shopify's own analytics. Null, or
+   *  carrying an error, when the store's app has no read_analytics scope: the
+   *  report then shows the four order-based figures and no traffic at all,
+   *  rather than empty cards. */
+  sessions?: {
+    period_days: number;
+    current: SessionFunnel;
+    previous?: SessionFunnel | null;
+    devices?: Array<{ device: string; sessions: number; conversion_rate: number | null }>;
+    error?: string;
+  } | null;
   top_products?: Array<{ title: string; revenue: number }>;
   channels?: Array<{ name: string; revenue: number; orders: number }>;
   currency?: string | null;

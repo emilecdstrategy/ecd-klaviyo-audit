@@ -24,11 +24,18 @@ import HoverTooltip from '../../ui/HoverTooltip';
  */
 
 const KPIS: Array<{ key: string; label: string }> = [
+  { key: 'sessions', label: 'Sessions' },
+  { key: 'conversion_rate', label: 'Conversion rate' },
   { key: 'revenue', label: 'Revenue' },
   { key: 'orders', label: 'Orders' },
   { key: 'aov', label: 'Avg order value' },
   { key: 'returning_customer_rate', label: 'Repeat rate' },
 ];
+
+/** Traffic figures are only in the band when Shopify actually gave them to us.
+ *  A store whose app lacks read_analytics gets the four it always had, rather
+ *  than two cards reading "—" for a reason the reader cannot see. */
+const TRAFFIC_KEYS = new Set(['sessions', 'conversion_rate']);
 
 function ProductCard({
   product,
@@ -355,8 +362,20 @@ export default function WebAnalyticsSection({
   // rather than leaving "repeat rate" to be read as lifetime loyalty.
   const repeatLookbackDays = rollup?.repeat_basis?.lookback_days ?? 90;
 
+  const sessions = rollup?.sessions ?? null;
+  const traffic = sessions && !sessions.error && sessions.current?.sessions ? sessions : null;
+  const kpis = KPIS.filter(k => (TRAFFIC_KEYS.has(k.key) ? Boolean(traffic) : true));
+  const deviceTotal = (traffic?.devices ?? []).reduce((sum, d) => sum + (d.sessions || 0), 0);
+  // Only the devices a real person browses on. A single game-console session is
+  // noise in a client report, and "other" is not a device anyone can act on.
+  const devices = (traffic?.devices ?? []).filter(d => deviceTotal > 0 && d.sessions / deviceTotal >= 0.02);
+
   const displayValue = (key: string): string => {
     const cur = rollup?.current;
+    if (key === 'sessions') return traffic ? traffic.current.sessions.toLocaleString('en-US') : '—';
+    if (key === 'conversion_rate') {
+      return traffic?.current.conversion_rate == null ? '—' : `${traffic.current.conversion_rate}%`;
+    }
     if (!cur) return '—';
     if (key === 'revenue') return formatMoney(cur.gross_revenue, currency);
     if (key === 'orders') return cur.order_count.toLocaleString('en-US');
@@ -369,7 +388,12 @@ export default function WebAnalyticsSection({
 
   const deltaFor = (key: string) => {
     const d = rollup?.deltas ?? {};
+    const prev = traffic?.previous;
+    const pct = (now?: number | null, before?: number | null) =>
+      now == null || before == null || before === 0 ? null : Math.round(((now - before) / before) * 1000) / 10;
     const map: Record<string, number | null | undefined> = {
+      sessions: pct(traffic?.current.sessions, prev?.sessions),
+      conversion_rate: pct(traffic?.current.conversion_rate, prev?.conversion_rate),
       revenue: d.gross_revenue,
       orders: d.order_count,
       aov: d.aov,
@@ -385,6 +409,21 @@ export default function WebAnalyticsSection({
   // 2,000 orders a month the fetch reaches only its most recent days, and
   // labelling that "last 30 days" quartered a client's real revenue.
   const periodDays = rollup?.period_days ?? 30;
+  // Where visitors fall out. Each step as a share of the one before it, which
+  // is the only framing that points at a page rather than at a total.
+  const funnel = traffic
+    ? (() => {
+        const c = traffic.current;
+        const step = (from: number, to: number) => (from > 0 ? Math.round((to / from) * 1000) / 10 : null);
+        return [
+          { label: 'Visited', count: c.sessions, kept: null as number | null },
+          { label: 'Added to cart', count: c.cart_additions, kept: step(c.sessions, c.cart_additions) },
+          { label: 'Reached checkout', count: c.reached_checkout, kept: step(c.cart_additions, c.reached_checkout) },
+          { label: 'Bought', count: c.completed_checkout, kept: step(c.reached_checkout, c.completed_checkout) },
+        ];
+      })()
+    : null;
+
   const windowLabel = rollup?.period_truncated
     ? `Shopify order data, the most recent ${periodDays} ${periodDays === 1 ? 'day' : 'days'} (2,000-order fetch limit reached, so there is no prior-period comparison)`
     : 'Shopify order data, last 30 days vs the prior 30 days';
@@ -397,8 +436,8 @@ export default function WebAnalyticsSection({
       </p>
 
       {/* KPI band */}
-      <div className="mt-4 grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {KPIS.map(({ key, label }) => {
+      <div className={`mt-4 grid grid-cols-2 gap-3 ${kpis.length > 4 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>
+        {kpis.map(({ key, label }) => {
           const delta = deltaFor(key);
           const isRepeat = key === 'returning_customer_rate';
           return (
@@ -445,6 +484,61 @@ export default function WebAnalyticsSection({
           );
         })}
       </div>
+
+      {/* The funnel, and where it leaks.
+          Revenue is an outcome; a drop-off is a page. Each step is shown as a
+          share of the step before it, because that is the framing that points
+          at work: "a quarter of the people who add to cart never reach
+          checkout" is a cart brief, where "356 orders" is not. */}
+      {funnel && (
+        <div className="mt-3 rounded-xl border border-gray-200/70 bg-brand-surface/50 px-4 py-3.5">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">The path to a purchase</h3>
+            <span className="text-xs text-gray-400">last {traffic?.period_days ?? 30} days</span>
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">
+            {funnel.map((stage, i) => (
+              <div key={stage.label} className="rounded-lg border border-gray-200 bg-white px-3 py-2.5">
+                <p className="text-xs font-medium text-gray-500">{stage.label}</p>
+                <p className="mt-1 text-base font-bold leading-none tabular-nums text-gray-900">
+                  {stage.count.toLocaleString('en-US')}
+                </p>
+                {/* The first stage has nothing before it to be a share of. */}
+                <p className="mt-1.5 text-xs tabular-nums text-gray-400">
+                  {i === 0 ? 'all visitors' : stage.kept == null ? '—' : `${stage.kept}% of previous step`}
+                </p>
+              </div>
+            ))}
+          </div>
+          {devices.length > 1 && (
+            <div className="mt-3 border-t border-gray-200/70 pt-3">
+              <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">By device</p>
+              <div className="mt-2 space-y-1.5">
+                {devices.map(d => {
+                  const share = deviceTotal > 0 ? Math.round((d.sessions / deviceTotal) * 100) : 0;
+                  return (
+                    <div key={d.device}>
+                      <div className="flex items-baseline justify-between gap-2 text-xs">
+                        <span className="font-medium capitalize text-gray-700">{d.device}</span>
+                        <span className="tabular-nums text-gray-500">
+                          {share}% of sessions
+                          {d.conversion_rate != null && (
+                            <span className="ml-1.5 text-gray-400">converting at {d.conversion_rate}%</span>
+                          )}
+                        </span>
+                      </div>
+                      <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white">
+                        <div className="h-full rounded-full bg-brand-primary/70" style={{ width: `${share}%` }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
 
       {(editMode || section.summary_text) && (
         <div className="mt-4 text-sm leading-relaxed text-gray-600">

@@ -1,4 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
+import { fetchSessions } from "../_shared/shopify-sessions.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { decryptString } from "../_shared/crypto.ts";
@@ -620,6 +621,11 @@ async function fetchOrdersRollup(
   // artefact the lifetime counter produced.
   const prevReturning = customerDataUnavailable ? null : prevRate;
   const topProducts = await fetchTopProducts(shopDomain, token, currentSince);
+  // Traffic and the checkout funnel, over the same window the order data used so
+  // the two halves of the section describe one period. Needs read_analytics; a
+  // store without it comes back with an error string and the report says the
+  // figures are unavailable rather than inventing them.
+  const sessions = await fetchSessions(shopDomain, token, currentSpanDays).catch(() => null);
 
   return {
     // Two-period comparison for the Data & Analytics section.
@@ -654,6 +660,9 @@ async function fetchOrdersRollup(
         ? pctDelta(curReturning, prevReturning)
         : null,
     },
+    /** Sessions, conversion rate and the device split. Null when the scope is
+     *  missing or the store has no traffic data; the error inside says which. */
+    sessions,
     returning_customer_rate_available: !customerDataUnavailable,
     returning_customer_rate_error: customerDataError,
     basket,
