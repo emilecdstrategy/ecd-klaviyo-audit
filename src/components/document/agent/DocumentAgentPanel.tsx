@@ -13,7 +13,7 @@ type AgentQuestion = { question: string; options: Array<{ label: string; value: 
 
 const TYPING_LABELS = ['Thinking', 'Reading your notes', 'Reviewing templates', 'Drafting the document'];
 
-function TypingIndicator() {
+function TypingIndicator({ part = 0 }: { part?: number }) {
   const [i, setI] = useState(0);
   useEffect(() => {
     const t = window.setInterval(() => setI(v => (v + 1) % TYPING_LABELS.length), 4000);
@@ -26,7 +26,7 @@ function TypingIndicator() {
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-300 [animation-delay:200ms]" />
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-300 [animation-delay:400ms]" />
       </span>
-      <span className="leading-none">{TYPING_LABELS[i]}…</span>
+      <span className="leading-none">{part > 1 ? `Writing part ${part} of a long document` : TYPING_LABELS[i]}…</span>
     </div>
   );
 }
@@ -268,7 +268,7 @@ function ChatHistoryList({ conversations, loading, currentId, onSelect, onDelete
 
 export default function DocumentAgentPanel() {
   const {
-    isOpen, close, messages, sending, loadingHistory, error, sendMessage, resetChat,
+    isOpen, close, messages, sending, partsProgress, loadingHistory, error, sendMessage, resetChat,
     historyView, openHistory, closeHistory, conversations, conversationsLoading, conversationId,
     selectConversation, deleteConversation,
   } = useDocumentAgent();
@@ -378,7 +378,7 @@ export default function DocumentAgentPanel() {
             <MessageBubble key={m.id} message={m} isLast={i === messages.length - 1 && !sending} onAnswer={value => void sendMessage(value)} />
           ))
         )}
-        {sending && <TypingIndicator />}
+        {sending && <TypingIndicator part={partsProgress} />}
         {error && <p className="mx-4 my-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-600">{error}</p>}
       </div>
 

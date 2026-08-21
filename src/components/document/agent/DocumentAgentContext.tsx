@@ -9,8 +9,11 @@ import {
   type ReactNode,
 } from 'react';
 import {
+  continueDocDraft,
   DocAgentError,
+  MAX_DOC_PARTS,
   sendDocAgentMessage,
+  type DocAgentResponse,
   type DocDraftPayload,
   type DocEditPayload,
   type DocumentSnapshot,
@@ -52,6 +55,9 @@ type DocumentAgentContextValue = {
   error: string | null;
   applyingMessageId: string | null;
   canApply: boolean;
+  /** Non-zero while a long document is being written across several calls:
+   *  the number of the part currently being fetched. */
+  partsProgress: number;
   sendMessage: (text: string, attachments?: ProposalAgentAttachment[]) => Promise<void>;
   applyMessage: (message: DocAgentChatMessage) => Promise<void>;
   resetChat: () => void;
@@ -81,6 +87,9 @@ export function DocumentAgentProvider({ config, defaultOpen = false, children }:
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [messages, setMessages] = useState<DocAgentChatMessage[]>([]);
   const [sending, setSending] = useState(false);
+  /** Which part of a multi-part document is being fetched, 0 when not in one.
+   *  The panel shows it so a two-minute build does not look like a hang. */
+  const [partsProgress, setPartsProgress] = useState(0);
   const [loadingHistory, setLoadingHistory] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [applyingMessageId, setApplyingMessageId] = useState<string | null>(null);
@@ -135,6 +144,16 @@ export function DocumentAgentProvider({ config, defaultOpen = false, children }:
     };
   }, [isOpen, config.documentId]);
 
+  /** Turn one agent response into the assistant bubble the panel renders. */
+  const responseToMessage = (res: DocAgentResponse): DocAgentChatMessage => ({
+    id: res.assistant_message_id,
+    role: 'assistant',
+    content: res.assistant_text,
+    payload: res.question ?? res.draft ?? res.edits ?? null,
+    payload_kind: res.question ? 'question' : res.draft ? 'draft' : res.edits ? 'edits' : null,
+    applied_at: null,
+  });
+
   const sendMessage = useCallback(
     async (text: string, attachments?: ProposalAgentAttachment[]) => {
       const trimmed = text.trim();
@@ -154,6 +173,7 @@ export function DocumentAgentProvider({ config, defaultOpen = false, children }:
       };
       setMessages(prev => [...prev, userMsg]);
       setSending(true);
+      setPartsProgress(0);
       try {
         const cfg = configRef.current;
         const res = await sendDocAgentMessage({
@@ -166,19 +186,34 @@ export function DocumentAgentProvider({ config, defaultOpen = false, children }:
         setConversationId(res.conversation_id);
         setMessages(prev => [
           ...prev.map(m => (m.id === userMsg.id ? { ...m, pending: false } : m)),
-          {
-            id: res.assistant_message_id,
-            role: 'assistant',
-            content: res.assistant_text,
-            payload: res.question ?? res.draft ?? res.edits ?? null,
-            payload_kind: res.question ? 'question' : res.draft ? 'draft' : res.edits ? 'edits' : null,
-            applied_at: null,
-          },
+          responseToMessage(res),
         ]);
+
+        // A long document arrives in parts, because one call has 150s to finish
+        // and a whole agreement does not fit in that. Each reply carries the
+        // full body written so far, so the bubble is replaced, not appended to,
+        // and the panel keeps showing "thinking" until the document is whole.
+        let current = res;
+        for (let part = 2; part <= MAX_DOC_PARTS; part++) {
+          if (!(current.draft?.more || current.edits?.more)) break;
+          setPartsProgress(part);
+          const next = await continueDocDraft(current.conversation_id, {
+            document_id: cfg.documentId,
+            snapshot: cfg.getSnapshot?.() ?? null,
+          });
+          setMessages(prev => prev.map(m => (m.id === next.assistant_message_id ? responseToMessage(next) : m)));
+          current = next;
+        }
+        // Still unfinished after the cap. The preview would be a document
+        // missing its ending, so say that rather than let it look complete.
+        if (current.draft?.more || current.edits?.more) {
+          setError('This document is longer than the assistant can write in one go. The preview above stops part-way, so ask for the remainder as a second document.');
+        }
       } catch (e) {
         setError(e instanceof DocAgentError || e instanceof Error ? e.message : 'The assistant request failed');
       } finally {
         setSending(false);
+        setPartsProgress(0);
       }
     },
     [conversationId, sending, currentUser?.name],
@@ -272,6 +307,7 @@ export function DocumentAgentProvider({ config, defaultOpen = false, children }:
       messages,
       conversationId,
       sending,
+      partsProgress,
       loadingHistory,
       error,
       applyingMessageId,
@@ -288,7 +324,7 @@ export function DocumentAgentProvider({ config, defaultOpen = false, children }:
       deleteConversation,
     }),
     [
-      isOpen, messages, conversationId, sending, loadingHistory, error, applyingMessageId,
+      isOpen, messages, conversationId, sending, partsProgress, loadingHistory, error, applyingMessageId,
       config.onApplyDraft, config.onApplyEdits, sendMessage, applyMessage, resetChat,
       historyView, conversations, conversationsLoading, openHistory, closeHistory, selectConversation, deleteConversation,
     ],

@@ -21,12 +21,17 @@ export type DocDraftPayload = {
   include_sender_signature?: boolean;
   /** Whose signature signs for ECD, as the user named them. Empty means Zak. */
   sender_signature_signer?: string;
+  /** The body stops part-way and there is more to fetch. A long document is
+   *  written across several calls because one call has 150s to finish. */
+  more?: boolean;
 };
 export type DocEditPayload = {
   content: string;
   summary: string;
   /** Set only when the user asked to change who signs; empty leaves it alone. */
   sender_signature_signer?: string;
+  /** See DocDraftPayload.more. */
+  more?: boolean;
 };
 
 export type DocAgentResponse = {
@@ -124,7 +129,7 @@ export async function sendDocAgentMessage(input: {
       const retryable = !timedOut && /546|502|503|Failed to send/i.test(message);
       if (timedOut) {
         throw new DocAgentError(
-          'That was too long to build in one pass. Ask for it in parts, for example the agreement first and the NDA after, and each part will come through.',
+          'That one part took too long to build. Ask again and it will pick up from what is already written.',
           'timeout',
         );
       }
@@ -142,6 +147,46 @@ export async function sendDocAgentMessage(input: {
   }
   throw lastErr instanceof Error ? lastErr : new DocAgentError('Request failed', 'request_failed');
 }
+
+/** Ask for the next part of a document the assistant stopped part-way through.
+ *  The reply carries the WHOLE body written so far, not just the new part, so a
+ *  caller can simply replace what it is holding. */
+export async function continueDocDraft(
+  conversationId: string,
+  opts?: { document_id?: string | null; snapshot?: DocumentSnapshot | null },
+): Promise<DocAgentResponse> {
+  const { data, error } = await supabase.functions.invoke<DocAgentResponse | { ok: false; error: { code: string; message: string } }>(
+    'document_agent',
+    {
+      body: {
+        conversation_id: conversationId,
+        continue_draft: true,
+        document_id: opts?.document_id ?? undefined,
+        snapshot: opts?.snapshot ?? undefined,
+      },
+    },
+  );
+  if (error) {
+    const message = error.message ?? '';
+    if (/504|timeout|timed out/i.test(message)) {
+      throw new DocAgentError(
+        'That part took too long to build. Ask again and it will pick up from what is already written.',
+        'timeout',
+      );
+    }
+    throw new DocAgentError(message || 'Request failed', 'request_failed');
+  }
+  if (!data || data.ok !== true) {
+    const err = (data as { error?: { code?: string; message?: string } })?.error;
+    throw new DocAgentError(err?.message ?? 'The rest of the document did not come through', err?.code ?? 'request_failed');
+  }
+  return data;
+}
+
+/** How many parts a single document may be written across. Ten parts is far
+ *  beyond any document this tool produces, and stops a model that never lowers
+ *  the flag from looping forever. */
+export const MAX_DOC_PARTS = 10;
 
 // ---------------------------------------------------------------------------
 // Apply helpers

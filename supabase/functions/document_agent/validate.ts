@@ -73,7 +73,14 @@ function signerHint(input: any): string {
 
 export function validateDraft(
   input: any,
-): ValidationResult<{ title: string; content: string; summary: string; include_sender_signature: boolean; sender_signature_signer: string }> {
+): ValidationResult<{
+  title: string;
+  content: string;
+  summary: string;
+  include_sender_signature: boolean;
+  sender_signature_signer: string;
+  more: boolean;
+}> {
   if (!input || typeof input !== "object") return { ok: false, error: "propose_draft input must be an object" };
   if (!isStr(input.title) || !input.title.trim()) return { ok: false, error: "title is required" };
   if (!isStr(input.content) || !input.content.trim()) return { ok: false, error: "content is required" };
@@ -90,15 +97,21 @@ export function validateDraft(
       // signature, so it wins even over an explicit false.
       include_sender_signature: signer.length > 0 || input.include_sender_signature !== false,
       sender_signature_signer: signer,
+      // A part rather than a whole document. Only ever true because the model
+      // said so; a missing flag means the body is finished.
+      more: input.more === true,
     },
   };
 }
 
 export function validateEdits(
   input: any,
-): ValidationResult<{ content: string; summary: string; sender_signature_signer: string }> {
+): ValidationResult<{ content: string; summary: string; sender_signature_signer: string; more: boolean }> {
   if (!input || typeof input !== "object") return { ok: false, error: "propose_edits input must be an object" };
   if (!isStr(input.content) || !input.content.trim()) return { ok: false, error: "content is required" };
   if (!isStr(input.summary) || !input.summary.trim()) return { ok: false, error: "summary is required" };
-  return { ok: true, value: { content: input.content, summary: input.summary, sender_signature_signer: signerHint(input) } };
+  return {
+    ok: true,
+    value: { content: input.content, summary: input.summary, sender_signature_signer: signerHint(input), more: input.more === true },
+  };
 }

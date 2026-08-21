@@ -73,6 +73,11 @@ export const AGENT_TOOLS: LlmTool[] = [
             "WHOSE signature signs for ECD, when the user named someone ('send it with Zak's signature', 'sign as Xiomara'). A first name, full name or email. Leave empty to use the team default (Zak). Never guess a name the user did not say.",
         },
       },
+        more: {
+          type: "boolean",
+          description:
+            "Set to true when the document is too long to finish in this one call and you stopped at a clean section boundary. You will be asked to continue and the parts are joined for the user. Leave it out (or false) when the body is complete.",
+        },
       required: ["title", "content", "summary"],
     },
   },
@@ -91,6 +96,11 @@ export const AGENT_TOOLS: LlmTool[] = [
             "Set ONLY when the user asks to change whose signature signs this document for ECD ('actually use Zak's signature'). A first name, full name or email. Applying the preview switches the signature to that person and turns the sender signature on. Leave empty to leave the current signature alone; never send it just because a signature exists.",
         },
       },
+        more: {
+          type: "boolean",
+          description:
+            "Set to true when the document is too long to finish in this one call and you stopped at a clean section boundary. You will be asked to continue and the parts are joined for the user. Leave it out (or false) when the body is complete.",
+        },
       required: ["content", "summary"],
     },
   },

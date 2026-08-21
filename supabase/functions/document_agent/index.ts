@@ -2,6 +2,7 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { assertServiceRoleClient, requireStaffUserId } from "../_shared/auth.ts";
 import { createLlmClient, type LlmMessage } from "../_shared/llm-adapter.ts";
 import { attachmentTurn } from "../_shared/chat-attachments.ts";
+import { continuationPrompt, joinParts, MAX_DOC_CHARS } from "./continuation.ts";
 import { fetchGoogleDoc } from "../_shared/fetch-google-doc.ts";
 import { fetchFirefliesTranscript } from "../_shared/fetch-fireflies-transcript.ts";
 import { buildSystemPrompt, type DocumentSnapshot } from "./prompt.ts";
@@ -79,11 +80,18 @@ serve(async (req) => {
       attachments?: AgentAttachment[];
       snapshot?: DocumentSnapshot;
       provider?: string;
+      /** Continue the part-written document from the last assistant turn,
+       *  rather than answering a new user message. */
+      continue_draft?: boolean;
     };
+    const continuing = body.continue_draft === true;
     const message = (body.message ?? "").trim();
     const attachments = (Array.isArray(body.attachments) ? body.attachments : []).filter((a) => a && typeof a.url === "string" && a.url);
-    if (!message && attachments.length === 0) {
+    if (!continuing && !message && attachments.length === 0) {
       return json({ ok: false, error: { code: "bad_request", message: "Missing message" } }, { status: 200 });
+    }
+    if (continuing && !body.conversation_id) {
+      return json({ ok: false, error: { code: "bad_request", message: "Missing conversation_id" } }, { status: 200 });
     }
 
     const sb = assertServiceRoleClient();
@@ -117,14 +125,18 @@ serve(async (req) => {
       conversationWasCreated = true;
     }
 
-    const { error: userInsertErr } = await sb.from("document_agent_messages").insert({
-      conversation_id: conversationId,
-      role: "user",
-      content: message,
-      actor_user_id: uid,
-      attachments,
-    });
-    if (userInsertErr) throw userInsertErr;
+    // A continuation is not a new thing the user said, so nothing is written to
+    // the transcript for it: the part-written assistant turn is updated in place.
+    if (!continuing) {
+      const { error: userInsertErr } = await sb.from("document_agent_messages").insert({
+        conversation_id: conversationId,
+        role: "user",
+        content: message,
+        actor_user_id: uid,
+        attachments,
+      });
+      if (userInsertErr) throw userInsertErr;
+    }
 
     const { data: historyRows, error: historyErr } = await sb
       .from("document_agent_messages")
@@ -135,6 +147,35 @@ serve(async (req) => {
     if (historyErr) throw historyErr;
     const rows = ((historyRows ?? []) as MessageRow[]).reverse();
 
+    // The turn being continued, and everything written into it so far.
+    let partial: MessageRow | null = null;
+    if (continuing) {
+      for (let i = rows.length - 1; i >= 0; i--) {
+        const r = rows[i];
+        if (r.role !== "assistant") continue;
+        if ((r.payload_kind === "draft" || r.payload_kind === "edits") && r.payload?.more === true) partial = r;
+        break;
+      }
+      if (!partial || typeof partial.payload?.content !== "string") {
+        return json(
+          { ok: false, error: { code: "nothing_to_continue", message: "There is no part-written document to continue." } },
+          { status: 200 },
+        );
+      }
+      if (String(partial.payload.content).length >= MAX_DOC_CHARS) {
+        return json(
+          {
+            ok: false,
+            error: {
+              code: "too_long",
+              message: "This document has grown past what one draft can hold. Ask for the rest as a second document.",
+            },
+          },
+          { status: 200 },
+        );
+      }
+    }
+
     const snapshot = body.snapshot ?? null;
     const mode: "draft" | "edit" = snapshot ? "edit" : "draft";
     const [voiceProfile, docMemory] = await Promise.all([
@@ -142,12 +183,20 @@ serve(async (req) => {
       readMemory(sb, DOCUMENT_MEMORY_SCOPE).catch(() => ""),
     ]);
     const system = buildSystemPrompt({ mode, snapshot, voiceProfile, memory: docMemory });
-    const tools = AGENT_TOOLS.filter((t) => (t.name === "propose_edits" ? mode === "edit" : true));
+    const continuingEdit = partial?.payload_kind === "edits";
+    const tools = AGENT_TOOLS.filter((t) => (t.name === "propose_edits" ? mode === "edit" || continuingEdit : true));
 
     const llm = createLlmClient(body.provider);
     const priorRows = rows.length > 0 && rows[rows.length - 1].role === "user" ? rows.slice(0, -1) : rows;
     const messages: LlmMessage[] = historyToLlmMessages(priorRows);
-    messages.push(...attachmentTurn(message, attachments, ATTACH_FALLBACK_TEXT));
+    if (partial) {
+      messages.push({
+        role: "user",
+        text: continuationPrompt(String(partial.payload.content), partial.payload_kind === "edits"),
+      });
+    } else {
+      messages.push(...attachmentTurn(message, attachments, ATTACH_FALLBACK_TEXT));
+    }
 
     let assistantText = "";
     let question: unknown = null;
@@ -231,19 +280,57 @@ serve(async (req) => {
       return json({ ok: false, error: { code: "no_response", message: "The assistant did not produce a response. Try rephrasing." } }, { status: 200 });
     }
 
+    // A continuation joins onto the part already shown, keeping the first
+    // part's title, summary and signature decision: only the body grows.
+    if (partial) {
+      const next = (draft ?? edits) as { content?: string; more?: boolean } | null;
+      if (!next || typeof next.content !== "string") {
+        return json(
+          {
+            ok: false,
+            error: {
+              code: "no_response",
+              message: "The rest of the document did not come through. Ask again to continue it.",
+            },
+          },
+          { status: 200 },
+        );
+      }
+      const joined = joinParts(String(partial.payload.content), next.content);
+      const merged = { ...partial.payload, content: joined, more: next.more === true };
+      // The joined document keeps the kind it started as, whichever tool the
+      // model reached for on the later part.
+      if (partial.payload_kind === "draft") { draft = merged; edits = null; }
+      else { edits = merged; draft = null; }
+      assistantText = (partial.content || "").trim() || assistantText;
+    }
+
     const payloadKind = question ? "question" : draft ? "draft" : edits ? "edits" : null;
-    const { data: assistantRow, error: assistantErr } = await sb
-      .from("document_agent_messages")
-      .insert({
-        conversation_id: conversationId,
-        role: "assistant",
-        content: assistantText,
-        payload: question ?? draft ?? edits ?? null,
-        payload_kind: payloadKind,
-      })
-      .select("id, created_at")
-      .single();
-    if (assistantErr) throw assistantErr;
+    let assistantRow: { id: string; created_at?: string };
+    if (partial) {
+      const { data, error } = await sb
+        .from("document_agent_messages")
+        .update({ content: assistantText, payload: draft ?? edits ?? null, payload_kind: payloadKind })
+        .eq("id", partial.id)
+        .select("id, created_at")
+        .single();
+      if (error) throw error;
+      assistantRow = data as { id: string; created_at?: string };
+    } else {
+      const { data, error: assistantErr } = await sb
+        .from("document_agent_messages")
+        .insert({
+          conversation_id: conversationId,
+          role: "assistant",
+          content: assistantText,
+          payload: question ?? draft ?? edits ?? null,
+          payload_kind: payloadKind,
+        })
+        .select("id, created_at")
+        .single();
+      if (assistantErr) throw assistantErr;
+      assistantRow = data as { id: string; created_at?: string };
+    }
 
     await sb.from("document_agent_conversations").update({ updated_at: new Date().toISOString() }).eq("id", conversationId);
 
@@ -268,8 +355,10 @@ serve(async (req) => {
       else await titleTask;
     }
 
-    // Update the global document memory in the background when a draft/edits was produced.
-    if (draft || edits) {
+    // Update the global document memory in the background when a draft/edits was
+    // produced. A part-written document is not a result yet, so it waits.
+    const finished = !((draft ?? edits) as { more?: boolean } | null)?.more;
+    if ((draft || edits) && finished) {
       const producedSummary =
         (draft as { summary?: string })?.summary ??
         (edits as { summary?: string })?.summary ??
