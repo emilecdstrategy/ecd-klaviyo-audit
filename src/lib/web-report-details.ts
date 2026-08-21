@@ -305,9 +305,46 @@ export function productsNamedIn(text: string, catalog: BasketProduct[]): BasketP
   for (const product of catalog) {
     const head = titleHead(product.title);
     if (head.length < 10 || head.split(' ').length < 2) continue;
-    if (haystack.includes(head)) found.push(product);
+    if (haystack.includes(head)) { found.push(product); continue; }
+    // A long manufacturer title is never written out in full: "DEWALT DCD130T1
+    // 60V MAX Mixer/Drill With E-Clutch" gets typed as "the DEWALT DCD130T1
+    // Mixer Drill", which drops words from the middle and defeats a substring
+    // match. A model number is distinctive enough to stand for the whole title
+    // on its own, and short numeric fragments like "60v" or "3" are not.
+    const modelNumber = head
+      .split(' ')
+      .find((token) => token.length >= 6 && /[0-9]/.test(token) && /[a-z]/.test(token));
+    if (modelNumber && haystack.includes(modelNumber)) found.push(product);
   }
   return found;
+}
+
+/**
+ * Is this play actually about specific products?
+ *
+ * "Pair the adapters with the augers they fit" is: every step names a product
+ * and the products are the mechanism. "Raise the free shipping bar" is not,
+ * even though one of its three steps mentions an item as an illustration, and
+ * neither is a play about the add-to-cart step that happens to name two pages
+ * where a generic change should go. Showing cards on those reads as though the
+ * play were about the products, which sends the reader looking for a point that
+ * is not being made.
+ *
+ * The separator is how central the products are: a play whose subject is its
+ * products names them in most of its steps, or in its title. One passing
+ * mention in one step of three does not.
+ */
+export function playIsAboutProducts(
+  play: { title: string; insight: string; action_steps: string[] },
+  catalog: BasketProduct[],
+): boolean {
+  if (catalog.length === 0) return false;
+  // Named in the headline: unambiguous.
+  if (productsNamedIn([play.title, play.insight].join(' \n '), catalog).length > 0) return true;
+  const steps = play.action_steps.map((step) => step.trim()).filter(Boolean);
+  if (steps.length === 0) return false;
+  const naming = steps.filter((step) => productsNamedIn(step, catalog).length > 0).length;
+  return naming * 2 >= steps.length;
 }
 
 export function parseWebRoadmap(sectionDetails: unknown): WebRoadmapRow[] {

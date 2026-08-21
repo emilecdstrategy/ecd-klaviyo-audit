@@ -5,6 +5,7 @@ import {
   formatDelta,
   formatMoney,
   parseWebAnalyticsDetail,
+  playIsAboutProducts,
   productsNamedIn,
   productUrl,
   type BasketProduct,
@@ -37,6 +38,18 @@ const KPIS: Array<{ key: string; label: string }> = [
  *  A store whose app lacks read_analytics gets the four it always had, rather
  *  than two cards reading "—" for a reason the reader cannot see. */
 const TRAFFIC_KEYS = new Set(['sessions', 'conversion_rate']);
+
+/** One row, whatever the count. Three cards in a two-column grid left the third
+ *  stranded on its own line, which reads as an afterthought rather than as the
+ *  third of three. Phones still stack, and four hold at two across until there
+ *  is room for the full row. */
+const PRODUCT_GRID: Record<number, string> = {
+  0: '',
+  1: '',
+  2: 'sm:grid-cols-2',
+  3: 'sm:grid-cols-2 lg:grid-cols-3',
+  4: 'sm:grid-cols-2 xl:grid-cols-4',
+};
 
 function ProductCard({
   product,
@@ -273,7 +286,7 @@ function PlayCard({
       {products.length > 0 && (
         <div className="mt-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Products in play</p>
-          <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div className={`mt-2 grid grid-cols-1 gap-2 ${PRODUCT_GRID[Math.min(products.length, 4)]}`}>
             {products.map((p) => (
               <ProductCard key={p.title} product={p} storeBase={storeBase} currency={currency} compact />
             ))}
@@ -344,6 +357,10 @@ export default function WebAnalyticsSection({
    *  forgot to list. A play that says "feature X and Y" and shows no cards
    *  leaves the reader with advice about two products they cannot see. */
   const productsFor = (play: WebAnalyticsPlay): BasketProduct[] => {
+    // A play about a threshold, a funnel step or a layout is not about the item
+    // it happens to mention in passing, and cards on it point the reader at a
+    // claim the play is not making.
+    if (!playIsAboutProducts(play, catalogList)) return [];
     const listed = play.products
       .map((t) => catalog.get(t.trim().toLowerCase()))
       .filter((p): p is BasketProduct => Boolean(p));
