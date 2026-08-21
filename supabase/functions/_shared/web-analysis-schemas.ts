@@ -10,9 +10,48 @@ export function sanitizeDash(input: unknown): string {
     .trim();
 }
 
+/** A list, out of whatever the model actually sent.
+ *
+ * The schema asks for arrays and the tool call is forced, and the model still
+ * sometimes JSON-encodes a whole array into one string. Every array-typed field
+ * was read with a bare Array.isArray check, so that reply was silently thrown
+ * away: a live product page came back with its findings, pros and
+ * recommendations all as strings, both passes, and the audit stopped with
+ * "0 findings" as if the model had found nothing to say. It had.
+ *
+ * Recovery is lossless where it is possible at all, and gives up where it is
+ * not. Nothing here invents content. */
+export function asArray(v: unknown): unknown[] {
+  if (Array.isArray(v)) return v;
+  if (v && typeof v === "object") return [v]; // one item, sent unwrapped
+  if (typeof v !== "string") return [];
+  const text = v.trim();
+  if (!text) return [];
+  // The common case: the array is all there, just encoded as text.
+  if (text.startsWith("[") || text.startsWith("{")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed;
+      if (parsed && typeof parsed === "object") return [parsed];
+    } catch { /* not JSON after all; fall through */ }
+  }
+  return [];
+}
+
+/** Like asArray, but for arrays of plain strings, where a prose blob can also
+ *  be split back into items without guessing at any structure. */
+function asStringItems(v: unknown): unknown[] {
+  const direct = asArray(v);
+  if (direct.length > 0) return direct;
+  if (typeof v !== "string" || !v.trim()) return [];
+  return v
+    .split(/\r?\n+|(?:^|\s)[-•*]\s+|;\s+/)
+    .map((line) => line.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, "").trim())
+    .filter((line) => line.length > 2);
+}
+
 function strArray(v: unknown, max: number): string[] {
-  if (!Array.isArray(v)) return [];
-  return v.map(sanitizeDash).filter(Boolean).slice(0, max);
+  return asStringItems(v).map(sanitizeDash).filter(Boolean).slice(0, max);
 }
 
 function clampPct(v: unknown): number {
@@ -414,7 +453,7 @@ export function coercePageAudit(
   pageType?: string,
 ) {
   const o = (input ?? {}) as Record<string, unknown>;
-  const findingsRaw = Array.isArray(o.findings) ? o.findings : [];
+  const findingsRaw = asArray(o.findings);
   const findings: WebFinding[] = findingsRaw.slice(0, 8).map((f) => {
     const rec = (f ?? {}) as Record<string, unknown>;
 

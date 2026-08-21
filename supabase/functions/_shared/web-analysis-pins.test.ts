@@ -3,7 +3,7 @@
 // Every case here is a pin that once landed on the wrong thing in a report a
 // client read. A wrong pin is worse than no pin, because it is a claim about
 // where the problem is and the reader checks it against the screenshot.
-import { coercePageAudit, PAGE_AUDIT_TOOL, type ElementBox } from "./web-analysis-schemas.ts";
+import { asArray, coercePageAudit, PAGE_AUDIT_TOOL, type ElementBox } from "./web-analysis-schemas.ts";
 
 /** A Shopify homepage header, as the capture actually records it. The logo lives
  * in an anonymous <a> inside an <h1>, so both carry bare tag names for labels. */
@@ -249,4 +249,73 @@ Deno.test("the highlight schema demands a box on every entry", () => {
   for (const key of ["image_ref", "x", "y", "w", "h"]) {
     if (!props.required?.includes(key)) throw new Error(`highlights must require ${key}`);
   }
+});
+
+// --- the reply that arrived in the wrong shape ------------------------------
+//
+// A live audit stopped with "web_product_page: incomplete after both passes
+// (0 findings, intro present)". The model had written a full audit and sent
+// findings, pros and recommendations as JSON-encoded strings, both passes. Every
+// array-typed field was read with a bare Array.isArray check, so the whole reply
+// was discarded and the section looked empty.
+
+Deno.test("findings JSON-encoded into a string are recovered whole", () => {
+  const real = [
+    { text: "The buy button sits below the fold on phones.", recommendation: "Move it up.", viewport: "mobile" },
+    { text: "No reviews anywhere on the page.", recommendation: "Add a review block.", viewport: "both" },
+  ];
+  const out = coercePageAudit(
+    { intro: "A tidy page.", findings: JSON.stringify(real), pros: '["Clear photos","Fast"]', recommendations: '["Move the button","Add reviews"]' },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map(),
+    new Map([["IMG_1", "mobile"]]),
+  );
+  if (out.findings.length !== 2) throw new Error(`expected 2 findings, got ${out.findings.length}`);
+  if (out.pros.length !== 2) throw new Error(`expected 2 pros, got ${out.pros.length}`);
+  if (out.recommendations.length !== 2) throw new Error(`expected 2 recommendations, got ${out.recommendations.length}`);
+  if (!out.findings[0].text.includes("buy button")) throw new Error("the finding text did not survive");
+});
+
+Deno.test("a single finding sent unwrapped is still a finding", () => {
+  const out = coercePageAudit(
+    { intro: "x", findings: { text: "The price is hard to find.", recommendation: "Make it bigger.", viewport: "both" } },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map(),
+    new Map([["IMG_1", "desktop"]]),
+  );
+  if (out.findings.length !== 1) throw new Error(`expected 1 finding, got ${out.findings.length}`);
+});
+
+Deno.test("prose pros and recommendations are split back into items", () => {
+  const out = coercePageAudit(
+    { intro: "x", findings: [], pros: "- Clear photography\n- Fast to load\n- Honest copy", recommendations: "1. Move the button\n2. Add reviews" },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map(),
+    new Map([["IMG_1", "desktop"]]),
+  );
+  if (out.pros.length !== 3) throw new Error(`expected 3 pros, got ${JSON.stringify(out.pros)}`);
+  if (out.recommendations.length !== 2) throw new Error(`expected 2 recommendations, got ${JSON.stringify(out.recommendations)}`);
+  if (out.pros[0] !== "Clear photography") throw new Error(`bullet not stripped: ${out.pros[0]}`);
+  if (out.recommendations[0] !== "Move the button") throw new Error(`number not stripped: ${out.recommendations[0]}`);
+});
+
+Deno.test("recovery never invents a finding out of prose", () => {
+  // A finding needs both a claim and a fix. Splitting a paragraph into
+  // sentences would manufacture recommendations nobody wrote, so this case
+  // stays empty on purpose and the retry asks again.
+  const out = coercePageAudit(
+    { intro: "x", findings: "The hero is weak and the button is unclear and there are no reviews." },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map(),
+    new Map([["IMG_1", "desktop"]]),
+  );
+  if (out.findings.length !== 0) throw new Error("prose must not become findings");
+});
+
+Deno.test("asArray leaves a real array alone and ignores junk", () => {
+  if (asArray([1, 2]).length !== 2) throw new Error("an array must pass through");
+  if (asArray(null).length !== 0) throw new Error("null is not a list");
+  if (asArray("").length !== 0) throw new Error("an empty string is not a list");
+  if (asArray("not json at all").length !== 0) throw new Error("prose is not a list");
+  if (asArray("[bad json").length !== 0) throw new Error("broken json is not a list");
 });

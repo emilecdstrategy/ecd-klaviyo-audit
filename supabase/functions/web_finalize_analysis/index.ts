@@ -386,8 +386,38 @@ function logAuditShape(stepKey: string, pass: string, input: unknown) {
   }));
 }
 
+/** Which array-typed fields did NOT arrive as arrays. Named so a retry can say
+ *  what was wrong instead of repeating the same generic ask, and so the log
+ *  shows the actual value rather than a count of zero. */
+function shapeProblems(input: unknown): Array<{ field: string; got: string; sample: string }> {
+  const o = (input ?? {}) as Record<string, unknown>;
+  const out: Array<{ field: string; got: string; sample: string }> = [];
+  for (const field of ["findings", "pros", "recommendations"]) {
+    const v = o[field];
+    if (v === undefined || v === null || Array.isArray(v)) continue;
+    out.push({
+      field,
+      got: typeof v,
+      sample: (typeof v === "string" ? v : JSON.stringify(v)).slice(0, 300),
+    });
+  }
+  return out;
+}
+
+/** Last words before the model answers. findings, pros and recommendations are
+ *  arrays, and a page whose findings arrived as one long string is a page the
+ *  reader never sees. */
+const SHAPE_REMINDER =
+  "\n\nOne last thing about the reply itself: findings is an array of objects, and pros and recommendations are arrays of strings. Send them as real arrays. Do not put an array or an object inside a string.";
+
 function logCoercionLoss(stepKey: string, pass: string, input: unknown, kept: number) {
   const o = (input ?? {}) as Record<string, unknown>;
+  // A field that arrived as the wrong TYPE used to leave raw at 0 and return
+  // early, so the one case worth seeing was the one case never logged.
+  const problems = shapeProblems(input);
+  if (problems.length > 0) {
+    console.warn(JSON.stringify({ event: "page_audit_wrong_shape", step: stepKey, pass, kept, problems }));
+  }
   const raw = Array.isArray(o.findings) ? o.findings.length : 0;
   if (raw === 0 || kept > 0) return;
   console.log(JSON.stringify({
@@ -494,7 +524,7 @@ async function runStep(
       : "";
     const messages: LlmMessage[] = [{
       role: "user_images",
-      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. ALWAYS write the intro field first: it is this section's summary paragraph in the report, 2-3 sentences on where this page stands, what it does well, and what is holding it back. Never leave it blank. Then return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${priorText}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${contextBlock}${elementsText}${trafficText}`,
+      text: `Audit the ${step.label} of this store using the screenshots above, in the founder-friendly voice and priorities from your instructions. You have both desktop and phone shots. Tag each finding with the device it applies to (desktop, mobile, or both), and surface what matters on each: the phone and desktop experiences differ, so aim for a healthy mix, not only 'both'. Lead with the biggest wins (what they sell and why, the hero message and image, one clear primary button, easy product discovery, trust and proof), and only then smaller polish. Give almost every finding highlights so it shows a numbered pin on the screenshots: add one entry to the finding's highlights array PER image it is visible on, using element_id from that image's listed elements when one fits. For a 'both' finding, pin it on BOTH the desktop IMG and the matching mobile IMG (the same element on each device) so the pin appears on both viewports. Only skip highlights when a point has no single spot on screen. ALWAYS write the intro field first: it is this section's summary paragraph in the report, 2-3 sentences on where this page stands, what it does well, and what is holding it back. Never leave it blank. Then return strengths, the most important opportunities, and prioritized recommendations. Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${priorText}${extraInstruction ? `\n\nThe strategist specifically asked for this regeneration: ${extraInstruction}. Prioritize that while still covering the biggest wins.` : ""}${contextBlock}${elementsText}${trafficText}${SHAPE_REMINDER}`,
       images,
     }];
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
@@ -550,8 +580,15 @@ async function runStep(
       const keepNote = needs.length === 1 && needIntro
         ? " Keep the same findings and recommendations you already gave."
         : "";
+      // What actually went wrong, when it was a shape problem rather than a
+      // thin answer. A model that JSON-encoded its arrays will do it again
+      // unless it is told that is what happened.
+      const badShape = shapeProblems(turn.input);
+      const shapeNote = badShape.length > 0
+        ? ` Your last reply sent ${badShape.map((p) => `"${p.field}" as a ${p.got}`).join(" and ")} instead of ${badShape.length === 1 ? "an array" : "arrays"}. Send findings as a real JSON array of objects, and pros and recommendations as real JSON arrays of strings. Never put an array inside a string.`
+        : "";
       const ask =
-        `Your audit of the ${step.label} came back incomplete. This page rendered normally and every storefront page has concrete UX and conversion issues worth raising. Return ${
+        `Your audit of the ${step.label} came back incomplete.${shapeNote} This page rendered normally and every storefront page has concrete UX and conversion issues worth raising. Return ${
           needs.join(" AND ")
         }. Do not pad with vague advice: only real issues you can point at in the screenshot.${keepNote}`;
       const retryMessages: LlmMessage[] = [{
