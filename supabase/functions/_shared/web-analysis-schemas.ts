@@ -435,7 +435,25 @@ export type WebHighlight = { snapshot_id: string; x: number; y: number; w: numbe
 export type WebViewportTag = "desktop" | "mobile" | "both";
 export type WebFinding = { text: string; recommendation: string; viewport: WebViewportTag; highlight?: WebHighlight; highlights?: WebHighlight[]; hidden: boolean };
 
-export type ElementBox = { id: string; x: number; y: number; w: number; h: number; label?: string };
+export type ElementBox = {
+  id: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  label?: string;
+  /** How a button, link or field is actually painted, measured at capture time.
+   *  Present only on interactive elements; see ElementStyle in browserless.ts. */
+  style?: {
+    fill: "filled" | "outlined" | "bare";
+    bg: string;
+    fg: string;
+    radius: number;
+    border: number;
+    bold: boolean;
+    font: number;
+  };
+};
 
 /** The cart is photographed with ONE item we added ourselves, so its blank space
  * is an artifact of our capture and never a defect of the store. The KB has said

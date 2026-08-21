@@ -12,7 +12,38 @@
  * token is absent or a Browserless call fails.
  */
 
-export type CapturedElement = { id: string; label: string; x: number; y: number; w: number; h: number };
+export type CapturedElement = {
+  id: string;
+  label: string;
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+  /** How the element is really painted, for buttons, links and fields only.
+   *
+   *  An audit told a client to give their "NOT SURE WHAT YOU NEED?" button a
+   *  solid green fill and rounded shape. It is a solid green pill. The model was
+   *  reading the pale container around it as the button, and the advice was to
+   *  add what was already there. Colour, fill and border are cheap to measure
+   *  and impossible to argue with, so they are measured. */
+  style?: ElementStyle;
+};
+
+export type ElementStyle = {
+  /** "filled" (a real background), "outlined" (a border and no fill), or
+   *  "bare" (neither: text or an icon on the page background). */
+  fill: "filled" | "outlined" | "bare";
+  /** Background and text colour as the browser computed them. */
+  bg: string;
+  fg: string;
+  /** Corner radius in CSS pixels, so "rounded" is a fact rather than a guess. */
+  radius: number;
+  /** Border width in CSS pixels. */
+  border: number;
+  bold: boolean;
+  /** Text size in CSS pixels, which is what a "too small to tap" claim rests on. */
+  font: number;
+};
 
 /** One photograph as it was painted in the shot. Boxes are percentages of the
  * VIEWPORT, so they line up with the primary screenshot the after-image edits.
@@ -600,8 +631,36 @@ export default async ({ page, context }) => {
         if (text.indexOf("{") !== -1 && text.indexOf("}") !== -1) text = ""; // leaked CSS
         text = text.slice(0, 60);
         if (!text && tag === "img") text = "image";
+        // How it is painted, for the things findings are actually written about.
+        let style = null;
+        if (tag === "button" || tag === "a" || tag === "input" || tag === "select" || el.getAttribute("role") === "button") {
+          try {
+            const bg = cs.backgroundColor || "";
+            // rgba(...,0) and "transparent" both mean nothing was painted.
+            const alpha = (function () {
+              const m = bg.match(/rgba?\(([^)]+)\)/);
+              if (!m) return bg && bg !== "transparent" ? 1 : 0;
+              const parts = m[1].split(",");
+              return parts.length > 3 ? parseFloat(parts[3]) : 1;
+            })();
+            const borderPx = Math.max(
+              parseFloat(cs.borderTopWidth || "0") || 0,
+              parseFloat(cs.borderLeftWidth || "0") || 0,
+            );
+            const painted = alpha > 0.05;
+            style = {
+              fill: painted ? "filled" : (borderPx >= 1 ? "outlined" : "bare"),
+              bg: painted ? bg : "none",
+              fg: cs.color || "",
+              radius: Math.round(parseFloat(cs.borderTopLeftRadius || "0") || 0),
+              border: Math.round(borderPx * 10) / 10,
+              bold: (parseInt(cs.fontWeight || "400", 10) || 400) >= 600,
+              font: Math.round(parseFloat(cs.fontSize || "0") || 0),
+            };
+          } catch (e) { style = null; }
+        }
         const entry = {
-          tag, text, chip: isChip,
+          tag, text, chip: isChip, style,
           x: +(left / vw * 100).toFixed(2), y: +(top / vh * 100).toFixed(2),
           w: +(w / vw * 100).toFixed(2), h: +(h / vh * 100).toFixed(2),
         };
@@ -629,7 +688,11 @@ export default async ({ page, context }) => {
         .concat(out.filter((e) => e.chip).sort(byArea).slice(0, 30));
       return kept
         .sort((a, b) => (a.y - b.y) || (a.x - b.x))
-        .map((e, i) => ({ id: "el_" + (i + 1), label: e.tag + (e.text ? ": " + e.text : ""), x: e.x, y: e.y, w: e.w, h: e.h }));
+        .map((e, i) => {
+          const out = { id: "el_" + (i + 1), label: e.tag + (e.text ? ": " + e.text : ""), x: e.x, y: e.y, w: e.w, h: e.h };
+          if (e.style) out.style = e.style;
+          return out;
+        });
     });
   }
 

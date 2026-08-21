@@ -18,6 +18,7 @@ import {
   OVERVIEW_TOOL,
   PAGE_AUDIT_TOOL,
   ROADMAP_TOOL,
+  type ElementBox,
 } from "../_shared/web-analysis-schemas.ts";
 import { REPEAT_LOOKBACK_DAYS } from "../_shared/repeat-rate.ts";
 
@@ -183,7 +184,8 @@ type SectionRow = {
   section_config: Record<string, unknown> | null;
 };
 
-type ElementBox = { id: string; x: number; y: number; w: number; h: number; label?: string };
+// ElementBox comes from the schema module: it was duplicated here, so adding a
+// field in one place left the other silently behind.
 
 /** The store's traffic and conversion figures, for whichever step is running.
  *  Both the page sections and the data section want them: a finding about the
@@ -237,6 +239,7 @@ function buildPageImages(
   const refToElements = new Map<string, ElementBox[]>();
   const refToViewport = new Map<string, string>();
   const elementLines: string[] = [];
+  const styleLines: string[] = [];
   ordered.forEach((s, i) => {
     const ref = `IMG_${i + 1}`;
     refToId.set(ref, s.id);
@@ -247,6 +250,23 @@ function buildPageImages(
       refToElements.set(ref, els);
       const listed = els.slice(0, 60).map((e) => `${e.id} ${e.label ?? ""}`.trim()).join(" | ");
       elementLines.push(`${ref} elements: ${listed}`);
+      // How the buttons and links are really painted. A finding that asks for a
+      // solid fill on something already solid is worse than no finding: it tells
+      // the client we did not look.
+      const styled = els
+        .filter((e) => e.style && (e.label ?? "").trim())
+        .slice(0, 18)
+        .map((e) => {
+          const st = e.style as NonNullable<ElementBox["style"]>;
+          const bits = [
+            st.fill === "filled" ? `FILLED background ${st.bg}` : st.fill === "outlined" ? `OUTLINED, border ${st.border}px, no fill` : "no fill and no border",
+            `text ${st.fg}`,
+            `corner radius ${st.radius}px`,
+            `${st.font}px${st.bold ? " bold" : ""}`,
+          ];
+          return `${e.id} (${e.label}): ${bits.join(", ")}`;
+        });
+      if (styled.length > 0) styleLines.push(`${ref} styling: ${styled.join(" | ")}`);
     }
   });
   // What a real mouse found when it hovered a product card. Without this the
@@ -300,10 +320,17 @@ function buildPageImages(
     return popupEvidence(best, true);
   })();
 
+  // Measured styling, and the one rule that makes it worth measuring.
+  const styleText = styleLines.length
+    ? "\n\nHOW THE BUTTONS AND LINKS ARE PAINTED. Read off the live page with getComputedStyle, so this is measured, not inferred from the picture:\n" +
+      styleLines.join("\n") +
+      "\n\nNever describe an element's fill, border, corner radius, colour or text size in a way this contradicts. An element listed as FILLED already has a solid background: do not recommend giving it one, and do not call it an outline, a plain box, a banner or unstyled. If its problem is that it is the wrong colour, the wrong size or in the wrong place, say that instead. A recommendation that asks for something the element already has tells the reader we did not look properly."
+    : "";
+
   const elementsText = elementLines.length
     ? `\n\nReal page elements detected on these screenshots (use element_id in a finding's highlight to pin exactly, it maps to the element's true on-page box). ALWAYS prefer element_id over x/y/w/h: your coordinate estimates land pins on the wrong element, while these boxes are exact. If you truly must fall back to coordinates, word the highlight's label using the same wording as the closest listed element so it can still be matched:\n${elementLines.join("\n")}`
     : "";
-  return { images, refToId, refToElements, refToViewport, primaryId, elementsText: elementsText + hoverText + belowFoldText + popupText };
+  return { images, refToId, refToElements, refToViewport, primaryId, elementsText: elementsText + styleText + hoverText + belowFoldText + popupText };
 }
 
 async function ensureJob(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
