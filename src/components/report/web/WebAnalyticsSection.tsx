@@ -172,10 +172,13 @@ function PlayCard({
 
   return (
     <article
-      className={`relative rounded-2xl border border-gray-200/80 bg-white p-5 shadow-[0_1px_2px_rgba(16,24,40,0.04)] ${
+      className={`relative overflow-hidden rounded-2xl border border-gray-200/70 bg-brand-surface/50 pl-6 pr-5 py-5 ${
         play.hidden ? 'opacity-50' : ''
       }`}
     >
+      {/* Accent rail. Ties the card to its number and gives the eye a left edge
+          to run down, which is what makes four of these scan as four things. */}
+      <span className="absolute inset-y-0 left-0 w-1 bg-brand-primary/70" aria-hidden />
       {editMode && (
         <div className="absolute right-2.5 top-2.5 flex items-center gap-1 rounded-lg bg-white/90 p-0.5 backdrop-blur-sm">
           <button
@@ -206,8 +209,8 @@ function PlayCard({
           </span>
         </h4>
         {(play.metric || editMode) && (
-          <div className="shrink-0 text-right">
-            <p className="text-sm font-semibold text-brand-primary">
+          <div className="shrink-0 rounded-xl border border-brand-primary/15 bg-white px-3 py-2 text-right">
+            <p className="text-sm font-semibold tabular-nums text-brand-primary">
               <EditablePlainText value={play.metric} onSave={(v) => onEdit('metric', v)} placeholder="headline figure" />
             </p>
             {(play.window || editMode) && (
@@ -263,7 +266,7 @@ function PlayCard({
       )}
 
       {products.length > 0 && (
-        <div className="mt-4 border-t border-gray-100 pt-4">
+        <div className="mt-4">
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">Products in play</p>
           <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
             {products.map((p) => (
@@ -402,7 +405,7 @@ export default function WebAnalyticsSection({
           const delta = deltaFor(key);
           const isRepeat = key === 'returning_customer_rate';
           return (
-            <div key={key} className="rounded-xl bg-brand-surface/60 px-4 py-3.5">
+            <div key={key} className="rounded-xl border border-gray-100 bg-white px-4 py-3.5 shadow-[0_1px_2px_rgba(16,24,40,0.03)]">
               <div className="flex items-center gap-1">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">{label}</p>
                 {isRepeat && !repeatUnavailable && (
@@ -453,8 +456,14 @@ export default function WebAnalyticsSection({
       {/* Opportunities, one card per row so each has room for its bullets and products. */}
       {plays.length > 0 && (
         <div className="mt-7 border-t border-gray-100 pt-6">
-          <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Opportunities in the data</h3>
-          <div className="mt-3.5 space-y-4">
+          <div className="flex items-baseline justify-between gap-3">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Opportunities in the data</h3>
+            {/* A count turns a wall of cards into a known quantity before reading. */}
+            <span className="text-xs text-gray-400">
+              {visiblePlays.filter(({ p }) => !p.hidden).length} to ship
+            </span>
+          </div>
+          <div className="mt-3.5 space-y-3">
             {visiblePlays.map(({ p: play, i }, position) => (
               <PlayCard
                 key={i}
@@ -527,8 +536,8 @@ export default function WebAnalyticsSection({
 
       <div className="mt-7 border-t border-gray-100 pt-6 grid grid-cols-1 gap-3 sm:grid-cols-2">
         {basket && basket.orders_analyzed ? (
-          <div className="rounded-xl border border-gray-100 px-4 py-3.5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Typical basket</h3>
+          <div className="rounded-xl border border-gray-200/70 bg-brand-surface/50 px-4 py-3.5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Typical basket</h3>
             <ul className="mt-2.5 space-y-2 text-sm">
               <LeaderRow label="Items per order" value={basket.units_per_order ?? '—'} />
               {basket.single_item_order_share != null && (
@@ -560,8 +569,8 @@ export default function WebAnalyticsSection({
         ) : null}
 
         {rollup?.channels && rollup.channels.length > 0 && (
-          <div className="rounded-xl border border-gray-100 px-4 py-3.5">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-400">Where orders come from</h3>
+          <div className="rounded-xl border border-gray-200/70 bg-brand-surface/50 px-4 py-3.5">
+            <h3 className="text-xs font-semibold uppercase tracking-wider text-gray-500">Where orders come from</h3>
             <ul className="mt-2.5 space-y-2.5 text-sm">
               {rollup.channels.slice(0, 5).map((c, i) => {
                 const share = channelTotal > 0 ? (c.revenue / channelTotal) * 100 : 0;
@@ -576,7 +585,7 @@ export default function WebAnalyticsSection({
                     </div>
                     {/* Share of the channels shown, so the bars fill the row
                         rather than shrinking against an unseen long tail. */}
-                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-gray-100">
+                    <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-white">
                       <div
                         className="h-full rounded-full bg-brand-primary/70"
                         style={{ width: (share > 0 ? Math.max(share, 1.5) : 0) + '%' }}
