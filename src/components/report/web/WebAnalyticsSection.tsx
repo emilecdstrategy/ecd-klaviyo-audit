@@ -422,7 +422,7 @@ export default function WebAnalyticsSection({
                   </HoverTooltip>
                 )}
               </div>
-              <p className="mt-1.5 text-[1.75rem] font-bold leading-none tracking-tight tabular-nums text-gray-900">
+              <p className="mt-1.5 text-[1.25rem] font-bold leading-none tracking-tight tabular-nums text-gray-900">
                 {displayValue(key)}
               </p>
               {delta ? (
