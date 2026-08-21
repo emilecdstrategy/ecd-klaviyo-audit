@@ -466,6 +466,9 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   let proxyUsed: string | null = null;
   let domOutline: unknown = null;
   let belowFold: unknown = null;
+  // Null while the capture has not looked, [] when it looked and saw none. The
+  // difference decides whether the audit may talk about popups at all.
+  let popups: unknown[] | null = null;
   let cartCount: number | null = null;
 
   // When Browserless is configured it handles every capture (full-page and
@@ -558,6 +561,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       if (isUsableOutline(bl.probe)) domOutline = bl.probe;
       const bf = (bl.probe as { below_fold?: unknown } | null)?.below_fold;
       if (isBelowFoldReport(bf)) belowFold = bf;
+      popups = Array.isArray(bl.popups) ? bl.popups : [];
       usedBrowserless = true;
       if (typeof bl.cartCount === "number") cartCount = bl.cartCount;
     } else {
@@ -689,8 +693,11 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       const withOutline = domOutline ? { ...withFold, dom_outline: domOutline } : withFold;
       // What the crop cut off, so the analysis can stop guessing about it.
       const withBelow = belowFold ? { ...withOutline, below_fold: belowFold } : withOutline;
+      // And what the sweep removed. Recorded even when empty: "looked, saw
+      // none" and "never looked" lead to different sentences in the report.
+      const withPopups = popups ? { ...withBelow, popups, popups_observed: true } : withBelow;
       // Every photo painted in this shot, for the after-image compositor.
-      const withPhotos = photos.length ? { ...withBelow, photos } : withBelow;
+      const withPhotos = photos.length ? { ...withPopups, photos } : withPopups;
       // And the text that must never change (titles, prices, ratings, brand).
       const withText = textLocks.length ? { ...withPhotos, text_locks: textLocks } : withPhotos;
       // Which proxy pool served this capture, so the datacenter-vs-residential

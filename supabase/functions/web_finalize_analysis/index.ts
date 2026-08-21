@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { sessionsEvidence } from "../_shared/shopify-sessions.ts";
-import { belowFoldEvidence } from "../_shared/below-fold-probe.ts";
+import { belowFoldEvidence, popupEvidence } from "../_shared/below-fold-probe.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { createLlmClient, type LlmImage, type LlmMessage } from "../_shared/llm-adapter.ts";
@@ -285,10 +285,25 @@ function buildPageImages(
     })),
   );
 
+  // The popup was stripped from the screenshot on purpose. Whether it existed
+  // is still part of the page's experience, so it arrives as words instead.
+  const popupText = (() => {
+    const withRaw = ordered.map((s) => ((s as { raw?: Record<string, unknown> }).raw ?? {}));
+    const looked = withRaw.find((r) => r.popups_observed === true);
+    if (!looked) return popupEvidence(null, false);
+    // One page, one popup story: whichever shot saw the most is the fullest
+    // account of it, and a popup is site-wide rather than per viewport.
+    const best = withRaw
+      .filter((r) => r.popups_observed === true)
+      .map((r) => (Array.isArray(r.popups) ? r.popups : []))
+      .sort((a2, b2) => b2.length - a2.length)[0] ?? [];
+    return popupEvidence(best, true);
+  })();
+
   const elementsText = elementLines.length
     ? `\n\nReal page elements detected on these screenshots (use element_id in a finding's highlight to pin exactly, it maps to the element's true on-page box). ALWAYS prefer element_id over x/y/w/h: your coordinate estimates land pins on the wrong element, while these boxes are exact. If you truly must fall back to coordinates, word the highlight's label using the same wording as the closest listed element so it can still be matched:\n${elementLines.join("\n")}`
     : "";
-  return { images, refToId, refToElements, refToViewport, primaryId, elementsText: elementsText + hoverText + belowFoldText };
+  return { images, refToId, refToElements, refToViewport, primaryId, elementsText: elementsText + hoverText + belowFoldText + popupText };
 }
 
 async function ensureJob(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {

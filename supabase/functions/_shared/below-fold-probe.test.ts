@@ -1,5 +1,5 @@
 import { assert, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { BELOW_FOLD_PROBE, belowFoldEvidence, composeProbes, isBelowFoldReport } from "./below-fold-probe.ts";
+import { BELOW_FOLD_PROBE, belowFoldEvidence, composeProbes, isBelowFoldReport, popupEvidence } from "./below-fold-probe.ts";
 import { DOM_OUTLINE_PROBE } from "./html-after.ts";
 
 // The probe runs as an async function body inside the page, so a syntax error in
@@ -103,4 +103,44 @@ Deno.test("the probe rejects a class hook that only looks like a match", () => {
     " && hasToken({ className: 'x-review-product flex', id: '' }, /^(reviews?)/) === true;";
   const fn = new AsyncFn(body);
   return (fn() as Promise<boolean>).then((ok) => assert(ok, "token matching should reject preview-img and accept x-review-product"));
+});
+
+// --- popups ---------------------------------------------------------------
+
+Deno.test("with no observation the model is forbidden from mentioning popups", () => {
+  // The capture strips them. Silence is correct; "there is no email capture"
+  // would be a claim about something never seen.
+  const text = popupEvidence(null, false);
+  assertStringIncludes(text, "Say NOTHING about popups");
+  assert(!text.includes("No popup appeared"));
+});
+
+Deno.test("observed but empty is reported as not seen, not as absent", () => {
+  const text = popupEvidence([], true);
+  assertStringIncludes(text, "not conclusive");
+  assertStringIncludes(text, "exit intent");
+});
+
+Deno.test("an observed popup is described by behaviour, never by appearance", () => {
+  const text = popupEvidence([{
+    text: "Get 10% off your first order",
+    screen_share: 78,
+    has_email_field: true,
+    has_close_control: false,
+    app: "klaviyo",
+    scroll_locked: true,
+    when: "on_arrival",
+  }], true);
+  assertStringIncludes(text, "appeared immediately on arrival");
+  assertStringIncludes(text, "78% of the screen");
+  assertStringIncludes(text, "NO visible close control");
+  assertStringIncludes(text, "locks page scrolling");
+  assertStringIncludes(text, "klaviyo");
+  assertStringIncludes(text, "Get 10% off your first order");
+  assertStringIncludes(text, "never describe the popup's colours or layout");
+});
+
+Deno.test("a malformed popup entry cannot break the evidence", () => {
+  const text = popupEvidence([null, 42, { screen_share: 10 }], true);
+  assertStringIncludes(text, "not conclusive");
 });

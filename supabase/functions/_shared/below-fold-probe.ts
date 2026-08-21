@@ -368,3 +368,48 @@ export function belowFoldEvidence(entries: Array<{ ref: string; report: unknown 
     "\n\nUse it. A section listed as NOT found really is absent, so recommending it is a genuine opportunity and worth saying plainly. A section listed as present exists, so never recommend adding it: if it needs work, say what to change about it instead. Never describe how a below-the-fold section LOOKS, because no screenshot of it was taken: describe only whether it is there and what it should do."
   );
 }
+
+// ---------------------------------------------------------------------------
+// Popups
+//
+// The capture strips newsletter modals so they do not cover the screenshot,
+// which left the audit unable to see the email capture at all and free to claim
+// a store had none. They are now recorded before the sweep removes them.
+
+export type CapturedPopup = {
+  text: string;
+  screen_share: number;
+  has_email_field: boolean;
+  has_close_control: boolean;
+  app: string;
+  scroll_locked: boolean;
+  when: "on_arrival" | "after_scroll";
+};
+
+export function popupEvidence(popups: unknown, observed: boolean): string {
+  const list = (Array.isArray(popups) ? popups : []).filter(
+    (p): p is CapturedPopup => Boolean(p) && typeof (p as CapturedPopup).text === "string",
+  );
+  if (!observed) {
+    return "\n\nThe capture hides newsletter and promo popups so they do not cover the screenshot, and on this page it did not record what it hid. Say NOTHING about popups, email capture on arrival, or discount offers: you cannot see them, and their absence from the screenshot is not evidence.";
+  }
+  if (list.length === 0) {
+    return "\n\nNo popup appeared while this page was open, and the page was open long enough to scroll its full length. That is real but not conclusive: a popup set to exit intent, a long delay, or a return visit would not have shown. If you raise email capture, say it was not seen rather than that it does not exist.";
+  }
+  const lines = list.map((p) => {
+    const bits = [
+      p.when === "on_arrival" ? "appeared immediately on arrival" : "appeared after scrolling",
+      `covers about ${p.screen_share}% of the screen`,
+      p.has_email_field ? "asks for an email address" : "has no email field",
+      p.has_close_control ? "has a close control" : "has NO visible close control",
+      p.scroll_locked ? "and locks page scrolling behind it" : "",
+      p.app ? `built with ${p.app}` : "",
+    ].filter(Boolean);
+    return `- ${bits.join(", ")}. Its words: "${p.text.slice(0, 300)}"`;
+  });
+  return (
+    "\n\nPOPUP. The screenshots have popups removed so they do not cover the page, but this is what was there before removal, measured on the live page:\n" +
+    lines.join("\n") +
+    "\n\nJudge it as part of the experience: the offer, whether it earns the interruption, when it fires, how much it covers on this device, and whether it can be dismissed. Never say the store has no email capture when a popup is listed here, and never describe the popup's colours or layout, because no picture of it was kept."
+  );
+}

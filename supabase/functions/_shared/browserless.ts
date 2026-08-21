@@ -80,8 +80,24 @@ export type BrowserlessResult =
     probe?: unknown;
     /** Return value of `editScript`: which edits actually landed. */
     editReport?: unknown;
+    /** Popups that appeared before the sweep removed them. Empty means none
+     *  showed while the page was open, not that the store has none. */
+    popups?: CapturedPopup[];
   }
   | { ok: false; error: string; proxyUsed?: string };
+
+/** A newsletter or promo modal, as it was before the sweep removed it. */
+export type CapturedPopup = {
+  text: string;
+  /** Percent of the screen it covers: a corner nudge and a wall are different findings. */
+  screen_share: number;
+  has_email_field: boolean;
+  has_close_control: boolean;
+  /** The app behind it when its markup names one (klaviyo, privy, attentive...). */
+  app: string;
+  scroll_locked: boolean;
+  when: "on_arrival" | "after_scroll";
+};
 
 const DIMENSIONS = {
   desktop: { width: 1440, height: 900 },
@@ -211,6 +227,68 @@ export default async ({ page, context }) => {
       });
     }
   };
+  // Look before sweeping.
+  //
+  // The sweep exists so a newsletter modal does not cover the page in the
+  // screenshot, and it works. The cost was that the audit could never see the
+  // email capture at all, and nothing stopped it claiming a store had none.
+  // This records what was there, in the same page load, so the popup is
+  // evidence instead of a blind spot.
+  const observePopups = () => {
+    const sels = [
+      '[role="dialog"]','[aria-modal="true"]',
+      '[class*="modal" i]','[id*="modal" i]','[class*="popup" i]','[id*="popup" i]',
+      '[class*="newsletter" i]','[class*="subscribe" i]','[class*="signup" i]','[class*="optin" i]',
+      '[class*="klaviyo" i]','[class*="kl-private" i]','[class*="privy" i]','[id*="om-" i]',
+      '[class*="justuno" i]','[class*="attentive" i]','[class*="wisepops" i]','[class*="omnisend" i]'
+    ];
+    const APPS = ['klaviyo','privy','justuno','attentive','wisepops','omnisend','mailchimp','sumo','optimonk'];
+    const vw = window.innerWidth, vh = window.innerHeight;
+    const out = [];
+    const seen = [];
+    for (const sel of sels) {
+      let list = [];
+      try { list = Array.prototype.slice.call(document.querySelectorAll(sel)); } catch (e) { continue; }
+      for (const el of list) {
+        try {
+          const idc = ((el.getAttribute("class") || "") + " " + (el.id || ""));
+          if (/cart|minicart|drawer/i.test(idc)) continue; // the cart drawer is not a popup
+          const cs = getComputedStyle(el);
+          const floating = cs.position === "fixed" || cs.position === "sticky" || Number(cs.zIndex) > 1000;
+          if (!floating) continue;
+          if (cs.display === "none" || cs.visibility === "hidden") continue;
+          const r = el.getBoundingClientRect();
+          // A real popup is a panel, not a one-pixel tracker or a full-page
+          // backdrop with nothing in it.
+          if (r.width < 180 || r.height < 120) continue;
+          const text = (el.innerText || "").trim().replace(/\s+/g, " ");
+          if (text.length < 8) continue;
+          if (seen.indexOf(text.slice(0, 60)) !== -1) continue;
+          seen.push(text.slice(0, 60));
+          const lower = (idc + " " + text).toLowerCase();
+          let app = "";
+          for (const name of APPS) { if (lower.indexOf(name) !== -1) { app = name; break; } }
+          const closeEl = el.querySelector('[aria-label*="close" i], [class*="close" i], button');
+          out.push({
+            text: text.slice(0, 400),
+            // Share of the screen it takes, which is the difference between a
+            // corner nudge and a wall the shopper has to get past.
+            screen_share: Math.min(100, Math.round(((r.width * r.height) / (vw * vh)) * 100)),
+            has_email_field: Boolean(el.querySelector('input[type="email"], input[name*="email" i]')),
+            has_close_control: Boolean(closeEl),
+            app: app,
+            scroll_locked: /hidden|clip/.test(getComputedStyle(document.body).overflow || ""),
+          });
+          if (out.length >= 4) return out;
+        } catch (e) {}
+      }
+    }
+    return out;
+  };
+
+  let popups = [];
+  try { popups = popups.concat(((await page.evaluate(observePopups)) || []).map((p) => ({ ...p, when: "on_arrival" }))); } catch (e) {}
+
   await page.evaluate(sweep).catch(() => {});
   await page.keyboard.press("Escape").catch(() => {}); // closes many popups
   await page.evaluate(sweepPopups).catch(() => {});
@@ -233,6 +311,9 @@ export default async ({ page, context }) => {
   // Let images that just entered the viewport decode after scrolling back to top.
   await new Promise((r) => setTimeout(r, 1500));
   // Many newsletter popups fire on a delay / after scroll — dismiss again.
+  // Observe first: a popup that waits for the scroll is the common case, and it
+  // was the one most thoroughly hidden from the audit.
+  try { popups = popups.concat(((await page.evaluate(observePopups)) || []).map((p) => ({ ...p, when: "after_scroll" }))); } catch (e) {}
   await page.keyboard.press("Escape").catch(() => {});
   await page.evaluate(sweepPopups).catch(() => {});
 
@@ -863,7 +944,7 @@ export default async ({ page, context }) => {
       await page.evaluate(() => { window.scrollTo(0, 0); });
     } catch (e) {}
   }
-  return { data: { screenshot, screenshot2, elements, photos, textLocks, hover, cartCount, probe, editReport }, type: "application/json" };
+  return { data: { screenshot, screenshot2, elements, photos, textLocks, hover, cartCount, probe, editReport, popups }, type: "application/json" };
 };
 `;
 
@@ -984,6 +1065,7 @@ export async function captureWithBrowserless(input: {
         hover?: HoverProbe | null;
         probe?: unknown;
         editReport?: unknown;
+        popups?: CapturedPopup[];
       }
       | null;
     // In-page detection (storefront rate-limit / bot-block page) reports a
@@ -1023,6 +1105,10 @@ export async function captureWithBrowserless(input: {
       proxyUsed: proxy,
       probe: payload.probe ?? null,
       editReport: payload.editReport ?? null,
+      // What the sweep removed, described before it went. Empty array means
+      // nothing appeared while the page was open, which is not the same as
+      // "this store has no popup": exit-intent and long delays are missed.
+      popups: Array.isArray(payload.popups) ? payload.popups : [],
     };
   } catch (e) {
     const msg = e instanceof Error && (e.name === "AbortError" || /abort/i.test(e.message))
