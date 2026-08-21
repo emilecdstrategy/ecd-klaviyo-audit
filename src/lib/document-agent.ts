@@ -114,7 +114,20 @@ export async function sendDocAgentMessage(input: {
     );
     if (error) {
       lastErr = new DocAgentError(error.message || 'Request failed', 'request_failed');
-      const retryable = /timeout|504|546|502|503|Failed to send/i.test(error.message ?? '');
+      // A 504 here is the gateway's 150s wall clock, not a blip. The work that
+      // hit it was one LLM turn producing a whole document, so repeating the
+      // identical request spends another 150s arriving at the same place while
+      // the panel looks like it is still thinking. Only genuine transport
+      // failures are worth a second go.
+      const message = error.message ?? '';
+      const timedOut = /504|timeout|timed out/i.test(message);
+      const retryable = !timedOut && /546|502|503|Failed to send/i.test(message);
+      if (timedOut) {
+        throw new DocAgentError(
+          'That was too long to build in one pass. Ask for it in parts, for example the agreement first and the NDA after, and each part will come through.',
+          'timeout',
+        );
+      }
       if (retryable && attempt < maxAttempts) {
         await new Promise(r => setTimeout(r, 1500 + attempt * 1000));
         continue;
