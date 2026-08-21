@@ -21,6 +21,7 @@ import { useToast } from '../components/ui/Toast';
 import ProposalDocument from '../components/proposal/ProposalDocument';
 import ProposalActivityTimeline from '../components/proposal/ProposalActivityTimeline';
 import SendProposalModal from '../components/proposal/SendProposalModal';
+import HoverTooltip from '../components/ui/HoverTooltip';
 import SignaturePad, { type SignaturePadHandle } from '../components/proposal/SignaturePad';
 import { ProposalEditProvider } from '../components/proposal/edit/ProposalEditContext';
 import { ProposalAgentProvider } from '../components/proposal/agent/ProposalAgentContext';
@@ -748,15 +749,20 @@ export default function ProposalDetail() {
                   Edit proposal
                 </button>
               )}
+              {/* The button name reads as "send now", and it is not: it opens a
+                  preview with its own send. Worth saying on hover so nobody
+                  hesitates over a button they think is irreversible. */}
               {!isClosed && (
-                <button
-                  type="button"
-                  onClick={() => setSendOpen(true)}
-                  className="flex w-full items-center justify-center gap-2 rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90"
-                >
-                  <Send className="h-3.5 w-3.5" />
-                  {proposal.status === 'draft' ? 'Send to client' : 'Resend'}
-                </button>
+                <HoverTooltip label="Opens a preview first" description="You will see the exact email and recipient before anything sends. Nothing goes out until you confirm." className="w-full">
+                  <button
+                    type="button"
+                    onClick={() => setSendOpen(true)}
+                    className="flex w-full items-center justify-center gap-2 rounded-lg gradient-bg px-4 py-2 text-sm font-medium text-white hover:opacity-90"
+                  >
+                    <Send className="h-3.5 w-3.5" />
+                    {proposal.status === 'draft' ? 'Send to client' : 'Resend'}
+                  </button>
+                </HoverTooltip>
               )}
               {needsCountersign && (
                 <button

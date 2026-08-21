@@ -18,6 +18,7 @@ import { DocumentAgentLayout, DocAgentToggleButton } from '../components/documen
 import DocumentActivityTimeline from '../components/document/DocumentActivityTimeline';
 import DocumentSignatures from '../components/document/DocumentSignatures';
 import SendDocumentModal from '../components/document/SendDocumentModal';
+import HoverTooltip from '../components/ui/HoverTooltip';
 import SignaturePad, { type SignaturePadHandle, type SignatureMeta } from '../components/proposal/SignaturePad';
 import BrandedCheckbox from '../components/ui/BrandedCheckbox';
 import Modal from '../components/ui/Modal';
@@ -335,7 +336,7 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
               <div className="flex items-center gap-2">
                 <button onClick={() => navigate('/documents')} className="flex items-center gap-1.5 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-600 hover:bg-gray-50"><ArrowLeft className="h-4 w-4" /> Back</button>
                 {!locked && (
-                  <button onClick={() => setSendOpen(true)} className="flex items-center gap-1.5 rounded-lg gradient-bg px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90"><Send className="h-4 w-4" /> {doc.status === 'draft' ? 'Send to sign' : 'Resend'}</button>
+                  <HoverTooltip label="Opens a preview first" description="You will see the exact email and signer before anything sends. Nothing goes out until you confirm."><button onClick={() => setSendOpen(true)} className="flex items-center gap-1.5 rounded-lg gradient-bg px-3.5 py-2 text-sm font-semibold text-white hover:opacity-90"><Send className="h-4 w-4" /> {doc.status === 'draft' ? 'Send to sign' : 'Resend'}</button></HoverTooltip>
                 )}
                 <DocAgentToggleButton />
               </div>
@@ -424,7 +425,7 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
               <div className="rounded-xl bg-white p-5 card-shadow space-y-2">
                 <h3 className="mb-1 text-sm font-semibold text-gray-900">Actions</h3>
                 {!locked && (
-                  <button onClick={() => setSendOpen(true)} className="flex w-full items-center gap-2 rounded-lg gradient-bg px-3 py-2 text-sm font-semibold text-white hover:opacity-90"><Send className="h-4 w-4" /> {doc.status === 'draft' ? 'Send to sign' : 'Resend'}</button>
+                  <HoverTooltip label="Opens a preview first" description="You will see the exact email and signer before anything sends. Nothing goes out until you confirm." className="w-full"><button onClick={() => setSendOpen(true)} className="flex w-full items-center gap-2 rounded-lg gradient-bg px-3 py-2 text-sm font-semibold text-white hover:opacity-90"><Send className="h-4 w-4" /> {doc.status === 'draft' ? 'Send to sign' : 'Resend'}</button></HoverTooltip>
                 )}
                 {!locked && (
                   <button onClick={copyLink} className="flex w-full items-center gap-2 rounded-lg border border-gray-200 px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"><Copy className="h-4 w-4" /> Copy signing link</button>
