@@ -517,3 +517,148 @@ Deno.test("a play's steps and products survive being sent as strings", () => {
   if (out.plays[0].action_steps.length !== 2) throw new Error(`steps: ${JSON.stringify(out.plays[0].action_steps)}`);
   if (out.plays[0].products.length !== 2) throw new Error(`products: ${JSON.stringify(out.plays[0].products)}`);
 });
+
+// --- a list that arrived as tagged text ------------------------------------
+
+Deno.test("an <item> tagged string is read as the list it is", () => {
+  // A live retry sent pros as "\n<item>...</item>\n<item>...</item>". The items
+  // were right there; throwing the reply away cost the whole retry.
+  const out = coercePageAudit(
+    {
+      intro: "x",
+      findings: [],
+      pros: "\n<item>The cart shows a free shipping progress bar.</item>\n<item>Estimated delivery dates sit above checkout.</item>",
+    },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map(),
+    new Map([["IMG_1", "desktop"]]),
+  );
+  if (out.pros.length !== 2) throw new Error(`expected 2 pros, got ${JSON.stringify(out.pros)}`);
+  if (out.pros[0] !== "The cart shows a free shipping progress bar.") throw new Error(`tags not stripped: ${out.pros[0]}`);
+});
+
+Deno.test("a stray tag on a plain line is stripped too", () => {
+  const out = coercePageAudit(
+    { intro: "x", findings: [], recommendations: "<p>Move the button up</p>\n<p>Add a delivery line</p>" },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map(),
+    new Map([["IMG_1", "desktop"]]),
+  );
+  if (out.recommendations.length !== 2) throw new Error(JSON.stringify(out.recommendations));
+  if (out.recommendations[0] !== "Move the button up") throw new Error(out.recommendations[0]);
+});
+
+// --- a cart that already states its shipping -------------------------------
+//
+// This cart said "MOST ORDERS SHIP WITHIN ONE BUSINESS DAY" and "Estimated
+// delivery between: Aug 24, 2026-Aug 26, 2026", and the audit still claimed the
+// drawer never mentions how long shipping takes. Two lines on the page, both in
+// the captured labels.
+
+const PP_CART: ElementBox[] = [
+  { id: "el_1", label: "p: FREE SHIPPING ON ORDERS ABOVE $100+", x: 5, y: 5, w: 90, h: 3 },
+  { id: "el_2", label: "p: MOST ORDERS SHIP WITHIN ONE BUSINESS DAY", x: 5, y: 9, w: 90, h: 3 },
+  { id: "el_3", label: "div: Estimated delivery between: Aug 24, 2026-Aug 26, 2026.", x: 5, y: 88, w: 90, h: 3 },
+];
+
+function ppCart(text: string, recommendation = "Add a delivery line.") {
+  return coercePageAudit(
+    { intro: "x", findings: [{ text, recommendation, viewport: "both" }] },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map([["IMG_1", PP_CART]]),
+    new Map([["IMG_1", "mobile"]]),
+    "cart",
+  ).findings;
+}
+
+Deno.test("a delivery estimate on the page refuses a claim that it is missing", () => {
+  const kept = ppCart("The cart drawer never mentions how long shipping takes or what returns look like.");
+  if (kept.length !== 0) throw new Error("the claim is contradicted by two lines on the page");
+});
+
+Deno.test("a dispatch time on the page counts as stating it", () => {
+  const kept = coercePageAudit(
+    {
+      intro: "x",
+      findings: [{ text: "There is no shipping information anywhere in the cart.", recommendation: "Add some.", viewport: "both" }],
+    },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map([["IMG_1", [PP_CART[1]]]]),
+    new Map([["IMG_1", "mobile"]]),
+    "cart",
+  ).findings;
+  if (kept.length !== 0) throw new Error("'ships within one business day' is shipping information");
+});
+
+Deno.test("a finding about WHERE the delivery estimate sits still stands", () => {
+  // The real point on this cart: the estimate is below the checkout button, so
+  // it arrives after the decision. That is a placement finding, not absence.
+  const kept = ppCart(
+    "The estimated delivery date is the last thing shoppers see, after the green checkout button.",
+    "Move the estimated delivery line above the checkout button.",
+  );
+  if (kept.length !== 1) throw new Error("a placement finding must survive");
+});
+
+Deno.test("asking for more than the store already says still stands", () => {
+  const kept = ppCart(
+    "The cart says orders ship within one business day but never says how long delivery takes after dispatch.",
+    "Add a delivery window next to the dispatch promise.",
+  );
+  if (kept.length !== 1) throw new Error("an acknowledged-and-extended finding must survive");
+});
+
+Deno.test("a cart with no shipping copy keeps the absence finding", () => {
+  const kept = coercePageAudit(
+    {
+      intro: "x",
+      findings: [{ text: "The cart never mentions shipping cost or timing.", recommendation: "Add a line.", viewport: "both" }],
+    },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map([["IMG_1", [{ id: "el_1", label: "button: CHECKOUT", x: 5, y: 90, w: 90, h: 6 }]]]),
+    new Map([["IMG_1", "mobile"]]),
+    "cart",
+  ).findings;
+  if (kept.length !== 1) throw new Error("with nothing on the page the claim is fair");
+});
+
+Deno.test("cart roominess is refused in every wording the model has found", () => {
+  // Each of these is the same artifact: the cart holds the single item we added
+  // in order to photograph it. The pattern used to require the word "empty"
+  // first, so "a lot of open white space" shipped in a live report.
+  for (const text of [
+    "The desktop cart drawer leaves a lot of open white space below the suggested products.",
+    "There is a large empty space under the cart items.",
+    "The cart has excess space between the total and the button.",
+    "A lot of unused space sits below the upsell row.",
+    "The layout feels sparse with only one item.",
+    "The cart looks bare on desktop.",
+  ]) {
+    const kept = coercePageAudit(
+      { intro: "x", findings: [{ text, recommendation: "Tighten the layout.", viewport: "desktop" }] },
+      new Map([["IMG_1", "snap-1"]]),
+      new Map([["IMG_1", PP_CART]]),
+      new Map([["IMG_1", "desktop"]]),
+      "cart",
+    ).findings;
+    if (kept.length !== 0) throw new Error(`should be refused on the cart: ${text}`);
+  }
+});
+
+Deno.test("the same wording is still allowed away from the cart", () => {
+  const kept = coercePageAudit(
+    {
+      intro: "x",
+      findings: [{
+        text: "The collection grid leaves a lot of open white space between rows.",
+        recommendation: "Tighten the grid.",
+        viewport: "desktop",
+      }],
+    },
+    new Map([["IMG_1", "snap-1"]]),
+    new Map([["IMG_1", PP_CART]]),
+    new Map([["IMG_1", "desktop"]]),
+    "collection",
+  ).findings;
+  if (kept.length !== 1) throw new Error("only the cart's roominess is our artifact");
+});

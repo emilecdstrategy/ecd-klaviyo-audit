@@ -44,9 +44,14 @@ function asStringItems(v: unknown): unknown[] {
   const direct = asArray(v);
   if (direct.length > 0) return direct;
   if (typeof v !== "string" || !v.trim()) return [];
+  // Some replies arrive as a tagged list rather than a JSON array: a live retry
+  // sent pros as "\n<item>...</item>\n<item>...</item>". The items are right
+  // there, so read them rather than throwing the answer away.
+  const tagged = [...v.matchAll(/<item>([\s\S]*?)<\/item>/gi)].map((m) => m[1].trim()).filter(Boolean);
+  if (tagged.length > 0) return tagged;
   return v
     .split(/\r?\n+|(?:^|\s)[-•*]\s+|;\s+/)
-    .map((line) => line.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, "").trim())
+    .map((line) => line.replace(/^\s*(?:\d+[.)]|[-•*])\s*/, "").replace(/^<\/?[a-z][^>]*>|<\/?[a-z][^>]*>$/gi, "").trim())
     .filter((line) => line.length > 2);
 }
 
@@ -496,9 +501,32 @@ export function isDiagnosticStep(text: unknown): boolean {
   return DIAGNOSTIC_STEP.some((re) => re.test(t));
 }
 
-/** Shopify prints this under the cart total on essentially every store. */
-const SHIPPING_DISCLOSURE_RE =
-  /(tax(es)?|duties)[^.]{0,60}(shipping|delivery)[^.]{0,60}(calculated|estimated|added|applied)|(shipping|delivery)[^.]{0,60}calculated at (the )?checkout|calculated at (the )?checkout/i;
+/**
+ * What a cart can already be saying about shipping.
+ *
+ * Three different families, because a finding claiming the cart is silent is
+ * wrong if ANY of them is on the page: the tax-and-shipping disclosure Shopify
+ * prints under the total, a delivery estimate, or a dispatch time. A live cart
+ * carried "MOST ORDERS SHIP WITHIN ONE BUSINESS DAY" and "Estimated delivery
+ * between: Aug 24, 2026-Aug 26, 2026" and the audit still said the drawer never
+ * mentions how long shipping takes.
+ */
+const SHIPPING_DISCLOSURE_RE = new RegExp(
+  [
+    // Taxes and shipping calculated at checkout.
+    "(tax(es)?|duties)[^.]{0,60}(shipping|delivery)[^.]{0,60}(calculated|estimated|added|applied)",
+    "calculated at (the )?checkout",
+    // A delivery estimate, as a date range or a day count.
+    "estimated (delivery|arrival|ship)",
+    "(delivery|arriv\w*) (between|by|on|in) ",
+    "arrives? (by|between|in|on) ",
+    // A dispatch time.
+    "ship(s|ped|ping)? (within|in) \d",
+    "ship(s|ped|ping)? within (one|two|three|a|the same)",
+    "\d+\s*(-|to)?\s*\d*\s*business day",
+  ].join("|"),
+  "i",
+);
 
 /** A finding claiming the cart says nothing about what shipping will cost. */
 const NO_SHIPPING_INFO_RE =
@@ -507,10 +535,39 @@ const NO_SHIPPING_INFO_RE =
 /** The finding is allowed to stand when it ACKNOWLEDGES the disclosure and asks
  *  for something more, such as a real delivery estimate. That is a different
  *  and legitimate point; what is refused is claiming the line is not there. */
-const ACKNOWLEDGES_DISCLOSURE_RE = /calculated at (the )?checkout/i;
+const ACKNOWLEDGES_DISCLOSURE_RE = new RegExp(
+  [
+    "calculated at (the )?checkout",
+    "estimated (delivery|arrival|ship)",
+    "delivery (estimate|date|window|range)",
+    "ship(s|ping)? within",
+    "business day",
+    "free shipping (over|above|on orders)",
+  ].join("|"),
+  "i",
+);
 
-const CART_EMPTINESS_RE =
-  /empty (black |blank |dead |white )?space|whitespace|blank space|large gap|big gap|lot of (empty|blank|dead) space|looks (sparse|empty|bare)|feels (sparse|empty|unbalanced)|unbalanced|sparse/i;
+// Any flavour of "there is space here". The cart is photographed with the one
+// item WE added, so its roominess is an artifact of our capture rather than
+// anything the store did. The list grew by one adjective at a time as the model
+// found new ways to say it: "a lot of open white space" walked straight through
+// a pattern that required the word "empty" to come first, so the adjectives are
+// now a set rather than a fixed phrase.
+const CART_EMPTINESS_RE = new RegExp(
+  [
+    // A qualifier, then "space" within a short window. The adjectives stack
+    // ("a lot of open white space"), so enumerating their orders does not work.
+    String.raw`\b(?:empty|blank|dead|white|open|unused|negative|excess|extra|large|lots? of)\b[\w\s]{0,20}?\bspace\b`,
+    "whitespace",
+    "large gap",
+    "big gap",
+    String.raw`looks (sparse|empty|bare)`,
+    String.raw`feels (sparse|empty|unbalanced)`,
+    "unbalanced",
+    "sparse",
+  ].join("|"),
+  "i",
+);
 
 export function coercePageAudit(
   input: unknown,
@@ -769,9 +826,20 @@ export function coercePageAudit(
       if (
         pageType === "cart" &&
         SHIPPING_DISCLOSURE_RE.test(pageText) &&
-        NO_SHIPPING_INFO_RE.test(blob) &&
-        !ACKNOWLEDGES_DISCLOSURE_RE.test(blob)
-      ) return false;
+        // Judged on the finding's TEXT, never on its fix. A fix that asks for
+        // "Arrives in X business days" naturally contains the very words the
+        // page would need, which read as proof the page already said them and
+        // let the false claim through.
+        NO_SHIPPING_INFO_RE.test(txt) &&
+        !ACKNOWLEDGES_DISCLOSURE_RE.test(txt)
+      ) {
+        console.warn(JSON.stringify({
+          event: "finding_refused",
+          reason: "cart_already_states_shipping",
+          finding: String(f.text ?? "").slice(0, 120),
+        }));
+        return false;
+      }
       // Drop grow-zone / planting-location widget findings: it is automatic
       // zip-based detection and 'n/a' before a zip is entered is expected. The
       // model renames it ("location fields", "personalization bar", "location

@@ -608,7 +608,14 @@ async function runStep(
       } else if (tooFew) {
         needs.push(`your existing ${parsed.findings.length} finding(s) PLUS enough new ones to reach at least ${MIN_FINDINGS} (four or five is normal), each with a recommendation and a viewport tag`);
       } else if (thinViewport) {
-        needs.push(`your existing findings PLUS at least two more that genuinely apply to ${thinViewport}, each tagged "${thinViewport}" (or "both" when it truly affects both), each with a recommendation`);
+        // Ask ONLY for the new ones. Asking for "your existing findings plus
+        // more" invites the model to restate the whole audit, and when that
+        // reply came back malformed the section kept a set with nothing at all
+        // on one device: a live cart showed four findings on desktop and a
+        // blank panel on mobile. New findings are merged into the first pass
+        // below, so a thin or broken retry now costs nothing instead of
+        // everything.
+        needs.push(`ONLY new findings for ${thinViewport}: two or three issues visible on the ${thinViewport} screenshot, each tagged "${thinViewport}" (or "both" when it genuinely affects both devices), each with a recommendation. Do NOT repeat the findings you already gave and do not return them again`);
       }
       if (needIntro) {
         needs.push(`the intro: 2-3 sentences in the founder-friendly voice on where this page stands, what it does well, and what is holding it back`);
@@ -649,11 +656,26 @@ async function runStep(
         } else if (needIntro && retryParsed.intro.trim() && !parsed.intro.trim()) {
           parsed = { ...parsed, intro: retryParsed.intro };
         } else if (thinViewport) {
-          // Keep the better-covered pass. The retry was asked to return the old
-          // findings plus more, but if it came back thinner, the first pass wins.
-          const before = parsed.findings.filter((f) => f.viewport === thinViewport || f.viewport === "both").length;
-          const after = retryParsed.findings.filter((f) => f.viewport === thinViewport || f.viewport === "both").length;
-          if (after > before) parsed = { ...retryParsed, intro: retryParsed.intro.trim() ? retryParsed.intro : parsed.intro };
+          // Merge, never replace. Anything the retry found for the thin device
+          // is added to what the first pass already had, so one useful finding
+          // is a gain and a malformed reply is simply nothing.
+          const seen = new Set(parsed.findings.map((f) => f.text.trim().toLowerCase()));
+          const added = retryParsed.findings.filter((f) => {
+            if (f.viewport !== thinViewport && f.viewport !== "both") return false;
+            const key = f.text.trim().toLowerCase();
+            if (!key || seen.has(key)) return false;
+            // The retry was told not to repeat itself; this catches it doing so
+            // in different words, which would read as the same point twice.
+            if (isNearDuplicateFinding(f.text, parsed.findings.map((existing) => existing.text))) return false;
+            seen.add(key);
+            return true;
+          });
+          if (added.length > 0) {
+            parsed = { ...parsed, findings: [...parsed.findings, ...added].slice(0, MAX_FINDINGS) };
+          }
+          console.log(
+            `${step.key}: ${thinViewport} was thin, retry added ${added.length} of ${retryParsed.findings.length} finding(s)`,
+          );
           if (needIntro && !parsed.intro.trim() && retryParsed.intro.trim()) parsed = { ...parsed, intro: retryParsed.intro };
         } else if (needIntro && retryParsed.intro.trim()) parsed = { ...parsed, intro: retryParsed.intro };
       }

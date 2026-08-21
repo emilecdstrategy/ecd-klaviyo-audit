@@ -306,7 +306,7 @@ export default async ({ page, context }) => {
           // A real popup is a panel, not a one-pixel tracker or a full-page
           // backdrop with nothing in it.
           if (r.width < 180 || r.height < 120) continue;
-          const text = (el.innerText || "").trim().replace(/\s+/g, " ");
+          const text = (el.innerText || "").trim().replace(/\\s+/g, " ");
           if (text.length < 8) continue;
           if (seen.indexOf(text.slice(0, 60)) !== -1) continue;
           seen.push(text.slice(0, 60));
