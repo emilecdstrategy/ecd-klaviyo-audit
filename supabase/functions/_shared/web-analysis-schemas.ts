@@ -442,6 +442,9 @@ export type ElementBox = {
   w: number;
   h: number;
   label?: string;
+  /** Whether this element is, or wraps, a control that is currently collapsed.
+   *  Read for every element: see CapturedElement in browserless.ts. */
+  toggle?: "collapsed" | "expanded";
   /** How a button, link or field is actually painted, measured at capture time.
    *  Present only on interactive elements; see ElementStyle in browserless.ts. */
   style?: {

@@ -19,6 +19,12 @@ export type CapturedElement = {
   y: number;
   w: number;
   h: number;
+  /** Whether this element is (or wraps) a control that hides its content until
+   *  tapped, and whether that content is currently open. Read for every
+   *  element, because the thing an audit must never do is tell a client to
+   *  collapse what is already collapsed, and the element that carries the label
+   *  is often a wrapper rather than the button itself. */
+  toggle?: "collapsed" | "expanded";
   /** How the element is really painted, for buttons, links and fields only.
    *
    *  An audit told a client to give their "NOT SURE WHAT YOU NEED?" button a
@@ -639,6 +645,21 @@ export default async ({ page, context }) => {
         if (text.indexOf("{") !== -1 && text.indexOf("}") !== -1) text = ""; // leaked CSS
         text = text.slice(0, 60);
         if (!text && tag === "img") text = "image";
+        // Open or closed, for anything that toggles. Cheap, and the label is as
+        // often on the wrapper as on the button inside it.
+        let toggle = null;
+        try {
+          let marker = el.hasAttribute("aria-expanded") ? el : null;
+          if (!marker) marker = el.closest("[aria-expanded]");
+          if (!marker) marker = el.querySelector("[aria-expanded]");
+          if (marker) {
+            toggle = marker.getAttribute("aria-expanded") === "true" ? "expanded" : "collapsed";
+          } else {
+            const det = tag === "details" ? el : (el.closest("details") || el.querySelector("details"));
+            if (det) toggle = det.hasAttribute("open") ? "expanded" : "collapsed";
+          }
+        } catch (e) { toggle = null; }
+
         // How it is painted, for the things findings are actually written about.
         let style = null;
         if (tag === "button" || tag === "a" || tag === "input" || tag === "select" || el.getAttribute("role") === "button") {
@@ -656,19 +677,6 @@ export default async ({ page, context }) => {
               parseFloat(cs.borderLeftWidth || "0") || 0,
             );
             const painted = alpha > 0.05;
-            // Open/closed state, from whatever the theme uses to mark it.
-            let toggle = null;
-            try {
-              let marker = el.hasAttribute("aria-expanded") ? el : null;
-              if (!marker) marker = el.closest("[aria-expanded]");
-              if (!marker) marker = el.querySelector("[aria-expanded]");
-              if (marker) {
-                toggle = marker.getAttribute("aria-expanded") === "true" ? "expanded" : "collapsed";
-              } else {
-                const det = tag === "details" ? el : el.closest("details");
-                if (det) toggle = det.hasAttribute("open") ? "expanded" : "collapsed";
-              }
-            } catch (e) { toggle = null; }
             style = {
               fill: painted ? "filled" : (borderPx >= 1 ? "outlined" : "bare"),
               bg: painted ? bg : "none",
@@ -682,7 +690,7 @@ export default async ({ page, context }) => {
           } catch (e) { style = null; }
         }
         const entry = {
-          tag, text, chip: isChip, style,
+          tag, text, chip: isChip, style, toggle,
           x: +(left / vw * 100).toFixed(2), y: +(top / vh * 100).toFixed(2),
           w: +(w / vw * 100).toFixed(2), h: +(h / vh * 100).toFixed(2),
         };
@@ -713,6 +721,7 @@ export default async ({ page, context }) => {
         .map((e, i) => {
           const out = { id: "el_" + (i + 1), label: e.tag + (e.text ? ": " + e.text : ""), x: e.x, y: e.y, w: e.w, h: e.h };
           if (e.style) out.style = e.style;
+          if (e.toggle) out.toggle = e.toggle;
           return out;
         });
     });

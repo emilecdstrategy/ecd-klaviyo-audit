@@ -254,18 +254,21 @@ function buildPageImages(
       // solid fill on something already solid is worse than no finding: it tells
       // the client we did not look.
       const styled = els
-        .filter((e) => e.style && (e.label ?? "").trim())
-        .slice(0, 18)
+        .filter((e) => (e.style || e.toggle) && (e.label ?? "").trim())
+        .slice(0, 20)
         .map((e) => {
-          const st = e.style as NonNullable<ElementBox["style"]>;
+          const st = e.style;
+          const toggle = e.toggle ?? st?.toggle;
           const bits = [
-            st.fill === "filled" ? `FILLED background ${st.bg}` : st.fill === "outlined" ? `OUTLINED, border ${st.border}px, no fill` : "no fill and no border",
-            `text ${st.fg}`,
-            `corner radius ${st.radius}px`,
-            `${st.font}px${st.bold ? " bold" : ""}`,
-            st.toggle === "collapsed"
-              ? "ALREADY A COLLAPSED TOGGLE: it hides its content until tapped"
-              : st.toggle === "expanded"
+            st
+              ? (st.fill === "filled" ? `FILLED background ${st.bg}` : st.fill === "outlined" ? `OUTLINED, border ${st.border}px, no fill` : "no fill and no border")
+              : "",
+            st ? `text ${st.fg}` : "",
+            st ? `corner radius ${st.radius}px` : "",
+            st ? `${st.font}px${st.bold ? " bold" : ""}` : "",
+            toggle === "collapsed"
+              ? "ALREADY COLLAPSED: it hides its content behind a tap, and that content is NOT on the screenshot"
+              : toggle === "expanded"
                 ? "a toggle, currently open"
                 : "",
           ].filter(Boolean);
@@ -329,7 +332,7 @@ function buildPageImages(
   const styleText = styleLines.length
     ? "\n\nHOW THE BUTTONS AND LINKS ARE PAINTED. Read off the live page with getComputedStyle, so this is measured, not inferred from the picture:\n" +
       styleLines.join("\n") +
-      "\n\nNever describe an element's fill, border, corner radius, colour or text size in a way this contradicts. An element listed as FILLED already has a solid background: do not recommend giving it one, and do not call it an outline, a plain box, a banner or unstyled. An element listed as an ALREADY COLLAPSED TOGGLE is already tucked away behind a tap: never recommend collapsing it, hiding it, putting it in an accordion, or making it smaller or less prominent, and never describe its hidden content as though it were on the screen. If its problem is the wrong colour, the wrong size, the wrong words or the wrong place, say that instead. A recommendation that asks for something the element already has tells the reader we did not look properly."
+      "\n\nNever describe an element's fill, border, corner radius, colour or text size in a way this contradicts. An element listed as FILLED already has a solid background: do not recommend giving it one, and do not call it an outline, a plain box, a banner or unstyled. An element listed as ALREADY COLLAPSED is already tucked away behind a tap: never recommend collapsing it, hiding it, putting it in an accordion, or making it smaller or less prominent, and never describe its hidden content as though it were on the screen. If its problem is the wrong colour, the wrong size, the wrong words or the wrong place, say that instead. A recommendation that asks for something the element already has tells the reader we did not look properly."
     : "";
 
   const elementsText = elementLines.length
