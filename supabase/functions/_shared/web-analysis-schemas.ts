@@ -452,6 +452,7 @@ export type ElementBox = {
     border: number;
     bold: boolean;
     font: number;
+    toggle?: "collapsed" | "expanded";
   };
 };
 
@@ -459,6 +460,39 @@ export type ElementBox = {
  * is an artifact of our capture and never a defect of the store. The KB has said
  * so for a while and the model kept submitting it anyway, twice with a fix that
  * admitted it was a non-issue, so the topic is now refused in code. */
+/**
+ * Work this audit does not recommend, and instructions that are not work.
+ *
+ * Page speed is not measured anywhere in this pipeline, so a recommendation
+ * about it is advice we cannot stand behind, and it is not what the team sells.
+ * Separately, a step that tells the client to audit, review or investigate
+ * something hands the job back to the person reading the audit. They are paying
+ * for the answer, not for a list of things to go and look at.
+ */
+const BANNED_WORK = [
+  /\b(page ?speed|site ?speed|load(ing)? (speed|time)|core web vitals|largest contentful paint|\bLCP\b|\bCLS\b|\bTTFB\b|lazy ?load|image compression|compress (the |your )?images?|minify|\bCDN\b|browser cach\w+)/i,
+];
+
+const DIAGNOSTIC_STEP = [
+  /^\s*(audit|review|analy[sz]e|investigate|examine|assess|benchmark|measure)\b/i,
+  /\b(run|do|perform|conduct) (an|a|another) (audit|analysis|review|assessment)\b/i,
+  /\baudit (your|the|this|each|every|product|collection|cart|checkout|site|store|page)/i,
+];
+
+/** True when a line of advice is something we refuse to ship. */
+export function isBannedWork(text: unknown): boolean {
+  const t = String(text ?? "");
+  if (!t.trim()) return false;
+  return BANNED_WORK.some((re) => re.test(t));
+}
+
+/** True when a "step" is really an instruction to go and investigate. */
+export function isDiagnosticStep(text: unknown): boolean {
+  const t = String(text ?? "");
+  if (!t.trim()) return false;
+  return DIAGNOSTIC_STEP.some((re) => re.test(t));
+}
+
 const CART_EMPTINESS_RE =
   /empty (black |blank |dead |white )?space|whitespace|blank space|large gap|big gap|lot of (empty|blank|dead) space|looks (sparse|empty|bare)|feels (sparse|empty|unbalanced)|unbalanced|sparse/i;
 
@@ -749,7 +783,11 @@ export function coerceAnalytics(input: unknown) {
       // action_steps is the current shape; `action` was the single-sentence
       // version, kept so a play from an earlier audit still shows its work.
       const steps = Array.isArray(rec.action_steps)
-        ? rec.action_steps.map((s) => sanitizeDash(s)).filter(Boolean).slice(0, 3)
+        ? rec.action_steps
+            .map((s) => sanitizeDash(s))
+            .filter(Boolean)
+            .filter((step) => !isBannedWork(step) && !isDiagnosticStep(step))
+            .slice(0, 3)
         : [];
       const legacyAction = sanitizeDash(rec.action);
       return {

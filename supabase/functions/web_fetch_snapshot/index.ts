@@ -429,6 +429,18 @@ function analyzeBaskets(
     single_item_order_share: withItems.length > 0 ? round2((singleLine / withItems.length) * 100) : null,
     multi_item_order_share: withItems.length > 0 ? round2(((withItems.length - singleLine) / withItems.length) * 100) : null,
     frequent_pairs: pairs,
+    /** Full records for the products named in frequent_pairs.
+     *
+     *  A pairing play names two products and the report could never show them,
+     *  because pair entries carry a title and nothing else while the card needs
+     *  a photo, a price and a link. Those products are usually just outside the
+     *  top six, so the records already exist here: they were simply never sent.
+     *  Kept separate from top_products so the best seller wall is unchanged. */
+    pair_products: (() => {
+      const wanted = new Set<string>();
+      for (const p of pairs) for (const t of p.products) wanted.add(t);
+      return ranked.filter((r) => wanted.has(r.title)).slice(0, 12);
+    })(),
     distinct_products_sold: ranked.length,
     top_product_revenue_share: topShare(1),
     top3_product_revenue_share: topShare(3),

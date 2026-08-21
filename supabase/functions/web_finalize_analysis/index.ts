@@ -263,7 +263,12 @@ function buildPageImages(
             `text ${st.fg}`,
             `corner radius ${st.radius}px`,
             `${st.font}px${st.bold ? " bold" : ""}`,
-          ];
+            st.toggle === "collapsed"
+              ? "ALREADY A COLLAPSED TOGGLE: it hides its content until tapped"
+              : st.toggle === "expanded"
+                ? "a toggle, currently open"
+                : "",
+          ].filter(Boolean);
           return `${e.id} (${e.label}): ${bits.join(", ")}`;
         });
       if (styled.length > 0) styleLines.push(`${ref} styling: ${styled.join(" | ")}`);
@@ -324,7 +329,7 @@ function buildPageImages(
   const styleText = styleLines.length
     ? "\n\nHOW THE BUTTONS AND LINKS ARE PAINTED. Read off the live page with getComputedStyle, so this is measured, not inferred from the picture:\n" +
       styleLines.join("\n") +
-      "\n\nNever describe an element's fill, border, corner radius, colour or text size in a way this contradicts. An element listed as FILLED already has a solid background: do not recommend giving it one, and do not call it an outline, a plain box, a banner or unstyled. If its problem is that it is the wrong colour, the wrong size or in the wrong place, say that instead. A recommendation that asks for something the element already has tells the reader we did not look properly."
+      "\n\nNever describe an element's fill, border, corner radius, colour or text size in a way this contradicts. An element listed as FILLED already has a solid background: do not recommend giving it one, and do not call it an outline, a plain box, a banner or unstyled. An element listed as an ALREADY COLLAPSED TOGGLE is already tucked away behind a tap: never recommend collapsing it, hiding it, putting it in an accordion, or making it smaller or less prominent, and never describe its hidden content as though it were on the screen. If its problem is the wrong colour, the wrong size, the wrong words or the wrong place, say that instead. A recommendation that asks for something the element already has tells the reader we did not look properly."
     : "";
 
   const elementsText = elementLines.length
@@ -751,6 +756,10 @@ async function runStep(
         thresholdNote,
         sessionsEvidence(computed.sessions as Parameters<typeof sessionsEvidence>[0]),
         `- The traffic figures above are the denominator for everything else in this section. When the funnel names a step that loses most people, a play about that step beats a play about a product mix. Never present a conversion rate as good or bad against an industry average: none was measured.`,
+        `- ORDER: the most concrete, quantified change the team could ship this week goes FIRST. A play whose steps are things to look into is not shippable and must not exist at all: every step is a change to make, with the change named. Never write a step that tells them to audit, review, analyse, investigate or measure something. They are reading the audit; handing the work back is the opposite of the job.`,
+        `- SPECIFICALLY: when the free-shipping threshold sits at or below the median order value, almost every order already clears it, so it is pulling nobody's basket upward. That is the strongest and cheapest lever in this data and its play goes first, with the new threshold named as a number set against the median and the 75th percentile.`,
+        `- NEVER recommend page speed, load time, image compression, lazy loading, caching or Core Web Vitals work. None of it is measured in this audit and none of it is what this team ships. If the data points at a step losing people, write the merchandising, copy, layout or pricing change that addresses it.`,
+        `- One instruction per step, written as an instruction. Do not reason inside a step, do not correct yourself mid-sentence, and never write two alternatives joined by "isn't right" or "actually". Decide, then say the thing to do.`,
         `Return 2 to 5 PLAYS via record_analytics_audit: things this team could ship this month to raise average order value, protect margin, or make the catalogue work harder. Rules:`,
         `- Every value under deltas is a RELATIVE percent change, never percentage points. A repeat rate moving 16.54 to 18.24 is a delta of 10.28, which is "up 10%", not "up 10.28 points". Say "from X to Y" when you want to be unambiguous.`,
         `- Each play quotes a real figure from the data above. Never invent or round a number into something the data does not say.`,

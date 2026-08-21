@@ -327,12 +327,19 @@ export default function WebAnalyticsSection({
   // Products a play names, resolved against the order data so a card always has
   // a real photo, price and link. Matched case-insensitively because the model
   // copies titles by hand.
-  const catalogList = basket?.top_products ?? basket?.top_products_by_units ?? [];
+  // Everything a play might name: the best sellers, plus the products that only
+  // appear in a frequent pair. A pairing play names two products by definition,
+  // and those two are often just outside the top six, which is why the play the
+  // reader most wants to see products on was the one that never had any.
+  const catalogList = [
+    ...(basket?.top_products ?? basket?.top_products_by_units ?? []),
+    ...(basket?.pair_products ?? []),
+  ].filter((p, i, all) => all.findIndex((q) => q.title === p.title) === i);
   const catalog = useMemo(() => {
     const map = new Map<string, BasketProduct>();
     for (const p of catalogList) map.set(p.title.trim().toLowerCase(), p);
     return map;
-  }, [basket?.top_products, basket?.top_products_by_units]);
+  }, [basket?.top_products, basket?.top_products_by_units, basket?.pair_products]);
   /** What the play listed, plus anything it named in its own sentences and
    *  forgot to list. A play that says "feature X and Y" and shows no cards
    *  leaves the reader with advice about two products they cannot see. */

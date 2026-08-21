@@ -406,6 +406,10 @@ export type OrdersRollup = {
     units_per_order?: number;
     single_item_order_share?: number | null;
     frequent_pairs?: Array<{ products: string[]; orders: number; revenue: number }>;
+  /** Full records for the products named in frequent_pairs, so a pairing play
+   *  can show the two products it is about. They are not part of the best
+   *  seller wall, which stays ranked on top_products. */
+  pair_products?: BasketProduct[];
     /** Ranked by revenue. `top_products_by_units` is the old key for the same
      * list, kept for snapshots stored before the rename. */
     top_products?: BasketProduct[];

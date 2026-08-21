@@ -43,6 +43,14 @@ export type ElementStyle = {
   bold: boolean;
   /** Text size in CSS pixels, which is what a "too small to tap" claim rests on. */
   font: number;
+  /** Whether this control hides something behind it, and whether that something
+   *  is currently open. Absent when the element is not a toggle.
+   *
+   *  An audit told a client to collapse their "Make it a gift?" option into
+   *  something smaller and less prominent. It is a button with
+   *  aria-expanded="false" inside an accordion: already collapsed. Advice to
+   *  hide what is hidden reads as though nobody looked. */
+  toggle?: "collapsed" | "expanded";
 };
 
 /** One photograph as it was painted in the shot. Boxes are percentages of the
@@ -648,6 +656,19 @@ export default async ({ page, context }) => {
               parseFloat(cs.borderLeftWidth || "0") || 0,
             );
             const painted = alpha > 0.05;
+            // Open/closed state, from whatever the theme uses to mark it.
+            let toggle = null;
+            try {
+              let marker = el.hasAttribute("aria-expanded") ? el : null;
+              if (!marker) marker = el.closest("[aria-expanded]");
+              if (!marker) marker = el.querySelector("[aria-expanded]");
+              if (marker) {
+                toggle = marker.getAttribute("aria-expanded") === "true" ? "expanded" : "collapsed";
+              } else {
+                const det = tag === "details" ? el : el.closest("details");
+                if (det) toggle = det.hasAttribute("open") ? "expanded" : "collapsed";
+              }
+            } catch (e) { toggle = null; }
             style = {
               fill: painted ? "filled" : (borderPx >= 1 ? "outlined" : "bare"),
               bg: painted ? bg : "none",
@@ -657,6 +678,7 @@ export default async ({ page, context }) => {
               bold: (parseInt(cs.fontWeight || "400", 10) || 400) >= 600,
               font: Math.round(parseFloat(cs.fontSize || "0") || 0),
             };
+            if (toggle) style.toggle = toggle;
           } catch (e) { style = null; }
         }
         const entry = {

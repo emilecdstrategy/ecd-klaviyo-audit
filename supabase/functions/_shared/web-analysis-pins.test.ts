@@ -3,7 +3,7 @@
 // Every case here is a pin that once landed on the wrong thing in a report a
 // client read. A wrong pin is worse than no pin, because it is a claim about
 // where the problem is and the reader checks it against the screenshot.
-import { asArray, coercePageAudit, PAGE_AUDIT_TOOL, type ElementBox } from "./web-analysis-schemas.ts";
+import { asArray, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, type ElementBox } from "./web-analysis-schemas.ts";
 
 /** A Shopify homepage header, as the capture actually records it. The logo lives
  * in an anonymous <a> inside an <h1>, so both carry bare tag names for labels. */
@@ -318,4 +318,94 @@ Deno.test("asArray leaves a real array alone and ignores junk", () => {
   if (asArray("").length !== 0) throw new Error("an empty string is not a list");
   if (asArray("not json at all").length !== 0) throw new Error("prose is not a list");
   if (asArray("[bad json").length !== 0) throw new Error("broken json is not a list");
+});
+
+// --- advice we refuse to ship ---------------------------------------------
+//
+// A play arrived with three steps, all of them things to go and look at, led by
+// "Audit product pages on a phone for load speed". The client is reading the
+// audit: handing the work back is the opposite of the job, and page speed is
+// not measured anywhere in this pipeline so we cannot stand behind it.
+
+Deno.test("page speed work is refused however it is worded", () => {
+  for (const line of [
+    "Audit product pages on a phone for load speed and image clarity",
+    "Compress your images to improve page speed",
+    "Enable lazy loading on the collection grid",
+    "Improve Core Web Vitals on mobile",
+    "Reduce TTFB by putting the store behind a CDN",
+    "Minify the theme CSS",
+  ]) {
+    if (!isBannedWork(line)) throw new Error(`should be refused: ${line}`);
+  }
+});
+
+Deno.test("ordinary merchandising advice is untouched", () => {
+  for (const line of [
+    "Show the price and a star rating under each product card",
+    "Raise the free shipping threshold to $150",
+    "Add a quick add to cart button on the collection grid",
+    "Pair the Auger Adapters with the Adapter Pins on both product pages",
+  ]) {
+    if (isBannedWork(line)) throw new Error(`should be kept: ${line}`);
+    if (isDiagnosticStep(line)) throw new Error(`should be kept: ${line}`);
+  }
+});
+
+Deno.test("a step that asks the client to go and investigate is refused", () => {
+  for (const line of [
+    "Audit product pages on a phone for load speed",
+    "Review your product titles for clarity",
+    "Analyse where visitors drop before adding to cart",
+    "Investigate why desktop converts lower",
+    "Run an audit of the checkout flow",
+    "Measure the drop-off between cart and checkout",
+  ]) {
+    if (!isDiagnosticStep(line)) throw new Error(`should be refused: ${line}`);
+  }
+});
+
+Deno.test("a play whose every step is refused is dropped entirely", () => {
+  // A play with nothing to do is not a play. Dropping it is better than
+  // printing a heading with no work under it.
+  const out = coerceAnalytics({
+    intro: "x",
+    plays: [
+      {
+        title: "Fix the add-to-cart step first",
+        insight: "Only 1.7% of sessions add to cart.",
+        action_steps: [
+          "Audit product pages on a phone for load speed",
+          "Analyse where visitors drop before adding to cart",
+        ],
+        metric: "1.7%",
+      },
+      {
+        title: "Raise the free shipping bar",
+        insight: "The threshold sits below the median order.",
+        action_steps: ["Raise the free shipping threshold to $150"],
+        metric: "$100 vs $132.71",
+      },
+    ],
+  });
+  if (out.plays.length !== 1) throw new Error(`expected 1 play, got ${out.plays.length}`);
+  if (out.plays[0].title !== "Raise the free shipping bar") throw new Error("kept the wrong play");
+});
+
+Deno.test("a play keeps its shippable steps and loses only the rest", () => {
+  const out = coerceAnalytics({
+    intro: "x",
+    plays: [{
+      title: "Lift the basket",
+      insight: "Most orders carry one item.",
+      action_steps: [
+        "Audit the product pages for load speed",
+        "Add a frequently bought together row to the product page",
+      ],
+      metric: "64%",
+    }],
+  });
+  if (out.plays.length !== 1) throw new Error("the play should survive");
+  if (out.plays[0].action_steps.length !== 1) throw new Error(`expected 1 step, got ${JSON.stringify(out.plays[0].action_steps)}`);
+  if (!out.plays[0].action_steps[0].includes("frequently bought")) throw new Error("kept the wrong step");
 });
