@@ -1,9 +1,9 @@
-import { useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Eye, Hourglass, Trophy, XCircle, Percent } from 'lucide-react';
 import KPICard from '../ui/KPICard';
 import MonthlyBarChart from '../ui/MonthlyBarChart';
-import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../ui/select';
 import { deriveProposalStatus, isProposalOpen } from '../../lib/proposal-status';
+import { inYear, monthsForYear, type ProposalYear } from '../../lib/proposal-year';
 import {
   computeProposalTotals,
   proposalDiscountFromRow,
@@ -11,28 +11,6 @@ import {
 } from '../../lib/proposal-pricing';
 import { formatCurrency } from '../../lib/revenue-calculator';
 import type { Proposal } from '../../lib/types';
-
-const PERIOD_OPTIONS = [
-  { value: '3', label: 'Last 3 months' },
-  { value: '6', label: 'Last 6 months' },
-  { value: '12', label: 'Last 12 months' },
-  { value: '24', label: 'Last 24 months' },
-  { value: 'all', label: 'All time' },
-] as const;
-
-function monthsBetween(start: Date, end: Date): number {
-  return (end.getFullYear() - start.getFullYear()) * 12 + (end.getMonth() - start.getMonth());
-}
-
-function lastMonths(count: number): string[] {
-  const months: string[] = [];
-  const now = new Date();
-  for (let i = count - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    months.push(`${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`);
-  }
-  return months;
-}
 
 function monthOf(iso: string | null): string | null {
   return iso ? iso.slice(0, 7) : null;
@@ -44,43 +22,49 @@ function proposalValue(proposal: Proposal): number {
   return proposalPipelineValue(totals);
 }
 
-export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
-  const [period, setPeriod] = useState<string>('6');
+export default function ProposalKPIs({ proposals, year }: { proposals: Proposal[]; year: ProposalYear }) {
   const [chartMode, setChartMode] = useState<'count' | 'value'>('count');
   const statuses = proposals.map(p => deriveProposalStatus(p));
-  const wonCount = statuses.filter(s => s === 'won').length;
+
+  // Each bucket asks about its OWN date, so a deal signed in January counts as
+  // a win this year even though it was written last December. An open proposal
+  // has no closing date yet, so it answers for when it was created.
+  const isOpenIn = (p: Proposal) => isProposalOpen(p) && inYear(p.created_at, year);
+  const isWonIn = (_p: Proposal, i: number) => statuses[i] === 'won' && inYear(proposals[i].won_at, year);
   // Expired proposals are auto-marked lost by an hourly job; the derived
   // 'expired' state only exists in the gap before it runs, so it counts as
-  // lost here rather than silently dropping out of every bucket.
-  const lostCount = statuses.filter(s => s === 'lost' || s === 'expired').length;
-  const decided = wonCount + lostCount;
-  const winRate = decided > 0 ? Math.round((wonCount / decided) * 100) : null;
+  // lost here rather than silently dropping out of every bucket. One that has
+  // not been stamped lost_at yet answers for when it was created, which is the
+  // only date it has.
+  const isLostIn = (_p: Proposal, i: number) => {
+    const st = statuses[i];
+    if (st !== 'lost' && st !== 'expired') return false;
+    const p = proposals[i];
+    return inYear(p.lost_at ?? p.created_at, year);
+  };
 
   const sumValue = (keep: (p: Proposal, i: number) => boolean) =>
     proposals.reduce((sum, p, i) => (keep(p, i) ? sum + proposalValue(p) : sum), 0);
+  const countWhere = (keep: (p: Proposal, i: number) => boolean) =>
+    proposals.reduce((n, p, i) => (keep(p, i) ? n + 1 : n), 0);
 
-  const openProposals = proposals.filter(isProposalOpen);
-  const openValue = sumValue(p => isProposalOpen(p));
+  const wonCount = countWhere(isWonIn);
+  const lostCount = countWhere(isLostIn);
+  const decided = wonCount + lostCount;
+  const winRate = decided > 0 ? Math.round((wonCount / decided) * 100) : null;
+
+  const openCount = countWhere(p => isOpenIn(p));
+  const openValue = sumValue(p => isOpenIn(p));
   // The subset of the open pipeline the client has actually looked at: the
   // deals to chase, as opposed to ones still sitting unread in an inbox.
-  const awaitingCount = proposals.filter(p => isProposalOpen(p) && Boolean(p.first_viewed_at)).length;
-  const awaitingValue = sumValue(p => isProposalOpen(p) && Boolean(p.first_viewed_at));
-  const wonValue = sumValue((_p, i) => statuses[i] === 'won');
-  const lostValue = sumValue((_p, i) => statuses[i] === 'lost' || statuses[i] === 'expired');
+  const awaitingCount = countWhere(p => isOpenIn(p) && Boolean(p.first_viewed_at));
+  const awaitingValue = sumValue(p => isOpenIn(p) && Boolean(p.first_viewed_at));
+  const wonValue = sumValue(isWonIn);
+  const lostValue = sumValue(isLostIn);
   const avgWonValue = wonCount > 0 ? wonValue / wonCount : null;
+  const windowLabel = year === 'all' ? 'All time' : String(year);
 
-  const monthCount = useMemo(() => {
-    if (period !== 'all') return Number(period);
-    const earliestDates = proposals
-      .map(p => p.created_at)
-      .filter((d): d is string => Boolean(d))
-      .map(d => new Date(d));
-    if (earliestDates.length === 0) return 6;
-    const earliest = new Date(Math.min(...earliestDates.map(d => d.getTime())));
-    return Math.max(1, monthsBetween(earliest, new Date()) + 1);
-  }, [period, proposals]);
-
-  const months = lastMonths(monthCount);
+  const months = monthsForYear(year, proposals);
   const chartData = months.map(month => {
     const sentProposals = proposals.filter(p => monthOf(p.sent_at) === month);
     const wonProposals = proposals.filter(p => p.status === 'won' && monthOf(p.won_at) === month);
@@ -106,7 +90,7 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
         <KPICard
           label="Open pipeline"
           value={formatCurrency(openValue)}
-          sub={`${openProposals.length} open proposal${openProposals.length === 1 ? '' : 's'}`}
+          sub={`${openCount} open proposal${openCount === 1 ? '' : 's'}`}
           icon={Hourglass}
           accent="primary"
         />
@@ -151,6 +135,7 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
             <h3 className="text-sm font-semibold text-gray-900">Sent vs won</h3>
             <div className="flex items-center gap-2">
+              <span className="text-xs text-gray-400">{windowLabel}</span>
               <div className="flex rounded-lg bg-gray-100 p-0.5 text-xs font-medium">
                 <button
                   type="button"
@@ -171,20 +156,6 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
                   Value ($)
                 </button>
               </div>
-              <div className="w-40 shrink-0">
-                <Select value={period} onValueChange={setPeriod}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Last 6 months" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {PERIOD_OPTIONS.map(opt => (
-                      <SelectItem key={opt.value} value={opt.value}>
-                        <SelectItemText>{opt.label}</SelectItemText>
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
             </div>
           </div>
           <MonthlyBarChart
@@ -200,7 +171,7 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
           <div className="flex items-center justify-between">
             <h3 className="text-sm font-semibold text-gray-900">Pipeline by status</h3>
             <span className="rounded-full bg-gray-100 px-2 py-0.5 text-[11px] font-medium text-gray-500">
-              All time
+              {windowLabel}
             </span>
           </div>
           <div className="mt-4 space-y-3">
@@ -215,7 +186,10 @@ export default function ProposalKPIs({ proposals }: { proposals: Proposal[] }) {
             </span>
           </div>
           <p className="mt-3 text-xs leading-relaxed text-gray-400">
-            One-time totals plus 12 months of retainers, across every proposal regardless of when it was created.
+            One-time totals plus 12 months of retainers.{' '}
+            {year === 'all'
+              ? 'Every proposal, whenever it was created.'
+              : `Won and lost by the year they closed; open by the year they were created.`}
           </p>
         </div>
       </div>

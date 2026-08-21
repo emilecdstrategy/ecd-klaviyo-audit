@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { FileSignature, LayoutTemplate, FileCheck2, Plus, Settings2 } from 'lucide-react';
+import { CalendarRange, ChevronDown, FileSignature, LayoutTemplate, FileCheck2, Plus, Settings2 } from 'lucide-react';
 import TopBar from '../components/layout/TopBar';
 import GlobalSearch from '../components/ui/GlobalSearch';
 import ProposalList from '../components/proposal/ProposalList';
@@ -13,6 +13,7 @@ import { SkeletonTable } from '../components/ui/Skeleton';
 import { ProposalAgentProvider } from '../components/proposal/agent/ProposalAgentContext';
 import { ProposalAgentLayout, AgentToggleButton } from '../components/proposal/agent/ProposalAgentLayout';
 import { listProposals } from '../lib/proposals-db';
+import { availableYears, type ProposalYear } from '../lib/proposal-year';
 import { applyDraftAsNewProposal, ApplyCancelled, type ProposalDraftPayload } from '../lib/proposal-agent';
 import { linkConversationToProposal } from '../lib/proposal-agent-db';
 import type { Client, Proposal } from '../lib/types';
@@ -26,6 +27,89 @@ const TABS = [
 
 type TabId = (typeof TABS)[number]['id'];
 
+/** The analytics window, sat at the end of the tab row.
+ *
+ *  A native <select> would have been quicker, but it renders in the OS chrome
+ *  and looks like a form field dropped into a nav bar. This is the same shape
+ *  and weight as the tabs beside it, so the row reads as one control strip. */
+function YearPicker({
+  value,
+  onChange,
+  years,
+}: {
+  value: ProposalYear;
+  onChange: (year: ProposalYear) => void;
+  years: number[];
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement | null>(null);
+
+  // Close on an outside click or Escape, the way every other menu here behaves.
+  useEffect(() => {
+    if (!open) return;
+    const onDown = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false);
+    };
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setOpen(false); };
+    document.addEventListener('mousedown', onDown);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('mousedown', onDown);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const options: ProposalYear[] = [...years, 'all'];
+  const labelFor = (v: ProposalYear) => (v === 'all' ? 'All time' : String(v));
+
+  return (
+    <div ref={ref} className="relative">
+      <button
+        type="button"
+        onClick={() => setOpen(o => !o)}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className={`flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium transition-colors ${
+          open
+            ? 'border-brand-primary/30 bg-brand-primary/10 text-brand-primary'
+            : 'border-gray-200 bg-white text-gray-700 hover:border-gray-300 hover:bg-gray-50'
+        }`}
+      >
+        <CalendarRange className="h-4 w-4 text-brand-primary" />
+        <span className="tabular-nums">{labelFor(value)}</span>
+        <ChevronDown className={`h-3.5 w-3.5 text-gray-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+      </button>
+      {open && (
+        <div
+          role="listbox"
+          className="absolute right-0 z-30 mt-1.5 min-w-[9rem] overflow-hidden rounded-xl border border-gray-100 bg-white py-1 shadow-lg"
+        >
+          {options.map(opt => {
+            const selected = opt === value;
+            return (
+              <button
+                key={String(opt)}
+                type="button"
+                role="option"
+                aria-selected={selected}
+                onClick={() => { onChange(opt); setOpen(false); }}
+                className={`flex w-full items-center justify-between px-3 py-2 text-left text-sm transition-colors ${
+                  selected
+                    ? 'bg-brand-primary/10 font-semibold text-brand-primary'
+                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
+                }`}
+              >
+                <span className="tabular-nums">{labelFor(opt)}</span>
+                {selected && <span className="ml-3 h-1.5 w-1.5 rounded-full bg-brand-primary" />}
+              </button>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
 export default function Proposals() {
   const navigate = useNavigate();
   const location = useLocation();
@@ -35,6 +119,17 @@ export default function Proposals() {
 
   const openNewProposal = () =>
     navigate('/proposals/new', { state: { backgroundLocation: location } });
+
+  // Defaults to this year, which is the question anyone opening the dashboard
+  // is actually asking. Kept in the URL so a filtered view can be shared.
+  const yearParam = searchParams.get('year');
+  const year: ProposalYear = yearParam === 'all' ? 'all' : Number(yearParam) || new Date().getFullYear();
+  const setYear = (next: ProposalYear) => {
+    const params = new URLSearchParams(searchParams);
+    if (next === new Date().getFullYear()) params.delete('year');
+    else params.set('year', String(next));
+    setSearchParams(params, { replace: true });
+  };
 
   const [proposals, setProposals] = useState<Proposal[]>([]);
   const [loading, setLoading] = useState(true);
@@ -58,6 +153,8 @@ export default function Proposals() {
     })();
     return () => { cancelled = true; };
   }, []);
+
+  const years = availableYears(proposals);
 
   // When the assistant proposes a draft with no client resolved, open a picker
   // and resolve/reject the Apply promise based on the user's choice.
@@ -140,7 +237,7 @@ export default function Proposals() {
       />
 
       <div className="p-8 animate-fade-in">
-        <div className="flex gap-2 mb-6 border-b border-gray-100 pb-3">
+        <div className="flex items-center gap-2 mb-6 border-b border-gray-100 pb-3">
           {TABS.map(t => (
             <button
               key={t.id}
@@ -155,6 +252,13 @@ export default function Proposals() {
               {t.label}
             </button>
           ))}
+          {/* The window the figures below answer for. Only on Overview, since
+              Templates, Contract Docs and Settings have nothing to filter. */}
+          {tab === 'overview' && (
+            <div className="ml-auto">
+              <YearPicker value={year} onChange={setYear} years={years} />
+            </div>
+          )}
         </div>
 
         {tab === 'overview' && (
@@ -166,7 +270,7 @@ export default function Proposals() {
               <SkeletonTable rows={5} cols={6} />
             ) : (
               <>
-              {proposals.length > 0 && <ProposalKPIs proposals={proposals} />}
+              {proposals.length > 0 && <ProposalKPIs proposals={proposals} year={year} />}
               <ProposalList
                 proposals={proposals}
                 onDeleted={id => setProposals(prev => prev.filter(p => p.id !== id))}
