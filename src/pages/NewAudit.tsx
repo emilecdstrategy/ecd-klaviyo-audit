@@ -74,6 +74,31 @@ async function detectShopifyDomain(url: string): Promise<string | null> {
   }
 }
 
+/** Which product and collection page this audit would capture.
+ *
+ * The same resolution the capture does, asked before anything runs, so the
+ * pages are visible and changeable here rather than discovered in the finished
+ * report. Answering also PINS them: the capture picks a collection at random,
+ * so two audits of one store could otherwise cover different collections. */
+async function detectAuditPages(
+  websiteUrl: string,
+  clientId: string,
+): Promise<{ product: string | null; collection: string | null } | null> {
+  if (!websiteUrl.trim()) return null;
+  try {
+    const { data } = await supabase.functions.invoke<any>('web_capture_screenshots', {
+      body: { action: 'detect', website_url: websiteUrl, client_id: clientId || undefined },
+    });
+    if (!data?.ok) return null;
+    return {
+      product: typeof data.product === 'string' ? data.product : null,
+      collection: typeof data.collection === 'string' ? data.collection : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 export default function NewAudit({ asModal }: NewAuditProps) {
   const navigate = useNavigate();
   const location = useLocation();
@@ -120,6 +145,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [domainVerified, setDomainVerified] = useState(false);
   const [proceedWithoutStore, setProceedWithoutStore] = useState(false);
 
+  // What the page detection is doing, so the fields do not just sit blank while
+  // three network calls resolve behind them.
+  const [detectingPages, setDetectingPages] = useState(false);
+  const [pagesDetected, setPagesDetected] = useState(false);
+  const [pageDetectFailed, setPageDetectFailed] = useState(false);
+  // Which values WE filled, so a later detection may replace them but anything
+  // typed by hand is never touched.
+  const autoPagesRef = useRef({ product: '', collection: '' });
+
   const selectedClient = form.clientId ? clients.find(c => c.id === form.clientId) : undefined;
   const hasSavedKlaviyoConnection = Boolean((selectedClient as any)?.klaviyo_connected);
   const hasSavedShopifyConnection = Boolean(selectedClient?.shopify_connected);
@@ -159,6 +193,47 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     prefillShopifyDomain(form.websiteUrl);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [stepKey, hasSavedShopifyConnection]);
+
+  /** Fill the product and collection fields with the pages this audit would
+   *  actually capture. Never clobbers a URL typed by hand. */
+  const prefillAuditPages = (url: string, clientId: string) => {
+    if (!url.trim()) return;
+    setDetectingPages(true);
+    setPageDetectFailed(false);
+    void detectAuditPages(url, clientId).then(found => {
+      setDetectingPages(false);
+      if (!found || (!found.product && !found.collection)) {
+        setPageDetectFailed(true);
+        return;
+      }
+      setPagesDetected(true);
+      setForm(prev => {
+        const next = { ...prev };
+        // Replace only a field that is empty, or one we filled ourselves.
+        if (found.product && (!prev.productUrl.trim() || prev.productUrl === autoPagesRef.current.product)) {
+          next.productUrl = found.product;
+          autoPagesRef.current.product = found.product;
+        }
+        if (found.collection && (!prev.collectionUrl.trim() || prev.collectionUrl === autoPagesRef.current.collection)) {
+          next.collectionUrl = found.collection;
+          autoPagesRef.current.collection = found.collection;
+        }
+        return next;
+      });
+    });
+  };
+
+  // Resolve on arrival at the step and whenever the homepage changes. Debounced
+  // rather than per keystroke: each run is three network calls against the
+  // storefront, and typing a URL would otherwise fire one per character.
+  useEffect(() => {
+    if (stepKey !== 'web_setup') return;
+    const url = form.websiteUrl.trim();
+    if (!url) return;
+    const t = window.setTimeout(() => prefillAuditPages(url, form.clientId), 600);
+    return () => window.clearTimeout(t);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [stepKey, form.websiteUrl, form.clientId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -614,14 +689,25 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                   placeholder="https://store.com"
                 />
                 <p className="mt-1.5 text-xs text-gray-500">
-                  We'll automatically detect and screenshot the product, collection, and cart pages. Override them below if needed.
+                  {detectingPages
+                    ? 'Finding the product and collection pages this audit will capture…'
+                    : pagesDetected
+                      ? 'These are the exact pages this audit will capture. Swap either one below if you would rather use a different page.'
+                      : pageDetectFailed
+                        ? "We could not read this store's pages automatically. Set the product and collection URLs below, or leave them blank and the capture will try again."
+                        : "We'll automatically detect and screenshot the product, collection, and cart pages. Override them below if needed."}
                 </p>
               </div>
 
-              <details className="group border border-gray-200 rounded-lg">
+              {/* Opened once there is something in it worth seeing: the whole
+                  point is that the pages are visible before the run, and a
+                  collapsed panel hides them. */}
+              <details className="group border border-gray-200 rounded-lg" open={pagesDetected}>
                 <summary className="cursor-pointer list-none flex items-center justify-between px-3.5 py-2.5 text-sm font-medium text-gray-800 [&::-webkit-details-marker]:hidden">
-                  <span>Override detected pages</span>
-                  <span className="text-xs text-gray-400 font-normal">Optional</span>
+                  <span>{pagesDetected ? 'Pages this audit will capture' : 'Override detected pages'}</span>
+                  <span className="text-xs text-gray-400 font-normal">
+                    {detectingPages ? 'Detecting…' : pagesDetected ? 'Editable' : 'Optional'}
+                  </span>
                 </summary>
                 <div className="px-3.5 pb-3.5 pt-1 space-y-3 border-t border-gray-100">
                   <div>
@@ -653,6 +739,10 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                       className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
                       placeholder="Leave blank to capture the slide-cart drawer"
                     />
+                    <p className="mt-1 text-xs text-gray-400">
+                      Nothing to detect here: the capture adds an item and photographs whatever
+                      the theme opens, drawer or page.
+                    </p>
                   </div>
                 </div>
               </details>

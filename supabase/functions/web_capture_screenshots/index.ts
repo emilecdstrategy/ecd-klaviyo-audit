@@ -752,7 +752,9 @@ serve(async (req) => {
     await authorize(req);
 
     const input = (await req.json()) as {
-      action?: "seed" | "capture_one" | "run";
+      action?: "seed" | "capture_one" | "run" | "detect";
+      /** detect only: the homepage to resolve pages for, before an audit exists. */
+      website_url?: string;
       audit_id?: string;
       client_id?: string;
       pages?: { homepage?: string; product?: string; collection?: string; cart?: string };
@@ -764,6 +766,55 @@ serve(async (req) => {
     const auditId = (input.audit_id ?? "").trim();
     const clientId = (input.client_id ?? "").trim();
     const action = input.action ?? "seed";
+
+    // Which pages WOULD this audit capture? Asked from the new-audit form so the
+    // strategist can see and change them before anything runs, rather than
+    // finding out from the finished report. Same resolution order as seed, but
+    // it writes nothing and needs no audit to exist yet.
+    //
+    // The answer is then submitted as explicit page overrides, which also pins
+    // the collection: seed picks one at random, so without pinning the report
+    // could cover a different collection than the one previewed here.
+    if (action === "detect") {
+      const homepage = normalizeUrl(input.website_url);
+      if (!homepage) {
+        return json({ ok: false, error: { code: "bad_request", message: "Missing website_url" }, correlationId }, { status: 400 });
+      }
+      const origin = originOf(homepage);
+      const sb = assertServiceClient();
+      let product: string | null = null;
+      let collection: string | null = null;
+      const sources: string[] = [];
+
+      if (clientId) {
+        const viaShopify = await detectFromShopify(sb, clientId, origin).catch(() => ({}) as Record<string, string>);
+        if (viaShopify.product) { product = normalizeUrl(viaShopify.product); sources.push("shopify_admin"); }
+        if (viaShopify.collection) collection = normalizeUrl(viaShopify.collection);
+      }
+      if (!product || !collection) {
+        const viaStore = await detectFromStorefront(origin).catch(() => ({}) as Record<string, string>);
+        if (!product && viaStore.product) { product = normalizeUrl(viaStore.product); sources.push("storefront_json"); }
+        if (!collection && viaStore.collection) { collection = normalizeUrl(viaStore.collection); sources.push("storefront_json"); }
+      }
+      if (!product || !collection) {
+        const viaHtml = await detectFromHtml(homepage, origin).catch(() => ({}) as Record<string, string>);
+        if (!product && viaHtml.product) { product = normalizeUrl(viaHtml.product); sources.push("homepage_html"); }
+        if (!collection && viaHtml.collection) { collection = normalizeUrl(viaHtml.collection); sources.push("homepage_html"); }
+      }
+
+      return json({
+        ok: true,
+        correlationId,
+        homepage,
+        product,
+        collection,
+        // The cart is never a URL we pick: capture adds the flagship variant and
+        // opens whatever the theme shows, so there is nothing to prefill.
+        cart: null,
+        sources: [...new Set(sources)],
+      });
+    }
+
     if (!auditId || !clientId) {
       return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id or client_id" }, correlationId }, { status: 400 });
     }
