@@ -487,6 +487,52 @@ const DIAGNOSTIC_STEP = [
   /\baudit (your|the|this|each|every|product|collection|cart|checkout|site|store|page)/i,
 ];
 
+/**
+ * Advice that presumes something about the store we never checked.
+ *
+ * A play told a client to "Turn on Shopify's abandoned checkout emails" and to
+ * "Simplify checkout to one page if your current theme still splits it into
+ * multiple steps". This audit never opens the checkout, never reads the
+ * notification settings and never inspects the theme, so both were guesses
+ * written as instructions. A client who already has those emails on reads it
+ * and concludes we did not look.
+ *
+ * Three shapes, all of them a guess about the current setup:
+ *  - a conditional hedge: "if your theme still...", "if you have not already"
+ *  - switching on a feature whose state we never read: "turn on", "enable"
+ *  - a change to the checkout page itself, which is never captured
+ *
+ * Proposing NEW work is fine and is not this: "send a follow-up email 30 days
+ * after purchase" claims nothing about what exists today.
+ */
+const PRESUMES_SETUP = [
+  // "if your current theme still splits it", "if you have not already done this"
+  new RegExp(
+    String.raw`\bif (you|your|they|their|the|this|that|it|there)\b[^.]{0,70}\b(already|currently|still|not|isn't|aren't|haven't|hasn't|don't|doesn't)\b`,
+    "i",
+  ),
+  new RegExp(String.raw`\bif not already\b|\bunless you already\b|\bassuming (you|your|it|they)\b`, "i"),
+  // Flipping a switch we never looked at.
+  new RegExp(
+    String.raw`\b(turn|switch) (it |them |these |this )?(on|off)\b|\b(enable|activate|disable|deactivate)\b`,
+    "i",
+  ),
+  // The checkout page is never captured, so nothing about its own layout,
+  // steps or fields can be evidenced. Findings about what leads INTO checkout
+  // are fine; this is about changing the checkout itself.
+  new RegExp(
+    String.raw`\b(one|single).page checkout\b|\bmulti.?(step|page) checkout\b|\bcheckout (in)?to (one|a single) page\b|\bsimplify (the )?checkout\b|\bcheckout (page|flow|form) (layout|fields?|steps?)\b`,
+    "i",
+  ),
+];
+
+/** True when a step is a guess about the store's current configuration. */
+export function presumesSetup(text: unknown): boolean {
+  const t = String(text ?? "");
+  if (!t.trim()) return false;
+  return PRESUMES_SETUP.some((re) => re.test(t));
+}
+
 /** True when a line of advice is something we refuse to ship. */
 export function isBannedWork(text: unknown): boolean {
   const t = String(text ?? "");
@@ -892,7 +938,7 @@ export function coerceAnalytics(input: unknown) {
       const steps = asArray(rec.action_steps)
         .map((s) => sanitizeDash(s))
         .filter(Boolean)
-        .filter((step) => !isBannedWork(step) && !isDiagnosticStep(step))
+        .filter((step) => !isBannedWork(step) && !isDiagnosticStep(step) && !presumesSetup(step))
         .slice(0, 3);
       const legacyAction = sanitizeDash(rec.action);
       return {

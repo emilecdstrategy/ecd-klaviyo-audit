@@ -3,7 +3,7 @@
 // Every case here is a pin that once landed on the wrong thing in a report a
 // client read. A wrong pin is worse than no pin, because it is a claim about
 // where the problem is and the reader checks it against the screenshot.
-import { asArray, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, type ElementBox } from "./web-analysis-schemas.ts";
+import { asArray, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, type ElementBox } from "./web-analysis-schemas.ts";
 
 /** A Shopify homepage header, as the capture actually records it. The logo lives
  * in an anonymous <a> inside an <h1>, so both carry bare tag names for labels. */
@@ -661,4 +661,79 @@ Deno.test("the same wording is still allowed away from the cart", () => {
     "collection",
   ).findings;
   if (kept.length !== 1) throw new Error("only the cart's roominess is our artifact");
+});
+
+// --- advice that guesses at the store's setup ------------------------------
+//
+// A play told a client to "Turn on Shopify's abandoned checkout emails" and to
+// "Simplify checkout to one page if your current theme still splits it into
+// multiple steps". This audit never opens the checkout, never reads the
+// notification settings and never inspects the theme, so both were guesses
+// written as instructions.
+
+Deno.test("switching on a setting we never read is refused", () => {
+  for (const step of [
+    "Turn on Shopify's abandoned checkout emails with a reminder sent within an hour.",
+    "Enable express checkout so returning payment details autofill.",
+    "Switch on the free shipping progress bar in the cart drawer.",
+    "Activate Shop Pay for faster repeat purchases.",
+  ]) {
+    if (!presumesSetup(step)) throw new Error(`should be refused: ${step}`);
+  }
+});
+
+Deno.test("a step that hedges about its own premise is refused", () => {
+  for (const step of [
+    "Simplify checkout to one page if your current theme still splits it into multiple steps.",
+    "Add a review widget if you have not already installed one.",
+    "Raise the threshold if it is not already above the median.",
+    "Assuming you are not already doing this, add a delivery estimate.",
+  ]) {
+    if (!presumesSetup(step)) throw new Error(`should be refused: ${step}`);
+  }
+});
+
+Deno.test("changing the checkout page itself is refused", () => {
+  // We never capture it, so nothing about its layout can be evidenced.
+  for (const step of [
+    "Move to a one-page checkout.",
+    "Reduce the multi-step checkout to a single screen.",
+    "Trim the checkout form fields to name, email and address.",
+  ]) {
+    if (!presumesSetup(step)) throw new Error(`should be refused: ${step}`);
+  }
+});
+
+Deno.test("new work and page changes we did see are untouched", () => {
+  for (const step of [
+    "Add a visible returns and delivery-time line next to the buy button on product pages.",
+    "Send a follow-up email 30 days after purchase offering a discount on the Garden Answer 7 inch Auger.",
+    "Set a free shipping bar at $225, just above the current $216.23 average.",
+    "Add Adapter Pins as a suggested add-on on the Auger Adapters product page and in cart.",
+    "Show a progress message in cart like 'Add $9 more for free shipping'.",
+    "Give every item in the upsell row its own add button.",
+  ]) {
+    if (presumesSetup(step)) throw new Error(`should be kept: ${step}`);
+    if (isBannedWork(step)) throw new Error(`should be kept: ${step}`);
+    if (isDiagnosticStep(step)) throw new Error(`should be kept: ${step}`);
+  }
+});
+
+Deno.test("a play keeps the steps that survive and loses the guesses", () => {
+  const out = coerceAnalytics({
+    intro: "x",
+    plays: [{
+      title: "Fix the checkout drop-off",
+      insight: "49% of shoppers who reach checkout do not complete the purchase.",
+      action_steps: [
+        "Add a visible returns and delivery-time line next to the buy button on product pages.",
+        "Turn on Shopify's abandoned checkout emails with a reminder sent within an hour.",
+        "Simplify checkout to one page if your current theme still splits it into multiple steps.",
+      ],
+      metric: "49%",
+    }],
+  });
+  if (out.plays.length !== 1) throw new Error("the play should survive on its one good step");
+  if (out.plays[0].action_steps.length !== 1) throw new Error(`steps: ${JSON.stringify(out.plays[0].action_steps)}`);
+  if (!out.plays[0].action_steps[0].includes("returns and delivery-time")) throw new Error("kept the wrong step");
 });
