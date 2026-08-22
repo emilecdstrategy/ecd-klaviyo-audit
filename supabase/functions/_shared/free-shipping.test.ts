@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertStringIncludes } from "https://deno.land/std@0.224.0/assert/mod.ts";
-import { freeShippingNote, labelsFromSnapshots, readFreeShippingOffer } from "./free-shipping.ts";
+import { freeShippingNote, labelsFromSnapshots, readFreeShippingOffer, thresholdAdvice } from "./free-shipping.ts";
 
 // A play told a store with no free shipping offer at all that "if your free
 // shipping bar sits at or near $135 or below, most carts already clear it". The
@@ -84,4 +84,70 @@ Deno.test("labels are gathered from every snapshot", () => {
   ]);
   assertEquals(labels, ["a: FREE SHIPPING OVER $50"]);
   assertEquals(readFreeShippingOffer(labels), { state: "found", amounts: ["50"] });
+});
+
+// --- which way should the threshold move -----------------------------------
+//
+// A play titled "Raise the free shipping bar" carried the step "Raise the free
+// shipping threshold to $75" on a store whose threshold was $80.01. That is a
+// reduction described as a raise, and the reader checks the two numbers. The
+// direction is arithmetic, so it is no longer left to the model: the note names
+// the direction and the target.
+
+Deno.test("a threshold above the 75th percentile is lowered", () => {
+  // The live case: $80.01 with a $40.60 median and a $62.95 75th percentile.
+  const advice = thresholdAdvice(80.01, { median: 40.6, p75: 62.95 });
+  assertEquals(advice.direction, "lower");
+  assert(advice.target !== null && advice.target < 80.01, `target ${advice.target} must be below the current bar`);
+  assert(advice.target! > 40.6, `target ${advice.target} must still be a stretch above the median`);
+});
+
+Deno.test("a threshold at or below the median is raised", () => {
+  // Power Planter: $100 with a $132.71 median and a $267.58 75th percentile.
+  const advice = thresholdAdvice(100, { median: 132.71, p75: 267.58 });
+  assertEquals(advice.direction, "raise");
+  assert(advice.target !== null && advice.target > 100, `target ${advice.target} must be above the current bar`);
+});
+
+Deno.test("a threshold already between the median and the 75th is left alone", () => {
+  const advice = thresholdAdvice(55, { median: 40.6, p75: 62.95 });
+  assertEquals(advice, { direction: "leave", target: null });
+});
+
+Deno.test("with no order spread there is no direction to give", () => {
+  assertEquals(thresholdAdvice(80, { median: null, p75: null }), { direction: "leave", target: null });
+});
+
+Deno.test("the note says lower, and forbids calling it a raise", () => {
+  const note = freeShippingNote({ state: "found", amounts: ["80.01"] }, 45, { median: 40.6, p75: 62.95 });
+  assertStringIncludes(note, "LOWER it");
+  assertStringIncludes(note, "MUST be lower than $80.01");
+  assertStringIncludes(note, 'describing a decrease as "raising the bar"');
+  assert(!note.includes("RAISE it"), "the note must not also say raise");
+});
+
+Deno.test("the note says raise when raising is right", () => {
+  const note = freeShippingNote({ state: "found", amounts: ["100"] }, 150, { median: 132.71, p75: 267.58 });
+  assertStringIncludes(note, "RAISE it");
+  assertStringIncludes(note, "MUST be higher than $100");
+  assert(!note.includes("LOWER it"), "the note must not also say lower");
+});
+
+Deno.test("a well-placed threshold gets no play at all", () => {
+  const note = freeShippingNote({ state: "found", amounts: ["55"] }, 48, { median: 40.6, p75: 62.95 });
+  assertStringIncludes(note, "where a threshold belongs");
+  assertStringIncludes(note, "Do NOT write a play about moving it");
+});
+
+Deno.test("the lowest advertised threshold is the one shoppers chase", () => {
+  // This store advertises $80.01 and $100; the $80.01 is the live target.
+  const note = freeShippingNote({ state: "found", amounts: ["100", "80.01"] }, 45, { median: 40.47, p75: 58.14 });
+  assertStringIncludes(note, "At $80.01");
+  assertStringIncludes(note, "LOWER it");
+});
+
+Deno.test("without an order spread the note falls back to the old wording", () => {
+  const note = freeShippingNote({ state: "found", amounts: ["100"] }, 150, { median: null, p75: null });
+  assertStringIncludes(note, "order_value_percentiles");
+  assert(!note.includes("RAISE it") && !note.includes("LOWER it"), "no direction without the numbers to derive one");
 });

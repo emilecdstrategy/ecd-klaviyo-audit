@@ -761,7 +761,15 @@ async function runStep(
           .eq("status", "success");
         const offer = readFreeShippingOffer(labelsFromSnapshots(snaps ?? []));
         const aov = Number((computed.current as { aov?: unknown } | undefined)?.aov);
-        return freeShippingNote(offer, Number.isFinite(aov) ? aov : null);
+        // Where the orders land decides which way a threshold should move, and
+        // that decision is arithmetic rather than judgement.
+        const pct = (computed.basket as { order_value_percentiles?: Record<string, unknown> } | undefined)
+          ?.order_value_percentiles ?? {};
+        const num = (v: unknown) => (Number.isFinite(Number(v)) && Number(v) > 0 ? Number(v) : null);
+        return freeShippingNote(offer, Number.isFinite(aov) ? aov : null, {
+          median: num(pct.p50),
+          p75: num(pct.p75),
+        });
       } catch {
         // Even the fallback says something, because saying nothing is what let
         // the model invent a threshold this store does not have.
@@ -777,7 +785,7 @@ async function runStep(
         sessionsEvidence(computed.sessions as Parameters<typeof sessionsEvidence>[0]),
         `- The traffic figures above are the denominator for everything else in this section. When the funnel names a step that loses most people, a play about that step beats a play about a product mix. Never present a conversion rate as good or bad against an industry average: none was measured.`,
         `- ORDER: the most concrete, quantified change the team could ship this week goes FIRST. A play whose steps are things to look into is not shippable and must not exist at all: every step is a change to make, with the change named. Never write a step that tells them to audit, review, analyse, investigate or measure something. They are reading the audit; handing the work back is the opposite of the job.`,
-        `- SPECIFICALLY: free shipping is usually the strongest and cheapest lever here, so its play goes first, but WHICH play depends entirely on the FREE SHIPPING note above. When a threshold is advertised and sits at or below the median order, almost every order already clears it and is pulling nobody's basket upward: raise it, naming the new number against the median and the 75th percentile. When none is advertised, there is nothing to raise: introduce one just above the average order value. When one is advertised but its amount was never captured, write neither play, because both need a number you do not have.`,
+        `- SPECIFICALLY: free shipping is usually the strongest and cheapest lever here, so its play goes first when there is one, but WHICH play, and in WHICH direction, is decided for you in the FREE SHIPPING note above. Follow it exactly: it names the direction and the target. Never move a threshold the note says to leave alone, never name a number on the wrong side of the current one, and make the title and the steps agree with the direction, so a play that lowers a threshold never says "raise the bar".`,
         `- NEVER recommend page speed, load time, image compression, lazy loading, caching or Core Web Vitals work. None of it is measured in this audit and none of it is what this team ships. If the data points at a step losing people, write the merchandising, copy, layout or pricing change that addresses it.`,
         `- Every step must be something we can SEE is worth doing. This audit reads the homepage, a product page, a collection page and the cart, plus the order data. It never opens the checkout, never reads the store's notification or shipping settings, and never inspects the theme. So never tell them to turn something on, enable something, or change the checkout page itself: you do not know whether it is already on or what the checkout looks like, and a client who already has it reads that and concludes we did not look. Never hedge with "if you have not already" or "if your theme still does X" either: a step that guesses at its own premise is not a step. Proposing genuinely NEW work is fine, because it claims nothing about what exists today.`,
         `- One instruction per step, written as an instruction. Do not reason inside a step, do not correct yourself mid-sentence, and never write two alternatives joined by "isn't right" or "actually". Decide, then say the thing to do.`,

@@ -532,7 +532,7 @@ const BANNED_WORK = [
 ];
 
 const DIAGNOSTIC_STEP = [
-  /^\s*(audit|review|analy[sz]e|investigate|examine|assess|benchmark|measure)\b/i,
+  /^\s*(audit|review|analy[sz]e|investigate|examine|assess|benchmark|measure|recheck|re-check|revisit|monitor|track|verify|confirm|evaluate|check)\b/i,
   /\b(run|do|perform|conduct) (an|a|another) (audit|analysis|review|assessment)\b/i,
   /\baudit (your|the|this|each|every|product|collection|cart|checkout|site|store|page)/i,
 ];
