@@ -699,10 +699,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 </p>
               </div>
 
-              {/* Opened once there is something in it worth seeing: the whole
-                  point is that the pages are visible before the run, and a
-                  collapsed panel hides them. */}
-              <details className="group border border-gray-200 rounded-lg" open={pagesDetected}>
+              {/* Open from the start: these are the pages the audit will
+                  capture, not an optional extra to go looking for. */}
+              <details className="group border border-gray-200 rounded-lg" open>
                 <summary className="cursor-pointer list-none flex items-center justify-between px-3.5 py-2.5 text-sm font-medium text-gray-800 [&::-webkit-details-marker]:hidden">
                   <span>{pagesDetected ? 'Pages this audit will capture' : 'Override detected pages'}</span>
                   <span className="text-xs text-gray-400 font-normal">
