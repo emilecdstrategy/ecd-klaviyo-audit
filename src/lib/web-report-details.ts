@@ -22,6 +22,10 @@ export type WebFinding = {
    * each carrying its own snapshot_id + coordinates. */
   highlights?: WebHighlight[];
   hidden?: boolean;
+  /** Taken out of the report but kept, so it can be put back. The trash button
+   *  used to filter the finding out of the array, which meant a mis-click threw
+   *  away an audit's work with no way to undo it. */
+  removed?: boolean;
 };
 
 /** All pins for a finding, combining the new `highlights` array with the legacy
@@ -184,6 +188,7 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
           highlight,
           highlights,
           hidden: rec.hidden === true,
+          removed: rec.removed === true,
         };
       })
     : [];

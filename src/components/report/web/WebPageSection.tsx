@@ -134,6 +134,7 @@ export default function WebPageSection({
 
   const forViewport = detail.findings
     .map((f, origIndex) => ({ f, origIndex }))
+    .filter(({ f }) => !f.removed)
     .filter(({ f }) => editMode || !f.hidden)
     .filter(({ f }) => f.viewport === 'both' || f.viewport === viewport)
     .map((item) => ({ ...item, pinned: pinnedOnShownShot(item.f) && !item.f.hidden }));
@@ -161,10 +162,22 @@ export default function WebPageSection({
     const next = detail.findings.map((f, idx) => (idx === i ? { ...f, highlight: null, highlights: [] } : f));
     updateSectionDetailValue(section.section_key, ['web', 'findings'], next);
   };
+  // Set aside rather than deleted. This used to filter the finding out of the
+  // array, so a mis-click destroyed it with nothing to undo.
   const removeFinding = (i: number) => {
-    const next = detail.findings.filter((_, idx) => idx !== i);
+    const next = detail.findings.map((f, idx) => (idx === i ? { ...f, removed: true } : f));
     updateSectionDetailValue(section.section_key, ['web', 'findings'], next);
   };
+  const restoreFinding = (i: number) => {
+    const next = detail.findings.map((f, idx) => (idx === i ? { ...f, removed: false } : f));
+    updateSectionDetailValue(section.section_key, ['web', 'findings'], next);
+  };
+  // Everything taken out of this section, in the order it was written, so the
+  // drawer below can offer it back.
+  const removedFindings = detail.findings
+    .map((f, origIndex) => ({ f, origIndex }))
+    .filter(({ f }) => f.removed);
+
   const addFinding = () => {
     const next = [...detail.findings, { text: '', recommendation: '', viewport, highlight: null, hidden: false }];
     updateSectionDetailValue(section.section_key, ['web', 'findings'], next);
@@ -449,6 +462,31 @@ export default function WebPageSection({
             >
               <Plus className="h-3.5 w-3.5" /> Add finding
             </button>
+          )}
+
+          {editMode && removedFindings.length > 0 && (
+            <details className="mt-4 rounded-lg border border-gray-200 bg-gray-50/60">
+              <summary className="cursor-pointer list-none px-3 py-2 text-xs font-medium text-gray-500 [&::-webkit-details-marker]:hidden">
+                Removed from this section ({removedFindings.length})
+                <span className="ml-1.5 font-normal text-gray-400">not shown in the report</span>
+              </summary>
+              <div className="space-y-2 border-t border-gray-200 px-3 py-2.5">
+                {removedFindings.map(({ f, origIndex }) => (
+                  <div key={origIndex} className="flex items-start gap-2">
+                    <p className="min-w-0 flex-1 text-xs leading-snug text-gray-500">
+                      {f.text || <span className="italic text-gray-400">Empty finding</span>}
+                    </p>
+                    <button
+                      type="button"
+                      onClick={() => restoreFinding(origIndex)}
+                      className="shrink-0 rounded-md border border-gray-200 bg-white px-2 py-1 text-xs font-medium text-gray-600 hover:border-brand-primary/40 hover:text-brand-primary"
+                    >
+                      Put back
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </details>
           )}
         </div>
       </div>

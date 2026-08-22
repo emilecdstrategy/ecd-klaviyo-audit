@@ -866,8 +866,12 @@ async function runStep(
   if (step.kind === "overview") {
     const pageSections = sections.filter((s) => STEPS.find((st) => st.key === s.section_key && st.kind === "page"));
     const digest = pageSections.map((s) => {
-      const web = (s.section_details?.web ?? {}) as { pros?: string[]; findings?: Array<{ text?: string }> };
-      return `${s.section_key}: pros=${(web.pros ?? []).join("; ")} | issues=${(web.findings ?? []).map((f) => f.text).filter(Boolean).join("; ")}`;
+      const web = (s.section_details?.web ?? {}) as {
+        pros?: string[];
+        findings?: Array<{ text?: string; hidden?: boolean; removed?: boolean }>;
+      };
+      const live = (web.findings ?? []).filter((f) => !f.removed && !f.hidden);
+      return `${s.section_key}: pros=${(web.pros ?? []).join("; ")} | issues=${live.map((f) => f.text).filter(Boolean).join("; ")}`;
     }).join("\n");
     const messages: LlmMessage[] = [{
       role: "user",
@@ -892,8 +896,13 @@ async function runStep(
   const catalog = (catalogRows ?? []) as any[];
   const pageSections = sections.filter((s) => STEPS.find((st) => st.key === s.section_key && st.kind === "page"));
   const findingsDigest = pageSections.map((s) => {
-    const web = (s.section_details?.web ?? {}) as { findings?: Array<{ text?: string; recommendation?: string }> };
-    return (web.findings ?? []).map((f) => `- ${f.text}${f.recommendation ? ` (fix: ${f.recommendation})` : ""}`).join("\n");
+    const web = (s.section_details?.web ?? {}) as {
+      findings?: Array<{ text?: string; recommendation?: string; hidden?: boolean; removed?: boolean }>;
+    };
+    return (web.findings ?? [])
+      .filter((f) => !f.removed && !f.hidden)
+      .map((f) => `- ${f.text}${f.recommendation ? ` (fix: ${f.recommendation})` : ""}`)
+      .join("\n");
   }).filter(Boolean).join("\n");
   const catalogList = catalog.map((c) => `- ${c.slug}: ${c.name}`).join("\n");
   const messages: LlmMessage[] = [{
