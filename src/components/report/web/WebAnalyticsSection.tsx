@@ -218,8 +218,8 @@ function PlayCard({
         </div>
       )}
       <div className={`flex flex-wrap items-start justify-between gap-3 ${editMode ? 'pr-14' : ''}`}>
-        <h4 className="flex min-w-0 items-start gap-2.5 text-base font-semibold leading-snug text-gray-900">
-          <span className="mt-px flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-surface text-xs font-bold tabular-nums text-brand-primary">
+        <h4 className="flex min-w-0 items-start gap-2.5 text-base font-semibold leading-6 text-gray-900">
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-surface text-xs font-bold tabular-nums text-brand-primary">
             {number}
           </span>
           <span className="min-w-0">
