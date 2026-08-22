@@ -23,7 +23,10 @@ export default function WebFindingCard({
   onRemoveHighlight,
   onToggleHidden,
 }: {
-  number: number;
+  /** Null when this finding has no marker on the screenshot being shown, which
+   *  is the honest answer for something the capture cannot photograph, such as a
+   *  popup it strips before taking the shot. */
+  number: number | null;
   /** Unique DOM id so pins can scroll to the right finding across sections. */
   anchorId?: string;
   finding: WebFinding;
@@ -41,7 +44,7 @@ export default function WebFindingCard({
 
   return (
     <div
-      id={anchorId ?? `finding-${number}`}
+      id={anchorId ?? `finding-${number ?? 'unpinned'}`}
       onMouseEnter={() => onActivate(true)}
       onMouseLeave={() => onActivate(false)}
       className={`scroll-mt-24 rounded-xl border p-4 transition-shadow ${
@@ -49,7 +52,7 @@ export default function WebFindingCard({
       } ${finding.hidden ? 'opacity-50' : ''}`}
     >
       <div>
-        {hasCrop && (
+        {hasCrop && number !== null && (
           <div className="relative mb-3">
             <WebCropCard index={number} imageUrl={cropShot!.screenshot_url as string} highlight={finding.highlight!} />
             {editMode && (
@@ -67,9 +70,20 @@ export default function WebFindingCard({
 
         <div className="min-w-0">
           <div className="flex items-start gap-2">
-            <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-primary/10 text-[11px] font-bold text-brand-primary">
-              {number}
-            </span>
+            {/* A hollow dot rather than a number: there is no marker to go and
+                find, so offering one would send the reader looking. */}
+            {number === null ? (
+              <span
+                title="Not visible in this screenshot"
+                className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border border-dashed border-gray-300 text-gray-300"
+              >
+                <span className="h-1 w-1 rounded-full bg-gray-300" />
+              </span>
+            ) : (
+              <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-brand-primary/10 text-[11px] font-bold text-brand-primary">
+                {number}
+              </span>
+            )}
             <div className="min-w-0 flex-1 text-[13px] text-gray-800">
               <EditablePlainText value={finding.text} onSave={onChangeText} placeholder="Finding…" />
             </div>

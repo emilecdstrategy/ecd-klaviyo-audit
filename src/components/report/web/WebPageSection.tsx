@@ -117,18 +117,32 @@ export default function WebPageSection({
   const hasMobile = successful.some((s) => s.viewport === 'mobile');
 
   // Show only the findings for the selected viewport (plus ones tagged 'both'),
-  // then renumber 1..M within that filtered set so the pins on the shot match the
-  // list. origIndex tracks the real position in detail.findings for edits.
+  // then number them so the list and the pins on the shot agree. origIndex
+  // tracks the real position in detail.findings for edits.
+  //
+  // Only a finding with a pin on the CURRENT shot gets a number. Numbering every
+  // finding meant a reader hunting the screenshot for a marker that was never
+  // going to be there: the popup finding cannot be pinned, because the capture
+  // strips popups before the shot is taken, so there is nothing on the image to
+  // point at. It was numbered 2 and the image jumped from 1 to 3. Findings
+  // without a marker now say so instead.
+  const pinnedOnShownShot = (finding: (typeof detail.findings)[number]) =>
+    Boolean(shown && findingHighlights(finding).some((h) => h.snapshot_id === shown.id));
+
+  let pinCount = 0;
   const visibleFindings = detail.findings
     .map((f, origIndex) => ({ f, origIndex }))
     .filter(({ f }) => editMode || !f.hidden)
     .filter(({ f }) => f.viewport === 'both' || f.viewport === viewport)
-    .map((item, idx) => ({ ...item, number: idx + 1 }));
+    .map((item) => {
+      const pinned = pinnedOnShownShot(item.f) && !item.f.hidden;
+      return { ...item, pinned, number: pinned ? ++pinCount : null };
+    });
 
   // A finding can carry a pin per screenshot (desktop AND mobile); show the one
   // that belongs to the currently shown shot so the same finding pins on both.
   const markers = visibleFindings.flatMap(({ f, number }) => {
-    if (!shown || f.hidden) return [];
+    if (!shown || f.hidden || number === null) return [];
     const hl = findingHighlights(f).find((h) => h.snapshot_id === shown.id);
     return hl ? [{ index: number, highlight: hl, text: f.text, recommendation: f.recommendation }] : [];
   });
@@ -152,7 +166,7 @@ export default function WebPageSection({
   // Anchor ids must be unique per section: every section numbers its findings
   // from 1, so a bare `finding-1` would collide across sections and always jump
   // to the first one (the homepage). Scope by section key.
-  const findingAnchorId = (number: number) => `finding-${section.section_key}-${number}`;
+  const findingAnchorId = (key: number | string) => `finding-${section.section_key}-${key}`;
 
   const focusFinding = (index: number) => {
     setActiveIndex(index);
@@ -404,12 +418,12 @@ export default function WebPageSection({
                 return (
                   <WebFindingCard
                     key={i}
-                    anchorId={findingAnchorId(number)}
+                    anchorId={findingAnchorId(number ?? `row${origIndex}`)}
                     number={number}
                     finding={f}
                     cropShot={null}
-                    active={activeIndex === number}
-                    onActivate={(a) => setActiveIndex(a ? number : null)}
+                    active={number !== null && activeIndex === number}
+                    onActivate={(a) => setActiveIndex(a && number !== null ? number : null)}
                     onChangeText={(v) => setFinding(i, 'text', v)}
                     onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}
                     onRemove={() => removeFinding(i)}
