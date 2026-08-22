@@ -87,7 +87,10 @@ export default function PublicDocument() {
 
   const { document, signature, sender_signature, signed, expired } = payload;
   const voided = document.status === 'void';
-  const canSign = !signed && !expired && !voided;
+  // A document that does not ask the recipient to sign is a statement, not an
+  // agreement: no pad, and no "awaiting signature" that will never arrive.
+  const recipientSigns = document.recipient_signature_enabled !== false;
+  const canSign = recipientSigns && !signed && !expired && !voided;
 
   const recipientPending = canSign ? (
     <SignForm
@@ -123,6 +126,7 @@ export default function PublicDocument() {
       <div className="mt-6 rounded-2xl border border-gray-100 bg-white p-6 shadow-sm">
         <DocumentSignatures
           senderEnabled={document.sender_signature_enabled}
+          recipientEnabled={recipientSigns}
           sender={sender_signature}
           recipient={signature}
           recipientName={document.recipient_name}

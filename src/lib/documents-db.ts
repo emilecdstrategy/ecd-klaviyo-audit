@@ -87,6 +87,7 @@ export type CreateDocumentInput = {
   recipient_email?: string;
   /** Defaults to true: documents from us normally carry our signature. */
   sender_signature_enabled?: boolean;
+  recipient_signature_enabled?: boolean;
 };
 
 export async function createDocument(
@@ -104,6 +105,7 @@ export async function createDocument(
       recipient_name: input.recipient_name ?? '',
       recipient_email: input.recipient_email ?? '',
       sender_signature_enabled: input.sender_signature_enabled ?? true,
+      recipient_signature_enabled: input.recipient_signature_enabled ?? true,
       created_by: userId,
     })
     .select('*')
@@ -132,7 +134,18 @@ export async function autoSignDocumentAsSender(documentId: string, signerHint?: 
 
 export async function updateDocument(
   id: string,
-  updates: Partial<Pick<Document, 'title' | 'content' | 'recipient_name' | 'recipient_email' | 'valid_until' | 'sender_signature_enabled'>>,
+  updates: Partial<
+    Pick<
+      Document,
+      | 'title'
+      | 'content'
+      | 'recipient_name'
+      | 'recipient_email'
+      | 'valid_until'
+      | 'sender_signature_enabled'
+      | 'recipient_signature_enabled'
+    >
+  >,
 ): Promise<Document> {
   const { data, error } = await supabase
     .from('documents')
@@ -228,6 +241,7 @@ export type PublicDocumentPayload = {
     recipient_name: string;
     recipient_email: string;
     sender_signature_enabled: boolean;
+    recipient_signature_enabled: boolean;
   };
   signature: DocumentSignature | null;
   sender_signature: PublicSenderSignature | null;

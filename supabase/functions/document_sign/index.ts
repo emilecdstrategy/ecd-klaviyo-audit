@@ -37,6 +37,12 @@ serve(async (req) => {
     if (!bundle) return documentJson({ ok: false, error: { code: "not_found" }, correlationId }, { status: 404 });
 
     const { document } = bundle;
+    // A document sent as a statement rather than an agreement is not signable
+    // by the recipient at all. The public page hides the pad, so reaching here
+    // means a stale tab or a direct call.
+    if (document.recipient_signature_enabled === false) {
+      return documentJson({ ok: false, error: { code: "not_signable", message: "This document does not require your signature." }, correlationId }, { status: 200 });
+    }
     if (document.status !== "sent" && document.status !== "viewed") {
       return documentJson({ ok: false, error: { code: "not_signable", message: "This document can no longer be signed." }, correlationId }, { status: 200 });
     }

@@ -911,13 +911,13 @@ export default function ProposalAgentPanel({
       <div
         aria-hidden
         className={cn(
-          'hidden shrink-0 transition-[width] duration-300 ease-in-out lg:block',
+          'hidden shrink-0 transition-[width] duration-300 ease-in-out lg:block print:hidden',
           isOpen ? 'w-[420px]' : 'w-0',
         )}
       />
       <div
         className={cn(
-          'fixed right-0 top-0 z-30 hidden h-screen w-[420px] transform border-l border-gray-100 bg-white shadow-sm transition-transform duration-300 ease-in-out lg:block',
+          'fixed right-0 top-0 z-30 hidden h-screen w-[420px] transform border-l border-gray-100 bg-white shadow-sm transition-transform duration-300 ease-in-out lg:block print:hidden',
           isOpen ? 'translate-x-0' : 'translate-x-full',
         )}
       >
@@ -926,7 +926,7 @@ export default function ProposalAgentPanel({
 
       {/* Mobile: overlay */}
       {isOpen && (
-        <div className="lg:hidden">
+        <div className="lg:hidden print:hidden">
           <div className="fixed inset-0 z-40 bg-black/20" onClick={close} />
           <div className="fixed inset-y-0 right-0 z-50 w-full max-w-[400px] shadow-xl">{body}</div>
         </div>

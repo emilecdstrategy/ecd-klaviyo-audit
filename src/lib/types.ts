@@ -614,6 +614,9 @@ export interface Document {
   recipient_email: string;
   /** When true, a sender (staff) signature column is included alongside the recipient's. */
   sender_signature_enabled: boolean;
+  /** When false the recipient is never asked to sign. An employment letter is a
+   *  statement we sign and hand over, not an agreement with two sides. */
+  recipient_signature_enabled: boolean;
   public_token: string | null;
   valid_until: string | null;
   sent_at: string | null;

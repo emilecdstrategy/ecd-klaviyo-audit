@@ -105,6 +105,10 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
   // The sender can add/replace their own signature at any time, including AFTER
   // the recipient has signed (a countersignature). Only a voided document blocks it.
   const senderSignDisabled = doc.status === 'void';
+  const [togglingRecipient, setTogglingRecipient] = useState(false);
+  // Once the recipient has signed, the question is settled: turning it off would
+  // hide a signature they actually gave.
+  const recipientToggleDisabled = doc.status === 'void' || doc.status === 'signed';
 
   // Inline editing (title + body) with debounced autosave.
   const [title, setTitle] = useState(doc.title);
@@ -197,6 +201,20 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
     await upsertSenderSignature({ document_id: doc.id, signer_name: savedSig.signer_name, signature_image: savedSig.signature_image, saveAsDefault: false });
     await reload();
     toast('Your saved signature was added');
+  };
+
+  /** Ask the recipient to sign, or do not. Off makes the document a statement:
+   *  the public page drops the pad and the signature block shows only ours. */
+  const toggleRecipientSignature = async (enabled: boolean) => {
+    setTogglingRecipient(true);
+    try {
+      const updated = await updateDocument(doc.id, { recipient_signature_enabled: enabled });
+      onDocChange(updated);
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not change that');
+    } finally {
+      setTogglingRecipient(false);
+    }
   };
 
   const toggleSenderSignature = async (enabled: boolean) => {
@@ -441,7 +459,7 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
               </div>
 
               <div className="rounded-xl bg-white p-5 card-shadow">
-                <h3 className="text-sm font-semibold text-gray-900">Our signature</h3>
+                <h3 className="text-sm font-semibold text-gray-900">Signatures</h3>
                 <label className="mt-2 flex cursor-pointer items-start gap-2 text-sm text-gray-700">
                   <BrandedCheckbox
                     className="mt-0.5"
@@ -451,6 +469,27 @@ function WorkspaceInner({ doc, events, signature, senderSignature, reload, onDoc
                     aria-label="Include a signature from us on this document"
                   />
                   <span>Include a signature from us</span>
+                </label>
+                {/* Its counterpart. An employment letter, a reference or any
+                    statement we hand over has no second party to countersign,
+                    and leaving the recipient column on made those documents
+                    look permanently unfinished. */}
+                <label className="mt-3 flex cursor-pointer items-start gap-2 text-sm text-gray-700">
+                  <BrandedCheckbox
+                    className="mt-0.5"
+                    checked={doc.recipient_signature_enabled !== false}
+                    disabled={togglingRecipient || recipientToggleDisabled}
+                    onChange={(checked: boolean) => toggleRecipientSignature(checked)}
+                    aria-label="Ask the recipient to sign this document"
+                  />
+                  <span>
+                    Ask the recipient to sign
+                    {doc.recipient_signature_enabled === false && (
+                      <span className="mt-0.5 block text-xs text-gray-400">
+                        They will see the document without a signature box.
+                      </span>
+                    )}
+                  </span>
                 </label>
                 {/* Who signs, so a document can go out under a colleague's name.
                     Changing it re-signs immediately: there is nothing to confirm,

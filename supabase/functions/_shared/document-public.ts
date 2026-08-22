@@ -60,6 +60,9 @@ export function serializePublicDocument(
       recipient_name: document.recipient_name,
       recipient_email: document.recipient_email,
       sender_signature_enabled: Boolean(document.sender_signature_enabled),
+      // Absent on rows created before the column existed, which all wanted a
+      // recipient signature, so a missing value means true.
+      recipient_signature_enabled: document.recipient_signature_enabled !== false,
     },
     signature,
     sender_signature: publicSender,

@@ -44,10 +44,12 @@ function Column({ role, name, sig, pending }: { role: string; name?: string; sig
 }
 
 /** Two-column signature block: sender (us) on the left, recipient on the right.
- * The sender column only renders when the document has it enabled. When the
+ * Either column can be switched off: a letter we sign and hand over has no
+ * counterparty, and a document someone else signs may not need ours. When the
  * recipient has not signed, `recipientPending` can supply an interactive form. */
 export default function DocumentSignatures({
   senderEnabled,
+  recipientEnabled = true,
   sender,
   recipient,
   senderName = 'ECD Digital Strategy',
@@ -56,6 +58,7 @@ export default function DocumentSignatures({
   className,
 }: {
   senderEnabled: boolean;
+  recipientEnabled?: boolean;
   sender: SignatureView;
   recipient: SignatureView;
   senderName?: string;
@@ -63,12 +66,17 @@ export default function DocumentSignatures({
   recipientPending?: ReactNode;
   className?: string;
 }) {
+  // Nothing to show beats an empty "Signatures" heading over a blank box.
+  if (!senderEnabled && !recipientEnabled) return null;
+  const bothColumns = senderEnabled && recipientEnabled;
   return (
     <div className={className}>
-      <h3 className="text-sm font-semibold text-gray-900">Signatures</h3>
-      <div className={`mt-3 grid grid-cols-1 gap-5 ${senderEnabled ? 'sm:grid-cols-2' : ''}`}>
+      <h3 className="text-sm font-semibold text-gray-900">{bothColumns ? 'Signatures' : 'Signature'}</h3>
+      <div className={`mt-3 grid grid-cols-1 gap-5 ${bothColumns ? 'sm:grid-cols-2' : ''}`}>
         {senderEnabled && <Column role="Sender" name={senderName} sig={sender} />}
-        <Column role="Recipient" name={recipientName} sig={recipient} pending={recipientPending} />
+        {recipientEnabled && (
+          <Column role="Recipient" name={recipientName} sig={recipient} pending={recipientPending} />
+        )}
       </div>
     </div>
   );
