@@ -3,7 +3,7 @@
 // Every case here is a pin that once landed on the wrong thing in a report a
 // client read. A wrong pin is worse than no pin, because it is a claim about
 // where the problem is and the reader checks it against the screenshot.
-import { asArray, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, snapToElementGroup, type ElementBox } from "./web-analysis-schemas.ts";
+import { asArray, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, snapToElementByLabel, snapToElementGroup, snapToHeroPhoto, type ElementBox } from "./web-analysis-schemas.ts";
 
 /** A Shopify homepage header, as the capture actually records it. The logo lives
  * in an anonymous <a> inside an <h1>, so both carry bare tag names for labels. */
@@ -865,4 +865,191 @@ Deno.test("the group beats one word matched inside the same sentence", () => {
   if (Math.round(pin.x) !== 50) throw new Error(`expected the cluster to start at the search icon, got x=${pin.x}`);
   if (pin.w < 30) throw new Error(`expected a cluster-width box, got w=${pin.w}`);
   if (Math.round(pin.y) !== 6) throw new Error(`expected the icon row, got y=${pin.y}`);
+});
+
+// --- a cart that already carries its own reassurance -----------------------
+//
+// "The cart drawer never mentions returns or a guarantee near checkout" on a
+// cart offering Order Protection against damage, loss and theft, under a button
+// reading Protected Checkout. The words were in the captured labels.
+
+const PP_CART_TRUST: ElementBox[] = [
+  { id: 'el_1', label: 'div: Order Protection Protect from damage, loss and theft. $2.99', x: 5, y: 70, w: 90, h: 4 },
+  { id: 'el_2', label: 'div: Estimated delivery between: Aug 24, 2026-Aug 26, 2026.', x: 5, y: 88, w: 90, h: 3 },
+  { id: 'el_3', label: 'button: PROTECTED CHECKOUT $23.49', x: 5, y: 92, w: 90, h: 6 },
+];
+
+function trustCart(text: string, recommendation = 'Add a returns line.') {
+  return coercePageAudit(
+    { intro: 'x', findings: [{ text, recommendation, viewport: 'both' }] },
+    new Map([['IMG_1', 'snap-1']]),
+    new Map([['IMG_1', PP_CART_TRUST]]),
+    new Map([['IMG_1', 'mobile']]),
+    'cart',
+  ).findings;
+}
+
+Deno.test("a claim of no guarantee is refused when the cart shows protection", () => {
+  const kept = trustCart('The cart drawer never mentions returns or a guarantee near checkout, only shipping and delivery dates.');
+  if (kept.length !== 0) throw new Error('the cart offers Order Protection under a Protected Checkout button');
+});
+
+Deno.test("a finding that names the protection and asks for more still stands", () => {
+  // "Order Protection is offered with only a vague question mark" is a fair
+  // point about the thing that IS there, and it must survive.
+  const kept = trustCart(
+    'Order Protection is offered with only a vague question mark for explanation, right next to the button that closes the sale.',
+    'Swap the question mark for a one-line tooltip stating what is covered.',
+  );
+  if (kept.length !== 1) throw new Error('a finding about the existing protection must survive');
+});
+
+Deno.test("a cart carrying no reassurance keeps the claim", () => {
+  const kept = coercePageAudit(
+    {
+      intro: 'x',
+      findings: [{ text: 'The cart offers no guarantee or returns reassurance at all.', recommendation: 'Add one.', viewport: 'both' }],
+    },
+    new Map([['IMG_1', 'snap-1']]),
+    new Map([['IMG_1', [{ id: 'el_1', label: 'button: CHECKOUT', x: 5, y: 92, w: 90, h: 6 }]]]),
+    new Map([['IMG_1', 'mobile']]),
+    'cart',
+  ).findings;
+  if (kept.length !== 1) throw new Error('with nothing on the page the claim is fair');
+});
+
+// --- one shared word against a one-word element ---------------------------
+
+Deno.test("a pin labelled for the hero does not land on a nav item called BULBS", () => {
+  const els: ElementBox[] = [
+    { id: 'el_15', label: 'nav: AUGERS AUGER ACCESSORIES BUNDLES TOOLS BULBS', x: 0, y: 20.94, w: 100, h: 7.33 },
+    { id: 'el_20', label: 'a: BULBS', x: 50, y: 20.94, w: 12.5, h: 7.11 },
+    { id: 'el_27', label: 'section: Previous 1 Next Page 1 of 2', x: 0, y: 28.27, w: 100, h: 55.56 },
+  ];
+  const out = coercePageAudit(
+    {
+      intro: 'x',
+      findings: [{
+        text: 'The hero banner is entirely a fall bulbs sale, so a first-time visitor cannot tell that augers and planting tools are the core business.',
+        recommendation: 'Swap in a hero image showing an auger at work.',
+        viewport: 'desktop',
+        highlights: [{ image_ref: 'IMG_1', label: 'Hero banner: 25% Off Fall Bulbs', x: 4, y: 30, w: 92, h: 40 }],
+      }],
+    },
+    new Map([['IMG_1', 'snap-desktop']]),
+    new Map([['IMG_1', els]]),
+    new Map([['IMG_1', 'desktop']]),
+  ).findings;
+  const pin = out[0]?.highlights?.[0];
+  if (!pin) throw new Error('should still be pinned');
+  // The nav sits at y=20.94 and is 7.33 tall; the hero starts below it.
+  if (pin.y < 28) throw new Error(`pin landed in the nav strip at y=${pin.y}`);
+  if (Math.round(pin.w) === 13) throw new Error('pin snapped to the one-word BULBS nav item');
+});
+
+Deno.test("a short pin label still wins a one-word element on one distinctive word", () => {
+  // The bar the rule must not cross. "Bulbs menu" is essentially about the one
+  // word it shares, so snapping to the BULBS item is right; the hero pin above
+  // said four other things as well, which is what made it wrong.
+  const els: ElementBox[] = [
+    { id: 'el_20', label: 'a: BULBS', x: 50, y: 20.94, w: 12.5, h: 7.11 },
+    { id: 'el_27', label: 'section: Previous 1 Next Page 1 of 2', x: 0, y: 28.27, w: 100, h: 55.56 },
+  ];
+  const pin = snapToElementByLabel('Bulbs menu', els);
+  if (!pin || pin.id !== 'el_20') throw new Error(`expected the BULBS item, got ${JSON.stringify(pin)}`);
+  // And the long form is refused, which is the whole point of the change.
+  if (snapToElementByLabel('Hero banner: 25% Off Fall Bulbs', els)) {
+    throw new Error('a five-word label must not win a one-word element');
+  }
+});
+
+// --- a finding about the hero, which the DOM cannot describe ---------------
+//
+// A homepage hero is one big photograph with its words baked into the pixels, so
+// no element carries "25% OFF FALL BULBS". Every matching route failed and the
+// pin fell back to the model's guess, which put the hero at y=88, near the
+// bottom of a page whose hero starts at 28.
+
+const PP_HOME: ElementBox[] = [
+  { id: 'el_15', label: 'nav: AUGERS AUGER ACCESSORIES BUNDLES TOOLS BULBS', x: 0, y: 20.94, w: 100, h: 7.33 },
+  { id: 'el_20', label: 'button: BULBS', x: 50, y: 20.94, w: 12.5, h: 7.11 },
+  { id: 'el_31', label: 'h1: Get Started With Our Best Selling Augers', x: 2.5, y: 87.16, w: 95, h: 7.22 },
+];
+// The capture's own photo inventory: the hero, and a small logo.
+const PP_PHOTOS = [
+  { x: 0, y: 28.27, w: 100, h: 55.56 },
+  { x: 44, y: 8, w: 12, h: 4 },
+];
+
+Deno.test("a hero finding anchors to the hero photograph", () => {
+  const out = coercePageAudit(
+    {
+      intro: 'x',
+      findings: [{
+        text: 'The homepage sells a 25% off bulb promotion, not the augers and tools the store is actually for.',
+        recommendation: 'Lead with an auger at work.',
+        viewport: 'desktop',
+        highlights: [{ image_ref: 'IMG_1', label: '25% Off Fall Bulbs hero', x: 0, y: 88, w: 100, h: 10 }],
+      }],
+    },
+    new Map([['IMG_1', 'snap-desktop']]),
+    new Map([['IMG_1', PP_HOME]]),
+    new Map([['IMG_1', 'desktop']]),
+    'homepage',
+    new Map([['IMG_1', PP_PHOTOS]]),
+  ).findings;
+  const pin = out[0]?.highlights?.[0];
+  if (!pin) throw new Error('should be pinned');
+  if (Math.round(pin.y) !== 28) throw new Error(`expected the hero photo at y=28.27, got ${pin.y}`);
+  if (Math.round(pin.h) !== 56) throw new Error(`expected the hero's height, got ${pin.h}`);
+});
+
+Deno.test("the hero anchor only fires for a finding about the hero", () => {
+  // A finding about the nav must not be dragged onto the hero photograph.
+  const out = coercePageAudit(
+    {
+      intro: 'x',
+      findings: [{
+        text: 'The desktop navigation packs eight categories edge to edge with no breathing room.',
+        recommendation: 'Group them.',
+        viewport: 'desktop',
+        highlights: [{ image_ref: 'IMG_1', label: 'Category navigation row', x: 0, y: 21, w: 100, h: 7 }],
+      }],
+    },
+    new Map([['IMG_1', 'snap-desktop']]),
+    new Map([['IMG_1', PP_HOME]]),
+    new Map([['IMG_1', 'desktop']]),
+    'homepage',
+    new Map([['IMG_1', PP_PHOTOS]]),
+  ).findings;
+  const pin = out[0]?.highlights?.[0];
+  if (!pin) throw new Error('should be pinned');
+  if (Math.round(pin.y) === 28) throw new Error('a nav finding must not snap to the hero photo');
+});
+
+Deno.test("with no photo inventory the hero anchor stands aside", () => {
+  const out = coercePageAudit(
+    {
+      intro: 'x',
+      findings: [{
+        text: 'The hero banner is entirely a bulbs sale.',
+        recommendation: 'Change it.',
+        viewport: 'desktop',
+        highlights: [{ image_ref: 'IMG_1', label: 'Hero banner', x: 5, y: 30, w: 90, h: 40 }],
+      }],
+    },
+    new Map([['IMG_1', 'snap-desktop']]),
+    new Map([['IMG_1', PP_HOME]]),
+    new Map([['IMG_1', 'desktop']]),
+    'homepage',
+  ).findings;
+  const pin = out[0]?.highlights?.[0];
+  // Falls back to the model's own box rather than losing the pin.
+  if (!pin || Math.round(pin.y) !== 30) throw new Error(`expected the model's box, got ${JSON.stringify(pin)}`);
+});
+
+Deno.test("a small photo is never mistaken for the hero", () => {
+  // A logo or a badge in the header is a photograph too.
+  const onlySmall = [{ x: 44, y: 8, w: 12, h: 4 }];
+  if (snapToHeroPhoto('Hero banner', onlySmall)) throw new Error('a 12x4 logo is not a hero');
 });

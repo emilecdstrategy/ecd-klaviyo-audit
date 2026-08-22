@@ -261,13 +261,26 @@ export default async ({ page, context }) => {
       '[class*="privy" i]','[id*="om-" i]','[class*="justuno" i]','[class*="attentive" i]','[class*="wisepops" i]',
       '[class*="backdrop" i]','[class*="overlay" i]'
     ];
+    // A modal is often an inner panel, positioned normally, inside a fixed
+    // overlay whose own class matches nothing in the list above. Reading only
+    // the matched element's position missed those entirely, so an ancestor
+    // within a few levels counts too.
+    const floating = (el) => {
+      let node = el;
+      for (let up = 0; up < 4 && node && node.nodeType === 1; up++, node = node.parentElement) {
+        try {
+          const cs = getComputedStyle(node);
+          if (cs.position === "fixed" || cs.position === "sticky" || Number(cs.zIndex) > 1000) return true;
+        } catch (e) { return false; }
+      }
+      return false;
+    };
     for (const s of sels) {
       document.querySelectorAll(s).forEach((el) => {
         try {
           const idc = ((el.getAttribute("class") || "") + " " + (el.id || ""));
           if (/cart|minicart|drawer/i.test(idc)) return; // keep the cart drawer
-          const cs = getComputedStyle(el);
-          if (cs.position === "fixed" || cs.position === "sticky" || Number(cs.zIndex) > 1000) el.remove();
+          if (floating(el)) el.remove();
         } catch (e) {}
       });
     }
@@ -1032,6 +1045,21 @@ export default async ({ page, context }) => {
       return { data: { error: "edit_script_failed: " + String(e && e.message || e).slice(0, 200) }, type: "application/json" };
     }
   }
+
+  // Last look before the shutter.
+  //
+  // The sweeps above run early, and then the cart flow, the hover probe, the
+  // element pass and the DOM probes all take their turn: several seconds in
+  // which a delayed popup can appear. One did, on a collection page whose
+  // desktop shot went out with a "WANT 10% OFF" modal across it while the
+  // observation from moments earlier had recorded nothing. Whatever arrived
+  // late is recorded and removed here, so the page in the shot is the page.
+  try {
+    popups = popups.concat(((await page.evaluate(observePopups)) || []).map((p) => ({ ...p, when: "after_scroll" })));
+  } catch (e) { /* observation is a bonus; the removal below is the point */ }
+  await page.keyboard.press("Escape").catch(() => {});
+  await page.evaluate(sweepPopups).catch(() => {});
+  await page.evaluate(sweep).catch(() => {});
 
   const screenshot = await page.screenshot({ encoding: "base64", fullPage: !!fullPage, captureBeyondViewport: !!fullPage });
 

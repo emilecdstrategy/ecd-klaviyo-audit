@@ -20,6 +20,7 @@ import {
   PAGE_AUDIT_TOOL,
   ROADMAP_TOOL,
   type ElementBox,
+  type PhotoBox,
 } from "../_shared/web-analysis-schemas.ts";
 import { REPEAT_LOOKBACK_DAYS } from "../_shared/repeat-rate.ts";
 
@@ -222,6 +223,7 @@ function buildPageImages(
   refToId: Map<string, string>;
   refToElements: Map<string, ElementBox[]>;
   refToViewport: Map<string, string>;
+  refToPhotos: Map<string, PhotoBox[]>;
   primaryId: string | null;
   elementsText: string;
 } {
@@ -239,6 +241,7 @@ function buildPageImages(
   const refToId = new Map<string, string>();
   const refToElements = new Map<string, ElementBox[]>();
   const refToViewport = new Map<string, string>();
+  const refToPhotos = new Map<string, PhotoBox[]>();
   const elementLines: string[] = [];
   const styleLines: string[] = [];
   ordered.forEach((s, i) => {
@@ -246,6 +249,18 @@ function buildPageImages(
     refToId.set(ref, s.id);
     refToViewport.set(ref, s.viewport);
     images.push({ url: s.screenshot_url as string, label: `${ref}: ${pageLabel}, ${s.viewport}, above-the-fold` });
+    // The photograph inventory, for anchoring a hero finding the DOM cannot
+    // describe: the words in a hero are usually part of the image.
+    const rawPhotos = ((s as { raw?: Record<string, unknown> }).raw ?? {}).photos;
+    if (Array.isArray(rawPhotos)) {
+      refToPhotos.set(
+        ref,
+        rawPhotos
+          .filter((p): p is Record<string, unknown> => Boolean(p) && typeof p === "object")
+          .map((p) => ({ x: Number(p.x), y: Number(p.y), w: Number(p.w), h: Number(p.h) }))
+          .filter((p) => [p.x, p.y, p.w, p.h].every((n) => Number.isFinite(n))),
+      );
+    }
     const els = Array.isArray(s.elements) ? s.elements : [];
     if (els.length > 0) {
       refToElements.set(ref, els);
@@ -339,7 +354,7 @@ function buildPageImages(
   const elementsText = elementLines.length
     ? `\n\nReal page elements detected on these screenshots. THESE LABELS ARE THE WORDS ACTUALLY ON THE PAGE, so never claim the page does not mention, say or show something that appears in them: an audit told a client their cart said nothing about shipping cost while the line under the total read "Taxes and shipping calculated at checkout". If the words are there but too small, too quiet or too late, say that instead. (Use element_id in a finding's highlight to pin exactly, it maps to the element's true on-page box). ALWAYS prefer element_id over x/y/w/h: your coordinate estimates land pins on the wrong element, while these boxes are exact. If you truly must fall back to coordinates, word the highlight's label using the same wording as the closest listed element so it can still be matched:\n${elementLines.join("\n")}`
     : "";
-  return { images, refToId, refToElements, refToViewport, primaryId, elementsText: elementsText + styleText + hoverText + belowFoldText + popupText };
+  return { images, refToId, refToElements, refToViewport, refToPhotos, primaryId, elementsText: elementsText + styleText + hoverText + belowFoldText + popupText };
 }
 
 async function ensureJob(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
@@ -530,7 +545,7 @@ async function runStep(
         return;
       }
     }
-    const { images, refToId, refToElements, refToViewport, primaryId, elementsText } = buildPageImages(rows, step.label);
+    const { images, refToId, refToElements, refToViewport, refToPhotos, primaryId, elementsText } = buildPageImages(rows, step.label);
     const trafficText = sessionsEvidence(
       (await loadSessions(sb, auditId)) as Parameters<typeof sessionsEvidence>[0],
     );
@@ -566,7 +581,7 @@ async function runStep(
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
     if (turn.kind !== "tool_call") throw new Error(`${step.key}: model did not call the tool`);
     logAuditShape(step.key, "first", turn.input);
-    let parsed = coercePageAudit(turn.input, refToId, refToElements, refToViewport, step.page_type);
+    let parsed = coercePageAudit(turn.input, refToId, refToElements, refToViewport, step.page_type, refToPhotos);
     logCoercionLoss(step.key, "first", turn.input, parsed.findings.length);
     // The model sometimes returns an empty audit for a page that clearly
     // rendered, and it often skips the intro entirely (which left the report's
@@ -642,7 +657,7 @@ async function runStep(
       const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
       if (retry.kind === "tool_call") {
         logAuditShape(step.key, "retry", retry.input);
-        const retryParsed = coercePageAudit(retry.input, refToId, refToElements, refToViewport, step.page_type);
+        const retryParsed = coercePageAudit(retry.input, refToId, refToElements, refToViewport, step.page_type, refToPhotos);
         logCoercionLoss(step.key, "retry", retry.input, retryParsed.findings.length);
         // Only take what was actually missing, so a retry cannot throw away good
         // findings from the first pass. `tooFew` is handled alongside

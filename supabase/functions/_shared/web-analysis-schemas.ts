@@ -183,6 +183,13 @@ export function snapToElementByLabel(
     // One shared word is only enough when it actually identifies something.
     // Two or more can include generic words, since the combination is specific.
     if (shared.length === 1 && GENERIC_TOKENS.has(shared[0])) continue;
+    // And one shared word is not enough when the label said far more than that
+    // word. A pin labelled "Hero banner: 25% Off Fall Bulbs" landed on the
+    // BULBS item in the nav, because that element's label is one word, so the
+    // single overlap scored a perfect match on the element's side while four
+    // fifths of the pin's own description went unaccounted for. A one-word
+    // element only wins when the pin was essentially about that one word.
+    if (shared.length === 1 && wanted.length > 2) continue;
     // Favour matching most of the requested words against a concise label.
     const score = shared.length / Math.max(wanted.length, 1) + shared.length / Math.max(have.length, 1);
     if (!best || score > best.score) best = { el, score };
@@ -239,6 +246,34 @@ export function snapToElementGroup(
   // stopped pointing at anything, and the model's own guess is no worse.
   if (w <= 0 || h <= 0 || w > 70 || h > 22) return undefined;
   return { x, y, w, h, ids: hits.map((e) => e.id) };
+}
+
+/** A photograph as the capture recorded it, in percentages of the shot. */
+export type PhotoBox = { x: number; y: number; w: number; h: number };
+
+const HERO_WORDS = new RegExp(
+  ["hero", "banner", "masthead", "above the fold", "first screen", "opening image", "main image", "slide", "carousel"].join("|"),
+  "i",
+);
+
+/**
+ * Where the hero actually is, for a finding that is about it.
+ *
+ * A homepage hero is usually one big photograph with its words baked into the
+ * pixels, so the DOM has no element carrying "25% OFF FALL BULBS" and no amount
+ * of label matching can find it. Every other route fails and the pin falls back
+ * to the model's guess at coordinates, which put the hero at the bottom of the
+ * page on a live report.
+ *
+ * The capture already inventories every photograph it painted, with boxes. The
+ * biggest one starting in the top half of the shot IS the hero, which is a fact
+ * rather than an estimate.
+ */
+export function snapToHeroPhoto(text: unknown, photos: PhotoBox[]): PhotoBox | undefined {
+  if (!HERO_WORDS.test(String(text ?? ""))) return undefined;
+  const candidates = (photos ?? []).filter((p) => p && p.w >= 50 && p.h >= 10 && p.y < 60);
+  if (candidates.length === 0) return undefined;
+  return candidates.reduce((best, p) => (p.w * p.h > best.w * best.h ? p : best));
 }
 
 // --- Cross-section duplicate detection -------------------------------------
@@ -649,6 +684,40 @@ const ACKNOWLEDGES_DISCLOSURE_RE = new RegExp(
 // found new ways to say it: "a lot of open white space" walked straight through
 // a pattern that required the word "empty" to come first, so the adjectives are
 // now a set rather than a fixed phrase.
+/** Reassurance a cart can already be carrying. */
+const TRUST_PRESENT_RE = new RegExp(
+  [
+    "protected checkout",
+    "order protection",
+    "protect(ion)? (from|against)",
+    "secure(ly)? (checkout|payment)",
+    "money.?back",
+    "guarantee",
+    "warranty",
+    "free returns",
+    "returns? within",
+    "buyer protection",
+  ].join("|"),
+  "i",
+);
+
+/** A finding claiming the cart offers no reassurance at all. */
+const NO_TRUST_CLAIM_RE = new RegExp(
+  [
+    "\\b(no|not|never|nothing|none|without|missing|absent|lacks?|fails? to|does ?n[o']?t|do ?n[o']?t)\\b",
+    "[^.]{0,90}",
+    "\\b(trust|reassur\\w*|guarantee|protection|protected|returns?|warranty|secure|safety|safe)\\b",
+  ].join(""),
+  "i",
+);
+
+/** The finding names the thing that IS there, so it is asking for more rather
+ *  than claiming there is nothing. That is a fair point and it stands. */
+const ACKNOWLEDGES_TRUST_RE = new RegExp(
+  ["protected checkout", "order protection", "protect from damage", "already (says|shows|has|offers)"].join("|"),
+  "i",
+);
+
 const CART_EMPTINESS_RE = new RegExp(
   [
     // A qualifier, then "space" within a short window. The adjectives stack
@@ -672,6 +741,9 @@ export function coercePageAudit(
   refToViewport?: Map<string, string>,
   /** Which page this is, so page-specific refusals can apply. */
   pageType?: string,
+  /** Every photograph the capture painted, per image, for anchoring a finding
+   *  about the hero when the DOM has no element for it. */
+  refToPhotos?: Map<string, PhotoBox[]>,
 ) {
   const o = (input ?? {}) as Record<string, unknown>;
   // Every word the capture found on these screenshots. A claim that the page
@@ -731,11 +803,18 @@ export function coercePageAudit(
       const widenToGroup = Boolean(group && (!el || group.ids.includes(el.id)));
       const fallbackEl = el || widenToGroup ? null : snapToElementByLabel(rec.text, els);
       const named = widenToGroup ? null : (el ?? fallbackEl);
+      // Last resort before the model's coordinates: if this is a finding about
+      // the hero, the hero is a photograph and we know where it is.
+      const hero = named || widenToGroup
+        ? null
+        : snapToHeroPhoto(`${hl.label ?? ""} ${rec.text ?? ""}`, refToPhotos?.get(ref) ?? []);
       let box: { x: number; y: number; w: number; h: number; label?: string } | null = null;
       if (named) {
         box = { x: clampPct(named.x), y: clampPct(named.y), w: clampPct(named.w), h: clampPct(named.h), label: named.label };
       } else if (widenToGroup && group) {
         box = { x: clampPct(group.x), y: clampPct(group.y), w: clampPct(group.w), h: clampPct(group.h) };
+      } else if (hero) {
+        box = { x: clampPct(hero.x), y: clampPct(hero.y), w: clampPct(hero.w), h: clampPct(hero.h) };
       } else {
         const w = clampPct(hl.w);
         const h = clampPct(hl.h);
@@ -745,11 +824,11 @@ export function coercePageAudit(
       // A box hugging the bottom edge of the crop is almost always a coordinate
       // guess at content that continues below the shot. Pinning there points at
       // nothing, so drop the pin rather than show it in the wrong place.
-      if (box.y >= 92 && !named && !widenToGroup && !lenient) return null;
+      if (box.y >= 92 && !named && !widenToGroup && !hero && !lenient) return null;
       // Lenient pass: slide a bottom-hugging box up so the whole pin sits in the
       // frame. It is an approximation of where the model was pointing, but a
       // roughly placed pin beats no pin at all.
-      if (lenient && !named && !widenToGroup && box.y + box.h > 100) {
+      if (lenient && !named && !widenToGroup && !hero && box.y + box.h > 100) {
         box = { ...box, h: Math.min(box.h, 12), y: Math.max(0, 100 - Math.min(box.h, 12)) };
       }
       return {
@@ -955,6 +1034,23 @@ export function coercePageAudit(
         console.warn(JSON.stringify({
           event: "finding_refused",
           reason: "cart_already_states_shipping",
+          finding: String(f.text ?? "").slice(0, 120),
+        }));
+        return false;
+      }
+      // "The cart drawer never mentions returns or a guarantee" on a cart
+      // offering Order Protection against damage, loss and theft, under a
+      // button that says Protected Checkout. Same shape as the shipping claim:
+      // the words are on the page and in the captured labels.
+      if (
+        pageType === "cart" &&
+        TRUST_PRESENT_RE.test(pageText) &&
+        NO_TRUST_CLAIM_RE.test(txt) &&
+        !ACKNOWLEDGES_TRUST_RE.test(txt)
+      ) {
+        console.warn(JSON.stringify({
+          event: "finding_refused",
+          reason: "cart_already_shows_protection",
           finding: String(f.text ?? "").slice(0, 120),
         }));
         return false;

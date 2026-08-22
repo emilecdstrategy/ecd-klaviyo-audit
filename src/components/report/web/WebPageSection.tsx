@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Loader2, Monitor, Plus, Smartphone, Trash2, Wand2 } from 'lucide-react';
+import { Loader2, Monitor, Plus, Smartphone, Wand2 } from 'lucide-react';
 import type { AuditSection, WebPageSnapshot } from '../../../lib/types';
 import { parseWebSectionDetail, findingHighlights } from '../../../lib/web-report-details';
 import { fetchSectionAfterImages, generateSectionAfter } from '../../../lib/web-pipeline-status';
