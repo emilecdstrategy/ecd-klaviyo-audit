@@ -224,7 +224,7 @@ export default async ({ page, context }) => {
     .catch(() => "");
   const looksLikeErrorPage =
     bodyText.length < 280 &&
-    /local_rate_limited|too many requests|rate.?limited|access denied|error 10\d\d|connection needs to be verified|verify you are human|checking your browser|just a moment|attention required|enable javascript and cookies|captcha/i.test(bodyText);
+    /local_rate_limited|too many requests|rate.?limited|access denied|error 10\\d\\d|connection needs to be verified|verify you are human|checking your browser|just a moment|attention required|enable javascript and cookies|captcha/i.test(bodyText);
   if (httpStatus >= 400 || looksLikeErrorPage) {
     return { data: { error: "storefront_blocked (http " + httpStatus + ": " + bodyText.slice(0, 90) + ")" }, type: "application/json" };
   }
@@ -1008,7 +1008,7 @@ export default async ({ page, context }) => {
     .catch(() => "");
   if (
     finalText.length < 280 &&
-    /local_rate_limited|too many requests|rate.?limited|access denied|error 10\d\d|connection needs to be verified|verify you are human|checking your browser|just a moment|attention required|enable javascript and cookies|captcha/i.test(finalText)
+    /local_rate_limited|too many requests|rate.?limited|access denied|error 10\\d\\d|connection needs to be verified|verify you are human|checking your browser|just a moment|attention required|enable javascript and cookies|captcha/i.test(finalText)
   ) {
     return { data: { error: "storefront_blocked (final: " + finalText.slice(0, 90) + ")" }, type: "application/json" };
   }

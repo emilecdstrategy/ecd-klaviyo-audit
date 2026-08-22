@@ -647,14 +647,18 @@ const SHIPPING_DISCLOSURE_RE = new RegExp(
     // Taxes and shipping calculated at checkout.
     "(tax(es)?|duties)[^.]{0,60}(shipping|delivery)[^.]{0,60}(calculated|estimated|added|applied)",
     "calculated at (the )?checkout",
-    // A delivery estimate, as a date range or a day count.
+    // A delivery estimate, as a date range or a day count. String.raw, because
+    // three of these shipped as plain strings whose \d, \s and \w had collapsed
+    // to bare letters: "Ships in 2 days" and "3-5 business days" matched
+    // nothing, so a cart whose only disclosure was a dispatch time was still
+    // called silent about shipping.
     "estimated (delivery|arrival|ship)",
-    "(delivery|arriv\w*) (between|by|on|in) ",
+    String.raw`(delivery|arriv\w*) (between|by|on|in) `,
     "arrives? (by|between|in|on) ",
     // A dispatch time.
-    "ship(s|ped|ping)? (within|in) \d",
+    String.raw`ship(s|ped|ping)? (within|in) \d`,
     "ship(s|ped|ping)? within (one|two|three|a|the same)",
-    "\d+\s*(-|to)?\s*\d*\s*business day",
+    String.raw`\d+\s*(-|to)?\s*\d*\s*business day`,
   ].join("|"),
   "i",
 );

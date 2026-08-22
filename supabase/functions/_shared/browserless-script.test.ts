@@ -28,6 +28,7 @@ Deno.test("the injected script carries real regex escapes, not eaten ones", () =
     { pattern: "/s+/g", why: "whitespace regex lost its backslash" },
     { pattern: "add +|+ add", why: "quantifier with nothing to repeat" },
     { pattern: "/d+/", why: "digit regex lost its backslash" },
+    { pattern: "error 10dd", why: "the Cloudflare error-code digits lost their backslashes" },
   ];
   for (const { pattern, why } of eaten) {
     if (FUNCTION_CODE.includes(pattern)) {

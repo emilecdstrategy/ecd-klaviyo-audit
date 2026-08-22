@@ -649,9 +649,13 @@ async function runStep(
         `Your audit of the ${step.label} came back incomplete.${shapeNote} This page rendered normally and every storefront page has concrete UX and conversion issues worth raising. Return ${
           needs.join(" AND ")
         }. Do not pad with vague advice: only real issues you can point at in the screenshot.${keepNote}`;
+      // The retry keeps the same rules as the first pass. It used to drop the
+      // sitewide-scope note and the list of findings other sections already
+      // made, so a retried product page was free to flag the header the
+      // homepage owns, or to restate an earlier section's point.
       const retryMessages: LlmMessage[] = [{
         role: "user_images",
-        text: `${ask} Call record_page_audit exactly once.${contextBlock}${elementsText}`,
+        text: `${ask} Call record_page_audit exactly once.${step.page_type === "homepage" ? "" : GLOBAL_CHROME_NOTE}${priorText}${contextBlock}${elementsText}${trafficText}${SHAPE_REMINDER}`,
         images,
       }];
       const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [PAGE_AUDIT_TOOL], toolChoice: { type: "tool", name: "record_page_audit" } });
@@ -849,9 +853,13 @@ async function runStep(
         : badShape.length > 0
           ? ` Your last reply sent ${badShape.map((p) => `"${p.field}" as a ${p.got}`).join(" and ")} instead of arrays.`
           : "";
+      // The retry carries the SAME rules as the first pass, not just the data.
+      // It used to send the bare JSON, so a retried section had never heard the
+      // free-shipping direction note or the no-speed-work rule: the exact plays
+      // those rules exist to stop could come back through the retry door.
       const retryMessages: LlmMessage[] = [{
         role: "user",
-        text: `Your plays for this store came back empty.${shapeNote} This store has real order data and there is always something worth shipping in it. Return 2 to 4 plays, each with a title, an insight quoting a real figure from the data, and 2 or 3 steps that each name a change to make. Call record_analytics_audit exactly once.\n\n${JSON.stringify(computed)}`,
+        text: `Your plays for this store came back empty.${shapeNote} This store has real order data and there is always something worth shipping in it. Return 2 to 4 plays, each with a title, an insight quoting a real figure from the data, and 2 or 3 steps that each name a change to make. Call record_analytics_audit exactly once.\n\n${JSON.stringify(computed)}\n\n${thresholdNote}\n\nRules that still apply: follow the FREE SHIPPING note exactly (its direction and target are decided for you, and the title and steps must agree with that direction). Never recommend page speed, load time, image compression, lazy loading, caching or Core Web Vitals work. Never write a step that tells them to audit, review, analyse, investigate or measure something, and never a step that guesses at their current setup ("turn on X", "if you have not already"). Every product you name must also appear in that play's products array, copied character for character from the data.${contextBlock}`,
       }];
       const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [ANALYTICS_TOOL], toolChoice: { type: "tool", name: "record_analytics_audit" } });
       if (retry.kind === "tool_call") {
@@ -1072,9 +1080,14 @@ async function runPipeline(auditId: string, correlationId: string, mode?: string
     job = reset ?? job;
   }
 
-  // Guard against two overlapping runners (stale-running reset at 90s).
+  // Guard against two overlapping runners. The threshold must sit ABOVE the
+  // edge runtime's 150s wall clock: one step is up to two vision turns and can
+  // honestly run for most of that, and at the old 90s a watchdog kick landing
+  // mid-step declared the live runner stale and started the same step again,
+  // twice the spend and interleaved writes. Past 150s the runtime has killed
+  // whatever was running, so a "running" row older than that is genuinely dead.
   const jobUpdatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
-  const stale = job.status === "running" && jobUpdatedMs > 0 && Date.now() - jobUpdatedMs >= 90_000;
+  const stale = job.status === "running" && jobUpdatedMs > 0 && Date.now() - jobUpdatedMs >= 160_000;
   if (job.status === "running" && !stale) {
     return json({ ok: true, correlationId, status: "in_progress", reason: "already_running" });
   }

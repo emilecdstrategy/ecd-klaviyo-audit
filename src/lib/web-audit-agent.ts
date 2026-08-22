@@ -116,7 +116,14 @@ export function applyEditsToFindings(current: WebFinding[], ops: WebAuditEditOp[
       if (op.recommendation != null) f.recommendation = op.recommendation;
       if (op.viewport != null) f.viewport = op.viewport;
     } else if (op.op === 'remove_finding') {
-      if (op.index >= 0 && op.index < next.length) next[op.index] = null;
+      // Soft-remove, exactly like the report's own Remove button: the finding
+      // keeps its slot (later indexes stay valid) and lands in the "Removed
+      // from this section" drawer, where Put back can undo it. The agent used
+      // to hard-delete here, which was the one removal in the product with no
+      // way back.
+      if (op.index >= 0 && op.index < next.length && next[op.index]) {
+        (next[op.index] as WebFinding).removed = true;
+      }
     }
   }
   const result = next.filter((f): f is WebFinding => f !== null);

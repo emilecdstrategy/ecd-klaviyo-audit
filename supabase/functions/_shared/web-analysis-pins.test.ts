@@ -1053,3 +1053,34 @@ Deno.test("a small photo is never mistaken for the hero", () => {
   const onlySmall = [{ x: 44, y: 8, w: 12, h: 4 }];
   if (snapToHeroPhoto('Hero banner', onlySmall)) throw new Error('a 12x4 logo is not a hero');
 });
+
+// --- dispatch-time shipping disclosures ------------------------------------
+
+function dispatchCart(labels: string[], text: string) {
+  const els: ElementBox[] = labels.map((label, i) => ({ id: 'el_' + (i + 1), label, x: 5, y: 40 + i * 10, w: 90, h: 6 }));
+  return coercePageAudit(
+    { intro: 'x', findings: [{ text, recommendation: 'Say when it ships.', viewport: 'both' }] },
+    new Map([['IMG_1', 'snap-1']]),
+    new Map([['IMG_1', els]]),
+    new Map([['IMG_1', 'mobile']]),
+    'cart',
+  ).findings;
+}
+
+Deno.test("a dispatch time like 'Ships in 2 days' counts as a shipping disclosure", () => {
+  // This alternate shipped with an eaten backslash (\d became d), so it never
+  // matched and the false "cart says nothing about shipping" claim survived.
+  const kept = dispatchCart(
+    ['div: Ships in 2 days', 'button: CHECKOUT'],
+    'The cart never tells shoppers anything about shipping or when their order will arrive.',
+  );
+  if (kept.length !== 0) throw new Error("'Ships in 2 days' is on the page, so the claim of silence must be refused");
+});
+
+Deno.test("a day-count range like '3-5 business days' counts as a disclosure too", () => {
+  const kept = dispatchCart(
+    ['div: Delivery in 3-5 business days', 'button: CHECKOUT'],
+    'Nothing in the cart mentions shipping times, which leaves shoppers guessing.',
+  );
+  if (kept.length !== 0) throw new Error("'3-5 business days' is on the page, so the claim of silence must be refused");
+});

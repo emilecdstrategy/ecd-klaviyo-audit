@@ -30,7 +30,7 @@ const PAGE_SECTIONS: Array<{ key: string; page_type: string; label: string }> = 
 ];
 const SECTION_KEYS = PAGE_SECTIONS.map((s) => s.key);
 
-type Finding = { text?: string; recommendation?: string; viewport?: string; hidden?: boolean };
+type Finding = { text?: string; recommendation?: string; viewport?: string; hidden?: boolean; removed?: boolean };
 type SectionRow = { id: string; section_key: string; summary_text: string | null; section_details: Record<string, unknown> | null };
 
 function webFindings(section: SectionRow): Finding[] {
@@ -107,6 +107,7 @@ HOW YOU WORK:
 - Use the provided screenshots and existing findings to keep edits grounded and specific. Do not invent features, prices, or facts.
 - Findings must be genuine improvement opportunities. Never add a "keep as is" or praise-only finding.
 - When you have a concrete change to specific findings, call propose_section_edits with the operations. Index-based operations (update_finding, remove_finding) refer to the CURRENT findings list shown to you (0-based). add_finding appends.
+- The report the strategist is looking at numbers its findings differently from the [n] indexes shown to you (it reorders them and renumbers from 1). So when they say "finding 3" or "point 3", find the finding whose TEXT matches what they are describing and use ITS [n] index; never assume their number is your index. If their message names no content and you cannot tell which finding they mean, ask.
 - When the strategist wants a whole section redone from scratch (e.g. "redo the cart findings", "regenerate the homepage focused on trust"), call regenerate_section instead of enumerating operations.
 - If the strategist is just chatting or asking a question, reply in plain text without calling a tool.
 
@@ -158,8 +159,15 @@ serve(async (req) => {
     const sectionsDigest = PAGE_SECTIONS.map((meta) => {
       const s = byKey.get(meta.key);
       if (!s) return `## ${meta.label} (${meta.key}) - not captured`;
+      // Skip what the strategist has removed or hidden, but keep each line's
+      // STORED index: the operations are applied to the stored array, and a
+      // removed finding still occupies its slot there. Renumbering here would
+      // shift every index after it and the edits would land on the wrong
+      // findings.
       const findings = webFindings(s)
-        .map((f, i) => `  [${i}] (${f.viewport ?? "both"}) ${f.text ?? ""}${f.recommendation ? ` => ${f.recommendation}` : ""}`)
+        .map((f, i) => ({ f, i }))
+        .filter(({ f }) => !f.removed && !f.hidden)
+        .map(({ f, i }) => `  [${i}] (${f.viewport ?? "both"}) ${f.text ?? ""}${f.recommendation ? ` => ${f.recommendation}` : ""}`)
         .join("\n");
       return `## ${meta.label} (${meta.key})\nSummary: ${s.summary_text ?? "(none)"}\nFindings:\n${findings || "  (none)"}`;
     }).join("\n\n");
