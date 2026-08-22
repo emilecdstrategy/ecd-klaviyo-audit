@@ -191,6 +191,56 @@ export function snapToElementByLabel(
   return best && best.score >= 1 ? best.el : undefined;
 }
 
+/**
+ * The box around the several elements a finding is about.
+ *
+ * "The phone header bunches search, account and cart all on the right" is about
+ * a GROUP, and no single element is it. Label matching needs a distinctive word
+ * to identify one element, and every word here is generic on its own: dozens of
+ * pages have a thing called "search" and a thing called "cart". So that finding
+ * matched nothing and fell back to the model's own guess at coordinates, which
+ * landed a row too low, on the growing-zone bar underneath the icons.
+ *
+ * Together those same generic words are specific. A finding naming search AND
+ * cart, on a page that has an element called each, is about both of them, and
+ * the box around them is exactly the cluster the sentence describes. Two
+ * elements matching two DIFFERENT words is the bar: one generic word shared
+ * with one element proves nothing, which is why snapToElementByLabel refuses
+ * it.
+ */
+export function snapToElementGroup(
+  findingText: unknown,
+  elements: ElementBox[],
+): { x: number; y: number; w: number; h: number; ids: string[] } | undefined {
+  const wanted = new Set(labelTokens(findingText));
+  if (wanted.size === 0 || elements.length < 2) return undefined;
+
+  const hits: ElementBox[] = [];
+  const matchedTokens = new Set<string>();
+  for (const el of elements) {
+    const raw = String(el.label ?? "").trim().toLowerCase();
+    if (!raw || TYPE_ONLY_LABELS.has(raw)) continue;
+    const mine = labelTokens(el.label).filter((t) => wanted.has(t));
+    if (mine.length === 0) continue;
+    hits.push(el);
+    for (const t of mine) matchedTokens.add(t);
+  }
+  // Two elements, and between them at least two different words from the
+  // sentence: one word echoed by two elements is one thing named twice.
+  if (hits.length < 2 || matchedTokens.size < 2) return undefined;
+
+  const x = Math.min(...hits.map((e) => e.x));
+  const y = Math.min(...hits.map((e) => e.y));
+  const right = Math.max(...hits.map((e) => e.x + e.w));
+  const bottom = Math.max(...hits.map((e) => e.y + e.h));
+  const w = right - x;
+  const h = bottom - y;
+  // A pin is a place to look. Once the box covers most of the screen it has
+  // stopped pointing at anything, and the model's own guess is no worse.
+  if (w <= 0 || h <= 0 || w > 70 || h > 22) return undefined;
+  return { x, y, w, h, ids: hits.map((e) => e.id) };
+}
+
 // --- Cross-section duplicate detection -------------------------------------
 
 const DUP_STOPWORDS = new Set([
@@ -657,12 +707,35 @@ export function coercePageAudit(
       // like row only shows two products"), and the scorer already demands most
       // of a concise element label be present, so a long sentence cannot snap on
       // one weak token.
+      // In order of how much each source knows about what is being pointed at:
+      //
+      //  1. the element the model named outright
+      //  2. the pin's own label, which is its statement of the one thing it means
+      //  3. the group the SENTENCE names, when it names several things
+      //  4. one thing named somewhere in the sentence
+      //  5. the model's coordinates, its weakest output
+      //
+      // The group sits above 4 deliberately. "search, account and cart are all
+      // bunched on the right" contains the word "cart", so step 4 matched the
+      // cart icon and pinned that alone: the right row, a third of the thing the
+      // sentence is about. A sentence naming several elements is about all of
+      // them.
       const el = resolveElementById(elId, els, hl) ??
-        snapToElementByLabel(hl.label, els) ??
-        snapToElementByLabel(rec.text, els);
+        snapToElementByLabel(hl.label, els);
+      const group = snapToElementGroup(rec.text, els);
+      // A pin that names ONE member of the row the sentence is about should
+      // cover the row. The model pinned "icon-cart" for a finding about search,
+      // account and cart being bunched together: the right place, a third of the
+      // subject. Widening only ever grows a pin to include its siblings, and
+      // only when the sentence named them; it can never move it elsewhere.
+      const widenToGroup = Boolean(group && (!el || group.ids.includes(el.id)));
+      const fallbackEl = el || widenToGroup ? null : snapToElementByLabel(rec.text, els);
+      const named = widenToGroup ? null : (el ?? fallbackEl);
       let box: { x: number; y: number; w: number; h: number; label?: string } | null = null;
-      if (el) {
-        box = { x: clampPct(el.x), y: clampPct(el.y), w: clampPct(el.w), h: clampPct(el.h), label: el.label };
+      if (named) {
+        box = { x: clampPct(named.x), y: clampPct(named.y), w: clampPct(named.w), h: clampPct(named.h), label: named.label };
+      } else if (widenToGroup && group) {
+        box = { x: clampPct(group.x), y: clampPct(group.y), w: clampPct(group.w), h: clampPct(group.h) };
       } else {
         const w = clampPct(hl.w);
         const h = clampPct(hl.h);
@@ -672,11 +745,11 @@ export function coercePageAudit(
       // A box hugging the bottom edge of the crop is almost always a coordinate
       // guess at content that continues below the shot. Pinning there points at
       // nothing, so drop the pin rather than show it in the wrong place.
-      if (box.y >= 92 && !el && !lenient) return null;
+      if (box.y >= 92 && !named && !widenToGroup && !lenient) return null;
       // Lenient pass: slide a bottom-hugging box up so the whole pin sits in the
       // frame. It is an approximation of where the model was pointing, but a
       // roughly placed pin beats no pin at all.
-      if (lenient && !el && box.y + box.h > 100) {
+      if (lenient && !named && !widenToGroup && box.y + box.h > 100) {
         box = { ...box, h: Math.min(box.h, 12), y: Math.max(0, 100 - Math.min(box.h, 12)) };
       }
       return {

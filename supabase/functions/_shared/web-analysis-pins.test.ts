@@ -3,7 +3,7 @@
 // Every case here is a pin that once landed on the wrong thing in a report a
 // client read. A wrong pin is worse than no pin, because it is a claim about
 // where the problem is and the reader checks it against the screenshot.
-import { asArray, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, type ElementBox } from "./web-analysis-schemas.ts";
+import { asArray, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, snapToElementGroup, type ElementBox } from "./web-analysis-schemas.ts";
 
 /** A Shopify homepage header, as the capture actually records it. The logo lives
  * in an anonymous <a> inside an <h1>, so both carry bare tag names for labels. */
@@ -217,15 +217,30 @@ function phonePin(highlight: Record<string, unknown>, findingText: string): stri
 
 const HEADER_FINDING = "The phone header bunches search, account, cart and menu all on the right, leaving the left side empty.";
 
-Deno.test("a header finding pins to the cart once the cart keeps its own label", () => {
+Deno.test("a header finding pins the icon row once the cart keeps its own label", () => {
   // Before the capture fix this element arrived as a bare "div" and the pin was
-  // refused, which is how a whole section shipped with nothing on it.
-  const pin = phonePin(
-    { image_ref: "IMG_1", element_id: "el_5", label: "Cart icon", x: 73, y: 4, w: 12, h: 5 },
-    HEADER_FINDING,
-  );
-  if (pin === "NO PIN") throw new Error("the cart is named and boxed, so this must pin");
-  if (!pin.includes("73")) throw new Error(`expected the cart's own box, got ${pin}`);
+  // refused, which is how a whole section shipped with nothing on it. It now
+  // resolves, and because the finding is about three icons bunched together the
+  // pin covers the row rather than the one icon the model happened to name.
+  const out = coercePageAudit(
+    {
+      findings: [{
+        text: HEADER_FINDING,
+        recommendation: "x",
+        viewport: "mobile",
+        highlights: [{ image_ref: "IMG_1", element_id: "el_5", label: "Cart icon", x: 73, y: 4, w: 12, h: 5 }],
+      }],
+    },
+    new Map([["IMG_1", "snap-mobile"]]),
+    new Map([["IMG_1", PHONE_ELEMENTS]]),
+    new Map([["IMG_1", "mobile"]]),
+  ).findings;
+  const hl = out[0]?.highlights?.[0];
+  if (!hl) throw new Error("the cart is named and boxed, so this must pin");
+  // The row runs from the search icon to the menu button, and the cart is inside it.
+  if (hl.y > 5) throw new Error(`expected the header row, got y=${hl.y}`);
+  if (hl.x > 47) throw new Error(`expected the row to start at the search icon, got x=${hl.x}`);
+  if (hl.x + hl.w < 85) throw new Error(`expected the row to reach the menu, got right edge ${hl.x + hl.w}`);
 });
 
 Deno.test("a finding about something with no matching element still gets its box", () => {
@@ -736,4 +751,118 @@ Deno.test("a play keeps the steps that survive and loses the guesses", () => {
   if (out.plays.length !== 1) throw new Error("the play should survive on its one good step");
   if (out.plays[0].action_steps.length !== 1) throw new Error(`steps: ${JSON.stringify(out.plays[0].action_steps)}`);
   if (!out.plays[0].action_steps[0].includes("returns and delivery-time")) throw new Error("kept the wrong step");
+});
+
+// --- a pin for a finding about a GROUP of elements -------------------------
+//
+// "The phone header bunches search, account and cart all on the right" was
+// pinned a row too low, over the growing-zone bar under the icons. No single
+// element matched: every word in it is generic on its own, so label matching
+// refused them all and the pin fell back to the model's guessed box.
+//
+// These are the real element boxes from that capture.
+const LAZYLEAF_MOBILE: ElementBox[] = [
+  { id: 'el_1', label: 'a: FREE SHIPPING ON US ORDERS $100+', x: 13.53, y: 1.54, w: 72.93, h: 2.13 },
+  { id: 'el_2', label: 'header', x: 0, y: 5.33, w: 100, h: 5.69 },
+  { id: 'el_3', label: 'a: search', x: 50.26, y: 5.8, w: 11.28, h: 4.74 },
+  { id: 'el_4', label: 'a: Log in', x: 61.54, y: 5.8, w: 11.28, h: 4.74 },
+  { id: 'el_5', label: 'a: icon-cart', x: 72.82, y: 5.8, w: 11.28, h: 4.74 },
+  { id: 'el_6', label: 'h1', x: 5.13, y: 6.63, w: 43.08, h: 3.08 },
+  { id: 'el_7', label: 'img: Shop LazyLeaf', x: 5.13, y: 6.63, w: 25.64, h: 3.08 },
+  { id: 'el_8', label: 'span: Planting in: n/a Growing Zone: n/a', x: 12.31, y: 12.3, w: 82.56, h: 1.93 },
+  { id: 'el_10', label: 'span: Growing Zone: n/a', x: 65.19, y: 12.3, w: 29.68, h: 1.93 },
+  { id: 'el_11', label: 'section: Because Lazy Grows Better Plants', x: 0, y: 15.52, w: 100, h: 54.57 },
+];
+
+const BUNCHED = 'The phone header bunches search, account and cart all on the right with the menu icon, leaving the left side empty.';
+
+Deno.test("a finding about a group of icons pins the group, not the model's guess", () => {
+  const out = coercePageAudit(
+    {
+      intro: 'x',
+      findings: [{
+        text: BUNCHED,
+        recommendation: 'Rebalance the icons so the menu sits on the left.',
+        viewport: 'mobile',
+        // The box the model actually sent: a row too low, over the growing-zone bar.
+        highlights: [{ image_ref: 'IMG_1', label: 'Header icon cluster', x: 54, y: 10, w: 44, h: 8 }],
+      }],
+    },
+    new Map([['IMG_1', 'snap-mobile']]),
+    new Map([['IMG_1', LAZYLEAF_MOBILE]]),
+    new Map([['IMG_1', 'mobile']]),
+  ).findings;
+  const pin = out[0]?.highlights?.[0];
+  if (!pin) throw new Error('the finding should still be pinned');
+  // The icons run 5.8 to 10.54 down the shot; the growing-zone bar is at 12.3.
+  if (pin.y > 7) throw new Error(`pin should sit on the icon row, got y=${pin.y}`);
+  if (pin.y + pin.h > 12) throw new Error(`pin should end above the growing-zone bar, got ${pin.y + pin.h}`);
+  if (pin.x > 52) throw new Error(`pin should start at the search icon, got x=${pin.x}`);
+});
+
+Deno.test("one generic word shared with one element is still not a pin", () => {
+  // The bar the group rule has to clear: "the cart is hard to find" names one
+  // generic thing, and guessing which element that is was never safe.
+  const group = snapToElementGroup('The cart is hard to find on a phone.', LAZYLEAF_MOBILE);
+  if (group) throw new Error('one element matching one word must not make a group');
+});
+
+Deno.test("a group box that covers the screen is refused", () => {
+  // Once the box is the whole page it points at nothing, so the model's own
+  // guess is no worse and the rule stands aside.
+  const wide: ElementBox[] = [
+    { id: 'el_1', label: 'a: search', x: 2, y: 4, w: 10, h: 4 },
+    { id: 'el_2', label: 'div: cart total', x: 5, y: 80, w: 90, h: 15 },
+  ];
+  if (snapToElementGroup('search and cart are far apart', wide)) {
+    throw new Error('a full-page box is not a pin');
+  }
+});
+
+Deno.test("a single element still wins when it genuinely matches", () => {
+  // Group snapping is a last resort: a precise single match is better, and this
+  // finding names one distinctive thing.
+  const out = coercePageAudit(
+    {
+      intro: 'x',
+      findings: [{
+        text: 'The FREE SHIPPING ON US ORDERS $100+ bar is easy to miss.',
+        recommendation: 'Make it bolder.',
+        viewport: 'mobile',
+        highlights: [{ image_ref: 'IMG_1', label: 'Announcement bar', x: 0, y: 50, w: 100, h: 5 }],
+      }],
+    },
+    new Map([['IMG_1', 'snap-mobile']]),
+    new Map([['IMG_1', LAZYLEAF_MOBILE]]),
+    new Map([['IMG_1', 'mobile']]),
+  ).findings;
+  const pin = out[0]?.highlights?.[0];
+  if (!pin) throw new Error('should be pinned');
+  if (Math.round(pin.y) !== 2) throw new Error(`should snap to the announcement bar at y=1.54, got ${pin.y}`);
+});
+
+Deno.test("the group beats one word matched inside the same sentence", () => {
+  // The ordering this depends on: the sentence contains "cart", so matching one
+  // word would pin the cart icon alone. The sentence is about three icons.
+  const out = coercePageAudit(
+    {
+      intro: 'x',
+      findings: [{
+        text: BUNCHED,
+        recommendation: 'Rebalance the icons.',
+        viewport: 'mobile',
+        highlights: [{ image_ref: 'IMG_1', label: 'Search, account, cart, menu cluster', x: 54, y: 10, w: 44, h: 8 }],
+      }],
+    },
+    new Map([['IMG_1', 'snap-mobile']]),
+    new Map([['IMG_1', LAZYLEAF_MOBILE]]),
+    new Map([['IMG_1', 'mobile']]),
+  ).findings;
+  const pin = out[0]?.highlights?.[0];
+  if (!pin) throw new Error('should be pinned');
+  // The cluster starts at the search icon (50.26) and ends past the cart (84.1),
+  // rather than being the 11pt-wide cart icon at 72.82.
+  if (Math.round(pin.x) !== 50) throw new Error(`expected the cluster to start at the search icon, got x=${pin.x}`);
+  if (pin.w < 30) throw new Error(`expected a cluster-width box, got w=${pin.w}`);
+  if (Math.round(pin.y) !== 6) throw new Error(`expected the icon row, got y=${pin.y}`);
 });
