@@ -63,21 +63,51 @@ export type OrderSpread = { median: number | null; p75: number | null };
  *    decoration. Lower it to just above the median, where it is a real stretch.
  *  - between the two: it is where it should be. No play.
  */
+/** The next round number above an amount: $10 steps once baskets are past $50,
+ *  $5 below that. A threshold wants to look deliberate, not calculated. */
+function nextRoundStepAbove(amount: number): number {
+  const step = amount >= 50 ? 10 : 5;
+  return Math.floor(amount / step) * step + step;
+}
+
+/**
+ * Where the threshold belongs: JUST above the median.
+ *
+ * The point of a threshold is a gap the shopper in the middle of the pack can
+ * see themselves closing, so they add one more thing. That means the number sits
+ * a few dollars over the median, not somewhere out towards the top of the range.
+ *
+ * This used to aim 60% of the way from the median to the 75th percentile, which
+ * on a real store (median $132.38, 75th $260.53) produced $210: the median
+ * shopper had to find another $77.62 to qualify. Nobody does that, so the
+ * threshold stops being a lever and just quietly excludes most of the basket
+ * range. The next round number above the median asks that same shopper for about
+ * eight dollars, which is the whole idea.
+ */
 export function thresholdAdvice(
   threshold: number,
   spread: OrderSpread,
 ): { direction: "raise" | "lower" | "leave"; target: number | null } {
   const { median, p75 } = spread;
   if (!median || median <= 0) return { direction: "leave", target: null };
-  const round5 = (n: number) => Math.max(5, Math.round(n / 5) * 5);
+
+  let target = nextRoundStepAbove(median);
+  // Never past the 75th percentile: beyond it, three orders in four cannot reach
+  // the threshold however round the number looks.
+  if (p75 && p75 > median && target > p75) {
+    target = Math.floor(p75 / 5) * 5;
+  }
+
   if (threshold <= median) {
-    // Between the median and the 75th percentile: a stretch most shoppers can
-    // make. Without a 75th percentile, half again over the median.
-    const ceiling = p75 && p75 > median ? p75 : median * 1.5;
-    return { direction: "raise", target: round5(median + (ceiling - median) * 0.6) };
+    // Raising must actually raise. On a store whose median sits just under a
+    // round number the target can land on the current bar, and "raise it to what
+    // it already is" is not a play.
+    if (target <= threshold) return { direction: "leave", target: null };
+    return { direction: "raise", target };
   }
   if (p75 && threshold > p75) {
-    return { direction: "lower", target: round5(median * 1.2) };
+    if (target >= threshold) return { direction: "leave", target: null };
+    return { direction: "lower", target };
   }
   return { direction: "leave", target: null };
 }
@@ -101,10 +131,10 @@ export function freeShippingNote(
     const spreadText = ` The median order is $${spread.median}${spread.p75 ? ` and the 75th percentile is $${spread.p75}` : ""}.`;
     const advice = thresholdAdvice(threshold, spread);
     if (advice.direction === "raise") {
-      return `${head}${spreadText} At $${threshold} it sits at or below the median, so nearly every order already clears it and it is pulling nobody's basket upward. RAISE it, to about $${advice.target}, and say raise: the number you name MUST be higher than $${threshold}.`;
+      return `${head}${spreadText} At $${threshold} it sits at or below the median, so nearly every order already clears it and it is pulling nobody's basket upward. RAISE it to $${advice.target}, and say raise: the number you name MUST be higher than $${threshold} and MUST be exactly $${advice.target}. That figure is the next round number above the median on purpose, so the shopper in the middle of the pack is only a few dollars short and adding one more item closes it. Do NOT pick a bigger number because the 75th percentile is high: a gap of fifty or eighty dollars is one no shopper closes, and it turns the offer into decoration.`;
     }
     if (advice.direction === "lower") {
-      return `${head}${spreadText} At $${threshold} it sits above the 75th percentile, so three orders in four cannot reach it and it is decoration rather than an incentive. LOWER it, to about $${advice.target}, which is a real stretch from the median rather than an impossible one. The number you name MUST be lower than $${threshold}, and you MUST call it lowering or reducing: describing a decrease as "raising the bar" is the single worst thing this section can say, because the reader checks the two numbers.`;
+      return `${head}${spreadText} At $${threshold} it sits above the 75th percentile, so three orders in four cannot reach it and it is decoration rather than an incentive. LOWER it to $${advice.target}, which is the next round number above the median: close enough that a typical basket is one small add away. The number you name MUST be lower than $${threshold} and MUST be exactly $${advice.target}, and you MUST call it lowering or reducing: describing a decrease as "raising the bar" is the single worst thing this section can say, because the reader checks the two numbers.`;
     }
     return `${head}${spreadText} At $${threshold} it sits between the median and the 75th percentile, which is where a threshold belongs: a stretch most shoppers can make. Do NOT write a play about moving it. If you want to write about free shipping at all, write about making the existing threshold more visible or about what to suggest adding to reach it.`;
   }

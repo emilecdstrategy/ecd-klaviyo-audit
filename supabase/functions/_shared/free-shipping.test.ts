@@ -151,3 +151,45 @@ Deno.test("without an order spread the note falls back to the old wording", () =
   assertStringIncludes(note, "order_value_percentiles");
   assert(!note.includes("RAISE it") && !note.includes("LOWER it"), "no direction without the numbers to derive one");
 });
+
+// --- how far above the median the target may sit -----------------------------
+//
+// A live report said "Raise the free shipping bar to $210" on a store whose
+// median order was $132.38. The direction was right and the number was useless:
+// the median shopper had to find another $77.62. The target is now the next
+// round number above the median, which asks that shopper for about eight
+// dollars.
+
+Deno.test("the raise target is the next round number above the median", () => {
+  const advice = thresholdAdvice(100, { median: 132.38, p75: 260.53 });
+  assertEquals(advice.direction, "raise");
+  assertEquals(advice.target, 140);
+});
+
+Deno.test("a high 75th percentile does not drag the target up with it", () => {
+  // Same median, a far longer tail. The threshold belongs by the median either
+  // way: the tail is a handful of big baskets, not the shopper being nudged.
+  const advice = thresholdAdvice(100, { median: 132.38, p75: 900 });
+  assertEquals(advice.target, 140);
+  assert(advice.target! - 132.38 < 20, `gap ${advice.target! - 132.38} must stay small`);
+});
+
+Deno.test("the target never lands past the 75th percentile", () => {
+  // A tight spread: the next $10 step above the median would exclude more than
+  // three quarters of orders, so it is pulled back to the 75th.
+  const advice = thresholdAdvice(100, { median: 132.38, p75: 135 });
+  assertEquals(advice.direction, "raise");
+  assert(advice.target! <= 135, `target ${advice.target} must not exceed the 75th percentile`);
+});
+
+Deno.test("small baskets step by five, not ten", () => {
+  const advice = thresholdAdvice(30, { median: 40.6, p75: 62.95 });
+  assertEquals(advice.direction, "raise");
+  assertEquals(advice.target, 45);
+});
+
+Deno.test("a raise that would not actually raise is no play at all", () => {
+  // Median $132.38 puts the next step at $140, which is where the bar already
+  // is: nothing to say.
+  assertEquals(thresholdAdvice(140, { median: 132.38, p75: 260.53 }).direction, "leave");
+});

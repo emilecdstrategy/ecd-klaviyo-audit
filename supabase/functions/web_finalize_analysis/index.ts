@@ -3,7 +3,7 @@ import { freeShippingNote, labelsFromSnapshots, readFreeShippingOffer } from "..
 import { sessionsEvidence } from "../_shared/shopify-sessions.ts";
 import { belowFoldEvidence, popupEvidence } from "../_shared/below-fold-probe.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
+import { getUserIdFromAuthorization, hasCronSecret, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { createLlmClient, type LlmImage, type LlmMessage } from "../_shared/llm-adapter.ts";
 import { FINDINGS_GUARDRAILS, CRO_HEURISTICS } from "../_shared/ecommerce-ux-kb.ts";
 import { afterImagesEnabled } from "../_shared/after-images-enabled.ts";
@@ -1184,7 +1184,13 @@ serve(async (req) => {
 
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.replace(/^Bearer\s+/i, "");
-  if (!isServiceRoleAuthorization(token)) {
+  // Same internal door as the other two pipeline functions: the capture chain
+  // reaches us with the service role key, and scheduled or operational work can
+  // present the web pipeline's cron secret instead, which no key rotation can
+  // invalidate.
+  const internal = isServiceRoleAuthorization(token) ||
+    await hasCronSecret(req, "web_pipeline_cron_secret");
+  if (!internal) {
     try {
       await getUserIdFromAuthorization(req);
     } catch (e) {
