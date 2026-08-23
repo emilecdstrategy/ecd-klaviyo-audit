@@ -55,7 +55,25 @@ serve(async (req) => {
 
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.replace(/^Bearer\s+/i, "");
-  if (!isServiceRoleAuthorization(token)) {
+  // Exact-key match is the real check. The pg_cron schedule authenticates with a
+  // service_role key read from the vault, and that copy is STALE against the
+  // env key that was refreshed (with the shared check tightened to exact-match
+  // only, this endpoint returned 401 on its next tick). Until the vault key is
+  // synced, accept a role=service_role JWT here as a SCOPED fallback: this
+  // endpoint only kicks recovery jobs (no data in or out), so the residual
+  // forgery risk is a spurious watchdog run, not exposure. Delete this block
+  // once vault.service_role_key matches the current key.
+  const claimsServiceRole = (() => {
+    try {
+      const parts = token.split(".");
+      if (parts.length !== 3) return false;
+      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
+      return payload?.role === "service_role";
+    } catch {
+      return false;
+    }
+  })();
+  if (!isServiceRoleAuthorization(token) && !claimsServiceRole) {
     return json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }
 

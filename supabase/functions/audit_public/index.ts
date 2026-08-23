@@ -78,6 +78,26 @@ serve(async (req) => {
       return json({ ok: false, error: { code: "not_found" }, correlationId }, { status: 404 });
     }
 
+    // Redact the internal-only fields before anything is returned. This is a
+    // public link: `audits.context` is the strategist's private brief (meeting
+    // notes, client background, custom instructions) and `clients.notes` is
+    // internal, and the report renders neither. `select("*")` was handing both
+    // to whoever holds the share link. Redact in place so the same raw row
+    // shapes the frontend enrichment expects still arrive, minus these keys.
+    const redactAudit = (row: Record<string, unknown> | null) => {
+      if (row) {
+        delete (row as Record<string, unknown>).context;
+      }
+      return row;
+    };
+    const redactClient = (row: Record<string, unknown> | null) => {
+      if (row) {
+        delete (row as Record<string, unknown>).notes;
+      }
+      return row;
+    };
+    redactAudit(audit as Record<string, unknown>);
+
     // Web audits carry a much lighter payload — skip the Klaviyo child selects.
     if ((audit as { audit_type?: string }).audit_type === "web") {
       const [webClient, webSections, pageSnaps, shopifySnaps] = await Promise.all([
@@ -100,7 +120,7 @@ serve(async (req) => {
       return json({
         ok: true,
         audit,
-        client: webClient.data,
+        client: redactClient(webClient.data as Record<string, unknown>),
         sections: webSections.data ?? [],
         webPageSnapshots: pageSnaps.data ?? [],
         shopifySnapshots: shopifySnaps.data ?? [],
@@ -155,7 +175,7 @@ serve(async (req) => {
     return json({
       ok: true,
       audit,
-      client: client.data,
+      client: redactClient(client.data as Record<string, unknown>),
       sections: sections.data ?? [],
       assets: assets.data ?? [],
       flowPerformance: flows.data ?? [],

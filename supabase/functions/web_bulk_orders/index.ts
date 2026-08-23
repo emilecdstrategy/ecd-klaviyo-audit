@@ -6,6 +6,7 @@
 // the rollup. The orchestrator calls poll repeatedly, exactly as it already
 // requeues pending screenshot rows.
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, exchangeClientCredentials } from "../_shared/shopify-api.ts";
 import {
@@ -72,6 +73,20 @@ async function resolveShop(sb: ReturnType<typeof serviceClient>, clientId: strin
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return new Response("ok", { headers: corsHeaders });
   const correlationId = crypto.randomUUID();
+
+  // Reads a client's Shopify order data (revenue, counts) and starts bulk
+  // operations against their store, so it must never be open: it took no auth at
+  // all, which let anyone with a client_id pull that store's numbers. Service
+  // role (the pipeline) or a signed-in staff member only.
+  const authHeader = req.headers.get("authorization") ?? "";
+  const bearer = authHeader.replace(/^Bearer\s+/i, "").trim();
+  if (!isServiceRoleAuthorization(bearer)) {
+    try {
+      await getUserIdFromAuthorization(req);
+    } catch (e) {
+      return json({ ok: false, error: e instanceof Error ? e.message : "Unauthorized", correlationId }, { status: 401 });
+    }
+  }
 
   try {
     const input = (await req.json()) as { client_id?: string; mode?: string; operation_id?: string };

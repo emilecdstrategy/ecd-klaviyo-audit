@@ -117,6 +117,23 @@ serve(async (req) => {
     }
 
     if (body.action === "remove") {
+      // The same lockout update_role guards against, by a different door: an
+      // admin deleting their own account (possibly the last one) leaves nobody
+      // able to manage users ever again. Block self-removal outright, and block
+      // removing the last remaining admin even when it is someone else.
+      if (body.user_id === callerId) {
+        return json({ ok: false, error: { code: "bad_request", message: "You cannot remove your own account. Ask another admin to do it." } }, { status: 200 });
+      }
+      const { data: target } = await sb.from("profiles").select("role").eq("id", body.user_id).maybeSingle();
+      if (target?.role === "admin") {
+        const { count: adminCount } = await sb
+          .from("profiles")
+          .select("id", { count: "exact", head: true })
+          .eq("role", "admin");
+        if ((adminCount ?? 0) <= 1) {
+          return json({ ok: false, error: { code: "bad_request", message: "This is the last admin. Promote another admin before removing this one." } }, { status: 200 });
+        }
+      }
       // Remove profile first (non-fatal if missing)
       await sb.from("profiles").delete().eq("id", body.user_id);
       const { error } = await sb.auth.admin.deleteUser(body.user_id);

@@ -1,17 +1,23 @@
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-/** Accept configured service role key or legacy JWT with role=service_role. */
+/** Whether a bearer token is the service role, by EXACT match against the
+ * configured key.
+ *
+ * This used to also accept any JWT whose payload merely claimed
+ * role=service_role, decoding the middle segment WITHOUT verifying the
+ * signature: `x.<base64 of {"role":"service_role"}>.x` passed, so anyone could
+ * reach every service-tier function that skips the user check.
+ *
+ * Every legitimate service caller sends the real key: the pipeline functions
+ * post `Bearer ${SUPABASE_SERVICE_ROLE_KEY}` and satisfy the exact match. The
+ * one exception was the pg_cron watchdog, which reads a service_role key from
+ * the vault that is currently STALE against the refreshed env key (proven live:
+ * with this path removed, the watchdog returned 401). Rather than reopen the
+ * forgery for everyone, the watchdog carries its own scoped fallback inline; see
+ * profile_scan_watchdog. Closing that last gap is a vault-key sync away. */
 export function isServiceRoleAuthorization(token: string): boolean {
   const expected = (Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "").trim();
-  if (expected && token === expected) return true;
-  try {
-    const parts = token.split(".");
-    if (parts.length !== 3) return false;
-    const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-    return payload?.role === "service_role";
-  } catch {
-    return false;
-  }
+  return Boolean(expected) && token === expected;
 }
 
 /** Resolves the signed-in user id using GoTrue (works reliably in Edge; avoids gateway JWT quirks). */
