@@ -865,20 +865,15 @@ export default function NewAudit({ asModal }: NewAuditProps) {
 
         {stepKey === 'line_items' && (
           <div className="bg-white rounded-xl p-6 card-shadow space-y-4 animate-slide-up mx-auto w-full max-w-2xl">
-            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-2">
-              <div>
-                <h2 className="text-lg font-semibold text-gray-900">Line Items</h2>
-                <p className="text-sm text-gray-500 mt-1">
-                  Optional. Select predefined revenue opportunities to include in the report. You can edit their copy and value later in the Line Item Catalog.
-                </p>
-              </div>
-              <button
-                type="button"
-                onClick={() => { setError(''); setStep(step + 1); }}
-                className="text-sm text-brand-primary font-medium hover:underline whitespace-nowrap"
-              >
-                Skip this step
-              </button>
+            {/* No skip control here. Selecting nothing IS skipping, and this is
+                the last step, so the old button incremented past the end of the
+                wizard and the view clamped straight back to this screen: it read
+                as a broken button rather than a way out. */}
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900">Line Items</h2>
+              <p className="text-sm text-gray-500 mt-1">
+                Optional. Select predefined revenue opportunities to include in the report. You can edit their copy and value later in the Line Item Catalog.
+              </p>
             </div>
 
             {revenueTemplates.length > 0 ? (
