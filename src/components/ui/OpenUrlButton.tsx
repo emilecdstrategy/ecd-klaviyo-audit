@@ -46,12 +46,16 @@ export function OpenUrlButton({ url, label = 'Open this page in a new tab' }: Op
       aria-label={label}
       // Keep the click from stealing the caret into the field behind it.
       onMouseDown={e => e.preventDefault()}
-      className="group absolute right-1.5 top-1/2 z-10 -translate-y-1/2 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-brand-primary/10 hover:text-brand-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary/30"
+      // A NAMED group, not a bare one. `group-hover:` matches any ancestor
+      // carrying `.group`, and these inputs sit inside a <details> that has it,
+      // so hovering one icon lit up every tooltip in the panel at once. Naming
+      // the group ties the tooltip to its own anchor and nothing else.
+      className="group/openurl absolute right-1.5 top-1/2 z-10 -translate-y-1/2 rounded-md p-1.5 text-gray-400 transition-colors hover:bg-brand-primary/10 hover:text-brand-primary focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary/30"
     >
       <ExternalLink className="h-3.5 w-3.5" />
       <span
         role="tooltip"
-        className="pointer-events-none absolute bottom-full right-0 z-20 mb-2 whitespace-nowrap rounded-lg bg-brand-navy px-2.5 py-1.5 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover:opacity-100 group-focus-visible:opacity-100"
+        className="pointer-events-none absolute bottom-full right-0 z-20 mb-2 whitespace-nowrap rounded-lg bg-brand-navy px-2.5 py-1.5 text-[11px] font-medium text-white opacity-0 shadow-lg transition-opacity duration-150 group-hover/openurl:opacity-100 group-focus-visible/openurl:opacity-100"
       >
         {label}
         {/* The little pointer, sharing the tooltip's colour so it reads as one shape. */}
