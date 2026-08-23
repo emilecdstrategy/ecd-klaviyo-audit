@@ -380,8 +380,14 @@ async function runPipeline(
     return json({ ok: true, correlationId, status: "complete" });
   }
 
+  // 160s, above the 150s edge-runtime wall clock. At 90s a step that was still
+  // legitimately running (one AI call has a 120s timeout, and invokeAiWithRetry
+  // may take more than one) was declared dead, and since nothing claims this job
+  // atomically the result was two runners on the same step: the same OpenAI call
+  // billed twice, both writing partial_state. Past the wall clock the invocation
+  // is certainly gone, so "running and older than this" really does mean dead.
   const jobUpdatedMs = job.updated_at ? Date.parse(String(job.updated_at)) : 0;
-  const jobStale = job.status === "running" && jobUpdatedMs > 0 && Date.now() - jobUpdatedMs >= 90_000;
+  const jobStale = job.status === "running" && jobUpdatedMs > 0 && Date.now() - jobUpdatedMs >= 160_000;
   if (job.status === "running" && !jobStale) {
     return json({ ok: true, correlationId, status: "in_progress", reason: "already_running" });
   }

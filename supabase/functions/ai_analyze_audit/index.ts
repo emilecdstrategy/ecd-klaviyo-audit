@@ -9,13 +9,11 @@ import {
   AUDIT_SECTION_KEYS,
   type SectionKey,
   type ValidationMode,
-  failedSectionKeysFromErrors,
   validateOutput,
 } from "./schema.ts";
 import {
   buildAuditSystemPrompt,
   buildAuditUserPrompt,
-  buildRepairUserPrompt,
   buildRefineSystemPrompt,
   buildRefineUserPrompt,
   type KlaviyoContext,
@@ -32,7 +30,6 @@ const KMS_ENCRYPTION_KEY = Deno.env.get("KMS_ENCRYPTION_KEY") ?? "";
 
 const OPENAI_URL = "https://api.openai.com/v1/responses";
 const PRIMARY_MODEL = "gpt-5.4";
-const ESCALATION_MODEL = "gpt-5.4-pro";
 // Supabase Edge Functions support up to 150s — stay under that including DB + JSON work.
 // With scoped prompts the payload is much smaller per call, so 120s is generous.
 const MAX_ATTEMPTS = 2;
@@ -454,16 +451,16 @@ serve(async (req) => {
     let usage = first.usage;
     let validation = validateOutput(output, requiredKeys, mode);
 
-    if (!validation.ok) {
-      const failedSections = failedSectionKeysFromErrors(validation.errors);
-      if (failedSections.length > 0) {
-        // Avoid long multi-call repair loops inside a single edge invocation.
-        // If validation fails, surface errors to the client so we can retry deterministically.
-        selectedModel = ESCALATION_MODEL;
-        retries += 1;
-      }
-    }
-
+    // NOTE: there is deliberately no in-invocation escalation or repair loop
+    // here. A validation failure is surfaced to the caller, and
+    // audit_finalize_analysis retries the step deterministically, which keeps
+    // this invocation inside the edge runtime's wall clock.
+    //
+    // This block used to set the model to a "pro" escalation model and increment
+    // the retry counter WITHOUT ever making a second call, so every logged run
+    // that failed validation recorded a model it never used and a retry that
+    // never happened. The bookkeeping is gone rather than the behaviour: the
+    // model field in ai_runs now says what actually answered.
     if (!validation.ok) {
       await logRun({
         correlation_id: correlationId,

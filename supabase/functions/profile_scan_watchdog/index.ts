@@ -4,12 +4,20 @@
  */
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { isServiceRoleAuthorization } from "../_shared/auth.ts";
+import { hasCronSecret, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { isTransientError } from "../_shared/transient-errors.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const STALE_AFTER_MS = 90_000;
+// Above the 150s edge-runtime wall clock on purpose.
+//
+// A stale-looking job is reset to "pending" and re-kicked, and at 90s that stole
+// jobs from invocations still alive and working: the AI path is not claimed
+// atomically, so the reset produced a SECOND runner on the same step, paying for
+// the same OpenAI call twice and interleaving writes to partial_state. Past 150s
+// the runtime has certainly killed whatever held the row, so a reset can only
+// revive something genuinely dead.
+const STALE_AFTER_MS = 180_000;
 const HIGHLIGHT_REGEN_STALE_AFTER_MS = 4 * 60 * 1000;
 
 function json(data: unknown, init: ResponseInit = {}) {
@@ -71,19 +79,8 @@ serve(async (req) => {
   // keepalive already work this way.
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.replace(/^Bearer\s+/i, "");
-  let authorized = isServiceRoleAuthorization(token);
-  if (!authorized) {
-    const presented = (req.headers.get("x-cron-secret") ?? "").trim();
-    if (presented) {
-      const { data: row } = await sb
-        .from("watchdog_cron_secret")
-        .select("secret")
-        .eq("id", "default")
-        .maybeSingle();
-      const expected = (row?.secret ?? "").trim();
-      authorized = Boolean(expected) && presented === expected;
-    }
-  }
+  const authorized = isServiceRoleAuthorization(token) ||
+    await hasCronSecret(req, "watchdog_cron_secret");
   if (!authorized) {
     return json({ ok: false, error: "Unauthorized" }, { status: 401 });
   }

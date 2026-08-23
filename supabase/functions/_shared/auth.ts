@@ -46,6 +46,32 @@ export async function getUserIdFromAuthorization(req: Request): Promise<string> 
   return body.id;
 }
 
+/**
+ * Whether the request carries a pg_cron job's own shared secret.
+ *
+ * Scheduled jobs used to authenticate as the service role, reading the key out
+ * of vault.decrypted_secrets. That copy does not match the project's current key
+ * (a request carrying it comes back "Invalid or expired session"), so every such
+ * job was really getting in through a since-removed check that accepted any
+ * UNSIGNED JWT claiming role=service_role.
+ *
+ * A per-job secret in its own table replaces that: a random value no key
+ * rotation can invalidate, sent as x-cron-secret and compared here. The table
+ * has RLS on with no policies, so only the service role can read it.
+ */
+export async function hasCronSecret(req: Request, table: string): Promise<boolean> {
+  const presented = (req.headers.get("x-cron-secret") ?? "").trim();
+  if (!presented) return false;
+  try {
+    const sb = assertServiceRoleClient();
+    const { data } = await sb.from(table).select("secret").eq("id", "default").maybeSingle();
+    const expected = String((data as { secret?: unknown } | null)?.secret ?? "").trim();
+    return Boolean(expected) && presented === expected;
+  } catch {
+    return false;
+  }
+}
+
 export function assertServiceRoleClient(): SupabaseClient {
   const url = Deno.env.get("SUPABASE_URL") ?? "";
   const key = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";

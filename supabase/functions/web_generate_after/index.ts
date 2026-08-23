@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
-import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
+import { getUserIdFromAuthorization, hasCronSecret, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getSecret } from "../_shared/app-secrets.ts";
 import { type WebPageKind } from "../_shared/ecommerce-ux-kb.ts";
 // The prompt, the Gemini call, and the vision QA live in _shared so the model
@@ -64,7 +64,7 @@ const STORAGE_BUCKET = "audit-assets";
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers":
-    "authorization, x-client-info, apikey, content-type, accept, origin, referer, user-agent",
+    "authorization, x-client-info, apikey, content-type, accept, origin, referer, user-agent, x-cron-secret",
   "access-control-allow-methods": "POST, OPTIONS",
 };
 
@@ -1163,7 +1163,11 @@ serve(async (req) => {
 
   const auth = req.headers.get("authorization") ?? "";
   const token = auth.replace(/^Bearer\s+/i, "");
-  const isService = isServiceRoleAuthorization(token);
+  // The stall-recovery job reaches us on a schedule with its own secret rather
+  // than a Supabase key: the vault's copy of the service role key no longer
+  // matches the project's, so a scheduled nudge could not authenticate at all.
+  const isService = isServiceRoleAuthorization(token) ||
+    await hasCronSecret(req, "web_pipeline_cron_secret");
   if (!isService) {
     try {
       await getUserIdFromAuthorization(req);

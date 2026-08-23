@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
+import { getUserIdFromAuthorization, hasCronSecret, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { getScreenshotProvider } from "../_shared/screenshot-provider.ts";
 import { browserlessEnabled, captureWithBrowserless, type CapturedElement, type CapturedPhoto, type CapturedTextLock } from "../_shared/browserless.ts";
 import { DOM_OUTLINE_PROBE, isUsableOutline } from "../_shared/html-after.ts";
@@ -18,7 +18,7 @@ const VIEWPORTS = ["desktop", "mobile"] as const;
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
   "access-control-allow-headers":
-    "authorization, x-client-info, apikey, content-type, accept, origin, referer, user-agent",
+    "authorization, x-client-info, apikey, content-type, accept, origin, referer, user-agent, x-cron-secret",
   "access-control-allow-methods": "POST, OPTIONS",
 };
 
@@ -63,6 +63,10 @@ async function kick(fn: string, body: Record<string, unknown>) {
 async function authorize(req: Request) {
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (token && isServiceRoleAuthorization(token)) return;
+  // The stall-recovery job (nudge_stalled_web_pipeline) reaches us on a schedule
+  // with its own secret rather than a Supabase key, which cannot go stale the
+  // way the vault's copy of the service role key did.
+  if (await hasCronSecret(req, "web_pipeline_cron_secret")) return;
   await getUserIdFromAuthorization(req);
 }
 

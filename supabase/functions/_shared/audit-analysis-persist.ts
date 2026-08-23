@@ -5,6 +5,7 @@ import {
   injectCompetingSmsFinding,
 } from "./competing-sms-finding.ts";
 import type { CompetingSmsScanSnapshot } from "./competing-sms-scan.ts";
+import { sanitizeDashDeep } from "./dash.ts";
 import {
   applyCoreFlowRecommendationsToSectionDetails,
   fetchCoreFlowRecommendations,
@@ -108,12 +109,20 @@ function mergeAddOnPlacementsIntoLayout(
 export async function persistAuditAnalysisResults(
   sb: SupabaseClient,
   auditId: string,
-  partial: PartialState,
+  partialInput: PartialState,
   options?: {
     patchOnlySectionKeys?: string[];
     preserveStrengthsFromAudit?: boolean;
   },
 ): Promise<void> {
+  // House style, enforced where the copy is written rather than only asked for
+  // in the prompt. Every other generated-copy path (web audits, the proposal and
+  // document agents) strips em and en dashes in code because the prompt rule
+  // alone did not hold; the Klaviyo path was the one that never got it, so a
+  // dash could still reach a client's report. One pass over the whole payload
+  // covers the summary, the findings, the strengths, the timeline and every
+  // section's text without having to name each field.
+  const partial = sanitizeDashDeep(partialInput);
   const { data: audit, error: auditErr } = await sb
     .from("audits")
     .select("id, layout, client_id, executive_summary")
