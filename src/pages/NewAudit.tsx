@@ -18,6 +18,7 @@ import { resolveRevenueOpportunityContent } from '../lib/revenue-opportunity-con
 import type { Audit, AuditType, Client, RevenueOpportunityAddOnItem, RevenueOpportunityTemplate } from '../lib/types';
 import { KLAVIYO_AUDIT_SECTION_KEYS, WEB_AUDIT_SECTION_KEYS } from '../lib/audit-sections';
 import { canUseWebAudits } from '../lib/web-audit-access';
+import { OpenUrlButton } from '../components/ui/OpenUrlButton';
 import { IndustrySelectWithCustom } from '../components/ui/IndustrySelect';
 import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHelpModal';
 import WebStoreAccess from '../components/web/WebStoreAccess';
@@ -150,6 +151,10 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   const [detectingPages, setDetectingPages] = useState(false);
   const [pagesDetected, setPagesDetected] = useState(false);
   const [pageDetectFailed, setPageDetectFailed] = useState(false);
+  // And whether the store connection check is still running. Both feed the
+  // Continue button: stepping past this screen mid-verification means the audit
+  // is created against pages and a store that had not been settled yet.
+  const [storeChecking, setStoreChecking] = useState(false);
   // Which values WE filled, so a later detection may replace them but anything
   // typed by hand is never touched.
   const autoPagesRef = useRef({ product: '', collection: '' });
@@ -229,7 +234,16 @@ export default function NewAudit({ asModal }: NewAuditProps) {
   useEffect(() => {
     if (stepKey !== 'web_setup') return;
     const url = form.websiteUrl.trim();
-    if (!url) return;
+    if (!url) {
+      // Nothing to resolve, so nothing is outstanding. Without this the flag
+      // could stay raised after the field is cleared.
+      setDetectingPages(false);
+      return;
+    }
+    // Raised BEFORE the debounce, not just when the request goes out: the gap
+    // was 600ms in which Continue was still live, which is long enough to land
+    // on this step and click straight past the verification.
+    setDetectingPages(true);
     const t = window.setTimeout(() => prefillAuditPages(url, form.clientId), 600);
     return () => window.clearTimeout(t);
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -548,6 +562,10 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     return true;
   };
 
+  /** The website step is still working something out: the pages this audit will
+   *  capture, or whether we can reach the store. Continue waits for both. */
+  const verifyingWebSetup = stepKey === 'web_setup' && (detectingPages || storeChecking);
+
   const body = (
     <div className={asModal ? 'p-5' : 'p-8 max-w-4xl'}>
       <style>{``}</style>
@@ -680,14 +698,17 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             <div className="space-y-3">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Website URL (homepage)</label>
-                <input
-                  type="url"
-                  value={form.websiteUrl}
-                  onChange={e => updateField('websiteUrl', e.target.value)}
-                  onBlur={() => prefillShopifyDomain(form.websiteUrl)}
-                  className="w-full px-3 py-2.5 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                  placeholder="https://store.com"
-                />
+                <div className="relative">
+                  <input
+                    type="url"
+                    value={form.websiteUrl}
+                    onChange={e => updateField('websiteUrl', e.target.value)}
+                    onBlur={() => prefillShopifyDomain(form.websiteUrl)}
+                    className="w-full px-3 py-2.5 pr-9 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                    placeholder="https://store.com"
+                  />
+                  <OpenUrlButton url={form.websiteUrl} label="Open the homepage in a new tab" />
+                </div>
                 <p className="mt-1.5 text-xs text-gray-500">
                   {detectingPages
                     ? 'Finding the product and collection pages this audit will capture…'
@@ -711,33 +732,44 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 <div className="px-3.5 pb-3.5 pt-1 space-y-3 border-t border-gray-100">
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Product page URL</label>
-                    <input
-                      type="url"
-                      value={form.productUrl}
-                      onChange={e => updateField('productUrl', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                      placeholder="https://store.com/products/…"
-                    />
+                    <div className="relative">
+                      <input
+                        type="url"
+                        value={form.productUrl}
+                        onChange={e => updateField('productUrl', e.target.value)}
+                        className="w-full px-3 py-2 pr-9 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        placeholder="https://store.com/products/…"
+                      />
+                      <OpenUrlButton url={form.productUrl} label="Open this product page in a new tab" />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Collection page URL</label>
-                    <input
-                      type="url"
-                      value={form.collectionUrl}
-                      onChange={e => updateField('collectionUrl', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                      placeholder="https://store.com/collections/…"
-                    />
+                    <div className="relative">
+                      <input
+                        type="url"
+                        value={form.collectionUrl}
+                        onChange={e => updateField('collectionUrl', e.target.value)}
+                        className="w-full px-3 py-2 pr-9 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        placeholder="https://store.com/collections/…"
+                      />
+                      <OpenUrlButton url={form.collectionUrl} label="Open this collection page in a new tab" />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs font-medium text-gray-600 mb-1">Cart URL</label>
-                    <input
-                      type="url"
-                      value={form.cartUrl}
-                      onChange={e => updateField('cartUrl', e.target.value)}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
-                      placeholder="Leave blank to capture the slide-cart drawer"
-                    />
+                    <div className="relative">
+                      <input
+                        type="url"
+                        value={form.cartUrl}
+                        onChange={e => updateField('cartUrl', e.target.value)}
+                        className="w-full px-3 py-2 pr-9 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-brand-primary focus:ring-1 focus:ring-brand-primary/20"
+                        placeholder="Leave blank to capture the slide-cart drawer"
+                      />
+                      {/* Usually blank, and then there is nothing to open: the
+                          affordance renders itself away. */}
+                      <OpenUrlButton url={form.cartUrl} label="Open this cart page in a new tab" />
+                    </div>
                     <p className="mt-1 text-xs text-gray-400">
                       Nothing to detect here: the capture adds an item and photographs whatever
                       the theme opens, drawer or page.
@@ -757,6 +789,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
                 domainVerified={domainVerified}
                 ensureClient={ensureClientRecord}
                 onConnectedChange={setStoreConnected}
+                onCheckingChange={setStoreChecking}
                 proceedWithoutStore={proceedWithoutStore}
                 onProceedWithoutStoreChange={setProceedWithoutStore}
               />
@@ -927,11 +960,14 @@ export default function NewAudit({ asModal }: NewAuditProps) {
           ) : (
             <button
               onClick={() => { setStep(step + 1); }}
-              disabled={!canProceed()}
-              className="ml-auto flex items-center gap-2 px-6 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40"
+              disabled={!canProceed() || verifyingWebSetup}
+              className="ml-auto flex items-center gap-2 px-6 py-2.5 gradient-bg text-white text-sm font-medium rounded-lg hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
             >
-              Continue
-              <ArrowRight className="w-4 h-4" />
+              {verifyingWebSetup ? (
+                <><Loader2 className="w-4 h-4 animate-spin" /> Verifying…</>
+              ) : (
+                <>Continue<ArrowRight className="w-4 h-4" /></>
+              )}
             </button>
           )}
         </div>

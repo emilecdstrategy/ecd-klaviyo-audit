@@ -108,6 +108,10 @@ export type WebStoreAccessProps = {
   ensureClient: () => Promise<string>;
   /** Whether a usable connection exists, so the wizard can gate on it. */
   onConnectedChange: (connected: boolean) => void;
+  /** True while the store connection is still being checked, so the wizard can
+   *  hold Continue rather than let someone step past a verdict that has not
+   *  arrived. Pass a stable setter: this fires on every change of the check. */
+  onCheckingChange?: (checking: boolean) => void;
   /** Set when the user decides to run without store data. */
   proceedWithoutStore: boolean;
   onProceedWithoutStoreChange: (value: boolean) => void;
@@ -122,6 +126,7 @@ export default function WebStoreAccess({
   domainVerified = false,
   ensureClient,
   onConnectedChange,
+  onCheckingChange,
   proceedWithoutStore,
   onProceedWithoutStoreChange,
 }: WebStoreAccessProps) {
@@ -198,6 +203,12 @@ export default function WebStoreAccess({
       onConnectedChange(false);
     }
   }, [onConnectedChange, probePromo]);
+
+  // Tell the wizard while a check is in flight, so Continue can wait for the
+  // verdict instead of letting someone move on before it lands.
+  useEffect(() => {
+    onCheckingChange?.(check.status === 'checking');
+  }, [check.status, onCheckingChange]);
 
   // Check on open, and again whenever the client changes. The ref stops a second
   // run for the same client when the parent re-renders.
