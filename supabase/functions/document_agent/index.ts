@@ -67,7 +67,7 @@ serve(async (req) => {
 
   let uid: string;
   try {
-    uid = await requireStaffUserId(req);
+    uid = await requireStaffUserId(req, "documents");
   } catch (e) {
     return json({ ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" } }, { status: 200 });
   }

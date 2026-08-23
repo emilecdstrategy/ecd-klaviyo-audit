@@ -1,6 +1,17 @@
 import type { AppArea, Profile } from './types';
 
-/** Per-user area access, the one place the rules live.
+/** Per-user area access, the one place the rules live IN THE FRONTEND.
+ *
+ * These rules are mirrored server-side and are enforced there, so this file
+ * decides what to render rather than what is permitted:
+ *  - RLS: public.has_app_access(area) is AND-ed into the policies on each area's
+ *    data tables, so a Member without an area cannot read or write it with their
+ *    own session even by calling the API directly.
+ *  - Edge functions: requireStaffUserId(req, area) applies the same rule on the
+ *    endpoints that do an area's work, because those act with the service role
+ *    and so bypass RLS by design.
+ * Keep the three in step: the semantics below (admins always pass, a missing
+ * app_access means allowed) are duplicated in both of those places.
  *
  * The model, as decided with Emil (2026-08-14):
  * - Admins can do everything, including managing users; their checkboxes are

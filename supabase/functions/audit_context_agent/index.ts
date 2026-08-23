@@ -166,7 +166,7 @@ serve(async (req) => {
   if (req.method !== "POST") return json({ ok: false, error: { code: "method_not_allowed" } }, { status: 405 });
 
   try {
-    await requireStaffUserId(req);
+    await requireStaffUserId(req, "audits");
   } catch (e) {
     return json({ ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" } }, { status: 200 });
   }

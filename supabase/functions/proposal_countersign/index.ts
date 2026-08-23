@@ -13,7 +13,7 @@ serve(async (req) => {
 
   const correlationId = crypto.randomUUID();
   try {
-    const userId = await requireStaffUserId(req);
+    const userId = await requireStaffUserId(req, "proposals");
     const body = (await req.json().catch(() => ({}))) as {
       proposal_id?: string;
       typed_name?: string;

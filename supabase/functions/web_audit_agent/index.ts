@@ -135,7 +135,7 @@ serve(async (req) => {
   if (!auditId || !message) return json({ ok: false, error: { code: "bad_request", message: "Missing audit_id or message" } }, { status: 400 });
 
   try {
-    await requireStaffUserId(req);
+    await requireStaffUserId(req, "audits");
   } catch (e) {
     return json({ ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" } }, { status: 401 });
   }

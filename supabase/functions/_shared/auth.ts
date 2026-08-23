@@ -90,12 +90,34 @@ export async function requireAdminUserId(req: Request): Promise<string> {
   return uid;
 }
 
-/** Like requireAdminUserId but accepts both staff roles (admin, auditor). */
-export async function requireStaffUserId(req: Request): Promise<string> {
+/** The three areas a Member's app_access can grant or withhold. */
+export type AppArea = "audits" | "proposals" | "documents";
+
+/**
+ * Like requireAdminUserId but accepts both staff roles (admin, auditor), and
+ * optionally requires access to one area.
+ *
+ * Pass an area on any endpoint that does that area's work. RLS now enforces
+ * app_access on the tables, but these functions act with the SERVICE ROLE, which
+ * bypasses RLS by design, so without a check here a Member with Documents
+ * unchecked could still drive the document agent or send a document. The rules
+ * match src/lib/access.ts: admins always pass, and a missing app_access (or a
+ * missing key in it) means allowed.
+ */
+export async function requireStaffUserId(req: Request, area?: AppArea): Promise<string> {
   const uid = await getUserIdFromAuthorization(req);
   const sb = assertServiceRoleClient();
-  const { data: profile, error: pErr } = await sb.from("profiles").select("role").eq("id", uid).maybeSingle();
+  const { data: profile, error: pErr } = await sb
+    .from("profiles")
+    .select("role, app_access")
+    .eq("id", uid)
+    .maybeSingle();
   if (pErr) throw pErr;
-  if (profile?.role !== "admin" && profile?.role !== "auditor") throw new Error("Forbidden");
+  const role = (profile as { role?: string } | null)?.role;
+  if (role !== "admin" && role !== "auditor") throw new Error("Forbidden");
+  if (area && role !== "admin") {
+    const access = (profile as { app_access?: Record<string, unknown> | null } | null)?.app_access ?? null;
+    if (access && access[area] === false) throw new Error("Forbidden");
+  }
   return uid;
 }
