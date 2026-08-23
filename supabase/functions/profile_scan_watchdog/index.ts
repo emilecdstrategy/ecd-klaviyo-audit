@@ -53,35 +53,40 @@ serve(async (req) => {
     return json({ error: "Method not allowed" }, { status: 405 });
   }
 
-  const auth = req.headers.get("authorization") ?? "";
-  const token = auth.replace(/^Bearer\s+/i, "");
-  // Exact-key match is the real check. The pg_cron schedule authenticates with a
-  // service_role key read from the vault, and that copy is STALE against the
-  // env key that was refreshed (with the shared check tightened to exact-match
-  // only, this endpoint returned 401 on its next tick). Until the vault key is
-  // synced, accept a role=service_role JWT here as a SCOPED fallback: this
-  // endpoint only kicks recovery jobs (no data in or out), so the residual
-  // forgery risk is a spurious watchdog run, not exposure. Delete this block
-  // once vault.service_role_key matches the current key.
-  const claimsServiceRole = (() => {
-    try {
-      const parts = token.split(".");
-      if (parts.length !== 3) return false;
-      const payload = JSON.parse(atob(parts[1].replace(/-/g, "+").replace(/_/g, "/")));
-      return payload?.role === "service_role";
-    } catch {
-      return false;
-    }
-  })();
-  if (!isServiceRoleAuthorization(token) && !claimsServiceRole) {
-    return json({ ok: false, error: "Unauthorized" }, { status: 401 });
-  }
-
   if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
     return json({ ok: false, error: "Missing Supabase env" }, { status: 500 });
   }
 
   const sb = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY);
+
+  // Two ways in, and neither is forgeable.
+  //
+  // The service role key, for a call from another function or by hand. Or the
+  // watchdog's own cron secret, which is how the pg_cron schedule authenticates:
+  // it used to send a service_role key read from the vault, that copy went stale
+  // when the project's keys were refreshed, and the only thing keeping the
+  // schedule alive was a shared check that accepted any UNSIGNED JWT claiming
+  // role=service_role. A dedicated secret cannot be invalidated by a key
+  // rotation and cannot be guessed, which is why the HubSpot sync and the Xero
+  // keepalive already work this way.
+  const auth = req.headers.get("authorization") ?? "";
+  const token = auth.replace(/^Bearer\s+/i, "");
+  let authorized = isServiceRoleAuthorization(token);
+  if (!authorized) {
+    const presented = (req.headers.get("x-cron-secret") ?? "").trim();
+    if (presented) {
+      const { data: row } = await sb
+        .from("watchdog_cron_secret")
+        .select("secret")
+        .eq("id", "default")
+        .maybeSingle();
+      const expected = (row?.secret ?? "").trim();
+      authorized = Boolean(expected) && presented === expected;
+    }
+  }
+  if (!authorized) {
+    return json({ ok: false, error: "Unauthorized" }, { status: 401 });
+  }
   const [{ data: profileJobs, error: profileErr }, { data: aiJobs, error: aiErr }] = await Promise.all([
     sb
       .from("klaviyo_profile_scan_jobs")
