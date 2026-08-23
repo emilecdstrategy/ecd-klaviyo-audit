@@ -722,6 +722,40 @@ const ACKNOWLEDGES_TRUST_RE = new RegExp(
   "i",
 );
 
+/**
+ * Proof, from the shot itself, that the cart we photographed had something in it.
+ *
+ * The cart section is hidden unless the capture can show the cart was populated,
+ * because a "Cart" section describing the homepage is worse than no section. That
+ * test used to accept only two things: an item count read back from /cart.js, or
+ * a /cart URL. Power Planter's bot protection blocks that fetch while serving the
+ * page perfectly, so a capture came back with a flawless slide-cart drawer, one
+ * item, "CHECKOUT $23.49" across the button, and no count. The section was hidden
+ * anyway.
+ *
+ * A checkout control or a total carrying an actual amount is the discriminator: a
+ * homepage header has a cart icon and often a "free shipping over $100" bar, but
+ * it never says "CHECKOUT $23.49". Requiring the money next to the word is what
+ * keeps "taxes and shipping calculated at checkout" from counting.
+ */
+const CART_POPULATED_RE = new RegExp(
+  String.raw`(checkout|subtotal|order total|cart total)[^a-z0-9]{0,12}\$\s?\d`,
+  "i",
+);
+
+/** Whether any captured element on these shots shows a populated cart. */
+export function cartLooksPopulated(
+  rows: Array<{ elements?: ElementBox[] | null }>,
+): boolean {
+  for (const row of rows ?? []) {
+    const els = (row?.elements ?? []) as ElementBox[];
+    for (const el of els) {
+      if (CART_POPULATED_RE.test(String(el?.label ?? ""))) return true;
+    }
+  }
+  return false;
+}
+
 const CART_EMPTINESS_RE = new RegExp(
   [
     // A qualifier, then "space" within a short window. The adjectives stack

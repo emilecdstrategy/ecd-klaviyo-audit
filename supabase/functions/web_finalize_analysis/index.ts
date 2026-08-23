@@ -14,6 +14,7 @@ import {
   coerceOverview,
   coercePageAudit,
   coerceRoadmap,
+  cartLooksPopulated,
   isNearDuplicateFinding,
   sitewideTopic,
   OVERVIEW_TOOL,
@@ -539,7 +540,14 @@ async function runStep(
     if (step.page_type === "cart") {
       const filled = allRows.some((r) => Number((r.raw ?? {}).cart_count ?? 0) > 0);
       const onCartUrl = allRows.some((r) => /\/cart(\/|$|\?)/.test(String(r.url ?? "")));
-      if (!filled && !onCartUrl) {
+      // Third witness: the shot itself. A storefront can serve the drawer and
+      // still block the /cart.js fetch that records the count, which is exactly
+      // what Power Planter does, so an audit hid a section whose screenshot
+      // showed a populated cart with CHECKOUT $23.49 on the button. Refusing to
+      // describe a cart we can SEE is a different mistake from refusing to
+      // describe a page we never captured.
+      const populated = cartLooksPopulated(rows);
+      if (!filled && !onCartUrl && !populated) {
         console.log(`${step.key}: cart never populated (no cart_count, not a /cart URL), hiding the section`);
         await sb.from("audit_sections").update({ section_config: hideConfig(section) }).eq("id", section.id);
         return;

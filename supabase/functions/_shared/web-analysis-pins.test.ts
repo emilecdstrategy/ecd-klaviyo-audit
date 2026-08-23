@@ -3,7 +3,7 @@
 // Every case here is a pin that once landed on the wrong thing in a report a
 // client read. A wrong pin is worse than no pin, because it is a claim about
 // where the problem is and the reader checks it against the screenshot.
-import { asArray, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, snapToElementByLabel, snapToElementGroup, snapToHeroPhoto, type ElementBox } from "./web-analysis-schemas.ts";
+import { asArray, cartLooksPopulated, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, snapToElementByLabel, snapToElementGroup, snapToHeroPhoto, type ElementBox } from "./web-analysis-schemas.ts";
 
 /** A Shopify homepage header, as the capture actually records it. The logo lives
  * in an anonymous <a> inside an <h1>, so both carry bare tag names for labels. */
@@ -1083,4 +1083,50 @@ Deno.test("a day-count range like '3-5 business days' counts as a disclosure too
     'Nothing in the cart mentions shipping times, which leaves shoppers guessing.',
   );
   if (kept.length !== 0) throw new Error("'3-5 business days' is on the page, so the claim of silence must be refused");
+});
+
+// --- proving a photographed cart was populated -------------------------------
+//
+// The cart section hides unless the capture can show the cart had something in
+// it. Power Planter serves the drawer but blocks the /cart.js fetch that records
+// the item count, so a flawless slide-cart shot (one item, "CHECKOUT $23.49" on
+// the button) was hidden for want of a number.
+
+Deno.test("a checkout button carrying an amount proves a populated cart", () => {
+  const rows = [{
+    elements: [
+      { id: 'el_1', label: 'p: Shopping Cart', x: 66, y: 2, w: 30, h: 4 },
+      { id: 'el_2', label: 'a: CHECKOUT $23.49', x: 66, y: 90, w: 30, h: 6 },
+    ] as ElementBox[],
+  }];
+  if (!cartLooksPopulated(rows)) throw new Error('CHECKOUT $23.49 is proof the cart had an item');
+});
+
+Deno.test("a homepage header is not mistaken for a populated cart", () => {
+  // The free-shipping bar carries a dollar amount and the header carries the
+  // word Cart, and neither means the cart has anything in it.
+  const rows = [{
+    elements: [
+      { id: 'el_1', label: 'div: FREE SHIPPING ON ALL DOMESTIC US ORDERS ABOVE $100+', x: 0, y: 0, w: 100, h: 4 },
+      { id: 'el_2', label: 'nav: Call Us Write Us Account Cart', x: 60, y: 5, w: 40, h: 5 },
+    ] as ElementBox[],
+  }];
+  if (cartLooksPopulated(rows)) throw new Error('a header and a shipping bar are not a cart');
+});
+
+Deno.test("the tax disclosure alone does not count as a populated cart", () => {
+  // "calculated at checkout" contains the word but names no amount.
+  const rows = [{
+    elements: [
+      { id: 'el_1', label: 'div: Taxes and shipping calculated at checkout', x: 5, y: 80, w: 90, h: 4 },
+    ] as ElementBox[],
+  }];
+  if (cartLooksPopulated(rows)) throw new Error('a disclosure is not evidence of contents');
+});
+
+Deno.test("a subtotal with an amount also proves it", () => {
+  const rows = [{
+    elements: [{ id: 'el_1', label: 'div: Subtotal $84.00', x: 5, y: 70, w: 90, h: 4 }] as ElementBox[],
+  }];
+  if (!cartLooksPopulated(rows)) throw new Error('a subtotal with money is a populated cart');
 });
