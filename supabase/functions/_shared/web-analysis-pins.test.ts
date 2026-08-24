@@ -1182,3 +1182,26 @@ Deno.test("coerceAnalytics drops the offending step but keeps the play", () => {
   if (steps.length !== 1) throw new Error(`expected the sticky step dropped, got ${JSON.stringify(steps)}`);
   if (!steps[0].includes('single-column')) throw new Error('the good step must survive');
 });
+
+Deno.test("a cross-sell block is caught whatever the theme calls it", () => {
+  // "you may also NEED" reached a live report on a product page the probe had
+  // already found a recommendations block on. The block is the fact; the
+  // wording above it is not.
+  const present = new Set(['recommendations']);
+  for (const step of [
+    'Add a you may also need section on the DEWALT DCD130T1 product page pointing to the Auger.',
+    'Add a you may also like row to the product page.',
+    'Build a complete the look section under the buy button.',
+    'Introduce related products on the product page.',
+  ]) {
+    if (!recommendsExistingFeature(step, present)) throw new Error(`should be refused: ${step}`);
+  }
+});
+
+Deno.test("naming a specific product to merchandise is not adding a block", () => {
+  // Configuring what appears in a row that exists is the useful version of this
+  // advice, and it must survive.
+  const present = new Set(['recommendations']);
+  const step = 'Add Adapter Pins as a one-click add-on directly on the Auger Adapters product page.';
+  if (recommendsExistingFeature(step, present)) throw new Error('merchandising an existing surface is legitimate');
+});

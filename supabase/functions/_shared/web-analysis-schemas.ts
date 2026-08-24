@@ -1132,7 +1132,10 @@ const FEATURE_ADD_CLAIMS: Array<{ feature: string; re: RegExp }> = [
   // mistake, and an early version of this rule refused both.
   { feature: "sticky_buy_button", re: /\b(add|introduce|install|implement|build|create)\b[^.]{0,40}\b(sticky|floating|fixed)\b[^.]{0,30}\b(add.?to.?cart|add.?to.?bag|buy|atc|checkout)\b[^.]{0,20}\b(bar|button|cta)\b/i },
   { feature: "reviews", re: /\b(add|introduce|install|bring in|start collecting)\b[^.]{0,40}\b(customer )?reviews?\b/i },
-  { feature: "recommendations", re: /\b(add|introduce|build)\b[^.]{0,40}\b(product )?(recommendations?|related products?|cross.?sells?|you may also like)\b/i },
+  // "you may also NEED" was the phrasing that got through on a live report, on
+  // a product page the probe had already found a recommendations block on. The
+  // block is what matters, not the words a theme happens to put above it.
+  { feature: "recommendations", re: /\b(add|introduce|build)\b[^.]{0,40}\b(product )?(recommendations?|related products?|cross.?sells?|upsells?|you may also (like|need|want)|complete the look|pairs well with|frequently bought)\b/i },
   { feature: "newsletter_signup", re: /\b(add|introduce|install)\b[^.]{0,40}\b(email|newsletter)\b[^.]{0,20}\b(signup|sign.?up|capture|form)\b/i },
   { feature: "size_or_fit_guide", re: /\b(add|introduce|build)\b[^.]{0,40}\b(size|fit)\b[^.]{0,15}\b(guide|chart)\b/i },
   { feature: "faq", re: /\b(add|introduce|build)\b[^.]{0,40}\b(faq|frequently asked)\b/i },
