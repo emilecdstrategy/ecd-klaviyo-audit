@@ -1268,3 +1268,43 @@ Deno.test("cart add-ons are not recommended to a drawer that has them", () => {
     if (!recommendsExistingFeature(step, present)) throw new Error(`should be refused: ${step}`);
   }
 });
+
+Deno.test("pre-checking protection is refused on a cart that already defaults to it", () => {
+  const present = new Set(['cart_shipping_protection']);
+  for (const step of [
+    'Pre-check the Shipping Protection add-on by default on product pages for the CARY INSPIRED Welding Cap.',
+    'Offer Shipping Protection pre-checked at the top of the cart.',
+  ]) {
+    if (!recommendsExistingFeature(step, present)) throw new Error(`should be refused: ${step}`);
+  }
+});
+
+Deno.test("express wallet buttons are refused, since the checkout is never captured", () => {
+  const step = 'Add express payment buttons like Shop Pay and Apple Pay right at the top of the mobile checkout.';
+  if (!presumesSetup(step)) throw new Error('wallet buttons live on a surface this audit cannot see');
+});
+
+Deno.test("a play whose title recommends an existing feature is dropped whole", () => {
+  const parsed = coerceAnalytics({
+    intro: 'x',
+    plays: [
+      {
+        title: 'Bundle Shipping Protection into top pairings',
+        insight: 'High ticket items carry more delivery risk.',
+        action_steps: ['Add a one-line note next to the add-on explaining what it covers.'],
+        metric: 'x',
+      },
+      {
+        title: 'Lift the single-item basket',
+        insight: '70% of orders hold one item.',
+        action_steps: ['Pair the 3 inch auger with the 7 inch auger on both product pages.'],
+        metric: 'y',
+      },
+    ],
+  }, new Set(['cart_shipping_protection']));
+  const titles = parsed.plays.map((p) => p.title);
+  if (titles.includes('Bundle Shipping Protection into top pairings')) {
+    throw new Error('the protection play should be gone entirely, not just tidied');
+  }
+  if (!titles.includes('Lift the single-item basket')) throw new Error('the good play must survive');
+});

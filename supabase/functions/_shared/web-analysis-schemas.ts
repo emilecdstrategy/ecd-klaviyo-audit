@@ -647,6 +647,15 @@ const PRESUMES_SETUP = [
     String.raw`\b(one|single|two|three|multi)[- ]?(page|step) checkout\b|\bcheckout (in)?to (one|a single) page\b|\bsimplif\w* (the )?checkout\b|\bcheckout (page|flow|form|process|funnel|experience)\b|\bcheckout (steps?|fields?)\b|\bfewer (form )?fields\b`,
     "i",
   ),
+  // The express wallet buttons live in the cart and checkout, which are a
+  // Shopify surface we never photograph and often already carry them. "Add
+  // express payment buttons like Shop Pay and Apple Pay right at the top of the
+  // mobile checkout" is both a guess about what is there and a change to a page
+  // this audit cannot see.
+  new RegExp(
+    String.raw`\bexpress (payment|checkout|wallet)\b|\b(shop pay|apple pay|google pay|paypal express|shoppay)\b|\b(top|bottom) of the (mobile |desktop )?checkout\b`,
+    "i",
+  ),
 ];
 
 /** True when a step is a guess about the store's current configuration. */
@@ -1186,7 +1195,11 @@ const FEATURE_ADD_CLAIMS: Array<{ feature: string; re: RegExp }> = [
   // order.
   {
     feature: "cart_shipping_protection",
-    re: /\b(add|introduce|offer|pair|bundle|upsell|promote|surface|push)\b[^.]{0,70}\b(shipping|order|package|purchase|delivery)\s*protection\b/i,
+    // "Pre-check the Shipping Protection add-on by default" survived the first
+    // list of verbs, on a store whose cart already makes PROTECTED CHECKOUT the
+    // primary button with an opt-out beside it. It is not just present, it is
+    // already the default.
+    re: /\b(add|introduce|offer|pair|bundle|upsell|promote|surface|push|pre.?check|pre.?select|tick|default|opt.?in)\b[^.]{0,70}\b(shipping|order|package|purchase|delivery)\s*protection\b|\b(shipping|order|package)\s*protection\b[^.]{0,40}\b(by default|pre.?checked|pre.?selected)\b/i,
   },
   // And Power Planter's cart drawer already carries a "You may also like" row,
   // so telling them to add a suggested add-on to it is the same mistake.
@@ -1276,6 +1289,20 @@ export function coerceAnalytics(
     // A play with no insight or nothing to do is half an idea and renders as an
     // empty card, so drop it rather than show it.
     .filter((p) => p.title && p.insight && p.action_steps.length > 0)
+    // And a play whose HEADLINE is the wrong idea is not saved by tidy steps.
+    // "Bundle Shipping Protection into top pairings" survived on a store that
+    // already makes protection the default, because only the steps were being
+    // checked. If the title asks for something the storefront has, the play is
+    // about the wrong thing.
+    .filter((p) => {
+      if (!recommendsExistingFeature(p.title, featuresPresent)) return true;
+      console.warn(JSON.stringify({
+        event: "play_refused",
+        reason: "title_recommends_a_feature_the_store_already_has",
+        title: p.title.slice(0, 120),
+      }));
+      return false;
+    })
     .slice(0, 5);
   return { intro: sanitizeDash(o.intro), plays, metrics };
 }
