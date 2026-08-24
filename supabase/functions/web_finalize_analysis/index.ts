@@ -807,7 +807,7 @@ async function runStep(
     // page change can be checked against the page.
     const { data: probeRows } = await sb
       .from("web_page_snapshots")
-      .select("page_type, viewport, raw")
+      .select("page_type, viewport, raw, elements")
       .eq("audit_id", auditId)
       .eq("status", "success");
     const featuresPresent = new Set<string>();
@@ -823,6 +823,48 @@ async function runStep(
       }),
     );
 
+    // What the CART carries, which the below-fold probe does not cover: it reads
+    // structure below the first screen, and the cart drawer is neither. Both of
+    // these produced a wrong play. Pipeliner's cart offers PROTECTED CHECKOUT
+    // with an opt-out reading "Checkout without shipping protection", and a play
+    // still said to pair Shipping Protection with high-ticket items; Power
+    // Planter's drawer already carries a "You may also like" row.
+    const labelsOf = (pageType: string) =>
+      (probeRows ?? [])
+        .filter((r) => String(r.page_type ?? "") === pageType)
+        .flatMap((r) => (Array.isArray(r.elements) ? r.elements : []) as ElementBox[])
+        .map((el) => String(el?.label ?? ""))
+        .filter(Boolean);
+    const cartLabels = labelsOf("cart");
+    const cartText = cartLabels.join(" | ");
+    if (/order protection|shipping protection|protected checkout|package protection/i.test(cartText)) {
+      featuresPresent.add("cart_shipping_protection");
+    }
+    if (/you may also like|complete the look|pairs well|frequently bought|also bought|recommend/i.test(cartText)) {
+      featuresPresent.add("cart_recommendations");
+    }
+
+    // The buy button's actual words, so a play cannot call it generic. Two
+    // reports told clients to replace a "generic label" on buttons that already
+    // read ADD TO CART.
+    const buyLabel = labelsOf("product")
+      .map((l) => l.replace(/^[a-z0-9]+:\s*/i, "").trim())
+      .find((l) => /^(add to (cart|bag)|buy now|pre.?order)/i.test(l));
+    const cartFacts = [
+      buyLabel
+        ? `The buy button on the product page reads "${buyLabel}". That is its real wording, so never call it generic, vague or unclear, and never write a step about changing button copy.`
+        : "",
+      featuresPresent.has("cart_shipping_protection")
+        ? "The cart already offers shipping or order protection on the whole order, so never write a step that adds, pairs or upsells it."
+        : "",
+      featuresPresent.has("cart_recommendations")
+        ? "The cart already shows a suggested products row, so never write a step that adds add-ons or cross-sells to the cart or drawer. Changing WHICH products it shows is fair."
+        : "",
+    ].filter(Boolean);
+    const cartFactsText = cartFacts.length
+      ? `\n\nWHAT THE CART AND BUY BUTTON ALREADY HAVE, measured on the capture:\n- ${cartFacts.join("\n- ")}`
+      : "";
+
     const messages: LlmMessage[] = [{
       role: "user",
       text: [
@@ -835,6 +877,7 @@ async function runStep(
         // add-to-cart bar to their phone product page, which the capture had
         // measured and could have answered either way.
         storefrontFacts,
+        cartFactsText,
         `- The traffic figures above are the denominator for everything else in this section. When the funnel names a step that loses most people, a play about that step beats a play about a product mix. Never present a conversion rate as good or bad against an industry average: none was measured.`,
         `- ORDER: the most concrete, quantified change the team could ship this week goes FIRST. A play whose steps are things to look into is not shippable and must not exist at all: every step is a change to make, with the change named. Never write a step that tells them to audit, review, analyse, investigate or measure something. They are reading the audit; handing the work back is the opposite of the job.`,
         `- SPECIFICALLY: free shipping is usually the strongest and cheapest lever here, so its play goes first when there is one, but WHICH play, and in WHICH direction, is decided for you in the FREE SHIPPING note above. Follow it exactly: it names the direction and the target. Never move a threshold the note says to leave alone, never name a number on the wrong side of the current one, and make the title and the steps agree with the direction, so a play that lowers a threshold never says "raise the bar".`,

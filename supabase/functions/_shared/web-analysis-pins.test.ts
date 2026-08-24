@@ -3,7 +3,7 @@
 // Every case here is a pin that once landed on the wrong thing in a report a
 // client read. A wrong pin is worse than no pin, because it is a claim about
 // where the problem is and the reader checks it against the screenshot.
-import { asArray, cartLooksPopulated, recommendsExistingFeature, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, snapToElementByLabel, snapToElementGroup, snapToHeroPhoto, type ElementBox } from "./web-analysis-schemas.ts";
+import { asArray, assumesLayout, cartLooksPopulated, recommendsExistingFeature, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, snapToElementByLabel, snapToElementGroup, snapToHeroPhoto, type ElementBox } from "./web-analysis-schemas.ts";
 
 /** A Shopify homepage header, as the capture actually records it. The logo lives
  * in an anonymous <a> inside an <h1>, so both carry bare tag names for labels. */
@@ -1204,4 +1204,67 @@ Deno.test("naming a specific product to merchandise is not adding a block", () =
   const present = new Set(['recommendations']);
   const step = 'Add Adapter Pins as a one-click add-on directly on the Auger Adapters product page.';
   if (recommendsExistingFeature(step, present)) throw new Error('merchandising an existing surface is legitimate');
+});
+
+// --- six live play steps a strategist rejected --------------------------------
+//
+// Each string below is verbatim from a shipped report. They share one cause:
+// the data section writes from order and traffic figures and was inventing
+// specifics about pages it had never seen.
+
+Deno.test("button copy rewrites are refused outright", () => {
+  // Both stores' buttons already read ADD TO CART, so "replace the generic
+  // label" asked for what was there. Per-product button copy is also a theme
+  // change out of proportion to anything it wins.
+  for (const step of [
+    'Test a specific button label like Add to cart in place of a generic one on those same pages.',
+    "Rewrite product buttons to name the benefit, like 'Add Umbrella to Cart' instead of a generic label.",
+  ]) {
+    if (!isBannedWork(step)) throw new Error(`should be banned: ${step}`);
+  }
+});
+
+Deno.test("a button step that is not about its wording still stands", () => {
+  for (const step of [
+    'Put a plain shipping and returns line right beside the add-to-cart button.',
+    'Add a comparison note near the buy button showing why this auger size fits the job.',
+  ]) {
+    if (isBannedWork(step)) throw new Error(`must survive: ${step}`);
+  }
+});
+
+Deno.test("checkout shape changes are refused, since we never open the checkout", () => {
+  const step = 'Test a simplified two-step checkout flow with fewer form fields before the pay button.';
+  if (!presumesSetup(step)) throw new Error('the checkout is never captured, so this cannot be evidenced');
+});
+
+Deno.test("rearranging a page this section never saw is refused", () => {
+  const step = 'Shrink the checkout steps visible on phones by moving secondary info like specs below the buy button.';
+  if (!assumesLayout(step)) throw new Error('this asserts where the specs currently sit');
+});
+
+Deno.test("deciding what to merchandise is not rearranging", () => {
+  for (const step of [
+    'Feature your top revenue products in the first row shoppers reach on mobile.',
+    'Add a star rating and short review quote next to the price on your top revenue products.',
+  ]) {
+    if (assumesLayout(step)) throw new Error(`must survive: ${step}`);
+  }
+});
+
+Deno.test("shipping protection is not recommended to a cart that offers it", () => {
+  const present = new Set(['cart_shipping_protection']);
+  const step = "Pair Shipping Protection with high-ticket items like the 8' Heavy Duty Umbrella at checkout-adjacent placement.";
+  if (!recommendsExistingFeature(step, present)) throw new Error('the cart already offers it on the whole order');
+  if (recommendsExistingFeature(step, new Set())) throw new Error('a cart without it may still be advised');
+});
+
+Deno.test("cart add-ons are not recommended to a drawer that has them", () => {
+  const present = new Set(['cart_recommendations']);
+  for (const step of [
+    'Add the bundle as a suggested add-on in the cart drawer.',
+    'Repeat the same add-on placement in the cart drawer for anyone who has Auger Adapters in their basket.',
+  ]) {
+    if (!recommendsExistingFeature(step, present)) throw new Error(`should be refused: ${step}`);
+  }
 });

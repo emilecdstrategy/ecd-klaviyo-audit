@@ -564,7 +564,40 @@ export type ElementBox = {
  */
 const BANNED_WORK = [
   /\b(page ?speed|site ?speed|load(ing)? (speed|time)|core web vitals|largest contentful paint|\bLCP\b|\bCLS\b|\bTTFB\b|lazy ?load|image compression|compress (the |your )?images?|minify|\bCDN\b|browser cach\w+)/i,
+  // Rewording the add-to-cart button.
+  //
+  // Two live reports carried this: "test a specific button label like Add to
+  // cart in place of a generic one" and "rewrite product buttons to name the
+  // benefit, like 'Add Umbrella to Cart' instead of a generic label". Both
+  // stores' buttons already read ADD TO CART, which is the specific label, so
+  // the advice asked for what was there and read as nonsense. Per-product
+  // button copy is also a theme change out of proportion to anything it wins.
+  /\b(button|buttons|cta)\b[^.]{0,80}\b(label|labels|copy|wording|text)\b/i,
+  /\b(label|labels|copy|wording)\b[^.]{0,40}\b(button|buttons|cta)\b/i,
 ];
+
+/**
+ * Rearranging a page the data section never saw.
+ *
+ * "Shrink the checkout steps visible on phones by moving secondary info like
+ * specs below the buy button" asserts where the specs currently sit. The plays
+ * are written from order and traffic figures, so a claim about the present
+ * arrangement of a page is a guess. Proposing what to merchandise is fine;
+ * moving furniture is not.
+ */
+const ASSUMES_LAYOUT = [
+  new RegExp(
+    String.raw`\b(mov(e|ing)|relocat\w*|reorder\w*|re-?arrang\w*|shift\w*|shrink\w*|collaps\w*)\b[^.]{0,70}\b(above|below|under|beneath|top of|bottom of|first screen|buy button|add.?to.?cart)\b`,
+    "i",
+  ),
+];
+
+/** True when a play step asserts how a page is currently laid out. */
+export function assumesLayout(text: unknown): boolean {
+  const t = String(text ?? "");
+  if (!t.trim()) return false;
+  return ASSUMES_LAYOUT.some((re) => re.test(t));
+}
 
 const DIAGNOSTIC_STEP = [
   /^\s*(audit|review|analy[sz]e|investigate|examine|assess|benchmark|measure|recheck|re-check|revisit|monitor|track|verify|confirm|evaluate|check)\b/i,
@@ -605,8 +638,13 @@ const PRESUMES_SETUP = [
   // The checkout page is never captured, so nothing about its own layout,
   // steps or fields can be evidenced. Findings about what leads INTO checkout
   // are fine; this is about changing the checkout itself.
+  // The checkout is never captured, so nothing about its steps, fields or shape
+  // can be evidenced. "Test a simplified two-step checkout flow with fewer form
+  // fields before the pay button" walked through the narrower version of this:
+  // it named neither "one page" nor "multi-step", and "checkout flow" was only
+  // matched when a layout word sat immediately after it.
   new RegExp(
-    String.raw`\b(one|single).page checkout\b|\bmulti.?(step|page) checkout\b|\bcheckout (in)?to (one|a single) page\b|\bsimplify (the )?checkout\b|\bcheckout (page|flow|form) (layout|fields?|steps?)\b`,
+    String.raw`\b(one|single|two|three|multi)[- ]?(page|step) checkout\b|\bcheckout (in)?to (one|a single) page\b|\bsimplif\w* (the )?checkout\b|\bcheckout (page|flow|form|process|funnel|experience)\b|\bcheckout (steps?|fields?)\b|\bfewer (form )?fields\b`,
     "i",
   ),
 ];
@@ -1139,6 +1177,23 @@ const FEATURE_ADD_CLAIMS: Array<{ feature: string; re: RegExp }> = [
   { feature: "newsletter_signup", re: /\b(add|introduce|install)\b[^.]{0,40}\b(email|newsletter)\b[^.]{0,20}\b(signup|sign.?up|capture|form)\b/i },
   { feature: "size_or_fit_guide", re: /\b(add|introduce|build)\b[^.]{0,40}\b(size|fit)\b[^.]{0,15}\b(guide|chart)\b/i },
   { feature: "faq", re: /\b(add|introduce|build)\b[^.]{0,40}\b(faq|frequently asked)\b/i },
+  // Measured on the cart capture rather than by the below-fold probe, so these
+  // keys are set from the cart's own element labels.
+  //
+  // Pipeliner's cart offers PROTECTED CHECKOUT with an opt-out link reading
+  // "Checkout without shipping protection", and a play still said to pair
+  // Shipping Protection with high-ticket items. It is already on the whole
+  // order.
+  {
+    feature: "cart_shipping_protection",
+    re: /\b(add|introduce|offer|pair|bundle|upsell|promote|surface|push)\b[^.]{0,70}\b(shipping|order|package|purchase|delivery)\s*protection\b/i,
+  },
+  // And Power Planter's cart drawer already carries a "You may also like" row,
+  // so telling them to add a suggested add-on to it is the same mistake.
+  {
+    feature: "cart_recommendations",
+    re: /\b(add|show|surface|suggest|introduce|place|put|repeat)\b[^.]{0,70}\b(add.?ons?|suggested|upsells?|cross.?sells?|recommend\w*|bundle)\b[^.]{0,40}\b(cart|drawer|mini.?cart|basket)\b/i,
+  },
 ];
 
 /** True when this step tells the client to add something they already have. */
@@ -1189,6 +1244,14 @@ export function coerceAnalytics(
         .filter(Boolean)
         .filter((step) => {
           if (isBannedWork(step) || isDiagnosticStep(step) || presumesSetup(step)) return false;
+          if (assumesLayout(step)) {
+            console.warn(JSON.stringify({
+              event: "play_step_refused",
+              reason: "asserts_a_page_layout_this_section_never_saw",
+              step: String(step).slice(0, 140),
+            }));
+            return false;
+          }
           if (recommendsExistingFeature(step, featuresPresent)) {
             console.warn(JSON.stringify({
               event: "play_step_refused",
