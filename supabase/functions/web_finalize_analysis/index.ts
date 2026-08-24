@@ -1,7 +1,7 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { freeShippingNote, labelsFromSnapshots, readFreeShippingOffer } from "../_shared/free-shipping.ts";
 import { sessionsEvidence } from "../_shared/shopify-sessions.ts";
-import { belowFoldEvidence, popupEvidence } from "../_shared/below-fold-probe.ts";
+import { belowFoldEvidence, isBelowFoldReport, popupEvidence, storefrontFactsForPlays } from "../_shared/below-fold-probe.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, hasCronSecret, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { createLlmClient, type LlmImage, type LlmMessage } from "../_shared/llm-adapter.ts";
@@ -803,6 +803,26 @@ async function runStep(
         return freeShippingNote({ state: "none" }, null);
       }
     })();
+    // Every page we captured, and what the probe found on it, so a play about a
+    // page change can be checked against the page.
+    const { data: probeRows } = await sb
+      .from("web_page_snapshots")
+      .select("page_type, viewport, raw")
+      .eq("audit_id", auditId)
+      .eq("status", "success");
+    const featuresPresent = new Set<string>();
+    const storefrontFacts = storefrontFactsForPlays(
+      (probeRows ?? []).map((r) => {
+        const report = ((r.raw ?? {}) as Record<string, unknown>).below_fold;
+        if (isBelowFoldReport(report)) {
+          for (const [key, value] of Object.entries(report.features)) {
+            if (value?.found) featuresPresent.add(key);
+          }
+        }
+        return { page: String(r.page_type ?? ""), viewport: String(r.viewport ?? ""), report };
+      }),
+    );
+
     const messages: LlmMessage[] = [{
       role: "user",
       text: [
@@ -810,6 +830,11 @@ async function runStep(
         JSON.stringify(computed),
         thresholdNote,
         sessionsEvidence(computed.sessions as Parameters<typeof sessionsEvidence>[0]),
+        // What the pages actually contain. Without this the section wrote about
+        // a storefront it had never seen: a play told a client to add a sticky
+        // add-to-cart bar to their phone product page, which the capture had
+        // measured and could have answered either way.
+        storefrontFacts,
         `- The traffic figures above are the denominator for everything else in this section. When the funnel names a step that loses most people, a play about that step beats a play about a product mix. Never present a conversion rate as good or bad against an industry average: none was measured.`,
         `- ORDER: the most concrete, quantified change the team could ship this week goes FIRST. A play whose steps are things to look into is not shippable and must not exist at all: every step is a change to make, with the change named. Never write a step that tells them to audit, review, analyse, investigate or measure something. They are reading the audit; handing the work back is the opposite of the job.`,
         `- SPECIFICALLY: free shipping is usually the strongest and cheapest lever here, so its play goes first when there is one, but WHICH play, and in WHICH direction, is decided for you in the FREE SHIPPING note above. Follow it exactly: it names the direction and the target. Never move a threshold the note says to leave alone, never name a number on the wrong side of the current one, and make the title and the steps agree with the direction, so a play that lowers a threshold never says "raise the bar".`,
@@ -839,7 +864,7 @@ async function runStep(
     const turn = await llm.runTurn({ system: SYSTEM_PROMPT, messages, tools: [ANALYTICS_TOOL], toolChoice: { type: "tool", name: "record_analytics_audit" } });
     if (turn.kind !== "tool_call") throw new Error("analytics: model did not call the tool");
     logAuditShape("web_performance", "analytics", turn.input);
-    let parsed = coerceAnalytics(turn.input);
+    let parsed = coerceAnalytics(turn.input, featuresPresent);
 
     // Zero plays means the section renders as a heading with nothing under it,
     // which is how a live report shipped with no "Opportunities in the data" at
@@ -872,7 +897,7 @@ async function runStep(
       const retry = await llm.runTurn({ system: SYSTEM_PROMPT, messages: retryMessages, tools: [ANALYTICS_TOOL], toolChoice: { type: "tool", name: "record_analytics_audit" } });
       if (retry.kind === "tool_call") {
         logAuditShape("web_performance", "analytics_retry", retry.input);
-        const retryParsed = coerceAnalytics(retry.input);
+        const retryParsed = coerceAnalytics(retry.input, featuresPresent);
         if (retryParsed.plays.length > 0) {
           parsed = { ...retryParsed, intro: retryParsed.intro.trim() ? retryParsed.intro : parsed.intro };
         }

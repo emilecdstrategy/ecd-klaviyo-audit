@@ -3,7 +3,7 @@
 // Every case here is a pin that once landed on the wrong thing in a report a
 // client read. A wrong pin is worse than no pin, because it is a claim about
 // where the problem is and the reader checks it against the screenshot.
-import { asArray, cartLooksPopulated, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, snapToElementByLabel, snapToElementGroup, snapToHeroPhoto, type ElementBox } from "./web-analysis-schemas.ts";
+import { asArray, cartLooksPopulated, recommendsExistingFeature, coerceAnalytics, coercePageAudit, isBannedWork, isDiagnosticStep, PAGE_AUDIT_TOOL, presumesSetup, snapToElementByLabel, snapToElementGroup, snapToHeroPhoto, type ElementBox } from "./web-analysis-schemas.ts";
 
 /** A Shopify homepage header, as the capture actually records it. The logo lives
  * in an anonymous <a> inside an <h1>, so both carry bare tag names for labels. */
@@ -1129,4 +1129,56 @@ Deno.test("a subtotal with an amount also proves it", () => {
     elements: [{ id: 'el_1', label: 'div: Subtotal $84.00', x: 5, y: 70, w: 90, h: 4 }] as ElementBox[],
   }];
   if (!cartLooksPopulated(rows)) throw new Error('a subtotal with money is a populated cart');
+});
+
+// --- plays that recommend what the store already has --------------------------
+//
+// A play told a client to "Add a sticky add-to-cart bar on phone product pages".
+// The capture had measured that page and could have answered, but the data
+// section never received page evidence, so it was guessing. It happened to be
+// right; on a store with a sticky bar it would have told them to build one.
+
+Deno.test("a step adding a sticky bar is refused when the page has one", () => {
+  const present = new Set(['sticky_buy_button']);
+  const step = 'Add a sticky add-to-cart bar on phone product pages so the button stays reachable while scrolling.';
+  if (!recommendsExistingFeature(step, present)) throw new Error('should be refused: the page already has one');
+});
+
+Deno.test("the same step stands when the page does not have one", () => {
+  // Power Planter measured sticky_buy_button: found false, so this advice is
+  // real and must survive.
+  const present = new Set(['reviews', 'recommendations']);
+  const step = 'Add a sticky add-to-cart bar on phone product pages so the button stays reachable while scrolling.';
+  if (recommendsExistingFeature(step, present)) throw new Error('a genuinely missing feature must still be recommendable');
+});
+
+Deno.test("with nothing measured, nothing is refused on these grounds", () => {
+  const step = 'Add customer reviews to the product page.';
+  if (recommendsExistingFeature(step, undefined)) throw new Error('no measurements means no verdict');
+  if (recommendsExistingFeature(step, new Set())) throw new Error('no measurements means no verdict');
+});
+
+Deno.test("changing an existing feature is not the same as adding one", () => {
+  // Asking to move or restyle what is there is fair; only "build this" is not.
+  const present = new Set(['sticky_buy_button']);
+  const step = 'Move the sticky add-to-cart bar above the fold so it clears the promo banner.';
+  if (recommendsExistingFeature(step, present)) throw new Error('rewording an existing element is legitimate');
+});
+
+Deno.test("coerceAnalytics drops the offending step but keeps the play", () => {
+  const parsed = coerceAnalytics({
+    intro: 'x',
+    plays: [{
+      title: 'Win back mobile shoppers',
+      insight: 'Mobile carries 58% of sessions but converts at 0.48%.',
+      action_steps: [
+        'Add a sticky add-to-cart bar on phone product pages so the button stays reachable.',
+        'Test larger, single-column product images on mobile.',
+      ],
+      metric: '0.48% mobile conversion rate',
+    }],
+  }, new Set(['sticky_buy_button']));
+  const steps = parsed.plays[0]?.action_steps ?? [];
+  if (steps.length !== 1) throw new Error(`expected the sticky step dropped, got ${JSON.stringify(steps)}`);
+  if (!steps[0].includes('single-column')) throw new Error('the good step must survive');
 });

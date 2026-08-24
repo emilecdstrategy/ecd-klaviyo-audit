@@ -1115,9 +1115,48 @@ export function coercePageAudit(
   };
 }
 
+/**
+ * "Add a sticky add-to-cart bar" on a store that has one.
+ *
+ * The data section writes plays from order and traffic figures, and it used to
+ * receive nothing at all about the storefront, so any play reaching for a page
+ * change was guessing. It now gets the probe's measurements, and this is the
+ * same rule in code: a step that says to ADD something the capture found on the
+ * page is refused outright, whatever the prompt did with the evidence.
+ *
+ * Keyed by the probe's own feature names, so the two cannot drift apart.
+ */
+const FEATURE_ADD_CLAIMS: Array<{ feature: string; re: RegExp }> = [
+  // The add-verb is required on every one of these. Asking to MOVE or restyle
+  // something that is already there is fair advice; only "build this" is the
+  // mistake, and an early version of this rule refused both.
+  { feature: "sticky_buy_button", re: /\b(add|introduce|install|implement|build|create)\b[^.]{0,40}\b(sticky|floating|fixed)\b[^.]{0,30}\b(add.?to.?cart|add.?to.?bag|buy|atc|checkout)\b[^.]{0,20}\b(bar|button|cta)\b/i },
+  { feature: "reviews", re: /\b(add|introduce|install|bring in|start collecting)\b[^.]{0,40}\b(customer )?reviews?\b/i },
+  { feature: "recommendations", re: /\b(add|introduce|build)\b[^.]{0,40}\b(product )?(recommendations?|related products?|cross.?sells?|you may also like)\b/i },
+  { feature: "newsletter_signup", re: /\b(add|introduce|install)\b[^.]{0,40}\b(email|newsletter)\b[^.]{0,20}\b(signup|sign.?up|capture|form)\b/i },
+  { feature: "size_or_fit_guide", re: /\b(add|introduce|build)\b[^.]{0,40}\b(size|fit)\b[^.]{0,15}\b(guide|chart)\b/i },
+  { feature: "faq", re: /\b(add|introduce|build)\b[^.]{0,40}\b(faq|frequently asked)\b/i },
+];
+
+/** True when this step tells the client to add something they already have. */
+export function recommendsExistingFeature(text: unknown, featuresPresent?: Set<string>): boolean {
+  if (!featuresPresent || featuresPresent.size === 0) return false;
+  const t = String(text ?? "");
+  if (!t.trim()) return false;
+  for (const { feature, re } of FEATURE_ADD_CLAIMS) {
+    if (featuresPresent.has(feature) && re.test(t)) return true;
+  }
+  return false;
+}
+
 const METRIC_KEYS = new Set(["revenue", "orders", "aov", "returning_customer_rate", "top_products", "sales_by_channel"]);
 
-export function coerceAnalytics(input: unknown) {
+export function coerceAnalytics(
+  input: unknown,
+  /** Feature keys the capture measured as PRESENT on this storefront, so a step
+   *  cannot tell the client to build something they already have. */
+  featuresPresent?: Set<string>,
+) {
   const o = (input ?? {}) as Record<string, unknown>;
   const metricsRaw = Array.isArray(o.metrics) ? o.metrics : [];
   const metrics = metricsRaw
@@ -1145,7 +1184,18 @@ export function coerceAnalytics(input: unknown) {
       const steps = asArray(rec.action_steps)
         .map((s) => sanitizeDash(s))
         .filter(Boolean)
-        .filter((step) => !isBannedWork(step) && !isDiagnosticStep(step) && !presumesSetup(step))
+        .filter((step) => {
+          if (isBannedWork(step) || isDiagnosticStep(step) || presumesSetup(step)) return false;
+          if (recommendsExistingFeature(step, featuresPresent)) {
+            console.warn(JSON.stringify({
+              event: "play_step_refused",
+              reason: "recommends_a_feature_the_page_already_has",
+              step: String(step).slice(0, 140),
+            }));
+            return false;
+          }
+          return true;
+        })
         .slice(0, 3);
       const legacyAction = sanitizeDash(rec.action);
       return {

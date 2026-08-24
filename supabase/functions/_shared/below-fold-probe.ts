@@ -369,6 +369,42 @@ export function belowFoldEvidence(entries: Array<{ ref: string; report: unknown 
   );
 }
 
+/**
+ * The same measurements, arranged for the data section rather than a page one.
+ *
+ * That section only ever received order and session figures, so when a play
+ * reached for a storefront change it was writing about a page it had never
+ * seen. One told a client to "add a sticky add-to-cart bar on phone product
+ * pages". The probe had actually measured that on the mobile product page, and
+ * it was absent, so the advice was right by luck rather than by evidence. On a
+ * store that already had one, the same play would have told them to build what
+ * they have.
+ *
+ * Keyed by page and device, because "no sticky buy button" is a fact about the
+ * phone product page and nowhere else.
+ */
+export function storefrontFactsForPlays(
+  entries: Array<{ page: string; viewport: string; report: unknown }>,
+): string {
+  const usable = entries.filter((e) => isBelowFoldReport(e.report)) as Array<
+    { page: string; viewport: string; report: BelowFoldReport }
+  >;
+  if (usable.length === 0) {
+    return "\n\nNo page structure was measured for this store, so do NOT write a play that adds, removes or changes anything on a page. Stick to what the order and traffic data support.";
+  }
+  const lines = usable.map(({ page, viewport, report }) => {
+    const label = (k: string) => FEATURE_LABELS[k] ?? k;
+    const present = Object.entries(report.features).filter(([, v]) => v.found).map(([k]) => label(k));
+    const absent = Object.entries(report.features).filter(([, v]) => !v.found).map(([k]) => label(k));
+    return `- ${page} page on ${viewport}: HAS ${present.length ? present.join(", ") : "none of the things we look for"}. DOES NOT HAVE ${absent.length ? absent.join(", ") : "nothing, everything we look for is there"}.`;
+  });
+  return (
+    "\n\nWHAT THE STOREFRONT ACTUALLY HAS. Read off the live pages after they settled, so it is measured rather than assumed:\n" +
+    lines.join("\n") +
+    "\n\nA play that changes a page MUST agree with this. Never tell them to add something listed as present on that page and device: a client who already has it reads that and concludes we did not look. Never assert that something is missing unless it is listed as absent above, and say nothing at all about a page or device that is not listed."
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Popups
 //
