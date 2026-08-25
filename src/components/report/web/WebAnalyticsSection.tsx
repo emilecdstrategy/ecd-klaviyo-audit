@@ -240,7 +240,11 @@ function PlayCard({
         )}
       </div>
 
-      <p className="mt-2 text-sm leading-relaxed text-gray-600">
+      {/* 15px rather than 14. This is the body of the section a strategist reads
+          aloud on a call, and at text-sm it sat a shade too small against the
+          16px title. One step up, not two: text-base would match the title and
+          flatten the card's hierarchy. */}
+      <p className="mt-2 text-[0.9375rem] leading-relaxed text-gray-600">
         <EditablePlainText value={play.insight} onSave={(v) => onEdit('insight', v)} placeholder="What the data shows…" />
       </p>
 
@@ -249,8 +253,8 @@ function PlayCard({
           <p className="text-xs font-semibold uppercase tracking-wider text-gray-400">What to do</p>
           <ul className="mt-1.5 space-y-1.5">
             {play.action_steps.map((step, i) => (
-              <li key={i} className="flex gap-2 text-sm leading-relaxed text-gray-700">
-                <ArrowUpRight className="mt-0.5 h-3.5 w-3.5 shrink-0 text-brand-primary" />
+              <li key={i} className="flex gap-2 text-[0.9375rem] leading-relaxed text-gray-700">
+                <ArrowUpRight className="mt-1 h-3.5 w-3.5 shrink-0 text-brand-primary" />
                 <span className="min-w-0 flex-1">
                   <EditablePlainText
                     value={step}
