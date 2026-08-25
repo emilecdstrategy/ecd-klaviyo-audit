@@ -303,25 +303,110 @@ function titleHead(title: string): string {
  * cannot invent one. Short or single-word heads are skipped, because those
  * match by accident.
  */
+/** Words too common in a product title to identify anything on their own. */
+const TITLE_STOPWORDS = new Set(['the', 'and', 'with', 'for', 'of', 'to', 'in', 'on', 'x', 'pack', 'mm', 'inch']);
+
+/**
+ * Every name a sentence might reasonably use for this product.
+ *
+ * The whole title, and each pipe-separated segment, each also stripped of its
+ * parenthetical asides. Matching only on the part BEFORE the first pipe missed
+ * an entire class of product: "GroundGrabba | Multi L Bracket | Adapt to Pipes,
+ * Walls, Frames & More" reduces to the single word "groundgrabba", which is
+ * skipped as too generic, so no sentence could ever name it. The real name sits
+ * in the second segment.
+ */
+function candidateNames(title: string): string[] {
+  const out: string[] = [];
+  for (const part of [title, ...title.split('|')]) {
+    for (const candidate of [matchKey(part), matchKey(part.replace(/\([^)]*\)/g, ' '))]) {
+      if (candidate.length >= 10 && candidate.split(' ').length >= 2 && !out.includes(candidate)) {
+        out.push(candidate);
+      }
+    }
+  }
+  return out;
+}
+
+/** The tokens that actually distinguish a title, asides and filler removed. */
+function distinctiveTokens(title: string): string[] {
+  return matchKey(title.replace(/\([^)]*\)/g, ' '))
+    .split(' ')
+    .filter((token) => token.length >= 2 && !TITLE_STOPWORDS.has(token));
+}
+
+/**
+ * The products a play names in its own text.
+ *
+ * A play is told to list the products it discusses so the report can show their
+ * real photo, price and link. When it names them in a step and leaves the list
+ * empty, the reader gets a recommendation about two products and no way to see
+ * them. This finds them instead of asking again.
+ *
+ * It can only ever return products that are already in the order data, so it
+ * cannot invent one.
+ *
+ * Three ways to match, in descending confidence: the sentence contains one of
+ * the product's names outright; it contains a model number distinctive enough
+ * to stand for the whole title; or it contains most of the title's distinctive
+ * words. The last one exists because nobody writes a catalog title out in full,
+ * and a play saying "the Ground Grabba 36" Anchors 2 Pack" was matching nothing
+ * at all against "Ground Grabba Commercial Grade 36" Anchors (900mm) - 2 Pack".
+ */
 export function productsNamedIn(text: string, catalog: BasketProduct[]): BasketProduct[] {
   const haystack = matchKey(text);
   if (!haystack) return [];
-  const found: BasketProduct[] = [];
+  const haystackTokens = new Set(haystack.split(' '));
+  const hits: Array<{ product: BasketProduct; matched: Set<string>; leadPosition: number }> = [];
+
   for (const product of catalog) {
-    const head = titleHead(product.title);
-    if (head.length < 10 || head.split(' ').length < 2) continue;
-    if (haystack.includes(head)) { found.push(product); continue; }
-    // A long manufacturer title is never written out in full: "DEWALT DCD130T1
-    // 60V MAX Mixer/Drill With E-Clutch" gets typed as "the DEWALT DCD130T1
-    // Mixer Drill", which drops words from the middle and defeats a substring
-    // match. A model number is distinctive enough to stand for the whole title
-    // on its own, and short numeric fragments like "60v" or "3" are not.
-    const modelNumber = head
-      .split(' ')
-      .find((token) => token.length >= 6 && /[0-9]/.test(token) && /[a-z]/.test(token));
-    if (modelNumber && haystack.includes(modelNumber)) found.push(product);
+    let matched: Set<string> | null = null;
+    for (const name of candidateNames(product.title)) {
+      if (haystack.includes(name)) { matched = new Set(name.split(' ')); break; }
+    }
+    if (!matched) {
+      // A long manufacturer title is never written out in full: "DEWALT DCD130T1
+      // 60V MAX Mixer/Drill With E-Clutch" gets typed as "the DEWALT DCD130T1
+      // Mixer Drill", which drops words from the middle and defeats a substring
+      // match. A model number is distinctive enough to stand for the whole title
+      // on its own, and short numeric fragments like "60v" or "3" are not.
+      const head = titleHead(product.title);
+      const modelNumber = head
+        .split(' ')
+        .find((token) => token.length >= 6 && /[0-9]/.test(token) && /[a-z]/.test(token));
+      if (modelNumber && haystack.includes(modelNumber)) matched = new Set([modelNumber]);
+    }
+    if (!matched) {
+      const tokens = distinctiveTokens(product.title);
+      const present = tokens.filter((token) => haystackTokens.has(token));
+      if (tokens.length > 0 && present.length >= 3 && present.length / tokens.length >= 0.6) {
+        matched = new Set(present);
+      }
+    }
+    if (!matched) continue;
+    const titleTokens = matchKey(product.title).split(' ');
+    hits.push({
+      product,
+      matched,
+      leadPosition: titleTokens.findIndex((token) => matched!.has(token)),
+    });
   }
-  return found;
+
+  // Two products can answer to the same words. The 24" and the 36" anchors share
+  // everything but the size, so a sentence naming one partially matches both;
+  // and a bundle whose title ends with "and DEWALT DCD130T1 60V MAX" answers to
+  // the same model number as the drill itself. Keep the fuller match, and on a
+  // tie keep the title that LEADS with those words, since a model number at the
+  // front names the product and one buried at the end names a component of it.
+  return hits
+    .filter((hit) => !hits.some((other) => {
+      if (other === hit) return false;
+      const covers = [...hit.matched].every((token) => other.matched.has(token));
+      if (!covers) return false;
+      if (other.matched.size > hit.matched.size) return true;
+      return other.matched.size === hit.matched.size && other.leadPosition < hit.leadPosition;
+    }))
+    .map((hit) => hit.product);
 }
 
 /**
@@ -344,13 +429,24 @@ export function playIsAboutProducts(
   catalog: BasketProduct[],
 ): boolean {
   if (catalog.length === 0) return false;
+  const headline = [play.title, play.insight].join(' \n ');
   // Named in the headline: unambiguous.
-  if (productsNamedIn([play.title, play.insight].join(' \n '), catalog).length > 0) return true;
+  if (productsNamedIn(headline, catalog).length > 0) return true;
+  // A play whose SUBJECT is a funnel step, a threshold or a traffic figure is
+  // not about the products it reaches for as examples, however many of its
+  // steps name one. "Fix the add-to-cart step" lists three products purely as
+  // places to apply a generic change, and cards there send the reader looking
+  // for a point the play is not making.
+  if (PLAY_ABOUT_A_STEP_RE.test(headline)) return false;
   const steps = play.action_steps.map((step) => step.trim()).filter(Boolean);
   if (steps.length === 0) return false;
   const naming = steps.filter((step) => productsNamedIn(step, catalog).length > 0).length;
   return naming * 2 >= steps.length;
 }
+
+/** Headlines about a funnel step, a threshold or a traffic figure. */
+const PLAY_ABOUT_A_STEP_RE =
+  /add.?to.?cart|checkout|free shipping|shipping bar|threshold|conversion rate|sessions|funnel|drop.?off|dropout/i;
 
 export function parseWebRoadmap(sectionDetails: unknown): WebRoadmapRow[] {
   return parseWebRoadmapDetail(sectionDetails).rows;
