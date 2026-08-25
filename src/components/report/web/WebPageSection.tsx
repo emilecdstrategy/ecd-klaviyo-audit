@@ -32,6 +32,11 @@ export default function WebPageSection({
   );
   const [lightbox, setLightbox] = useState<string | null>(null);
   const [activeIndex, setActiveIndex] = useState<number | null>(null);
+  // Which PIN the pointer is on, kept apart from activeIndex on purpose. Both
+  // light up the matching finding, but only a pin fades the others: pointing at
+  // the shot is asking "which one of these is that?", while running down the
+  // list is just reading, and dimming it there would fight the reader.
+  const [hoveredMarker, setHoveredMarker] = useState<number | null>(null);
   const [afterBusy, setAfterBusy] = useState(false);
   const [afterError, setAfterError] = useState('');
   // Locally overrides the persisted after image right after a (re)generate, so
@@ -326,8 +331,9 @@ export default function WebPageSection({
                         imageUrl={shown.screenshot_url as string}
                         alt={`${title} (before)`}
                         markers={markers}
-                        activeIndex={activeIndex}
+                        activeIndex={activeIndex ?? hoveredMarker}
                         onMarkerClick={focusFinding}
+                        onMarkerHover={setHoveredMarker}
                       />
                     </div>
                   </div>
@@ -368,8 +374,9 @@ export default function WebPageSection({
                           imageUrl={afterUrl}
                           alt={`${title} redesign concept`}
                           markers={afterMarkers}
-                          activeIndex={activeIndex}
+                          activeIndex={activeIndex ?? hoveredMarker}
                           onMarkerClick={focusFinding}
+                          onMarkerHover={setHoveredMarker}
                         />
                       </div>
                     ) : (
@@ -397,8 +404,9 @@ export default function WebPageSection({
                     imageUrl={shown.screenshot_url as string}
                     alt={`${title} (${viewport})`}
                     markers={markers}
-                    activeIndex={activeIndex}
+                    activeIndex={activeIndex ?? hoveredMarker}
                     onMarkerClick={focusFinding}
+                    onMarkerHover={setHoveredMarker}
                   />
                 </div>
               )}
@@ -442,7 +450,8 @@ export default function WebPageSection({
                     pinned={pinned}
                     finding={f}
                     cropShot={null}
-                    active={activeIndex === number}
+                    active={activeIndex === number || hoveredMarker === number}
+                    dimmed={hoveredMarker !== null && hoveredMarker !== number}
                     onActivate={(a) => setActiveIndex(a ? number : null)}
                     onChangeText={(v) => setFinding(i, 'text', v)}
                     onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}

@@ -26,12 +26,17 @@ export default function WebHighlightLayer({
   markers,
   activeIndex,
   onMarkerClick,
+  onMarkerHover,
 }: {
   imageUrl: string;
   alt: string;
   markers: Marker[];
   activeIndex?: number | null;
   onMarkerClick?: (index: number) => void;
+  /** Which pin the pointer is on, so the matching finding in the column beside
+   *  the shot can answer. The tooltip says what the pin means; this says WHICH
+   *  of the findings listed alongside it is the one being pointed at. */
+  onMarkerHover?: (index: number | null) => void;
 }) {
   return (
     // No overflow-hidden: pins sit centered on their point and would otherwise be
@@ -69,6 +74,8 @@ export default function WebHighlightLayer({
             <div
               className="group absolute z-20 -translate-x-1/2 -translate-y-1/2 hover:z-50"
               style={{ left: `${cx}%`, top: `${cy}%` }}
+              onMouseEnter={() => onMarkerHover?.(index)}
+              onMouseLeave={() => onMarkerHover?.(null)}
             >
               <button
                 type="button"

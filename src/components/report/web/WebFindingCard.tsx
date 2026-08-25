@@ -17,6 +17,7 @@ export default function WebFindingCard({
   finding,
   cropShot,
   active,
+  dimmed,
   onActivate,
   onChangeText,
   onChangeRecommendation,
@@ -35,6 +36,10 @@ export default function WebFindingCard({
   finding: WebFinding;
   cropShot?: WebPageSnapshot | null;
   active: boolean;
+  /** Another finding's pin is being hovered, so this one steps back and lets it
+   *  stand out. Only ever set from the screenshot side: reading down the list
+   *  should not fade the list. */
+  dimmed?: boolean;
   onActivate: (active: boolean) => void;
   onChangeText: (value: string) => void;
   onChangeRecommendation: (value: string) => void;
@@ -44,15 +49,19 @@ export default function WebFindingCard({
 }) {
   const { editMode } = useReportEdit();
   const hasCrop = Boolean(finding.highlight && cropShot?.screenshot_url);
+  // One opacity, decided here. Two opacity utilities on the same element do not
+  // combine, they race on stylesheet order, so being dimmed and being hidden
+  // have to resolve to a single class.
+  const fade = dimmed ? 'opacity-40' : finding.hidden ? 'opacity-50' : '';
 
   return (
     <div
       id={anchorId ?? `finding-${number}`}
       onMouseEnter={() => onActivate(true)}
       onMouseLeave={() => onActivate(false)}
-      className={`scroll-mt-24 rounded-xl border p-4 transition-shadow ${
-        active ? 'border-brand-primary/50 ring-1 ring-brand-primary/20' : 'border-gray-300'
-      } ${finding.hidden ? 'opacity-50' : ''}`}
+      className={`scroll-mt-24 rounded-xl border p-4 transition duration-150 ${
+        active ? 'border-brand-primary ring-2 ring-brand-primary/25' : 'border-gray-300'
+      } ${fade}`}
     >
       <div>
         {hasCrop && (
