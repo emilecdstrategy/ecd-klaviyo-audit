@@ -20,8 +20,9 @@ import type { AppArea, Profile } from './types';
  *   areas their app_access grants: audits, proposals, documents.
  * - Clients, the Dashboard, the Line Item Catalog and API Connection are open
  *   to every staff account and are deliberately NOT represented here.
- * - Web audits keep their separate email allowlist (web-audit-access.ts); an
- *   Audits checkbox grants Klaviyo audits, not web audits.
+ * - Web audits are covered by the Audits checkbox too, as of 2026-08-25. They
+ *   were behind a one-person email allowlist while the feature was being built
+ *   (web-audit-access.ts), which now just defers to this.
  *
  * A missing app_access, or a missing key inside it, means ALLOWED: the column
  * default grants all three areas, rows predating the column have null, and
