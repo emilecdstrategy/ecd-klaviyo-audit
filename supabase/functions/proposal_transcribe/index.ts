@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { getUserIdFromAuthorization } from "../_shared/auth.ts";
+import { requireStaffUserId } from "../_shared/auth.ts";
 import { getSecret } from "../_shared/app-secrets.ts";
 
 const corsHeaders: Record<string, string> = {
@@ -38,7 +38,7 @@ serve(async (req) => {
 
   const correlationId = crypto.randomUUID();
   try {
-    await getUserIdFromAuthorization(req);
+    await requireStaffUserId(req, "proposals");
 
     const input = (await req.json()) as { audio_base64?: string; mime?: string };
     const b64 = (input.audio_base64 ?? "").trim();

@@ -1,6 +1,6 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getUserIdFromAuthorization } from "../_shared/auth.ts";
+import { requireStaffUserId } from "../_shared/auth.ts";
 import { encryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest, mapShopifyErrorCode, exchangeClientCredentials, fetchInstalledAppToken, SHOPIFY_API_VERSION } from "../_shared/shopify-api.ts";
 
@@ -41,7 +41,7 @@ serve(async (req) => {
     if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) {
       return json({ ok: false, error: { code: "config_missing", message: "Supabase env missing" }, correlationId }, { status: 500 });
     }
-    await getUserIdFromAuthorization(req);
+    await requireStaffUserId(req, "audits");
 
     const input = (await req.json()) as {
       client_id?: string;

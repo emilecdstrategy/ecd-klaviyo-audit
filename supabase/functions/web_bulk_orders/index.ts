@@ -6,7 +6,7 @@
 // the rollup. The orchestrator calls poll repeatedly, exactly as it already
 // requeues pending screenshot rows.
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
+import { isServiceRoleAuthorization, requireStaffUserId } from "../_shared/auth.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, exchangeClientCredentials } from "../_shared/shopify-api.ts";
 import {
@@ -82,7 +82,7 @@ Deno.serve(async (req) => {
   const bearer = authHeader.replace(/^Bearer\s+/i, "").trim();
   if (!isServiceRoleAuthorization(bearer)) {
     try {
-      await getUserIdFromAuthorization(req);
+      await requireStaffUserId(req, "audits");
     } catch (e) {
       return json({ ok: false, error: e instanceof Error ? e.message : "Unauthorized", correlationId }, { status: 401 });
     }

@@ -2,6 +2,7 @@ import { createContext, useContext, useState, useEffect, useRef, type ReactNode 
 import { supabase } from '../lib/supabase';
 import type { Profile, UserRole } from '../lib/types';
 import { clearCachedProfile, readCachedProfile, writeCachedProfile } from '../lib/profile-cache';
+import { isAllowedSignInEmail, signInErrorMessage } from '../lib/sign-in-policy';
 
 interface AuthState {
   user: Profile | null;
@@ -130,14 +131,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ? `${window.location.origin}${redirectPath}`
       : window.location.origin;
 
+    // Refuse anything off the agency's domain before an email is even sent.
+    if (!isAllowedSignInEmail(trimmed)) {
+      throw new Error('Use your ECD Digital Strategy email address to sign in.');
+    }
+
     const { error } = await supabase.auth.signInWithOtp({
       email: trimmed,
       options: {
         emailRedirectTo: target,
-        shouldCreateUser: true,
+        // Invited accounts only. This used to create an account for whatever
+        // address was typed in, which is how three strangers ended up with
+        // accounts here. Signing in can no longer bring an account into being.
+        shouldCreateUser: false,
       },
     });
-    if (error) throw error;
+    if (error) throw new Error(signInErrorMessage(error.message));
   };
 
   const signOut = async () => {

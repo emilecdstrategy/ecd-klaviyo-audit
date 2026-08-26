@@ -1,5 +1,5 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
-import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
+import { isServiceRoleAuthorization, requireStaffUserId } from "../_shared/auth.ts";
 import { createDraftInvoiceForProposal } from "../_shared/xero-invoice.ts";
 import { loadConnection, serviceClient } from "../_shared/xero.ts";
 
@@ -29,7 +29,7 @@ serve(async (req) => {
 
   try {
     const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
-    if (!token || !isServiceRoleAuthorization(token)) await getUserIdFromAuthorization(req);
+    if (!token || !isServiceRoleAuthorization(token)) await requireStaffUserId(req);
   } catch (e) {
     return json(
       { ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" } },

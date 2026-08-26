@@ -5,7 +5,7 @@
 // is written encrypted and the row is single-use.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { encryptString } from "../_shared/crypto.ts";
-import { getUserIdFromAuthorization } from "../_shared/auth.ts";
+import { requireStaffUserId } from "../_shared/auth.ts";
 import { normalizeShopDomain } from "../_shared/shopify-api.ts";
 import { authorizeUrl, callbackUrl, oauthScopeParam } from "../_shared/shopify-oauth.ts";
 
@@ -33,7 +33,7 @@ Deno.serve(async (req) => {
     // to a merchant's store.
     let uid: string;
     try {
-      uid = await getUserIdFromAuthorization(req);
+      uid = await requireStaffUserId(req, "audits");
     } catch (e) {
       return json({ ok: false, error: { code: "unauthorized", message: e instanceof Error ? e.message : "Unauthorized" }, correlationId }, { status: 401 });
     }

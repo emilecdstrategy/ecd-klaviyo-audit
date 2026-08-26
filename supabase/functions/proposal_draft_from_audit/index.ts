@@ -9,7 +9,7 @@
 // invention: a proposal that guesses at scope is worse than one that asks.
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { createLlmClient, type LlmMessage, type LlmTool } from "../_shared/llm-adapter.ts";
-import { getUserIdFromAuthorization } from "../_shared/auth.ts";
+import { isServiceRoleAuthorization, requireStaffUserId } from "../_shared/auth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -103,11 +103,20 @@ Deno.serve(async (req) => {
       return json({ ok: false, error: "Missing audit_id or proposal_id", correlationId }, { status: 400 });
     }
 
+    // Service role, or a staff member with the Proposals area. This used to
+    // swallow the failure and carry on with uid = null, which meant there was no
+    // check at all: the gateway only asks that SOME valid JWT is present, and
+    // the anon key that satisfies it ships in the frontend bundle. So anyone
+    // could read an audit and start a proposal draft from it.
     let uid: string | null = null;
-    try {
-      uid = await getUserIdFromAuthorization(req);
-    } catch {
-      uid = null; // service-role callers are fine; the conversation just has no author
+    const bearer = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
+    if (!isServiceRoleAuthorization(bearer)) {
+      try {
+        uid = await requireStaffUserId(req, "proposals");
+      } catch (e) {
+        const message = e instanceof Error ? e.message : "Unauthorized";
+        return json({ ok: false, error: message, correlationId }, { status: message === "Forbidden" ? 403 : 401 });
+      }
     }
 
     const sb = serviceClient();
