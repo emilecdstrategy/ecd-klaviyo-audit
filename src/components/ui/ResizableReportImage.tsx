@@ -1,10 +1,11 @@
-import { useCallback, useRef, type PointerEvent as ReactPointerEvent } from 'react';
+import { useCallback, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import {
   DEFAULT_IMAGE_SCALE,
   MAX_IMAGE_SCALE,
   MIN_IMAGE_SCALE,
   normalizeImageScale,
 } from '../../lib/report-image-scale';
+import { optimizedStorageImage } from '../../lib/storage-image';
 import { cn } from '../../lib/utils';
 
 const DRAG_THRESHOLD_PX = 4;
@@ -122,6 +123,25 @@ export default function ResizableReportImage({
     onClick?.();
   }, [onClick]);
 
+  // The resized WebP of an uploaded screenshot instead of the raw file: the
+  // attribution and add-on shots average around 400 to 600KB each and render at
+  // card width, so the proxy cuts most of that. The lightbox that onClick opens
+  // keeps the original, so full size stays one click away.
+  //
+  // Best-effort fallback to the original if the proxy errors, attached natively
+  // because React's onError prop was probed and never fired here. loading="lazy"
+  // stays, since these sit far down long reports with no preload warming them;
+  // the known cost is that a lazy image whose load is never attempted also never
+  // errors, so the fallback only covers loads that actually ran and failed.
+  const [proxyFailed, setProxyFailed] = useState(false);
+  const shownSrc = proxyFailed ? src : optimizedStorageImage(src);
+  const attachFallback = useCallback((el: HTMLImageElement | null) => {
+    if (!el) return;
+    el.onerror = () => {
+      if (el.src !== src) setProxyFailed(true);
+    };
+  }, [src]);
+
   const frameClassName = cn(
     'w-full overflow-hidden rounded-xl border border-gray-100 bg-gray-50',
     isResizable && 'ring-1 ring-brand-primary/15',
@@ -134,7 +154,8 @@ export default function ResizableReportImage({
         style={{ width: `${scale * 100}%` }}
       >
         <img
-          src={src}
+          ref={attachFallback}
+          src={shownSrc}
           alt={alt}
           draggable={false}
           loading="lazy"

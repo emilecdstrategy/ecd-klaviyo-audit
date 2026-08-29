@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { Plus, X } from 'lucide-react';
 import type { Annotation, AnnotationSize } from '../../lib/types';
+import { optimizedStorageImage } from '../../lib/storage-image';
 
 function injectBaseTarget(html: string): string {
   const inject = '<base target="_blank"><style>html,body{margin:0;padding:0;overflow:hidden}</style>';
@@ -62,6 +63,13 @@ export default function AnnotationLayer({
   const [adding, setAdding] = useState(false);
   const [pendingPos, setPendingPos] = useState<{ x: number; y: number } | null>(null);
   const [labelText, setLabelText] = useState('');
+  // The resized WebP of the state screenshot, falling back to the raw file if
+  // the image proxy errors. Annotations are placed in percentages, so a resized
+  // source cannot move them. The fallback listener is native rather than a React
+  // onError prop (the synthetic one was probed and never fired), and it is best
+  // effort under loading="lazy": a load that is never attempted never errors.
+  const [proxyFailed, setProxyFailed] = useState(false);
+  const shownImageUrl = proxyFailed ? imageUrl : optimizedStorageImage(imageUrl);
   const [hoveredListId, setHoveredListId] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -217,7 +225,10 @@ export default function AnnotationLayer({
       >
         {imageUrl && !htmlContent && (
           <img
-            src={imageUrl}
+            ref={(el) => {
+              if (el) el.onerror = () => { if (el.src !== imageUrl) setProxyFailed(true); };
+            }}
+            src={shownImageUrl}
             alt={`${side} state`}
             loading="lazy"
             decoding="async"
