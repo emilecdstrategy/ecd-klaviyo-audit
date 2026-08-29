@@ -563,9 +563,13 @@ export async function updateFormSnapshotRow(
 }
 
 export async function listCampaignSnapshots(auditId: string): Promise<KlaviyoCampaignSnapshot[]> {
+  // Never select('*') here: it drags `raw` along, and every row's raw carries
+  // the same ~50KB of account-wide name maps, so an audit with a few hundred
+  // campaigns shipped tens of MB to fill a picker that reads names and dates.
+  // Measured at a 1.5 SECOND mean per call before the column list.
   const { data, error } = await supabase
     .from('klaviyo_campaign_snapshots')
-    .select('*')
+    .select('id, audit_id, client_id, campaign_id, name, status, send_channel, created_at_klaviyo, updated_at_klaviyo, fetched_at, is_hidden, display_name, display_notes, display_order')
     .eq('audit_id', auditId);
   if (error) throw error;
   return (data ?? []) as KlaviyoCampaignSnapshot[];

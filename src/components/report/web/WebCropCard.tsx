@@ -1,4 +1,5 @@
 import type { WebHighlight } from '../../../lib/web-report-details';
+import { optimizedStorageImage } from '../../../lib/storage-image';
 
 /**
  * A zoomed crop of a screenshot region, done purely in CSS (no server crop).
@@ -29,7 +30,11 @@ export default function WebCropCard({
         <div
           className="absolute inset-0"
           style={{
-            backgroundImage: `url(${imageUrl})`,
+            // The resized WebP of the same 1440px capture the main shot uses,
+            // so it is usually already in cache by the time a crop paints.
+            // (No CSS fallback layer here on purpose: multiple backgrounds are
+            // ALL downloaded, which would double the bytes this exists to save.)
+            backgroundImage: `url(${optimizedStorageImage(imageUrl)})`,
             backgroundSize: bgSize,
             backgroundPosition: `${posX}% ${posY}%`,
             backgroundRepeat: 'no-repeat',

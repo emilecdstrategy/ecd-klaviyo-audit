@@ -1,5 +1,7 @@
+import { useState } from 'react';
 import { ArrowRight } from 'lucide-react';
 import type { WebHighlight } from '../../../lib/web-report-details';
+import { optimizedStorageImage } from '../../../lib/storage-image';
 
 type Marker = { index: number; highlight: WebHighlight; text?: string; recommendation?: string };
 
@@ -38,11 +40,34 @@ export default function WebHighlightLayer({
    *  of the findings listed alongside it is the one being pointed at. */
   onMarkerHover?: (index: number | null) => void;
 }) {
+  // The resized WebP unless it fails to load, then the original PNG: an image
+  // proxy hiccup should cost speed, never the screenshot itself.
+  //
+  // Deliberately NOT loading="lazy", for two reasons found the hard way. The
+  // section's preload effect already fetches and decodes every shot eagerly at
+  // mount, so lazy here deferred nothing. And a lazy image whose fetch FAILS
+  // never fires the error event at all (probed directly: a guaranteed-400 src
+  // fired error eagerly and stayed silent for 5s lazily), which silently
+  // disabled this exact fallback.
+  const [proxyFailed, setProxyFailed] = useState(false);
+  const shownUrl = proxyFailed ? imageUrl : optimizedStorageImage(imageUrl);
+  const attachFallback = (el: HTMLImageElement | null) => {
+    if (!el) return;
+    el.onerror = () => {
+      if (el.src !== imageUrl) setProxyFailed(true);
+    };
+  };
+
   return (
     // No overflow-hidden: pins sit centered on their point and would otherwise be
     // clipped at the screenshot edges. The image keeps its own rounded corners.
     <div className="relative w-full rounded-lg border border-gray-200 bg-white">
-      <img src={imageUrl} alt={alt} className="block w-full rounded-lg" loading="lazy" />
+      <img
+        ref={attachFallback}
+        src={shownUrl}
+        alt={alt}
+        className="block w-full rounded-lg"
+      />
       {withBadgeOffsets(markers).map(({ index, highlight, text, recommendation, badgeShiftPct }) => {
         const active = activeIndex === index;
         // When the highlighted box is small, a badge centered inside it covers the

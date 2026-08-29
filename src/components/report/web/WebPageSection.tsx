@@ -8,6 +8,7 @@ import { useReportEdit } from '../edit/ReportEditContext';
 import EditablePlainText from '../edit/EditablePlainText';
 import ImageLightbox from '../../ui/ImageLightbox';
 import WebHighlightLayer from './WebHighlightLayer';
+import { optimizedStorageImage } from '../../../lib/storage-image';
 import WebFindingCard from './WebFindingCard';
 
 export default function WebPageSection({
@@ -101,7 +102,9 @@ export default function WebPageSection({
     for (const url of preloadKey.split('|')) {
       if (!url) continue;
       const img = new Image();
-      img.src = url;
+      // Warm the SAME resized URL the layer renders, or this would download the
+      // multi-megabyte original alongside the ~150KB version actually shown.
+      img.src = optimizedStorageImage(url);
       void img.decode?.().catch(() => {});
     }
   }, [preloadKey]);
