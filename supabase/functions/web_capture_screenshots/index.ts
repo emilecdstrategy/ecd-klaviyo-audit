@@ -665,6 +665,13 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       }).eq("id", row.id);
     } else {
       const { data: pub } = sb.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+      // A re-capture overwrites the SAME storage path, so without this the URL
+      // never changes and nothing downstream knows the picture did. Supabase
+      // serves these with max-age=3600, so a strategist who had the report open
+      // kept seeing the old shot for an hour and reported the fix as not having
+      // worked. A version stamp gives every capture its own URL, which no cache
+      // can answer from a previous one.
+      const versionedUrl = pub?.publicUrl ? `${pub.publicUrl}?v=${Date.parse(now)}` : null;
 
       // Store the next-fold shot alongside it and remember its URL on the row.
       // It is deliberately NOT a web_page_snapshots row of its own: it must never
@@ -676,7 +683,13 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
         const { error: f2Err } = await sb.storage
           .from(STORAGE_BUCKET)
           .upload(fold2Path, pngFold2, { contentType: "image/png", upsert: true });
-        if (!f2Err) fold2Url = sb.storage.from(STORAGE_BUCKET).getPublicUrl(fold2Path).data?.publicUrl ?? null;
+        if (!f2Err) {
+          const f2Public = sb.storage.from(STORAGE_BUCKET).getPublicUrl(fold2Path).data?.publicUrl ?? null;
+          // Versioned for the same reason as the main shot: this path is
+          // overwritten on a re-capture, and the after generator fetching a
+          // cached previous fold would describe content that is no longer there.
+          fold2Url = f2Public ? `${f2Public}?v=${Date.parse(now)}` : null;
+        }
       }
 
       // If Browserless failed and we recovered via ScreenshotOne, keep a
@@ -713,7 +726,7 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       await sb.from("web_page_snapshots").update({
         status: "success",
         screenshot_path: path,
-        screenshot_url: pub?.publicUrl ?? null,
+        screenshot_url: versionedUrl,
         elements,
         error_message: null,
         raw,
