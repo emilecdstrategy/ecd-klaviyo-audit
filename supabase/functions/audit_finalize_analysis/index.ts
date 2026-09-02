@@ -120,6 +120,28 @@ async function chainSelf(auditId: string, mode?: string) {
   }
 }
 
+/** Fire the direct mail step and move on. Only the request has to be accepted;
+ * the race keeps this invocation from waiting on a model call it does not need. */
+async function kickDirectMail(auditId: string) {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE_KEY) return;
+  try {
+    await Promise.race([
+      fetch(`${SUPABASE_URL}/functions/v1/klaviyo_direct_mail`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE_KEY}`,
+          apikey: SUPABASE_SERVICE_ROLE_KEY,
+        },
+        body: JSON.stringify({ audit_id: auditId }),
+      }),
+      sleep(2_500),
+    ]);
+  } catch {
+    // best effort; the section can be regenerated on demand
+  }
+}
+
 async function invokeAiAnalyze(body: Record<string, unknown>) {
   const res = await fetch(`${SUPABASE_URL}/functions/v1/ai_analyze_audit`, {
     method: "POST",
@@ -545,6 +567,10 @@ async function runPipeline(
       }).eq("audit_id", auditId);
       // The analysis is the whole Klaviyo pipeline, so this is "done".
       await autoPublishAudit(sb, auditId);
+      // The direct mail section sits outside the step machine: it reads the
+      // persisted sections and counts, decides on its own gate, and writes its
+      // own row, so a failure there can never stall or fail the analysis.
+      await kickDirectMail(auditId);
       return json({ ok: true, correlationId, status: "complete", step: stepIndex });
     }
 

@@ -8,6 +8,9 @@ export const KLAVIYO_AUDIT_SECTION_KEYS = [
   'campaigns',
   'email_design',
   'signup_forms',
+  // Written by klaviyo_direct_mail after analysis; hidden unless the audit
+  // passes its gate. Seeded here so the row exists for the editor from day one.
+  'direct_mail',
   'revenue_summary',
 ] as const;
 

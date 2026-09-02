@@ -4,6 +4,7 @@ import type {
   CampaignsSectionConfig,
   DeliverabilitySnapshotSectionConfig,
   EmailDesignSectionConfig,
+  DirectMailSectionConfig,
   ExecutiveSummarySectionConfig,
   FlowsSectionConfig,
   RevenueSummarySectionConfig,
@@ -227,6 +228,43 @@ export const DEFAULT_EMAIL_DESIGN_SECTION: EmailDesignSectionConfig = {
       title: undefined,
       subtitle: 'Side-by-side comparison of a recent campaign email and an ECD-designed benchmark for your industry.',
     },
+  },
+};
+
+// -----------------------------------------------------------------------------
+// Direct Mail (PostPilot companion). The klaviyo_direct_mail function hides it
+// on the audits that fail its gate, so it is visible by default here.
+// -----------------------------------------------------------------------------
+
+export const DEFAULT_DIRECT_MAIL_SECTION: DirectMailSectionConfig = {
+  hidden: false,
+  sectionNumber: '08',
+  sectionTitle: 'Direct Mail',
+  sectionSubtitle: 'Reaching the profiles email cannot',
+  blocks: {
+    keyFindings: { ...DEFAULT_KEY_FINDINGS_BLOCK },
+    narrative: {
+      hidden: false,
+      currentTitle: 'What email cannot reach',
+      optimizedTitle: 'Direct mail as the last step of every flow',
+    },
+    gap: {
+      hidden: false,
+      title: 'The gap in this account',
+      subtitle: 'Profiles the email program is not allowed to touch, and what a postcard can still reach.',
+    },
+    pairings: {
+      hidden: false,
+      title: 'Flow pairings',
+      subtitle: 'A postcard at the end of each flow you already run, plus the programs Klaviyo cannot run at all.',
+    },
+    investment: {
+      hidden: false,
+      title: 'Investment',
+      subtitle: 'PostPilot rate card, effective 2026-08-31. ECD fees are separate line items in the proposal.',
+    },
+    plan: { hidden: false, title: 'Integration and measurement' },
+    proof: { hidden: false, title: 'Proof', subtitle: 'Named, brand-specific published results. Not benchmarks.' },
   },
 };
 

@@ -5,6 +5,7 @@ export const SECTION_LABELS: Record<string, string> = {
   campaigns: 'Campaigns',
   email_design: 'Email Design',
   signup_forms: 'Signup Forms',
+  direct_mail: 'Direct Mail',
   revenue_summary: 'Revenue Opportunity Summary',
 };
 

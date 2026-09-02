@@ -4,6 +4,8 @@ import type {
   AttributionModelSectionConfig,
   DeliverabilitySnapshotSectionConfig,
   EmailDesignBlockKey,
+  DirectMailSectionConfig,
+  DirectMailBlockKey,
   EmailDesignSectionConfig,
   ExecutiveSummaryBlockKey,
   ExecutiveSummarySectionConfig,
@@ -21,6 +23,7 @@ import {
   DEFAULT_CAMPAIGNS_SECTION,
   DEFAULT_DELIVERABILITY_SNAPSHOT_SECTION,
   DEFAULT_EMAIL_DESIGN_SECTION,
+  DEFAULT_DIRECT_MAIL_SECTION,
   DEFAULT_EXECUTIVE_SUMMARY_SECTION,
   DEFAULT_FLOWS_SECTION,
   DEFAULT_REVENUE_SUMMARY_SECTION,
@@ -230,6 +233,31 @@ export function resolveEmailDesignConfig(
 export function isEmailDesignBlockVisible(
   resolved: EmailDesignSectionConfig,
   block: EmailDesignBlockKey,
+): boolean {
+  return isBlockVisible(resolved, block);
+}
+
+// -----------------------------------------------------------------------------
+// Direct Mail
+// -----------------------------------------------------------------------------
+
+export function extractDirectMailRawConfig(
+  sectionConfig: Record<string, unknown> | null | undefined,
+): Partial<DirectMailSectionConfig> | undefined {
+  return extractSubtree<DirectMailSectionConfig>(sectionConfig, 'direct_mail');
+}
+
+export function resolveDirectMailConfig(
+  raw: Partial<DirectMailSectionConfig> | null | undefined,
+  defaults: DirectMailSectionConfig = DEFAULT_DIRECT_MAIL_SECTION,
+): DirectMailSectionConfig {
+  if (!raw) return defaults;
+  return deepMerge(defaults, raw);
+}
+
+export function isDirectMailBlockVisible(
+  resolved: DirectMailSectionConfig,
+  block: DirectMailBlockKey,
 ): boolean {
   return isBlockVisible(resolved, block);
 }

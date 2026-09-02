@@ -15,6 +15,7 @@ const AUDIT_SECTION_KEY_TO_NAV_ID: Record<string, string> = {
   campaigns: 'campaigns',
   email_design: 'email_design',
   signup_forms: 'forms',
+  direct_mail: 'direct_mail',
 };
 
 export function auditSectionKeyToNavId(sectionKey: string): string {
@@ -53,6 +54,7 @@ export const AUDIT_SECTION_OPTIONS = [
   { key: 'campaigns', label: 'Campaigns' },
   { key: 'email_design', label: 'Email design' },
   { key: 'signup_forms', label: 'Signup forms' },
+  { key: 'direct_mail', label: 'Direct mail' },
 ] as const;
 
 export type AuditSectionKey = (typeof AUDIT_SECTION_OPTIONS)[number]['key'];

@@ -19,6 +19,8 @@ import ReportInventoryLauncher from './ReportInventoryLauncher';
 import ReportCoreFlowsMatrix from './ReportCoreFlowsMatrix';
 import ReportCover from './ReportCover';
 import ReportSectionHeader from './ReportSectionHeader';
+import ReportDirectMailDetails from './ReportDirectMailDetails';
+import { parseDirectMailPlan } from '../../lib/direct-mail';
 import ReportKeyFindings from './ReportKeyFindings';
 import ReportSectionKeyFindings from './ReportSectionKeyFindings';
 import ReportStrengthsPanel from './ReportStrengthsPanel';
@@ -82,6 +84,9 @@ import {
   extractDeliverabilitySnapshotRawConfig,
   extractAttributionModelRawConfig,
   resolveAttributionModelConfig,
+  extractDirectMailRawConfig,
+  resolveDirectMailConfig,
+  isDirectMailBlockVisible,
 } from '../../lib/report-config/resolve';
 import { DEFAULT_REVENUE_SUMMARY_SECTION } from '../../lib/report-config/defaults';
 import type { DeliverabilitySnapshotSectionConfig, RevenueSummarySectionConfig, GenericBlockConfig } from '../../lib/report-config/types';
@@ -95,6 +100,7 @@ const NAV_ITEMS = [
   { id: 'forms', label: 'Signup Forms' },
   { id: 'campaigns', label: 'Campaigns' },
   { id: 'email_design', label: 'Email Design' },
+  { id: 'direct_mail', label: 'Direct Mail' },
   { id: 'attribution', label: 'Attribution Model' },
   { id: 'addons', label: 'Add-Ons' },
   { id: 'opportunity', label: 'Revenue Opportunity' },
@@ -360,6 +366,9 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     const emailDesignSectionRow = reportSections.find(section => section.section_key === 'email_design');
     const emailDesignCfg = resolveEmailDesignConfig(extractEmailDesignRawConfig(pickConfig('email_design')));
 
+    const directMailSectionRow = reportSections.find(section => section.section_key === 'direct_mail');
+    const directMailCfg = resolveDirectMailConfig(extractDirectMailRawConfig(pickConfig('direct_mail')));
+
     const revenueSummaryRaw = auditLayout.revenue_summary as Partial<RevenueSummarySectionConfig> | null | undefined;
     const revenueSummaryCfg = resolveRevenueSummaryConfig(
       revenueSummaryRaw && typeof revenueSummaryRaw === 'object' ? revenueSummaryRaw : undefined,
@@ -388,6 +397,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       campaignsCfg,
       emailDesignSectionRow,
       emailDesignCfg,
+      directMailSectionRow,
+      directMailCfg,
       revenueSummaryCfg,
       deliverabilitySnapshotCfg,
       attributionModelCfg,
@@ -406,6 +417,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     campaignsCfg,
     emailDesignSectionRow,
     emailDesignCfg,
+    directMailSectionRow,
+    directMailCfg,
     revenueSummaryCfg,
     deliverabilitySnapshotCfg,
     attributionModelCfg,
@@ -505,6 +518,14 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     Boolean(emailDesign?.client_email_html || emailDesign?.ecd_example) || editMode;
   const attributionSectionAvailable =
     Boolean(attributionModelCfg.screenshot_url?.trim()) || editMode;
+  // The row exists on every Klaviyo audit; it has a plan only once the direct
+  // mail function has run. Whether it is SHOWN is the gate's call, written into
+  // section_config.direct_mail.hidden, which the shell reads like any section.
+  const directMailPlan = useMemo(
+    () => parseDirectMailPlan(directMailSectionRow?.section_details),
+    [directMailSectionRow?.section_details],
+  );
+  const directMailAvailable = Boolean(directMailPlan);
 
   const sectionHiddenFlags = useMemo<Record<string, boolean>>(
     () => ({
@@ -515,11 +536,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       forms: Boolean(signupFormsCfg.hidden),
       campaigns: Boolean(campaignsCfg.hidden),
       email_design: Boolean(emailDesignCfg.hidden),
+      direct_mail: Boolean(directMailCfg.hidden),
       attribution: Boolean(attributionModelCfg.hidden),
       addons: Boolean(revenueSummaryCfg.blocks.addOns?.hidden),
       opportunity: Boolean(revenueSummaryCfg.hidden),
     }),
-    [executiveSummaryCfg, flowsCfg, deliverabilitySnapshotCfg, segmentationCfg, signupFormsCfg, campaignsCfg, emailDesignCfg, attributionModelCfg, revenueSummaryCfg],
+    [executiveSummaryCfg, flowsCfg, deliverabilitySnapshotCfg, segmentationCfg, signupFormsCfg, campaignsCfg, emailDesignCfg, directMailCfg, attributionModelCfg, revenueSummaryCfg],
   );
 
   const sectionDataAvailable = useMemo<Record<string, boolean>>(
@@ -531,11 +553,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       forms: formSnapshots.length > 0,
       campaigns: campaignSnapshots.length > 0,
       email_design: emailDesignDataAvailable,
+      direct_mail: directMailAvailable,
       attribution: attributionSectionAvailable,
       addons: addOnsSectionAvailable,
       opportunity: editMode || opportunityContentAvailable,
     }),
-    [flowsDataAvailable, accountSnapshot?.deliverability, segmentSnapshots.length, formSnapshots.length, campaignSnapshots.length, emailDesignDataAvailable, attributionSectionAvailable, addOnsSectionAvailable, editMode, opportunityContentAvailable],
+    [flowsDataAvailable, accountSnapshot?.deliverability, segmentSnapshots.length, formSnapshots.length, campaignSnapshots.length, emailDesignDataAvailable, directMailAvailable, attributionSectionAvailable, addOnsSectionAvailable, editMode, opportunityContentAvailable],
   );
 
   const sectionVisibility = useMemo<Record<string, boolean>>(
@@ -547,6 +570,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       forms: formSnapshots.length > 0 && !sectionHiddenFlags.forms,
       campaigns: campaignSnapshots.length > 0 && !sectionHiddenFlags.campaigns,
       email_design: emailDesignDataAvailable && !sectionHiddenFlags.email_design,
+      direct_mail: directMailAvailable && !sectionHiddenFlags.direct_mail,
       attribution: attributionSectionAvailable && !sectionHiddenFlags.attribution,
       addons: addOnsSectionAvailable && !sectionHiddenFlags.addons,
       opportunity: (editMode || opportunityContentAvailable) && !sectionHiddenFlags.opportunity,
@@ -558,6 +582,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
       formSnapshots.length,
       campaignSnapshots.length,
       emailDesignDataAvailable,
+      directMailAvailable,
       attributionSectionAvailable,
       addOnsSectionAvailable,
       opportunityContentAvailable,
@@ -1261,6 +1286,60 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
               )}
             </>
           ) : null}
+        </ReportSectionShell>
+
+        <ReportSectionShell
+          id="direct_mail"
+          setRef={setRef}
+          label={directMailCfg.sectionTitle ?? 'Direct Mail'}
+          hidden={sectionHiddenFlags.direct_mail}
+          onToggleHidden={h => toggleAuditSectionHidden('direct_mail', h)}
+          available={sectionDataAvailable.direct_mail}
+        >
+            <ReportSectionHeader
+              number={sectionNumbers['direct_mail'] ?? directMailCfg.sectionNumber ?? '08'}
+              label={directMailCfg.sectionTitle ?? 'Direct Mail'}
+              sectionKey="direct_mail"
+              addOnItems={addOnCatalogItems}
+              demoMarkers={demoFor('direct_mail')}
+            />
+
+            {directMailSectionRow && directMailPlan && (
+              <>
+                {isDirectMailBlockVisible(directMailCfg, 'narrative') && directMailPlan.gate.qualified && (() => {
+                  const idx = reportSections.findIndex(s => s.id === directMailSectionRow.id);
+                  const narrativeCfg = directMailCfg.blocks.narrative;
+                  const sectionForBlock: AuditSection = {
+                    ...directMailSectionRow,
+                    current_state_title: narrativeCfg?.currentTitle ?? directMailSectionRow.current_state_title,
+                    optimized_state_title: narrativeCfg?.optimizedTitle ?? directMailSectionRow.optimized_state_title,
+                  };
+                  return (
+                    <div className="mb-6">
+                      <ReportSectionBlock
+                        section={sectionForBlock}
+                        index={idx < 0 ? 0 : idx}
+                        assets={assets}
+                        annotations={annotations}
+                        hideHeader
+                        hideRubric
+                      />
+                    </div>
+                  );
+                })()}
+
+                <ReportDirectMailDetails plan={directMailPlan} cfg={directMailCfg} />
+
+                {directMailPlan.gate.qualified && (isDirectMailBlockVisible(directMailCfg, 'keyFindings') || editMode) && (
+                  <AuditSectionKeyFindingsPanel
+                    sectionKey="direct_mail"
+                    section={directMailSectionRow}
+                    blockCfg={directMailCfg.blocks.keyFindings}
+                    blockVisible={isDirectMailBlockVisible(directMailCfg, 'keyFindings')}
+                  />
+                )}
+              </>
+            )}
         </ReportSectionShell>
 
         <ReportSectionShell

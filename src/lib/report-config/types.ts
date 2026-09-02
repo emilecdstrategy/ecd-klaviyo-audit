@@ -180,6 +180,22 @@ export interface EmailDesignSectionConfig extends BaseSectionConfig {
 
 export type EmailDesignBlockKey = keyof NonNullable<EmailDesignSectionConfig['blocks']>;
 
+// ----- Direct Mail (PostPilot companion) -------------------------------------
+
+export interface DirectMailSectionConfig extends BaseSectionConfig {
+  blocks: {
+    keyFindings?: GenericBlockConfig;
+    narrative?: NarrativeBlockConfig;
+    gap?: GenericBlockConfig;
+    pairings?: GenericBlockConfig;
+    investment?: GenericBlockConfig;
+    plan?: GenericBlockConfig;
+    proof?: GenericBlockConfig;
+  };
+}
+
+export type DirectMailBlockKey = keyof NonNullable<DirectMailSectionConfig['blocks']>;
+
 // ----- Revenue Summary (Opportunity) -----------------------------------------
 
 export interface RevenueSummarySectionConfig extends BaseSectionConfig {
@@ -261,6 +277,10 @@ export interface EmailDesignSectionConfigRoot {
   email_design?: Partial<EmailDesignSectionConfig>;
 }
 
+export interface DirectMailSectionConfigRoot {
+  direct_mail?: Partial<DirectMailSectionConfig>;
+}
+
 export interface RevenueSummarySectionConfigRoot {
   revenue_summary?: Partial<RevenueSummarySectionConfig>;
 }
@@ -281,4 +301,5 @@ export type SectionKey =
   | 'signup_forms'
   | 'campaigns'
   | 'email_design'
+  | 'direct_mail'
   | 'revenue_summary';
