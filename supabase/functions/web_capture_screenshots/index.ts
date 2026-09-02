@@ -473,6 +473,11 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
   // Null while the capture has not looked, [] when it looked and saw none. The
   // difference decides whether the audit may talk about popups at all.
   let popups: unknown[] | null = null;
+  // How long the capture waited for placeholder cards to become real products,
+  // when the page had any. Kept so a thin-looking shot can be explained.
+  let contentWait: unknown = null;
+  // Where the slide-cart drawer settled, for the same reason.
+  let cartDrawerInfo: unknown = null;
   let cartCount: number | null = null;
 
   // When Browserless is configured it handles every capture (full-page and
@@ -566,6 +571,8 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       const bf = (bl.probe as { below_fold?: unknown } | null)?.below_fold;
       if (isBelowFoldReport(bf)) belowFold = bf;
       popups = Array.isArray(bl.popups) ? bl.popups : [];
+      contentWait = bl.contentWait ?? null;
+      cartDrawerInfo = bl.cartDrawer ?? null;
       usedBrowserless = true;
       if (typeof bl.cartCount === "number") cartCount = bl.cartCount;
     } else {
@@ -713,8 +720,12 @@ async function captureOne(sb: ReturnType<typeof assertServiceClient>, auditId: s
       // And what the sweep removed. Recorded even when empty: "looked, saw
       // none" and "never looked" lead to different sentences in the report.
       const withPopups = popups ? { ...withBelow, popups, popups_observed: true } : withBelow;
+      // How long we waited for placeholder cards to become real products, when
+      // the page had any, so a thin-looking shot can be explained afterwards.
+      const withWait = contentWait ? { ...withPopups, content_wait: contentWait } : withPopups;
+      const withDrawer = cartDrawerInfo ? { ...withWait, cart_drawer: cartDrawerInfo } : withWait;
       // Every photo painted in this shot, for the after-image compositor.
-      const withPhotos = photos.length ? { ...withPopups, photos } : withPopups;
+      const withPhotos = photos.length ? { ...withDrawer, photos } : withDrawer;
       // And the text that must never change (titles, prices, ratings, brand).
       const withText = textLocks.length ? { ...withPhotos, text_locks: textLocks } : withPhotos;
       // Which proxy pool served this capture, so the datacenter-vs-residential

@@ -128,6 +128,12 @@ export type BrowserlessResult =
     /** Popups that appeared before the sweep removed them. Empty means none
      *  showed while the page was open, not that the store has none. */
     popups?: CapturedPopup[];
+    /** How long we waited for placeholder cards to become real products, when
+     *  the page had any. Null means the page never showed placeholders. */
+    contentWait?: { skeletons_at_start: number; skeletons_at_end: number; waited_ms: number } | null;
+    /** Where the slide-cart drawer sat once it stopped moving, and how long that
+     *  took. Null when no drawer was opened. */
+    cartDrawer?: { left: number | null; width: number | null; coverage: number | null; settled: boolean; waited_ms: number } | null;
   }
   | { ok: false; error: string; proxyUsed?: string };
 
@@ -381,6 +387,11 @@ export default async ({ page, context }) => {
   // a last resort). Either way we get a POPULATED cart, never the checkout the
   // /cart/{variant}:1 permalink would land on.
   let cartCount = null;
+  // Geometry of the slide-cart drawer once it stopped moving, kept so a cart
+  // shot that looks wrong can be explained rather than guessed at.
+  let cartDrawer = null;
+  // Whether the shot we are about to take is OF an open slide-cart drawer.
+  let drawerOpen = false;
   if (cartAdd) {
     try {
       // 1) Determine a variant to add. Prefer the one we detected; else read a
@@ -506,30 +517,102 @@ export default async ({ page, context }) => {
           }
         }, on).catch(() => {});
       };
-      // Is a slide-cart drawer actually on screen? A click alone proves nothing:
-      // on many themes the cart icon is a plain <a href="/cart"> that navigates,
-      // which used to be accepted as "opened" and gave us the /cart page instead.
-      const drawerVisible = () => page.evaluate(() => {
+      // Is a slide-cart drawer actually on screen, and has it stopped moving?
+      //
+      // Two things went wrong here before. A click alone proves nothing: on many
+      // themes the cart icon is a plain <a href="/cart"> that navigates, which
+      // used to be accepted as "opened" and gave us the /cart page instead. And
+      // once we did look for a panel, any class-matched box overlapping the
+      // viewport by four pixels counted, so a drawer still sliding in passed,
+      // we waited a flat 700ms and shot. On a phone that produced a cart
+      // photographed mid-slide with the homepage still behind it, and the audit
+      // then told the client their drawer was "mostly cut off by the screen
+      // edge", which was true of our screenshot and not of their store.
+      //
+      // So the probe below answers both questions at once, and is careful about
+      // WHICH box it measures: themes wrap the panel in a full-viewport
+      // container that also matches on class and holds the word "cart", and
+      // that wrapper sits perfectly still while the panel inside it slides.
+      // Measuring the wrapper reads as "fully on screen" instantly. We want the
+      // innermost candidate that is positioned out of flow and actually carries
+      // the cart's own copy, plus a signature over every candidate so a moving
+      // child is never mistaken for a settled parent.
+      const drawerProbe = () => page.evaluate(() => {
         const sel = '[class*="drawer" i],[id*="drawer" i],[class*="mini-cart" i],[id*="mini-cart" i],'
           + '[class*="minicart" i],[id*="minicart" i],[class*="cart-modal" i],[class*="cart-popup" i],'
           + 'dialog[open],[role="dialog"],[aria-modal="true"]';
         const vw = window.innerWidth, vh = window.innerHeight;
-        const nodes = Array.from(document.querySelectorAll(sel));
-        for (const el of nodes) {
+        const seen = [];
+        for (const el of Array.prototype.slice.call(document.querySelectorAll(sel))) {
           const cs = window.getComputedStyle(el);
           if (cs.display === "none" || cs.visibility === "hidden") continue;
           if (parseFloat(cs.opacity || "1") < 0.1) continue;
           const r = el.getBoundingClientRect();
-          // A real slide panel occupies a meaningful slice of the screen and is
-          // actually within the viewport (a closed drawer sits translated off it).
+          // A real slide panel occupies a meaningful slice of the screen.
           if (r.width < vw * 0.18 || r.height < vh * 0.25) continue;
-          if (r.right <= 4 || r.left >= vw - 4 || r.bottom <= 4 || r.top >= vh - 4) continue;
-          const txt = ((el.innerText || "") + "").toLowerCase();
-          if (!/cart|subtotal|checkout/.test(txt)) continue;
-          return true;
+          seen.push({ el: el, r: r, cs: cs });
         }
-        return false;
-      }).catch(() => false);
+        // Geometry of every candidate, still or not, so that a wrapper holding
+        // steady cannot mask the panel travelling inside it.
+        let sig = "";
+        for (const v of seen) {
+          sig += Math.round(v.r.left) + ":" + Math.round(v.r.top) + ":" + Math.round(v.r.width) + "|";
+        }
+        let best = null;
+        for (const v of seen) {
+          const el = v.el, r = v.r;
+          // Skip wrappers: something else we matched lives inside this one.
+          let wraps = false;
+          for (const o of seen) { if (o.el !== el && el.contains(o.el)) { wraps = true; break; } }
+          if (wraps) continue;
+          // Drawers are taken out of the document flow, by themselves or by an
+          // ancestor. A plain in-flow section is page content, not a drawer.
+          let floated = false;
+          for (let n = el; n; n = n.parentElement) {
+            const p = window.getComputedStyle(n).position;
+            if (p === "fixed" || p === "absolute" || p === "sticky") { floated = true; break; }
+          }
+          if (!floated) continue;
+          const txt = ((el.innerText || "") + "").toLowerCase();
+          if (!/checkout|subtotal/.test(txt)) continue;
+          // How much of the panel's own width is actually inside the screen.
+          const shown = Math.max(0, Math.min(vw, r.right) - Math.max(0, r.left));
+          const coverage = r.width > 0 ? shown / r.width : 0;
+          if (r.right <= 4 || r.left >= vw - 4 || r.bottom <= 4 || r.top >= vh - 4) continue;
+          const cand = {
+            left: Math.round(r.left),
+            width: Math.round(r.width),
+            coverage: coverage,
+            // Which box we measured, so a wrong pick is diagnosable from the row
+            // instead of by re-deriving the page state days later.
+            cls: ((el.getAttribute("class") || "") + " " + (el.id || "")).slice(0, 80),
+            txt: txt.slice(0, 80),
+          };
+          if (!best || cand.coverage > best.coverage) best = cand;
+        }
+        return { sig: sig, best: best };
+      }).catch(() => null);
+
+      /** Poll until nothing on screen is moving any more, then report the panel. */
+      const settleDrawer = async () => {
+        let last = null;
+        let stableFor = 0;
+        const startedAt = Date.now();
+        let latest = null;
+        while (Date.now() - startedAt < 4000) {
+          const now = await drawerProbe();
+          latest = now;
+          if (now && last && now.sig === last.sig) {
+            stableFor += 1;
+            if (stableFor >= 2) return { rect: now.best, ms: Date.now() - startedAt, settled: true };
+          } else {
+            stableFor = 0;
+          }
+          last = now;
+          await new Promise((r) => setTimeout(r, 180));
+        }
+        return { rect: latest ? latest.best : null, ms: Date.now() - startedAt, settled: false };
+      };
 
       let opened = false;
       if (!cartAdd.pageOnly) {
@@ -564,10 +647,30 @@ export default async ({ page, context }) => {
           const before = page.url();
           try { await page.mouse.click(box.x, box.y); } catch (e) { continue; }
           await new Promise((r) => setTimeout(r, 2200));
-          if (await drawerVisible()) {
-            opened = true;
-            await new Promise((r) => setTimeout(r, 700));
-            break;
+          {
+            // Let the slide finish before believing what we can see. The probe
+            // reports null when no cart panel is on screen, which is also how a
+            // click that merely navigated shows up here.
+            const settle = await settleDrawer();
+            cartDrawer = {
+              left: settle.rect ? settle.rect.left : null,
+              width: settle.rect ? settle.rect.width : null,
+              coverage: settle.rect ? Math.round(settle.rect.coverage * 100) / 100 : null,
+              cls: settle.rect ? settle.rect.cls : null,
+              txt: settle.rect ? settle.rect.txt : null,
+              settled: settle.settled,
+              waited_ms: settle.ms,
+            };
+            // A panel that has stopped moving and is still hanging off the edge
+            // is not a drawer worth photographing. Falling through to the next
+            // trigger, and ultimately to the populated /cart page, gives the
+            // reader a cart they can actually read.
+            if (settle.rect && settle.rect.coverage >= 0.6) {
+              opened = true;
+              drawerOpen = true;
+              await new Promise((r) => setTimeout(r, 400));
+              break;
+            }
           }
           // The click navigated (typically to /cart) rather than opening a drawer.
           // Return to the page and try the next, more drawer-specific trigger.
@@ -596,6 +699,62 @@ export default async ({ page, context }) => {
   await page.evaluate(sweep).catch(() => {});
   // Final popup sweep (keeps the cart drawer; no Escape here so we don't close it).
   await page.evaluate(sweepPopups).catch(() => {});
+
+  // Wait for placeholder cards to become real products.
+  //
+  // Plenty of storefronts render their grid through a search-and-filter app
+  // rather than in the theme, and those ship skeleton cards in the server HTML
+  // and swap them for products once their own script answers. The page reaches
+  // networkidle2 with the skeletons painted, so the shot went out showing grey
+  // blocks and the audit then told the client their category page had "nothing
+  // to browse yet", which is a fact about our timing and not their store.
+  // Creekside's collection page ships 319 skeleton nodes this way.
+  //
+  // Counted rather than assumed, and bounded: if the placeholders never clear
+  // we shoot the page as it is rather than fail the capture. This runs before
+  // the element and photo passes so everything downstream sees one settled
+  // page, and it costs nothing on a store that has no placeholders.
+  const countSkeletons = () => {
+    const sel = '[class*="skeleton" i],[class*="shimmer" i],[class*="animate-pulse" i],[class*="snize-placeholder" i]';
+    const vh = window.innerHeight, vw = window.innerWidth;
+    let list = [];
+    try { list = Array.prototype.slice.call(document.querySelectorAll(sel)); } catch (e) { return 0; }
+    let n = 0;
+    for (const el of list) {
+      try {
+        const cs = getComputedStyle(el);
+        if (cs.display === "none" || cs.visibility === "hidden" || Number(cs.opacity) === 0) continue;
+        const r = el.getBoundingClientRect();
+        // Only what is actually on screen, and only card-sized things: a
+        // one-pixel spacer with "skeleton" in its class is not worth waiting on.
+        if (r.bottom <= 0 || r.top >= vh || r.right <= 0 || r.left >= vw) continue;
+        if (r.width < 24 || r.height < 12) continue;
+        n++;
+      } catch (e) {}
+    }
+    return n;
+  };
+
+  let contentWait = null;
+  try {
+    const startSkeletons = await page.evaluate(countSkeletons);
+    if (startSkeletons > 0) {
+      const startedAt = Date.now();
+      let remaining = startSkeletons;
+      while (Date.now() - startedAt < 8000) {
+        await new Promise((r) => setTimeout(r, 250));
+        remaining = await page.evaluate(countSkeletons).catch(() => 0);
+        if (remaining === 0) break;
+      }
+      // Give whatever replaced them a moment to paint and decode.
+      if (remaining === 0) await new Promise((r) => setTimeout(r, 600));
+      contentWait = {
+        skeletons_at_start: startSkeletons,
+        skeletons_at_end: remaining,
+        waited_ms: Date.now() - startedAt,
+      };
+    }
+  } catch (e) { /* diagnostic only; never fail a capture over it */ }
 
   let elements = [];
   if (withElements) {
@@ -1057,7 +1216,13 @@ export default async ({ page, context }) => {
   try {
     popups = popups.concat(((await page.evaluate(observePopups)) || []).map((p) => ({ ...p, when: "after_scroll" })));
   } catch (e) { /* observation is a bonus; the removal below is the point */ }
-  await page.keyboard.press("Escape").catch(() => {});
+  // Escape is the cheapest way to dismiss a late popup, and on a cart capture
+  // it is also how you close a slide-cart drawer. Pressing it here undid the
+  // whole drawer flow: the drawer opened, settled, was measured fully on
+  // screen, and was then dismissed a moment before the shutter, leaving the
+  // homepage with the drawer caught halfway back off the edge. The sweeps below
+  // already skip cart elements, so on a drawer shot we sweep without the key.
+  if (!drawerOpen) await page.keyboard.press("Escape").catch(() => {});
   await page.evaluate(sweepPopups).catch(() => {});
   await page.evaluate(sweep).catch(() => {});
 
@@ -1080,7 +1245,7 @@ export default async ({ page, context }) => {
       await page.evaluate(() => { window.scrollTo(0, 0); });
     } catch (e) {}
   }
-  return { data: { screenshot, screenshot2, elements, photos, textLocks, hover, cartCount, probe, editReport, popups }, type: "application/json" };
+  return { data: { screenshot, screenshot2, elements, photos, textLocks, hover, cartCount, cartDrawer, probe, editReport, popups, contentWait }, type: "application/json" };
 };
 `;
 
@@ -1202,6 +1367,8 @@ export async function captureWithBrowserless(input: {
         probe?: unknown;
         editReport?: unknown;
         popups?: CapturedPopup[];
+        contentWait?: { skeletons_at_start: number; skeletons_at_end: number; waited_ms: number } | null;
+        cartDrawer?: { left: number | null; width: number | null; coverage: number | null; settled: boolean; waited_ms: number } | null;
       }
       | null;
     // In-page detection (storefront rate-limit / bot-block page) reports a
@@ -1245,6 +1412,8 @@ export async function captureWithBrowserless(input: {
       // nothing appeared while the page was open, which is not the same as
       // "this store has no popup": exit-intent and long delays are missed.
       popups: Array.isArray(payload.popups) ? payload.popups : [],
+      contentWait: payload.contentWait ?? null,
+      cartDrawer: payload.cartDrawer ?? null,
     };
   } catch (e) {
     const msg = e instanceof Error && (e.name === "AbortError" || /abort/i.test(e.message))
