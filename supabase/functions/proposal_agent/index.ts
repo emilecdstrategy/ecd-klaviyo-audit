@@ -450,7 +450,14 @@ serve(async (req) => {
       // a legal document.
       if (turn.name === "propose_edits") {
         const ops = ((validation.value as { operations?: Array<Record<string, unknown>> }).operations ?? []);
-        const overrides = ((snapshot?.proposal as { contract_overrides?: Record<string, string> } | undefined)?.contract_overrides) ?? {};
+        // The stored overrides are the authority for what a redline edits: a
+        // contract already tailored for this proposal must be edited from that
+        // text, not from the shared version, or the earlier changes vanish.
+        let overrides: Record<string, string> = {};
+        if (body.proposal_id) {
+          const { data: pRow } = await sb.from("proposals").select("contract_overrides").eq("id", body.proposal_id).maybeSingle();
+          overrides = ((pRow as { contract_overrides?: Record<string, string> } | null)?.contract_overrides) ?? {};
+        }
         let redlineError: string | null = null;
         for (const op of ops) {
           if (op.op !== "override_contract" || !Array.isArray(op.contract_edits)) continue;
