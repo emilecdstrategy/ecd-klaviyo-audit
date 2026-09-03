@@ -204,10 +204,23 @@ export const AGENT_TOOLS: LlmTool[] = [
               discount: { ...DISCOUNT_SCHEMA, description: "For update_discount" },
               slug: { type: "string", description: "For toggle_contract / override_contract" },
               included: { type: "boolean", description: "For toggle_contract" },
+              contract_edits: {
+                type: "array",
+                description:
+                  "For override_contract, PREFERRED: redline edits to the contract for this proposal only. Each item quotes a passage VERBATIM from get_contracts (find) and gives its replacement (replace). The server assembles the full document. Use this for any change short of rewriting the whole contract.",
+                items: {
+                  type: "object",
+                  required: ["find", "replace"],
+                  properties: {
+                    find: { type: "string", description: "Exact text currently in the contract, long enough to appear only once (a full clause or sentence)." },
+                    replace: { type: "string", description: "The new text for that passage. To delete a passage, send an empty string." },
+                  },
+                },
+              },
               contract_content: {
                 type: ["string", "null"],
                 description:
-                  "For override_contract: the full replacement text of that contract FOR THIS PROPOSAL ONLY (the shared version in Settings is untouched). Send the entire document, not a fragment. Pass null to drop the override and go back to the shared version.",
+                  "For override_contract, ONLY when the whole contract must be restructured: the full replacement text FOR THIS PROPOSAL ONLY. This is slow and fails on long contracts, so prefer contract_edits. Pass null to drop the override and go back to the shared version.",
               },
               recipient_name: { type: "string", description: "For update_recipient" },
               recipient_email: { type: "string", description: "For update_recipient" },

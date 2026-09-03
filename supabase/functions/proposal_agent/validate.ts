@@ -251,14 +251,29 @@ export function validateEditSet(
         if (!isStr(o.slug) || !ctx.contractSlugs.has(o.slug)) {
           return { ok: false, error: `${label}: slug must be a known contract slug` };
         }
-        // null clears the override; anything else must be the full document.
+        // Redlines (preferred): a list of verbatim find/replace pairs, applied
+        // server-side. Otherwise null clears the override, or a full document
+        // replaces it.
+        if (Array.isArray(o.contract_edits)) {
+          if (o.contract_edits.length === 0) return { ok: false, error: `${label}: contract_edits is empty` };
+          for (let j = 0; j < o.contract_edits.length; j++) {
+            const e = o.contract_edits[j];
+            if (!e || typeof e !== "object" || !isStr(e.find) || !isStr(e.replace)) {
+              return { ok: false, error: `${label}.contract_edits[${j}] must be { find: string, replace: string }` };
+            }
+          }
+          break;
+        }
+        if (o.contract_content === undefined) {
+          return { ok: false, error: `${label}: provide contract_edits (preferred), or contract_content, or contract_content: null to reset` };
+        }
         if (o.contract_content !== null && !isStr(o.contract_content)) {
           return { ok: false, error: `${label}: contract_content must be the full contract text, or null to reset` };
         }
         if (isStr(o.contract_content) && o.contract_content.trim().length < 40) {
           return {
             ok: false,
-            error: `${label}: contract_content looks like a fragment. Send the ENTIRE contract text, or null to reset.`,
+            error: `${label}: contract_content looks like a fragment. Use contract_edits with the exact passage to change instead.`,
           };
         }
         break;

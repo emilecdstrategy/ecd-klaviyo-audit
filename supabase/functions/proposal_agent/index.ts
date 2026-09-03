@@ -16,9 +16,14 @@ import {
   validateQuestion,
 } from "./validate.ts";
 import { buildClientDossier, fetchClientHistory } from "./dossier.ts";
+import { applyContractEdits, type ContractEdit } from "../_shared/contract-edits.ts";
 import { readMemory, readVoiceProfile, scheduleMemoryUpdate } from "../_shared/agent-memory.ts";
 
 const MAX_TOOL_ITERATIONS = 6;
+// The edge runtime kills an invocation at 150s and the browser sees only "non-2xx
+// status code". One model turn can take up to 110s, so past this point we stop
+// starting new turns and say so, which is a better answer than a 504.
+const TURN_BUDGET_MS = 100_000;
 const HISTORY_LIMIT = 30;
 const DOC_CONTENT_CHAR_CAP = 24_000;
 
@@ -224,7 +229,13 @@ serve(async (req) => {
     let edits: unknown = null;
     let retriedValidation = false;
 
+    const loopStartedAt = Date.now();
     for (let i = 0; i < MAX_TOOL_ITERATIONS; i++) {
+      if (i > 0 && Date.now() - loopStartedAt > TURN_BUDGET_MS) {
+        assistantText =
+          "That took longer than I am allowed in one go, so I stopped before making changes. Please send the request again, or split it into smaller steps.";
+        break;
+      }
       const turn = await llm.runTurn({ system, messages, tools });
 
       if (turn.kind === "text") {
@@ -431,6 +442,44 @@ serve(async (req) => {
           result: JSON.stringify({ error: `Invalid input: ${validation.error}. Fix the payload and call ${turn.name} again.` }),
         });
         continue;
+      }
+
+      // Redlines become the full contract text here, so the app keeps receiving
+      // the one shape it knows (contract_content). A quote the model got wrong
+      // goes back to it as a validation error rather than silently mis-editing
+      // a legal document.
+      if (turn.name === "propose_edits") {
+        const ops = ((validation.value as { operations?: Array<Record<string, unknown>> }).operations ?? []);
+        const overrides = ((snapshot?.proposal as { contract_overrides?: Record<string, string> } | undefined)?.contract_overrides) ?? {};
+        let redlineError: string | null = null;
+        for (const op of ops) {
+          if (op.op !== "override_contract" || !Array.isArray(op.contract_edits)) continue;
+          const slug = String(op.slug);
+          const base = overrides[slug] ?? contracts.find((c) => c.slug === slug)?.content ?? "";
+          if (!base.trim()) { redlineError = `the ${slug} contract has no text to edit`; break; }
+          const applied = applyContractEdits(base, op.contract_edits as ContractEdit[]);
+          if (!applied.ok) { redlineError = applied.error; break; }
+          op.contract_content = applied.content;
+          delete op.contract_edits;
+        }
+        if (redlineError) {
+          if (retriedValidation) {
+            console.error(`proposal_agent: contract redlines failed twice (${redlineError})`);
+            return json(
+              { ok: false, error: { code: "bad_response", message: `I could not apply the contract redlines: ${redlineError}` } },
+              { status: 200 },
+            );
+          }
+          retriedValidation = true;
+          messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+          messages.push({
+            role: "tool_result",
+            id: turn.id,
+            name: turn.name,
+            result: JSON.stringify({ error: `Invalid contract_edits: ${redlineError}. Quote the passage exactly as get_contracts returns it and call propose_edits again.` }),
+          });
+          continue;
+        }
       }
 
       assistantText = stripInternalNotes(sanitizeCopy(turn.text ?? ""));
