@@ -6,8 +6,9 @@
 // The report only reads it, so this file is the read-side mirror plus a
 // tolerant parser: an older or partial row must render as "nothing here", not
 // crash the report. There is deliberately no pricing anywhere in this shape:
-// PostPilot's v2 source withdrew its rate card, and the only permitted pricing
-// text is the `pricing_note` sentence.
+// PostPilot's source withdrew its rate card; the only permitted pricing text is
+// the `pricing_note` sentence, and the budget is the client's own spend as a
+// share of revenue.
 
 export type DirectMailRange = { low: number; high: number; mid: number };
 
@@ -44,10 +45,14 @@ export type DirectMailCannotRun = {
   benchmark: DirectMailBenchmark;
 };
 
-export type DirectMailVolume = {
-  label: 'Test' | 'Recommended' | 'Scale';
-  pieces_per_month: number;
-  cadence: string;
+export type DirectMailBudget = {
+  label: 'Test' | 'Recommended';
+  pct: number;
+  budget_per_month: number;
+  pieces_low: number;
+  pieces_high: number;
+  pooled: boolean;
+  read: string;
 };
 
 export type DirectMailProof = { brand: string; model: string; result: string; url: string };
@@ -68,7 +73,9 @@ export type DirectMailPlan = {
   cannot_run: DirectMailCannotRun[];
   integration: string[];
   measurement: string[];
-  volume: DirectMailVolume[] | null;
+  store_revenue_30d: number | null;
+  budget: DirectMailBudget[] | null;
+  budget_note: string;
   pricing_note: string;
   ecd_fees: { setup: number | null; monthly: number | null };
   compliance: string;
@@ -100,7 +107,9 @@ export function parseDirectMailPlan(sectionDetails: unknown): DirectMailPlan | n
   if (!isObject(plan)) return null;
   const gate = plan.gate;
   if (!isObject(gate) || typeof gate.qualified !== 'boolean') return null;
-  if (!String(plan.version ?? '').includes('2.0')) return null;
+  // v1 rows carried a rate card and v2 rows a cadence that read as absurd at
+  // scale; both must be regenerated, not rendered.
+  if (!/companion-3\./.test(String(plan.version ?? ''))) return null;
   return {
     version: String(plan.version ?? ''),
     expires: plan.expires == null ? null : String(plan.expires),
@@ -118,7 +127,9 @@ export function parseDirectMailPlan(sectionDetails: unknown): DirectMailPlan | n
     cannot_run: Array.isArray(plan.cannot_run) ? (plan.cannot_run as DirectMailCannotRun[]) : [],
     integration: strings(plan.integration),
     measurement: strings(plan.measurement),
-    volume: Array.isArray(plan.volume) ? (plan.volume as DirectMailVolume[]) : null,
+    store_revenue_30d: typeof plan.store_revenue_30d === 'number' ? plan.store_revenue_30d : null,
+    budget: Array.isArray(plan.budget) ? (plan.budget as DirectMailBudget[]) : null,
+    budget_note: String(plan.budget_note ?? ''),
     pricing_note: String(plan.pricing_note ?? ''),
     ecd_fees: isObject(plan.ecd_fees)
       ? {

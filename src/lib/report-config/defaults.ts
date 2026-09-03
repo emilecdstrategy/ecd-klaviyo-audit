@@ -250,7 +250,7 @@ export const DEFAULT_DIRECT_MAIL_SECTION: DirectMailSectionConfig = {
     },
     gap: { hidden: false, title: 'The gap', subtitle: 'What email cannot reach, and what a postcard can.' },
     pairings: { hidden: false, title: 'Flow pairings', subtitle: 'A postcard at the end of each flow you already run.' },
-    volume: { hidden: false, title: 'Volume', subtitle: 'A cadence over the reachable audience, not a forecast.' },
+    budget: { hidden: false, title: 'Starting budget', subtitle: '0.5 to 1% of trailing 30-day revenue, then scale on measured results.' },
     plan: { hidden: false, title: 'How it runs' },
     proof: { hidden: false, title: 'Proof', subtitle: 'Published, brand-specific results. Not benchmarks.' },
   },

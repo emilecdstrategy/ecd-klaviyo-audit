@@ -201,6 +201,7 @@ async function collectInputs(sb: Sb, auditId: string, clientId: string, context:
     aov_window_days: AOV_WINDOW_DAYS,
     market,
     monthly_sessions: sessions,
+    store_revenue_30d: n(((snap.revenue_breakdown as Record<string, unknown> | undefined) ?? {}).total_store_revenue),
     core_flows: coreFlows,
     has_vip_segments: typeof segDetails?.has_vip_segments === "boolean" ? segDetails.has_vip_segments : null,
     sells_subscriptions: Boolean(context?.sells_subscriptions),
@@ -258,7 +259,7 @@ const SYSTEM = `You write one short section of a Klaviyo lifecycle audit for ECD
 
 Hard rules, none of them optional:
 - Use only the facts you are given. Every number in your text must appear in the facts. If a fact is missing, do not fill it in.
-- Never state, estimate or imply any PostPilot price, rate, plan or monthly cost. Pricing comes from the PostPilot partner contact.
+- Never state, estimate or imply any PostPilot price, rate or plan. Pricing comes from the PostPilot partner contact. The opening BUDGET (0.5 to 1% of trailing 30-day revenue, given in the facts) is the client's own spend and may be stated, always as a planning starting point.
 - Direct mail is a companion to Klaviyo, never a replacement, and it does not fix deliverability or list health.
 - Quote benchmarks as medians with their spread, exactly as given, and never as a forecast for this brand. Never quote a case-study result.
 - Say "iROAS" only for holdout-measured figures.
@@ -306,7 +307,10 @@ async function writeNarrative(plan: DirectMailPlan, companyName: string): Promis
       return null;
     }
     const text = String(input.current_state_notes ?? "") + String(input.optimized_notes ?? "") + String(input.ai_findings ?? "") + items.join(" ");
-    if (/\$\s?\d[\d,]*(\.\d+)?\s*(a|per|\/)\s*(piece|month|mo|card|postcard)/i.test(text)) {
+    // A per-piece or per-card figure is a PostPilot price and is refused. A
+    // monthly dollar figure is the client's own budget (0.5 to 1% of revenue),
+    // which the source asks us to state.
+    if (/\$\s?\d[\d,]*(\.\d+)?\s*(a|per|\/)\s*(piece|card|postcard)/i.test(text)) {
       lastNarrativeError = "model wrote a price";
       console.error("direct_mail narrative:", lastNarrativeError);
       return null;
@@ -331,7 +335,7 @@ async function writeNarrative(plan: DirectMailPlan, companyName: string): Promis
 function fallbackNarrative(plan: DirectMailPlan): Narrative {
   const g = plan.gap!;
   const fmt = (v: number) => v.toLocaleString("en-US");
-  const rec = plan.volume?.find((c) => c.label === "Recommended");
+  const rec = plan.budget?.find((c) => c.label === "Recommended");
   return sanitizeDashDeep({
     current_state_title: "What email cannot reach",
     optimized_state_title: "Postcards where email stops",
@@ -341,7 +345,7 @@ function fallbackNarrative(plan: DirectMailPlan): Narrative {
       `Each flow you already run gets a postcard at the end of its email sequence, and the audience email cannot reach gets a winback program of its own. Postal mail runs under its own consent rules, not as a workaround for email suppression. Every campaign holds out a share of its audience so results read as incremental ROAS.`,
     ai_findings:
       `Retention programs to customers with orders have a holdout-tested median of ${plan.cannot_run[0].benchmark.median}x iROAS (${plan.cannot_run[0].benchmark.p25}x to ${plan.cannot_run[0].benchmark.p75}x). Start with the unreachable winback and the strongest flow pairing as one-off tests with holdouts, read at 30 days, then automate.` +
-      (rec ? ` Recommended cadence is about ${fmt(rec.pieces_per_month)} postcards a month.` : ""),
+      (rec ? ` An opening budget of about $${fmt(rec.budget_per_month)} a month, 1% of trailing 30-day revenue, buys roughly ${fmt(rec.pieces_low)} to ${fmt(rec.pieces_high)} postcards.` : ""),
     summary_text:
       `Your Klaviyo program is doing its job; this is about the ${fmt(g.unreachable)} profiles it is not allowed to touch.`,
     key_findings: [

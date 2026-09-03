@@ -6,7 +6,7 @@ import { isDirectMailBlockVisible } from '../../lib/report-config/resolve';
 import { useReportEdit } from './edit/ReportEditContext';
 
 // The numbers of the direct mail section, kept short on purpose: four tiles
-// for the gap, one compact table for the pairings, a volume strip, two short
+// for the gap, one compact table for the pairings, a budget strip, two short
 // lists, three one-line proof cards, and the fine print folded away. Everything
 // is read straight off the plan the edge function computed; nothing is derived
 // in the browser, and there is no PostPilot pricing to show.
@@ -136,14 +136,19 @@ export default function ReportDirectMailDetails({ plan, cfg }: { plan: DirectMai
         </Block>
       )}
 
-      {show('volume') && plan.volume && (
-        <Block title={b.volume?.title} subtitle={b.volume?.subtitle}>
-          <div className={`grid grid-cols-1 gap-3 ${plan.volume.length === 3 ? 'md:grid-cols-3' : 'md:grid-cols-2'}`}>
-            {plan.volume.map(v => (
-              <div key={v.label} className={`rounded-xl border px-4 py-3 ${v.label === 'Recommended' ? 'border-violet-200 bg-violet-50/60' : 'border-gray-100 bg-white'}`}>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">{v.label}</p>
-                <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">{n(v.pieces_per_month)} <span className="text-xs font-medium text-gray-500">postcards / mo</span></p>
-                <p className="mt-0.5 text-[11px] text-gray-500">{v.cadence}</p>
+      {show('budget') && plan.budget && (
+        <Block title={b.budget?.title} subtitle={b.budget?.subtitle}>
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+            {plan.budget.map(c => (
+              <div key={c.label} className={`rounded-xl border px-4 py-3 ${c.label === 'Recommended' ? 'border-violet-200 bg-violet-50/60' : 'border-gray-100 bg-white'}`}>
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
+                  {c.label} <span className="font-medium normal-case text-gray-400">· {(c.pct * 100).toFixed(1).replace(/\.0$/, '')}% of trailing 30-day revenue</span>
+                </p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">
+                  {formatCurrency(c.budget_per_month)} <span className="text-xs font-medium text-gray-500">/ mo</span>
+                </p>
+                <p className="mt-0.5 text-xs text-gray-700">About {n(c.pieces_low)} to {n(c.pieces_high)} postcards a month</p>
+                <p className={`mt-1 text-[11px] ${c.pooled ? 'text-amber-700' : 'text-gray-500'}`}>{c.read}</p>
               </div>
             ))}
           </div>
@@ -194,6 +199,7 @@ export default function ReportDirectMailDetails({ plan, cfg }: { plan: DirectMai
         </summary>
         <ul className="mt-3 list-disc space-y-1 pl-4 text-xs leading-relaxed text-gray-600">
           {plan.assumptions.map((a, i) => <li key={i}>{a}</li>)}
+          {plan.budget_note && <li>{plan.budget_note}</li>}
           {plan.compliance && <li>{plan.compliance}</li>}
         </ul>
         {plan.caveat && <p className="mt-3 text-xs leading-relaxed text-gray-500">{plan.caveat}</p>}

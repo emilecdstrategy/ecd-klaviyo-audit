@@ -2,7 +2,7 @@ import { assert, assertEquals, assertStringIncludes } from "https://deno.land/st
 import {
   buildDirectMailPlan,
   buildPairings,
-  buildVolume,
+  buildBudget,
   type DirectMailInputs,
   factsForNarrative,
   inferMarketFromKlaviyoAccount,
@@ -22,6 +22,7 @@ const higherDose: DirectMailInputs = {
   aov_window_days: 90,
   market: { country: "US", source: "klaviyo_account" },
   monthly_sessions: null,
+  store_revenue_30d: 1909771,
   core_flows: [
     { flow_name: "Abandoned Cart", present: true, live: true },
     { flow_name: "Abandoned Checkout", present: true, live: true },
@@ -49,13 +50,15 @@ Deno.test("a large US brand with a healthy AOV qualifies", () => {
   const plan = buildDirectMailPlan(higherDose);
   assert(plan.gate.qualified, plan.gate.reasons.join("; "));
   assertEquals(plan.gate.reasons, []);
-  assertEquals(plan.gate.checks, { market_us: true, audience_ok: true, aov_ok: true });
+  assertEquals(plan.gate.checks, { market_us: true, audience_ok: true, aov_ok: true, budget_ok: true });
 });
 
 Deno.test("no PostPilot price or rate can appear anywhere in the plan", () => {
   const plan = buildDirectMailPlan(higherDose);
   const text = JSON.stringify(plan) + factsForNarrative(plan, "HigherDOSE");
-  assert(!/\$0\.\d\d|per piece|\bPro\+?\b|Growth plan|subscription|rate card/i.test(text.replace(plan.pricing_note, "")), "a price leaked");
+  const scrubbed = text.replace(plan.pricing_note, "").split(plan.budget_note).join("");
+  assert(!/\bPro\+?\b|Growth plan|subscription|rate card/i.test(scrubbed), "a plan or rate leaked");
+  assertStringIncludes(plan.budget_note, "planning heuristic");
   assertStringIncludes(plan.pricing_note, "partner contact");
   assertStringIncludes(factsForNarrative(plan, "HigherDOSE"), "never state, estimate or imply a price");
 });
@@ -64,7 +67,7 @@ Deno.test("the compliance line and the source expiry travel with the plan", () =
   const plan = buildDirectMailPlan(higherDose);
   assertStringIncludes(plan.compliance, "not a workaround for email suppression");
   assertEquals(plan.expires, "2026-12-31");
-  assertStringIncludes(plan.version, "2.0");
+  assertStringIncludes(plan.version, "3.0");
 });
 
 Deno.test("a non-US brand never qualifies, and says why", () => {
@@ -135,12 +138,42 @@ Deno.test("the unreachable winback is always listed; anonymous retargeting only 
   assertEquals(withTraffic.gap!.sitematch, { low: 80000, high: 160000, mid: 120000 });
 });
 
-Deno.test("volume is a cadence over the matched audience with no Scale when doubling adds nothing", () => {
-  const mid = buildVolume(sizeGap({ ...higherDose, total_profiles: 80000, email_subscribed: 40000, active_90d: 25000, suppressed: 20000 })!);
-  // (20,000 + 15,000) * 0.65 = 22,750 matched: 10% sample, a third a month, double that
-  assertEquals(mid.map((c) => [c.label, c.pieces_per_month]), [["Test", 2275], ["Recommended", 7583], ["Scale", 15166]]);
-  const capped = buildVolume(sizeGap({ ...higherDose, suppressed: 900000, total_profiles: 1500000 })!);
-  assertEquals(capped.map((c) => c.label), ["Test", "Recommended"]);
+Deno.test("the opening budget is 0.5 to 1% of trailing 30-day revenue, in pieces at the indicative rate", () => {
+  // HigherDOSE: $1.91M last 30 days. Drew's answer to "is 50k a month high": yes.
+  const cols = buildBudget(1909771, sizeGap(higherDose))!;
+  assertEquals(cols.map((c) => c.label), ["Test", "Recommended"]);
+  assertEquals(cols[0].budget_per_month, 9549);
+  assertEquals(cols[1].budget_per_month, 19098);
+  // $19,098 at $0.70 to $0.80 a piece
+  assertEquals(cols[1].pieces_low, Math.round(19098 / 0.8));
+  assertEquals(cols[1].pieces_high, Math.round(19098 / 0.7));
+  assert(cols[1].pieces_high < 30000, "nowhere near 50,000 a month");
+  assertEquals(cols[1].pooled, false);
+  assertStringIncludes(cols[1].read, "Multiple test cells");
+});
+
+Deno.test("a small store is told to pool months rather than mail a sub-scale test", () => {
+  const cols = buildBudget(250000, sizeGap(higherDose))!;
+  // 1% of $250k = $2,500, about 3,100 to 3,600 pieces: under the 5,000 floor
+  assertEquals(cols[1].pooled, true);
+  assertStringIncludes(cols[1].read, "pool");
+});
+
+Deno.test("pieces are capped at the reachable audience", () => {
+  const small = sizeGap({ ...higherDose, total_profiles: 20000, email_subscribed: 12000, active_90d: 10000, suppressed: 4000 })!;
+  const cols = buildBudget(5000000, small)!;
+  assertEquals(cols[1].pieces_high, small.mailable.mid);
+});
+
+Deno.test("a 1% budget under $1k a month fails the gate; unknown revenue does not", () => {
+  const tiny = buildDirectMailPlan({ ...higherDose, store_revenue_30d: 80000 });
+  assertEquals(tiny.gate.qualified, false);
+  assertEquals(tiny.gate.checks.budget_ok, false);
+  assertStringIncludes(tiny.gate.reasons[0], "under $1,000");
+  const unknown = buildDirectMailPlan({ ...higherDose, store_revenue_30d: null });
+  assertEquals(unknown.gate.qualified, true);
+  assertEquals(unknown.gate.checks.budget_ok, null);
+  assertEquals(unknown.budget, null);
 });
 
 Deno.test("US inference from a Klaviyo account needs USD and a US timezone", () => {

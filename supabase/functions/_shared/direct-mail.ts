@@ -18,12 +18,12 @@
 // request to the partner contact, not a number in the report.
 //
 // Source: "PostPilot x Klaviyo: Direct Mail Companion to a Klaviyo Audit",
-// v2.0, 2026-09-02 (supersedes v1.0; expires 2026-12-31, re-confirm after),
+// v3.0, 2026-09-03 (supersedes v2.0 and v1.0; expires 2026-12-31, re-confirm after),
 // and the 2026 BFCM Direct Mail Benchmark Report medians.
 
 export const DIRECT_MAIL_SECTION_KEY = "direct_mail";
 export const DIRECT_MAIL_TEMPLATE_SLUG = "ecd_direct_mail_postpilot";
-export const DIRECT_MAIL_SOURCE_VERSION = "postpilot-companion-2.0-2026-09-02";
+export const DIRECT_MAIL_SOURCE_VERSION = "postpilot-companion-3.0-2026-09-03";
 /** The source document's own expiry. After this, re-confirm with PostPilot. */
 export const DIRECT_MAIL_SOURCE_EXPIRES = "2026-12-31";
 
@@ -40,7 +40,28 @@ export const GATE = {
    * a 1.5% ceiling that is an AOV of about $49; below $50 a card struggles to
    * pay for itself whatever the rate turns out to be. */
   min_aov: 50,
+  /** A 1% test budget under this is a program the source says was incremental
+   * only about 30% of the time. */
+  min_monthly_budget: 1000,
 } as const;
+
+/** Section 8.1 of the source: the opening budget for a first direct mail test
+ * is 0.5% to 1% of trailing 30-day store revenue, sized against a floor of
+ * 5,000 to 6,000 pieces per test cell. The per-piece range is the source's own
+ * "indicative" figure for turning a budget into a piece count, not a rate;
+ * actual rates come from PostPilot. The percentage is a planning heuristic
+ * PostPilot uses to open a budget conversation, not a performance guarantee. */
+export const BUDGET = {
+  low_pct: 0.005,
+  high_pct: 0.01,
+  indicative_cpp: { low: 0.7, high: 0.8 },
+  floor_pieces_per_cell: 5000,
+  /** Enough for more than one cell with clean holdouts, per the source's table. */
+  multi_cell_pieces: 13500,
+} as const;
+
+export const BUDGET_NOTE =
+  "The 0.5 to 1% range is a PostPilot planning heuristic for opening a budget conversation, not a performance guarantee. Piece counts are indicative at $0.70 to $0.80 a piece; confirm actual rates with PostPilot.";
 
 export type Benchmark = { label: string; p25: number; median: number; p75: number };
 
@@ -98,6 +119,8 @@ export type DirectMailInputs = {
   market: { country: string | null; source: MarketSource };
   /** Shopify sessions over the last 30 days, when the store is connected. */
   monthly_sessions: number | null;
+  /** Total store revenue over the last 30 days, from the Placed Order metric. */
+  store_revenue_30d: number | null;
   core_flows: CoreFlowState[];
   has_vip_segments: boolean | null;
   sells_subscriptions: boolean;
@@ -143,10 +166,17 @@ export type CannotRun = {
   benchmark: Benchmark;
 };
 
-export type VolumeColumn = {
-  label: "Test" | "Recommended" | "Scale";
-  pieces_per_month: number;
-  cadence: string;
+export type BudgetColumn = {
+  label: "Test" | "Recommended";
+  /** Share of trailing 30-day revenue. */
+  pct: number;
+  budget_per_month: number;
+  /** At the indicative $0.70 to $0.80 a piece, capped at the reachable audience. */
+  pieces_low: number;
+  pieces_high: number;
+  /** Below the per-cell floor: pool two or three months into one drop. */
+  pooled: boolean;
+  read: string;
 };
 
 export type ProofCase = { brand: string; model: string; result: string; url: string };
@@ -158,6 +188,7 @@ export type GateResult = {
     market_us: boolean;
     audience_ok: boolean;
     aov_ok: boolean | null;
+    budget_ok: boolean | null;
   };
 };
 
@@ -173,8 +204,10 @@ export type DirectMailPlan = {
   cannot_run: CannotRun[];
   integration: string[];
   measurement: string[];
-  /** Cadence over the matched audience, never a cost. */
-  volume: VolumeColumn[] | null;
+  store_revenue_30d: number | null;
+  /** Opening budget as a share of trailing 30-day revenue, and the pieces it buys. */
+  budget: BudgetColumn[] | null;
+  budget_note: string;
   pricing_note: string;
   ecd_fees: { setup: number | null; monthly: number | null };
   compliance: string;
@@ -344,35 +377,36 @@ export function buildCannotRun(gap: GapSizing | null): CannotRun[] {
   return out;
 }
 
-// --- Volume ------------------------------------------------------------------
+// --- Budget ------------------------------------------------------------------
 
-/** Three sizes of the same program, as pieces a month. A cadence over the
- * matched retention audience, not a forecast and not a cost: a 10% one-off
- * sample to prove incrementality, then the audience on a quarterly cycle, then
- * double that once prospecting comes in. A program already past the point where
- * doubling adds nothing sensible gets two columns, not a third repeating it. */
-export function buildVolume(gap: GapSizing): VolumeColumn[] {
-  const audience = gap.mailable.mid;
-  const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)));
-  // Past 50,000 a month the conversation is an enterprise program with
-  // PostPilot, not a cadence we should be sizing on their behalf.
-  const CAP = 50000;
-  const test = clamp(audience * 0.1, 1500, 5000);
-  const quarterly = Math.round(audience / 3);
-  const recommended = clamp(quarterly, 1500, CAP);
-  const scale = clamp(recommended * 2, recommended, CAP);
-  const out: VolumeColumn[] = [
-    { label: "Test", pieces_per_month: test, cadence: "One-off, 10% sample with holdout" },
-    {
-      label: "Recommended",
-      pieces_per_month: recommended,
-      cadence: quarterly > CAP
-        ? "Capped; the reachable audience takes more than a quarter to cover"
-        : "Reachable audience on a quarterly cycle",
-    },
+function budgetColumn(label: BudgetColumn["label"], pct: number, revenue30d: number, audienceCap: number | null): BudgetColumn {
+  const budget = Math.round(revenue30d * pct);
+  const cap = audienceCap != null && audienceCap > 0 ? audienceCap : Number.POSITIVE_INFINITY;
+  const low = Math.min(cap, Math.round(budget / BUDGET.indicative_cpp.high));
+  const high = Math.min(cap, Math.round(budget / BUDGET.indicative_cpp.low));
+  const pooled = high < BUDGET.floor_pieces_per_cell;
+  const read = pooled
+    ? "Below the 5,000-piece floor for one test cell; pool two or three months into a single drop"
+    : low >= BUDGET.multi_cell_pieces
+      ? "Multiple test cells with clean holdouts"
+      : low >= BUDGET.floor_pieces_per_cell
+        ? "One test cell with a clean holdout"
+        : "One test cell at the top of the range; pool months if results are thin";
+  return { label, pct, budget_per_month: budget, pieces_low: low, pieces_high: high, pooled, read };
+}
+
+/** The opening budget, at both ends of the source's range. Test is the 0.5%
+ * end, for a brand mailing for the first time; Recommended is the 1% end, for a
+ * large suppressed population or proven retention, which is what qualifying
+ * here already implies. Pieces are capped at the reachable audience: a budget
+ * cannot buy more people than the file has. */
+export function buildBudget(revenue30d: number | null, gap: GapSizing | null): BudgetColumn[] | null {
+  if (revenue30d == null || revenue30d <= 0) return null;
+  const cap = gap ? gap.mailable.mid : null;
+  return [
+    budgetColumn("Test", BUDGET.low_pct, revenue30d, cap),
+    budgetColumn("Recommended", BUDGET.high_pct, revenue30d, cap),
   ];
-  if (scale > recommended) out.push({ label: "Scale", pieces_per_month: scale, cadence: "Plus prospecting once retention is proven" });
-  return out;
 }
 
 // --- Proof -------------------------------------------------------------------
@@ -436,10 +470,18 @@ export function evaluateGate(input: DirectMailInputs, gap: GapSizing | null): Ga
   const aovOk = aov == null ? null : aov >= GATE.min_aov;
   if (aov == null) reasons.push("Average order value could not be read from the Placed Order metric");
   else if (!aovOk) reasons.push(`AOV of $${Math.round(aov)} is below the $${GATE.min_aov} floor where a postcard can realistically pay for itself`);
+  const rev = num(input.store_revenue_30d);
+  const budgetOk = rev == null ? null : rev * BUDGET.high_pct >= GATE.min_monthly_budget;
+  if (budgetOk === false) {
+    reasons.push(
+      `Trailing 30-day revenue of $${Math.round(rev!).toLocaleString("en-US")} puts a 1% test budget under $${GATE.min_monthly_budget.toLocaleString("en-US")} a month, where most programs were not incremental`,
+    );
+  }
   return {
-    qualified: marketUs && audienceOk && aovOk === true,
+    // Unknown revenue does not block: the budget is then stated as an assumption.
+    qualified: marketUs && audienceOk && aovOk === true && budgetOk !== false,
     reasons,
-    checks: { market_us: marketUs, audience_ok: audienceOk, aov_ok: aovOk },
+    checks: { market_us: marketUs, audience_ok: audienceOk, aov_ok: aovOk, budget_ok: budgetOk },
   };
 }
 
@@ -468,7 +510,9 @@ export function buildDirectMailPlan(input: DirectMailInputs, now = new Date()): 
         : "Primary market could not be determined.",
   );
   if (!gap?.sitematch) assumptions.push("Site traffic was not sized in this audit, so the never-subscribed audience is not counted.");
-  assumptions.push("Volumes are a cadence over the matched audience, not a forecast.");
+  const rev = num(input.store_revenue_30d);
+  if (rev == null) assumptions.push("Trailing 30-day store revenue was not available, so no opening budget is sized.");
+  else assumptions.push(`Opening budget is 0.5 to 1% of trailing 30-day store revenue ($${Math.round(rev).toLocaleString("en-US")}), capped at the reachable audience.`);
 
   return {
     version: DIRECT_MAIL_SOURCE_VERSION,
@@ -490,7 +534,9 @@ export function buildDirectMailPlan(input: DirectMailInputs, now = new Date()): 
       "Read each test at 30 days, as a median with its spread.",
       "Two or three one-off tests first, then automate the winners, then scale.",
     ],
-    volume: gap ? buildVolume(gap) : null,
+    store_revenue_30d: num(input.store_revenue_30d),
+    budget: buildBudget(num(input.store_revenue_30d), gap),
+    budget_note: BUDGET_NOTE,
     pricing_note: PRICING_NOTE,
     ecd_fees: { setup: num(input.fees.setup), monthly: num(input.fees.monthly) },
     compliance: COMPLIANCE_NOTE,
@@ -523,8 +569,12 @@ export function factsForNarrative(plan: DirectMailPlan, companyName: string): st
   lines.push(`Programs Klaviyo cannot run: ${plan.cannot_run.map((c) => c.program).join("; ")}`);
   lines.push(`Benchmarks (holdout-tested medians with 25th to 75th percentile): retention ${BENCHMARKS.retention.median}x (${BENCHMARKS.retention.p25}x to ${BENCHMARKS.retention.p75}x); cart and checkout ${BENCHMARKS.cart.median}x (${BENCHMARKS.cart.p25}x to ${BENCHMARKS.cart.p75}x); retargeting ${BENCHMARKS.retargeting.median}x (${BENCHMARKS.retargeting.p25}x to ${BENCHMARKS.retargeting.p75}x)`);
   lines.push("Recency: median iROAS peaks 31 to 60 days after the last order and stays above 1.8x past two years");
-  const rec = plan.volume?.find((c) => c.label === "Recommended");
-  if (rec) lines.push(`Recommended cadence: about ${rec.pieces_per_month.toLocaleString("en-US")} postcards a month (${rec.cadence.toLowerCase()})`);
+  if (plan.budget && plan.store_revenue_30d != null) {
+    const [test, rec] = plan.budget;
+    lines.push(
+      `Opening budget (a PostPilot planning heuristic, 0.5 to 1% of trailing 30-day store revenue of $${Math.round(plan.store_revenue_30d).toLocaleString("en-US")}): $${test.budget_per_month.toLocaleString("en-US")} to $${rec.budget_per_month.toLocaleString("en-US")} a month, roughly ${test.pieces_low.toLocaleString("en-US")} to ${rec.pieces_high.toLocaleString("en-US")} postcards; a test cell needs at least 5,000 pieces to read a holdout${rec.pooled ? ", so pool two or three months into one drop" : ""}`,
+    );
+  }
   lines.push("Pricing: none available. PostPilot pricing comes from the partner contact; never state, estimate or imply a price, rate or monthly cost.");
   lines.push(`Compliance (mention in one clause): ${plan.compliance}`);
   return lines.join("\n");

@@ -188,7 +188,7 @@ export interface DirectMailSectionConfig extends BaseSectionConfig {
     narrative?: NarrativeBlockConfig;
     gap?: GenericBlockConfig;
     pairings?: GenericBlockConfig;
-    volume?: GenericBlockConfig;
+    budget?: GenericBlockConfig;
     plan?: GenericBlockConfig;
     proof?: GenericBlockConfig;
   };
