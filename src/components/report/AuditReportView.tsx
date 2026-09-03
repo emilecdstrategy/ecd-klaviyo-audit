@@ -486,6 +486,12 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     () => splitAddOnsByPricing(visibleAddOnItems),
     [visibleAddOnItems],
   );
+  // An add-on priced both ways renders once, in the one-time group, with its
+  // monthly price beside the setup price; the monthly group lists the rest.
+  const monthlyOnlyAddOns = useMemo(
+    () => monthlyAddOns.filter(m => !oneTimeAddOns.some(o => o.item === m.item)),
+    [monthlyAddOns, oneTimeAddOns],
+  );
   const hasPricedAddOns = oneTimeAddOns.length > 0 || monthlyAddOns.length > 0;
   const investmentSummaryItems = useMemo(
     () => addOnCatalogItems.filter(item => !item.is_hidden && addOnHasPricing(item)),
@@ -1454,6 +1460,7 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                           <ReportAddOnCard
                             key={`${slice.item.template_slug}-${slice.item.display_order}-one-time`}
                             slice={slice}
+                            secondarySlice={monthlyAddOns.find(m => m.item === slice.item)}
                             customerAgentDemoUrl={customerAgentDemoUrl}
                             uploadingAddOnKey={uploadingAddOnKey}
                             onImageUpload={handleAddOnImageUpload}
@@ -1468,13 +1475,13 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
                       </div>
                     </div>
                   )}
-                  {monthlyAddOns.length > 0 && (
+                  {monthlyOnlyAddOns.length > 0 && (
                     <div>
                       <h3 className="mb-4 text-sm font-bold uppercase tracking-wide text-gray-500">
                         Monthly Retainers
                       </h3>
                       <div className="grid grid-cols-1 gap-5 md:grid-cols-2">
-                        {monthlyAddOns.map(slice => (
+                        {monthlyOnlyAddOns.map(slice => (
                           <ReportAddOnCard
                             key={`${slice.item.template_slug}-${slice.item.display_order}-monthly`}
                             slice={slice}

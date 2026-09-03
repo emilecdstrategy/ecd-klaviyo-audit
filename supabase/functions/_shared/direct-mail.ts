@@ -9,18 +9,23 @@
 //
 // Everything numeric here is computed in code from the audit's own counts and
 // PostPilot's published medians, never by the model. The model only writes the
-// prose around the numbers, and is told which numbers it may use. Two rules
-// from PostPilot's own source document are enforced here rather than asked
-// for: audiences are sized off the MATCHED count (60 to 70% of emails resolve
-// to an address), and projections use holdout-tested medians with their
-// spread, never case-study results.
+// prose around the numbers, and is told which numbers it may use. Rules from
+// PostPilot's own source document are enforced here rather than asked for:
+// audiences are sized off the MATCHED count (60 to 70% of emails resolve to an
+// address), projections use holdout-tested medians with their spread and never
+// case-study results, and no PostPilot price is estimated or shown. The v2
+// edition withdrew the rate card to a partner-only annex, so pricing is a
+// request to the partner contact, not a number in the report.
 //
 // Source: "PostPilot x Klaviyo: Direct Mail Companion to a Klaviyo Audit",
-// v1.0, 2026-09-01, and the 2026 BFCM Direct Mail Benchmark Report medians.
+// v2.0, 2026-09-02 (supersedes v1.0; expires 2026-12-31, re-confirm after),
+// and the 2026 BFCM Direct Mail Benchmark Report medians.
 
 export const DIRECT_MAIL_SECTION_KEY = "direct_mail";
 export const DIRECT_MAIL_TEMPLATE_SLUG = "ecd_direct_mail_postpilot";
-export const DIRECT_MAIL_SOURCE_VERSION = "postpilot-companion-1.0-2026-09-01";
+export const DIRECT_MAIL_SOURCE_VERSION = "postpilot-companion-2.0-2026-09-02";
+/** The source document's own expiry. After this, re-confirm with PostPilot. */
+export const DIRECT_MAIL_SOURCE_EXPIRES = "2026-12-31";
 
 /** Share of email addresses MailMatch resolves to a mailable home address. */
 export const MAILMATCH_RATE = { low: 0.6, high: 0.7 } as const;
@@ -31,10 +36,10 @@ export const SITEMATCH_RATE = { low: 0.2, high: 0.4 } as const;
 export const GATE = {
   /** Matched retention audience (suppressed + unengaged, times the match midpoint). */
   min_mailable_audience: 3000,
-  /** Share of recipients who must order for a card to pay for itself. */
-  max_break_even_rate: 0.015,
-  /** Programs under about $1k a month were incremental only 30% of the time. */
-  min_monthly_spend: 1000,
+  /** The source's illustrative break-even is $0.74 a piece over AOV at 0.62%. At
+   * a 1.5% ceiling that is an AOV of about $49; below $50 a card struggles to
+   * pay for itself whatever the rate turns out to be. */
+  min_aov: 50,
 } as const;
 
 export type Benchmark = { label: string; p25: number; median: number; p75: number };
@@ -60,29 +65,13 @@ export const RECENCY_CURVE: Array<{ days: string; median: number }> = [
   { days: "730+", median: 1.87 },
 ];
 
-export type PlanTier = "growth" | "pro" | "pro_plus";
+/** The only pricing sentence the source permits. Verbatim. */
+export const PRICING_NOTE =
+  "PostPilot pricing is supplied by your PostPilot partner contact. Request current rates before quoting.";
 
-/** Rate card effective 2026-08-31, printing and postage included. */
-export const PRICING = {
-  plans: {
-    growth: { name: "Growth", monthly: 99 },
-    pro: { name: "Pro", monthly: 499 },
-    pro_plus: { name: "Pro+", monthly: 1000 },
-  },
-  /** 6x9 outperformed 4x6 by 31% incremental revenue per piece, so it is the default. */
-  piece_6x9: { growth: 0.77, pro: 0.69, pro_plus: 0.67 },
-  piece_4x6: { growth: 0.68, pro: 0.64, pro_plus: 0.62 },
-  handwritten: { growth: 2.99, pro: 1.99, pro_plus: 1.89 },
-  /** Per recipient, on top of the piece. */
-  data_mailmatch: 0.05,
-  data_sitematch: 0.05,
-  surcharge_retargeting: 0.05,
-  /** Pieces per month where the next plan becomes cheaper overall (6x9). */
-  crossover_growth_to_pro: 5000,
-  crossover_pro_to_pro_plus: 25000,
-  /** Above this PostPilot quotes enterprise pricing; we do not estimate it. */
-  enterprise_from: 50000,
-} as const;
+/** Required in the audit whenever suppressed or unsubscribed profiles are targeted. */
+export const COMPLIANCE_NOTE =
+  "This is postal mail to a postal address. An email unsubscribe withdraws email consent; it does not restrict postal mail, and the two channels are governed separately. It is not a workaround for email suppression. DMAchoice mail-preference opt-outs, CCPA/CPRA and equivalent state requests, and brand-level do-not-mail suppression are honored.";
 
 export const CAVEAT =
   "Benchmarks reflect holdout-tested PostPilot campaigns across thousands of brands and many verticals. " +
@@ -154,24 +143,10 @@ export type CannotRun = {
   benchmark: Benchmark;
 };
 
-export type InvestmentColumn = {
+export type VolumeColumn = {
   label: "Test" | "Recommended" | "Scale";
   pieces_per_month: number;
-  plan: PlanTier;
-  plan_name: string;
-  format: string;
-  piece_rate: number;
-  data_rate: number;
-  postpilot_subscription: number;
-  postpilot_pieces_cost: number;
-  postpilot_monthly_total: number;
-  /** Piece plus data, the number the break-even rests on. */
-  blended_cpp: number;
-  break_even_rate: number | null;
-  ecd_setup: number | null;
-  ecd_monthly: number | null;
-  /** Over the enterprise line: PostPilot quotes it, we do not. */
-  enterprise_quote: boolean;
+  cadence: string;
 };
 
 export type ProofCase = { brand: string; model: string; result: string; url: string };
@@ -182,13 +157,13 @@ export type GateResult = {
   checks: {
     market_us: boolean;
     audience_ok: boolean;
-    break_even_ok: boolean | null;
-    spend_ok: boolean;
+    aov_ok: boolean | null;
   };
 };
 
 export type DirectMailPlan = {
   version: string;
+  expires: string;
   computed_at: string;
   gate: GateResult;
   gap: GapSizing | null;
@@ -196,14 +171,13 @@ export type DirectMailPlan = {
   market: { country: string | null; source: MarketSource };
   pairings: Pairing[];
   cannot_run: CannotRun[];
-  integration: {
-    connection: string;
-    audience_path: string;
-    shopify_prerequisite: string;
-    event_sync: string;
-  };
-  measurement: { holdout: string; readout: string; phases: string[] };
-  investment: InvestmentColumn[] | null;
+  integration: string[];
+  measurement: string[];
+  /** Cadence over the matched audience, never a cost. */
+  volume: VolumeColumn[] | null;
+  pricing_note: string;
+  ecd_fees: { setup: number | null; monthly: number | null };
+  compliance: string;
   proof: ProofCase[];
   assumptions: string[];
   caveat: string;
@@ -221,18 +195,6 @@ function range(base: number, low: number, high: number): Range {
     high: Math.round(base * high),
     mid: Math.round(base * ((low + high) / 2)),
   };
-}
-
-export function planForVolume(piecesPerMonth: number): PlanTier {
-  if (piecesPerMonth < PRICING.crossover_growth_to_pro) return "growth";
-  if (piecesPerMonth < PRICING.crossover_pro_to_pro_plus) return "pro";
-  return "pro_plus";
-}
-
-/** cost per piece divided by AOV: the share of recipients who must order. */
-export function breakEvenRate(blendedCpp: number, aov: number | null): number | null {
-  if (aov == null || aov <= 0) return null;
-  return blendedCpp / aov;
 }
 
 function isUs(country: string | null): boolean {
@@ -288,61 +250,61 @@ const CANONICAL: Array<Omit<Pairing, "flow_live"> & { matches: string[] }> = [
     n: 1,
     klaviyo_flow: "Browse abandonment",
     matches: ["Browse Abandonment"],
-    companion: "Postcard to known browsers, and to anonymous browsers via SiteMatch",
-    timing: "Parallel to the email flow",
-    audience_source: "MailMatch (known) + SiteMatch (anonymous)",
+    companion: "Postcard to known and anonymous browsers",
+    timing: "Alongside the email flow",
+    audience_source: "MailMatch + SiteMatch",
     benchmark: BENCHMARKS.retargeting,
   },
   {
     n: 2,
     klaviyo_flow: "Welcome series",
     matches: ["Welcome Series"],
-    companion: "Postcard to warm leads who did not convert on email",
-    timing: "Day 7 to 10, after the series ends",
-    audience_source: "MailMatch on the Klaviyo list",
+    companion: "Postcard to leads who did not convert",
+    timing: "Day 7 to 10, after the series",
+    audience_source: "MailMatch on the list",
     benchmark: BENCHMARKS.retargeting,
   },
   {
     n: 3,
     klaviyo_flow: "Abandoned cart / checkout",
     matches: ["Abandoned Cart", "Abandoned Checkout"],
-    companion: "Postcard featuring the exact product, clear CTA to checkout",
-    timing: "Day 3 to 5 after abandon, at the end of the email flow",
+    companion: "Postcard with the exact product and a checkout CTA",
+    timing: "Day 3 to 5, after the emails",
     audience_source: "MailMatch",
     benchmark: BENCHMARKS.cart,
   },
   {
     n: 4,
-    klaviyo_flow: "Post-purchase / second purchase",
+    klaviyo_flow: "Post-purchase",
     matches: ["Post-Purchase"],
-    companion: "Postcard to compress time to second order; handwritten for high AOV",
-    timing: "31 to 60 days after purchase, the peak of the recency curve",
+    companion: "Second-order postcard; handwritten for high AOV",
+    timing: "31 to 60 days after purchase",
     audience_source: "Shopify or Klaviyo segment",
     benchmark: BENCHMARKS.retention,
   },
   {
     n: 5,
-    klaviyo_flow: "Winback at repurchase lapse",
+    klaviyo_flow: "Winback",
     matches: ["Winback / Re-engagement"],
-    companion: "Postcard when the customer passes their expected repurchase window",
-    timing: "Triggered at lapse, about 1.5x the median repeat gap",
-    audience_source: "Klaviyo segment or PostPilot automation",
+    companion: "Postcard at the expected repurchase lapse",
+    timing: "At lapse, about 1.5x the repeat gap",
+    audience_source: "Klaviyo segment",
     benchmark: BENCHMARKS.retention,
   },
   {
     n: 7,
     klaviyo_flow: "VIP appreciation",
     matches: ["__vip__"],
-    companion: "Handwritten card at anniversary, Nth-purchase milestone, birthday",
-    timing: "Event-based",
-    audience_source: "Top 10 to 20% by LTV or RFM",
+    companion: "Handwritten card at milestones",
+    timing: "Anniversary, Nth order, birthday",
+    audience_source: "Top 10 to 20% by LTV",
     benchmark: BENCHMARKS.retention,
   },
 ];
 
 /** One row per canonical pairing the brand can actually run: the email flow
  * exists (live or not), or for VIP the segments exist. Pairing 6, the winback
- * Klaviyo cannot run, is always on and lives in cannotRun(). */
+ * Klaviyo cannot run, is always on and lives in buildCannotRun(). */
 export function buildPairings(flows: CoreFlowState[], hasVipSegments: boolean | null): Pairing[] {
   const byName = new Map(flows.map((f) => [f.flow_name, f]));
   const out: Pairing[] = [];
@@ -365,15 +327,15 @@ export function buildCannotRun(gap: GapSizing | null): CannotRun[] {
   const out: CannotRun[] = [];
   out.push({
     program: "Unreachable winback",
-    audience: "Suppressed, unsubscribed and unengaged profiles with order history",
+    audience: "Suppressed, unsubscribed and unengaged customers with order history",
     audience_count: gap ? gap.mailable : null,
-    why: "No email consent, or excluded by deliverability hygiene",
+    why: "No email consent",
     benchmark: BENCHMARKS.retention,
   });
   if (gap?.sitematch) {
     out.push({
       program: "Anonymous visitor retargeting",
-      audience: "Site visitors who never subscribed, resolved by SiteMatch",
+      audience: "Site visitors who never gave an email, via SiteMatch",
       audience_count: gap.sitematch,
       why: "Never entered Klaviyo",
       benchmark: BENCHMARKS.retargeting,
@@ -382,57 +344,35 @@ export function buildCannotRun(gap: GapSizing | null): CannotRun[] {
   return out;
 }
 
-// --- Investment --------------------------------------------------------------
+// --- Volume ------------------------------------------------------------------
 
-function column(
-  label: InvestmentColumn["label"],
-  pieces: number,
-  aov: number | null,
-  fees: DirectMailInputs["fees"],
-  dataRate: number,
-): InvestmentColumn {
-  const plan = planForVolume(pieces);
-  const pieceRate = PRICING.piece_6x9[plan];
-  const blended = pieceRate + dataRate;
-  const piecesCost = Math.round(pieces * blended);
-  const subscription = PRICING.plans[plan].monthly;
-  return {
-    label,
-    pieces_per_month: pieces,
-    plan,
-    plan_name: PRICING.plans[plan].name,
-    format: "6x9 postcard",
-    piece_rate: pieceRate,
-    data_rate: dataRate,
-    postpilot_subscription: subscription,
-    postpilot_pieces_cost: piecesCost,
-    postpilot_monthly_total: piecesCost + subscription,
-    blended_cpp: Math.round(blended * 100) / 100,
-    break_even_rate: breakEvenRate(blended, aov),
-    ecd_setup: label === "Test" ? num(fees.setup) : null,
-    ecd_monthly: num(fees.monthly),
-    enterprise_quote: pieces >= PRICING.enterprise_from,
-  };
-}
-
-/** Three sizes of the same program. Volumes are a cadence over the matched
- * retention audience, not a forecast: a 10% one-off sample to prove
- * incrementality, then the audience mailed on a quarterly cycle, then double
- * that once prospecting comes in. All three are stated as assumptions. */
-export function buildInvestment(gap: GapSizing, aov: number | null, fees: DirectMailInputs["fees"]): InvestmentColumn[] {
+/** Three sizes of the same program, as pieces a month. A cadence over the
+ * matched retention audience, not a forecast and not a cost: a 10% one-off
+ * sample to prove incrementality, then the audience on a quarterly cycle, then
+ * double that once prospecting comes in. A program already past the point where
+ * doubling adds nothing sensible gets two columns, not a third repeating it. */
+export function buildVolume(gap: GapSizing): VolumeColumn[] {
   const audience = gap.mailable.mid;
   const clamp = (v: number, lo: number, hi: number) => Math.max(lo, Math.min(hi, Math.round(v)));
+  // Past 50,000 a month the conversation is an enterprise program with
+  // PostPilot, not a cadence we should be sizing on their behalf.
+  const CAP = 50000;
   const test = clamp(audience * 0.1, 1500, 5000);
-  const recommended = clamp(audience / 3, 1500, PRICING.enterprise_from);
-  const scale = clamp(recommended * 2, recommended, PRICING.enterprise_from);
-  const columns = [
-    column("Test", test, aov, fees, PRICING.data_mailmatch),
-    column("Recommended", recommended, aov, fees, PRICING.data_mailmatch),
+  const quarterly = Math.round(audience / 3);
+  const recommended = clamp(quarterly, 1500, CAP);
+  const scale = clamp(recommended * 2, recommended, CAP);
+  const out: VolumeColumn[] = [
+    { label: "Test", pieces_per_month: test, cadence: "One-off, 10% sample with holdout" },
+    {
+      label: "Recommended",
+      pieces_per_month: recommended,
+      cadence: quarterly > CAP
+        ? "Capped; the reachable audience takes more than a quarter to cover"
+        : "Reachable audience on a quarterly cycle",
+    },
   ];
-  // A program already at the enterprise line has nowhere to scale to on the
-  // rate card; a third column repeating the second would only look like one.
-  if (scale > recommended) columns.push(column("Scale", scale, aov, fees, PRICING.data_mailmatch));
-  return columns;
+  if (scale > recommended) out.push({ label: "Scale", pieces_per_month: scale, cadence: "Plus prospecting once retention is proven" });
+  return out;
 }
 
 // --- Proof -------------------------------------------------------------------
@@ -440,26 +380,26 @@ export function buildInvestment(gap: GapSizing, aov: number | null, fees: Direct
 const CASES: Record<string, ProofCase> = {
   awe: {
     brand: "Awe Inspired",
-    model: "jewelry, automated retargeting and retention",
-    result: "14.02x iROAS across all campaigns with holdouts; churned membership winback 4.42x iROAS, running evergreen",
+    model: "jewelry, retargeting and retention",
+    result: "14.02x iROAS across all holdout campaigns",
     url: "https://postpilot.com/case-studies/awe-inspired",
   },
   axe: {
     brand: "Axe & Sledge",
-    model: "supplements, every Klaviyo flow given a mail node at the end",
-    result: "Automated welcome 6.01x ROAS, abandoned cart 4.66x ROAS, evergreen winbacks 7.43x+ ROAS",
+    model: "supplements, a mail node on every flow",
+    result: "Welcome 6.01x, cart 4.66x, winbacks 7.43x+ ROAS",
     url: "https://postpilot.com/case-studies/axe-sledge",
   },
   laird: {
     brand: "Laird Superfood",
-    model: "subscription food, anti-churn and unsubscribed winback",
-    result: "Unsubscribed customers with 3+ orders 10x ROAS; anti-churn by cancellation reason 14x ROAS",
+    model: "subscription food, anti-churn",
+    result: "Unsubscribed 3+ order customers 10x ROAS",
     url: "https://postpilot.com/case-studies/laird-superfood",
   },
   madein: {
     brand: "Made In",
-    model: "cookware, considered high-AOV purchase",
-    result: "Automated abandoned cart at 10% off $100: 8.35x iROAS; winbacks up to 10.29x iROAS",
+    model: "cookware, high-AOV purchase",
+    result: "Abandoned cart at 10% off: 8.35x iROAS",
     url: "https://postpilot.com/case-studies/made-in",
   },
 };
@@ -475,7 +415,7 @@ export function pickProof(input: { sells_subscriptions: boolean; aov: number | n
 
 // --- Gate --------------------------------------------------------------------
 
-export function evaluateGate(input: DirectMailInputs, gap: GapSizing | null, investment: InvestmentColumn[] | null): GateResult {
+export function evaluateGate(input: DirectMailInputs, gap: GapSizing | null): GateResult {
   const reasons: string[] = [];
   const marketUs = isUs(input.market.country);
   if (!marketUs) {
@@ -492,25 +432,14 @@ export function evaluateGate(input: DirectMailInputs, gap: GapSizing | null, inv
       `Matched retention audience is about ${gap.mailable.mid.toLocaleString("en-US")}, below the ${GATE.min_mailable_audience.toLocaleString("en-US")} needed for a program that pays for itself`,
     );
   }
-  const recommended = investment?.find((c) => c.label === "Recommended") ?? null;
-  const be = recommended?.break_even_rate ?? null;
-  const breakEvenOk = be == null ? null : be <= GATE.max_break_even_rate;
-  if (input.aov == null) reasons.push("Average order value could not be read from the Placed Order metric");
-  else if (breakEvenOk === false && recommended) {
-    reasons.push(
-      `Break-even needs ${(be! * 100).toFixed(2)}% of recipients to order at a $${Math.round(input.aov)} AOV, above the ${(GATE.max_break_even_rate * 100).toFixed(1)}% ceiling`,
-    );
-  }
-  const spendOk = Boolean(recommended && recommended.postpilot_monthly_total >= GATE.min_monthly_spend);
-  if (recommended && !spendOk) {
-    reasons.push(
-      `The recommended program is about $${recommended.postpilot_monthly_total.toLocaleString("en-US")} a month; under $1,000 only about 30% of programs proved incremental`,
-    );
-  }
+  const aov = num(input.aov);
+  const aovOk = aov == null ? null : aov >= GATE.min_aov;
+  if (aov == null) reasons.push("Average order value could not be read from the Placed Order metric");
+  else if (!aovOk) reasons.push(`AOV of $${Math.round(aov)} is below the $${GATE.min_aov} floor where a postcard can realistically pay for itself`);
   return {
-    qualified: marketUs && audienceOk && breakEvenOk === true && spendOk,
+    qualified: marketUs && audienceOk && aovOk === true,
     reasons,
-    checks: { market_us: marketUs, audience_ok: audienceOk, break_even_ok: breakEvenOk, spend_ok: spendOk },
+    checks: { market_us: marketUs, audience_ok: audienceOk, aov_ok: aovOk },
   };
 }
 
@@ -519,37 +448,31 @@ export function evaluateGate(input: DirectMailInputs, gap: GapSizing | null, inv
 export function buildDirectMailPlan(input: DirectMailInputs, now = new Date()): DirectMailPlan {
   const gap = sizeGap(input);
   const aov = num(input.aov);
-  const investment = gap ? buildInvestment(gap, aov, input.fees) : null;
-  const gate = evaluateGate(input, gap, investment);
+  const gate = evaluateGate(input, gap);
 
   const assumptions: string[] = [];
   assumptions.push(
-    `Mailable audience is the suppressed and unengaged count times a ${Math.round(MAILMATCH_RATE.low * 100)} to ${Math.round(MAILMATCH_RATE.high * 100)}% MailMatch rate; tables use the midpoint.`,
+    `Mailable audience is the suppressed and unengaged count times a ${Math.round(MAILMATCH_RATE.low * 100)} to ${Math.round(MAILMATCH_RATE.high * 100)}% MailMatch rate.`,
   );
-  assumptions.push(
-    "The suppressed count includes profiles with no order history. PostPilot's segment narrows to 1+ orders, so the real retention audience is smaller than the matched figure.",
-  );
-  assumptions.push("Unengaged means email subscribed with no activity in the last 90 days, from the profile scan.");
+  assumptions.push("The suppressed count includes profiles with no orders; PostPilot's segment narrows to 1+ orders, so the real audience is smaller.");
+  assumptions.push("Unengaged means email subscribed with no activity in the last 90 days.");
   if (gap?.counts_partial) assumptions.push("The profile scan stopped early, so profile counts are lower bounds.");
   if (aov != null) {
-    assumptions.push(
-      `AOV of $${Math.round(aov)} is Placed Order revenue divided by orders over the last ${input.aov_window_days} days${input.aov_orders ? ` (${input.aov_orders.toLocaleString("en-US")} orders)` : ""}.`,
-    );
+    assumptions.push(`AOV of $${Math.round(aov)} is Placed Order revenue divided by orders over the last ${input.aov_window_days} days.`);
   }
   assumptions.push(
     input.market.source === "shopify"
       ? "Primary market read from the connected Shopify store."
       : input.market.source === "klaviyo_account"
-        ? "Primary market inferred from the Klaviyo account's USD currency and US timezone; the store is not connected."
+        ? "Primary market inferred from the Klaviyo account's USD currency and US timezone."
         : "Primary market could not be determined.",
   );
-  if (!gap?.sitematch) assumptions.push("Site traffic is not available without a Shopify connection, so the never-subscribed audience is not sized.");
-  assumptions.push(
-    "Volumes are a cadence, not a forecast: a 10% sample to test, the matched audience on a quarterly cycle as the program, and double that at scale. Cost per piece is the 6x9 rate for the plan that volume implies plus $0.05 MailMatch data; PostPilot's subscription is shown separately.",
-  );
+  if (!gap?.sitematch) assumptions.push("Site traffic was not sized in this audit, so the never-subscribed audience is not counted.");
+  assumptions.push("Volumes are a cadence over the matched audience, not a forecast.");
 
   return {
     version: DIRECT_MAIL_SOURCE_VERSION,
+    expires: DIRECT_MAIL_SOURCE_EXPIRES,
     computed_at: now.toISOString(),
     gate,
     gap,
@@ -557,25 +480,20 @@ export function buildDirectMailPlan(input: DirectMailInputs, now = new Date()): 
     market: input.market,
     pairings: buildPairings(input.core_flows, input.has_vip_segments),
     cannot_run: buildCannotRun(gap),
-    integration: {
-      connection: "OAuth to Klaviyo with segments:write, metrics:read and events:write. Legacy API-key connections should be upgraded; they do not get the fast sync engine.",
-      audience_path:
-        "Segment sync: connect the Klaviyo segments to PostPilot and they refresh daily. Use the in-app Segment Builder when a segment needs an address-resolvability condition.",
-      shopify_prerequisite:
-        "PostPilot needs an active Shopify store connection before the Klaviyo integration can be configured. A dummy store satisfies it; an External Shop connection does not.",
-      event_sync:
-        "Event Sync (beta, opt-in per brand) writes a Received PostPilot Mail event to the Klaviyo profile at print time, with no revenue data. Useful for suppressing an email promo the week a card lands; not on by default.",
-    },
-    measurement: {
-      holdout: "Withhold 10 to 20% of every audience as a holdout. PostPilot measures the delta as iROAS and incremental revenue per recipient.",
-      readout: "Read each test at 30 days. Report medians with the spread, never a single number, and never place a plain ROAS next to an iROAS.",
-      phases: [
-        "Phase 1: two or three one-off tests with holdouts (unreachable winback first, then the strongest flow pairing).",
-        "Phase 2: automate the winners as always-on programs, mailed at the end of each email sequence.",
-        "Phase 3: scale volume and add prospecting (SiteMatch, AcquisitionAI) once retention is proven.",
-      ],
-    },
-    investment,
+    integration: [
+      "Connect Klaviyo to PostPilot over OAuth and sync the segments; they refresh daily.",
+      "A Shopify store connection is required first; a dummy store is fine.",
+      "Event Sync (beta, opt-in) can write a Received Mail event back to Klaviyo, with no revenue data.",
+    ],
+    measurement: [
+      "Hold out 10 to 20% of every audience; PostPilot reads the delta as iROAS.",
+      "Read each test at 30 days, as a median with its spread.",
+      "Two or three one-off tests first, then automate the winners, then scale.",
+    ],
+    volume: gap ? buildVolume(gap) : null,
+    pricing_note: PRICING_NOTE,
+    ecd_fees: { setup: num(input.fees.setup), monthly: num(input.fees.monthly) },
+    compliance: COMPLIANCE_NOTE,
     proof: pickProof({ sells_subscriptions: input.sells_subscriptions, aov }),
     assumptions,
     caveat: CAVEAT,
@@ -583,41 +501,31 @@ export function buildDirectMailPlan(input: DirectMailInputs, now = new Date()): 
 }
 
 /** The facts the model is allowed to write from, as plain text. Anything not
- * in here is not in the audit, and the prompt says so. */
+ * in here is not in the audit, and the prompt says so. No pricing, ever. */
 export function factsForNarrative(plan: DirectMailPlan, companyName: string): string {
   const g = plan.gap;
   const lines: string[] = [];
   lines.push(`Brand: ${companyName}`);
   if (g) {
     lines.push(`Total Klaviyo profiles: ${g.total_profiles.toLocaleString("en-US")}`);
-    lines.push(`Suppressed or unsubscribed: ${g.suppressed.toLocaleString("en-US")} (${g.suppressed_pct}% of profiles), permanently unreachable by email`);
-    lines.push(`Unengaged (email subscribed, no activity in 90 days): ${g.unengaged.toLocaleString("en-US")} (${g.unengaged_pct}%)`);
+    lines.push(`Suppressed or unsubscribed: ${g.suppressed.toLocaleString("en-US")} (${g.suppressed_pct}%), unreachable by email`);
+    lines.push(`Unengaged (subscribed, no activity in 90 days): ${g.unengaged.toLocaleString("en-US")} (${g.unengaged_pct}%)`);
     lines.push(`Matched mailable audience after MailMatch (60 to 70%): ${g.mailable.low.toLocaleString("en-US")} to ${g.mailable.high.toLocaleString("en-US")}`);
     if (g.sitematch && g.monthly_sessions) {
       lines.push(`Monthly site sessions: ${g.monthly_sessions.toLocaleString("en-US")}; SiteMatch could resolve ${g.sitematch.low.toLocaleString("en-US")} to ${g.sitematch.high.toLocaleString("en-US")} anonymous visitors a month`);
     } else {
-      lines.push("Site traffic: not available (no Shopify connection), so the never-subscribed audience is not sized");
+      lines.push("Site traffic was not sized in this audit");
     }
     if (g.counts_partial) lines.push("Profile counts are lower bounds; the scan stopped early");
   }
   if (plan.aov.value != null) lines.push(`AOV: $${Math.round(plan.aov.value)} over ${plan.aov.window_days} days`);
-  lines.push(`Flow pairings available (the brand runs the email flow): ${plan.pairings.map((p) => `${p.klaviyo_flow}${p.flow_live ? "" : " (flow not live)"}`).join("; ") || "none"}`);
-  lines.push(`Programs Klaviyo cannot run at all: ${plan.cannot_run.map((c) => c.program).join("; ")}`);
-  lines.push(`Benchmarks (holdout-tested medians, with 25th to 75th percentile): retention iROAS ${BENCHMARKS.retention.median}x (${BENCHMARKS.retention.p25}x to ${BENCHMARKS.retention.p75}x); cart and checkout ${BENCHMARKS.cart.median}x (${BENCHMARKS.cart.p25}x to ${BENCHMARKS.cart.p75}x); retargeting ${BENCHMARKS.retargeting.median}x (${BENCHMARKS.retargeting.p25}x to ${BENCHMARKS.retargeting.p75}x)`);
-  lines.push("Recency curve: median iROAS peaks at 31 to 60 days since last order (7.65x and 7.09x) and stays above 1.8x past two years");
-  const rec = plan.investment?.find((c) => c.label === "Recommended");
-  if (rec && rec.enterprise_quote) {
-    lines.push(
-      `Recommended program: the matched audience is large enough that a quarterly cycle runs past ${PRICING.enterprise_from.toLocaleString("en-US")} pieces a month, where PostPilot quotes enterprise pricing rather than the rate card. Do not state a monthly dollar figure. Blended rate-card cost per piece for reference: $${rec.blended_cpp.toFixed(2)}${rec.break_even_rate != null ? `; break-even ${(rec.break_even_rate * 100).toFixed(2)}% of recipients must order` : ""}`,
-    );
-  } else if (rec) {
-    lines.push(
-      `Recommended program: about ${rec.pieces_per_month.toLocaleString("en-US")} 6x9 postcards a month on the ${rec.plan_name} plan, roughly $${rec.postpilot_monthly_total.toLocaleString("en-US")} a month to PostPilot including subscription; blended cost per piece $${rec.blended_cpp.toFixed(2)}${rec.break_even_rate != null ? `; break-even ${(rec.break_even_rate * 100).toFixed(2)}% of recipients must order` : ""}`,
-    );
-  }
-  lines.push(`Integration: ${plan.integration.audience_path} ${plan.integration.shopify_prerequisite}`);
-  lines.push(`Event Sync: ${plan.integration.event_sync}`);
-  lines.push(`Measurement: ${plan.measurement.holdout} ${plan.measurement.readout}`);
-  lines.push(`Assumptions: ${plan.assumptions.join(" ")}`);
+  lines.push(`Flow pairings available: ${plan.pairings.map((p) => `${p.klaviyo_flow}${p.flow_live ? "" : " (flow not live)"}`).join("; ") || "none"}`);
+  lines.push(`Programs Klaviyo cannot run: ${plan.cannot_run.map((c) => c.program).join("; ")}`);
+  lines.push(`Benchmarks (holdout-tested medians with 25th to 75th percentile): retention ${BENCHMARKS.retention.median}x (${BENCHMARKS.retention.p25}x to ${BENCHMARKS.retention.p75}x); cart and checkout ${BENCHMARKS.cart.median}x (${BENCHMARKS.cart.p25}x to ${BENCHMARKS.cart.p75}x); retargeting ${BENCHMARKS.retargeting.median}x (${BENCHMARKS.retargeting.p25}x to ${BENCHMARKS.retargeting.p75}x)`);
+  lines.push("Recency: median iROAS peaks 31 to 60 days after the last order and stays above 1.8x past two years");
+  const rec = plan.volume?.find((c) => c.label === "Recommended");
+  if (rec) lines.push(`Recommended cadence: about ${rec.pieces_per_month.toLocaleString("en-US")} postcards a month (${rec.cadence.toLowerCase()})`);
+  lines.push("Pricing: none available. PostPilot pricing comes from the partner contact; never state, estimate or imply a price, rate or monthly cost.");
+  lines.push(`Compliance (mention in one clause): ${plan.compliance}`);
   return lines.join("\n");
 }

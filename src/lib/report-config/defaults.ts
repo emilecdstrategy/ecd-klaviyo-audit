@@ -248,23 +248,11 @@ export const DEFAULT_DIRECT_MAIL_SECTION: DirectMailSectionConfig = {
       currentTitle: 'What email cannot reach',
       optimizedTitle: 'Direct mail as the last step of every flow',
     },
-    gap: {
-      hidden: false,
-      title: 'The gap in this account',
-      subtitle: 'Profiles the email program is not allowed to touch, and what a postcard can still reach.',
-    },
-    pairings: {
-      hidden: false,
-      title: 'Flow pairings',
-      subtitle: 'A postcard at the end of each flow you already run, plus the programs Klaviyo cannot run at all.',
-    },
-    investment: {
-      hidden: false,
-      title: 'Investment',
-      subtitle: 'PostPilot rate card, effective 2026-08-31. ECD fees are separate line items in the proposal.',
-    },
-    plan: { hidden: false, title: 'Integration and measurement' },
-    proof: { hidden: false, title: 'Proof', subtitle: 'Named, brand-specific published results. Not benchmarks.' },
+    gap: { hidden: false, title: 'The gap', subtitle: 'What email cannot reach, and what a postcard can.' },
+    pairings: { hidden: false, title: 'Flow pairings', subtitle: 'A postcard at the end of each flow you already run.' },
+    volume: { hidden: false, title: 'Volume', subtitle: 'A cadence over the reachable audience, not a forecast.' },
+    plan: { hidden: false, title: 'How it runs' },
+    proof: { hidden: false, title: 'Proof', subtitle: 'Published, brand-specific results. Not benchmarks.' },
   },
 };
 

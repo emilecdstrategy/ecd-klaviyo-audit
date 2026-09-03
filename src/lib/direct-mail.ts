@@ -5,7 +5,9 @@
 // (supabase/functions/_shared/direct-mail.ts owns the shape and the maths).
 // The report only reads it, so this file is the read-side mirror plus a
 // tolerant parser: an older or partial row must render as "nothing here", not
-// crash the report.
+// crash the report. There is deliberately no pricing anywhere in this shape:
+// PostPilot's v2 source withdrew its rate card, and the only permitted pricing
+// text is the `pricing_note` sentence.
 
 export type DirectMailRange = { low: number; high: number; mid: number };
 
@@ -42,22 +44,10 @@ export type DirectMailCannotRun = {
   benchmark: DirectMailBenchmark;
 };
 
-export type DirectMailInvestmentColumn = {
+export type DirectMailVolume = {
   label: 'Test' | 'Recommended' | 'Scale';
   pieces_per_month: number;
-  plan: 'growth' | 'pro' | 'pro_plus';
-  plan_name: string;
-  format: string;
-  piece_rate: number;
-  data_rate: number;
-  postpilot_subscription: number;
-  postpilot_pieces_cost: number;
-  postpilot_monthly_total: number;
-  blended_cpp: number;
-  break_even_rate: number | null;
-  ecd_setup: number | null;
-  ecd_monthly: number | null;
-  enterprise_quote: boolean;
+  cadence: string;
 };
 
 export type DirectMailProof = { brand: string; model: string; result: string; url: string };
@@ -65,26 +55,23 @@ export type DirectMailProof = { brand: string; model: string; result: string; ur
 export type DirectMailGate = {
   qualified: boolean;
   reasons: string[];
-  checks: {
-    market_us: boolean;
-    audience_ok: boolean;
-    break_even_ok: boolean | null;
-    spend_ok: boolean;
-  };
 };
 
 export type DirectMailPlan = {
   version: string;
+  expires: string | null;
   computed_at: string;
   gate: DirectMailGate;
   gap: DirectMailGap | null;
   aov: { value: number | null; orders: number | null; window_days: number };
-  market: { country: string | null; source: 'shopify' | 'klaviyo_account' | 'unknown' };
   pairings: DirectMailPairing[];
   cannot_run: DirectMailCannotRun[];
-  integration: { connection: string; audience_path: string; shopify_prerequisite: string; event_sync: string };
-  measurement: { holdout: string; readout: string; phases: string[] };
-  investment: DirectMailInvestmentColumn[] | null;
+  integration: string[];
+  measurement: string[];
+  volume: DirectMailVolume[] | null;
+  pricing_note: string;
+  ecd_fees: { setup: number | null; monthly: number | null };
+  compliance: string;
   proof: DirectMailProof[];
   assumptions: string[];
   caveat: string;
@@ -94,7 +81,11 @@ function isObject(v: unknown): v is Record<string, unknown> {
   return Boolean(v) && typeof v === 'object' && !Array.isArray(v);
 }
 
-/** Read the plan off a section's details, or null when there is no plan yet. */
+const strings = (v: unknown): string[] => (Array.isArray(v) ? v.map(x => String(x)) : []);
+
+/** Read the plan off a section's details, or null when there is no plan yet.
+ * Rows written by the v1 function (which carried an `investment` table with
+ * prices) are treated as absent: they must be regenerated, not rendered. */
 export function parseDirectMailPlan(sectionDetails: unknown): DirectMailPlan | null {
   let details: unknown = sectionDetails;
   if (typeof details === 'string') {
@@ -109,19 +100,12 @@ export function parseDirectMailPlan(sectionDetails: unknown): DirectMailPlan | n
   if (!isObject(plan)) return null;
   const gate = plan.gate;
   if (!isObject(gate) || typeof gate.qualified !== 'boolean') return null;
+  if (!String(plan.version ?? '').includes('2.0')) return null;
   return {
     version: String(plan.version ?? ''),
+    expires: plan.expires == null ? null : String(plan.expires),
     computed_at: String(plan.computed_at ?? ''),
-    gate: {
-      qualified: gate.qualified,
-      reasons: Array.isArray(gate.reasons) ? gate.reasons.map(r => String(r)) : [],
-      checks: {
-        market_us: Boolean(isObject(gate.checks) && gate.checks.market_us),
-        audience_ok: Boolean(isObject(gate.checks) && gate.checks.audience_ok),
-        break_even_ok: isObject(gate.checks) && typeof gate.checks.break_even_ok === 'boolean' ? gate.checks.break_even_ok : null,
-        spend_ok: Boolean(isObject(gate.checks) && gate.checks.spend_ok),
-      },
-    },
+    gate: { qualified: gate.qualified, reasons: strings(gate.reasons) },
     gap: isObject(plan.gap) ? (plan.gap as unknown as DirectMailGap) : null,
     aov: isObject(plan.aov)
       ? {
@@ -130,35 +114,25 @@ export function parseDirectMailPlan(sectionDetails: unknown): DirectMailPlan | n
           window_days: Number(plan.aov.window_days ?? 90),
         }
       : { value: null, orders: null, window_days: 90 },
-    market: isObject(plan.market)
-      ? {
-          country: plan.market.country == null ? null : String(plan.market.country),
-          source: (plan.market.source as DirectMailPlan['market']['source']) ?? 'unknown',
-        }
-      : { country: null, source: 'unknown' },
     pairings: Array.isArray(plan.pairings) ? (plan.pairings as DirectMailPairing[]) : [],
     cannot_run: Array.isArray(plan.cannot_run) ? (plan.cannot_run as DirectMailCannotRun[]) : [],
-    integration: isObject(plan.integration)
-      ? (plan.integration as unknown as DirectMailPlan['integration'])
-      : { connection: '', audience_path: '', shopify_prerequisite: '', event_sync: '' },
-    measurement: isObject(plan.measurement)
+    integration: strings(plan.integration),
+    measurement: strings(plan.measurement),
+    volume: Array.isArray(plan.volume) ? (plan.volume as DirectMailVolume[]) : null,
+    pricing_note: String(plan.pricing_note ?? ''),
+    ecd_fees: isObject(plan.ecd_fees)
       ? {
-          holdout: String(plan.measurement.holdout ?? ''),
-          readout: String(plan.measurement.readout ?? ''),
-          phases: Array.isArray(plan.measurement.phases) ? plan.measurement.phases.map(p => String(p)) : [],
+          setup: typeof plan.ecd_fees.setup === 'number' ? plan.ecd_fees.setup : null,
+          monthly: typeof plan.ecd_fees.monthly === 'number' ? plan.ecd_fees.monthly : null,
         }
-      : { holdout: '', readout: '', phases: [] },
-    investment: Array.isArray(plan.investment) ? (plan.investment as DirectMailInvestmentColumn[]) : null,
+      : { setup: null, monthly: null },
+    compliance: String(plan.compliance ?? ''),
     proof: Array.isArray(plan.proof) ? (plan.proof as DirectMailProof[]) : [],
-    assumptions: Array.isArray(plan.assumptions) ? plan.assumptions.map(a => String(a)) : [],
+    assumptions: strings(plan.assumptions),
     caveat: String(plan.caveat ?? ''),
   };
 }
 
-export function formatPct(rate: number, digits = 2): string {
-  return `${(rate * 100).toFixed(digits)}%`;
-}
-
 export function formatBenchmark(b: DirectMailBenchmark): string {
-  return `${b.median}x median (${b.p25}x to ${b.p75}x)`;
+  return `${b.median}x (${b.p25}x to ${b.p75}x)`;
 }

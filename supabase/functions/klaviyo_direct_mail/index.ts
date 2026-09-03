@@ -224,42 +224,57 @@ type Narrative = {
   key_findings: string[];
 };
 
+// Word caps, enforced in code after the model answers. The first version of
+// this section came back at four paragraphs a side and five long findings, and
+// the strategist's verdict was "very hard to digest". The section's tables carry
+// the detail; the prose only has to say what the tables mean.
+const CAPS = { notes: 60, findings: 80, summary: 30, key_finding: 20 } as const;
+
 const NARRATIVE_TOOL: LlmTool = {
   name: "record_direct_mail_section",
-  description: "Write the narrative of the direct mail section of a Klaviyo audit from the facts supplied.",
+  description: "Write the short narrative of the direct mail section of a Klaviyo audit from the facts supplied.",
   input_schema: {
     type: "object",
     required: ["current_state_title", "optimized_state_title", "current_state_notes", "optimized_notes", "ai_findings", "summary_text", "key_findings"],
     properties: {
-      current_state_title: { type: "string", description: "Short heading for what the email program cannot reach today. 3 to 8 words." },
-      optimized_state_title: { type: "string", description: "Short heading for the direct mail companion. 3 to 8 words." },
-      current_state_notes: { type: "string", description: "One or two short paragraphs. The gap in this account, in the client's own numbers." },
-      optimized_notes: { type: "string", description: "One or two short paragraphs. What the program looks like: pairings at the end of existing flows, the unreachable winback, holdouts." },
-      ai_findings: { type: "string", description: "Two or three short paragraphs for the strategist: the case, the integration path, the measurement plan." },
-      summary_text: { type: "string", description: "Two sentences a client reads first." },
+      current_state_title: { type: "string", description: "Heading for what email cannot reach today. 3 to 6 words." },
+      optimized_state_title: { type: "string", description: "Heading for the direct mail companion. 3 to 6 words." },
+      current_state_notes: { type: "string", description: `ONE paragraph, at most ${CAPS.notes} words. The gap, in the client's own numbers.` },
+      optimized_notes: { type: "string", description: `ONE paragraph, at most ${CAPS.notes} words. Postcards at the end of the flows they already run, plus the winback email cannot run, measured with holdouts.` },
+      ai_findings: { type: "string", description: `ONE paragraph for the strategist, at most ${CAPS.findings} words: why this account, and the first two tests to run.` },
+      summary_text: { type: "string", description: `One sentence, at most ${CAPS.summary} words.` },
       key_findings: {
         type: "array",
         minItems: 3,
-        maxItems: 5,
+        maxItems: 3,
         items: { type: "string" },
-        description: "Each one a specific point about THIS account, with a number from the facts where one exists.",
+        description: `Exactly 3. Each at most ${CAPS.key_finding} words, one number from the facts in each.`,
       },
     },
   },
 };
 
-const SYSTEM = `You write one section of a Klaviyo lifecycle audit for ECD Digital Strategy: the direct mail companion, built on PostPilot.
+const SYSTEM = `You write one short section of a Klaviyo lifecycle audit for ECD Digital Strategy: the direct mail companion, built on PostPilot.
 
 Hard rules, none of them optional:
 - Use only the facts you are given. Every number in your text must appear in the facts. If a fact is missing, do not fill it in.
-- Direct mail is a companion to Klaviyo, never a replacement, and it does not fix deliverability or list health. Never suggest otherwise.
-- Quote benchmarks as medians with their spread, exactly as given. Never quote a case-study result, and never present a benchmark as a forecast for this brand.
-- Say "iROAS" only for holdout-measured figures; never convert it to revenue for this brand.
-- Event Sync is beta and opt-in. MailMatch resolves 60 to 70% of emails. Size every audience off the matched count.
-- Where the facts list an assumption that affects a number you use, say it in one clause.
-- Write for the client, not for the analyst. Never tell the reader how tables "should be sized" or restate methodology as instructions; state the number and, if needed, the one-clause assumption behind it. Do not mention our tooling or connections (say "site traffic was not sized in this audit", never "without a Shopify connection").
-- Plain business English, second person to the client, no hype, no filler. Never use an em dash or en dash; use commas or full stops.
-- The core framing: the Klaviyo program is doing its job; this section is about the profiles it will never be allowed to touch.`;
+- Never state, estimate or imply any PostPilot price, rate, plan or monthly cost. Pricing comes from the PostPilot partner contact.
+- Direct mail is a companion to Klaviyo, never a replacement, and it does not fix deliverability or list health.
+- Quote benchmarks as medians with their spread, exactly as given, and never as a forecast for this brand. Never quote a case-study result.
+- Say "iROAS" only for holdout-measured figures.
+- Postcards to suppressed or unsubscribed profiles are postal mail under separate consent rules, not a workaround for email suppression; say so in one clause where you mention that audience.
+- Write for the client, not the analyst: no methodology, no tooling, no "should be sized". Say "site traffic was not sized in this audit", never mention connections.
+- Respect the word caps. Short sentences. Plain business English, second person, no hype. Never use an em dash or en dash.
+- Framing: the Klaviyo program is doing its job; this is about the profiles it is not allowed to touch.`;
+
+const clip = (t: string, max: number) => {
+  const w = t.trim().split(/\s+/).filter(Boolean);
+  if (w.length <= max) return t.trim();
+  // Cut at the last sentence end inside the cap; otherwise at the cap.
+  const head = w.slice(0, max).join(" ");
+  const lastStop = Math.max(head.lastIndexOf(". "), head.lastIndexOf("."));
+  return lastStop > head.length * 0.5 ? head.slice(0, lastStop + 1) : head.replace(/[,;:]?$/, ".");
+};
 
 // Why the last narrative attempt gave up, surfaced in the response because the
 // hosted log query is not reliable enough to lean on for a diagnosis.
@@ -290,14 +305,20 @@ async function writeNarrative(plan: DirectMailPlan, companyName: string): Promis
       console.error("direct_mail narrative:", lastNarrativeError);
       return null;
     }
+    const text = String(input.current_state_notes ?? "") + String(input.optimized_notes ?? "") + String(input.ai_findings ?? "") + items.join(" ");
+    if (/\$\s?\d[\d,]*(\.\d+)?\s*(a|per|\/)\s*(piece|month|mo|card|postcard)/i.test(text)) {
+      lastNarrativeError = "model wrote a price";
+      console.error("direct_mail narrative:", lastNarrativeError);
+      return null;
+    }
     return sanitizeDashDeep({
       current_state_title: String(input.current_state_title ?? "").trim() || "What email cannot reach",
-      optimized_state_title: String(input.optimized_state_title ?? "").trim() || "Direct mail as the last step of every flow",
-      current_state_notes: String(input.current_state_notes ?? "").trim(),
-      optimized_notes: String(input.optimized_notes ?? "").trim(),
-      ai_findings: String(input.ai_findings ?? "").trim(),
-      summary_text: String(input.summary_text ?? "").trim(),
-      key_findings: items.slice(0, 5),
+      optimized_state_title: String(input.optimized_state_title ?? "").trim() || "Postcards where email stops",
+      current_state_notes: clip(String(input.current_state_notes ?? ""), CAPS.notes),
+      optimized_notes: clip(String(input.optimized_notes ?? ""), CAPS.notes),
+      ai_findings: clip(String(input.ai_findings ?? ""), CAPS.findings),
+      summary_text: clip(String(input.summary_text ?? ""), CAPS.summary),
+      key_findings: items.slice(0, 3).map((k) => clip(k, CAPS.key_finding + 4)),
     });
   } catch (e) {
     lastNarrativeError = e instanceof Error ? e.message : String(e);
@@ -306,31 +327,27 @@ async function writeNarrative(plan: DirectMailPlan, companyName: string): Promis
   }
 }
 
-/** Plain numbers in plain sentences, for when the model is unavailable. The
- * section still ships; it just reads like a table. */
+/** Plain numbers in plain sentences, for when the model is unavailable. */
 function fallbackNarrative(plan: DirectMailPlan): Narrative {
   const g = plan.gap!;
-  const rec = plan.investment?.find((c) => c.label === "Recommended");
   const fmt = (v: number) => v.toLocaleString("en-US");
+  const rec = plan.volume?.find((c) => c.label === "Recommended");
   return sanitizeDashDeep({
     current_state_title: "What email cannot reach",
-    optimized_state_title: "Direct mail as the last step of every flow",
+    optimized_state_title: "Postcards where email stops",
     current_state_notes:
-      `Of ${fmt(g.total_profiles)} profiles, ${fmt(g.suppressed)} (${g.suppressed_pct}%) are suppressed or unsubscribed and ${fmt(g.unengaged)} (${g.unengaged_pct}%) have not engaged in 90 days. Email is not allowed to reach the first group and should not be sent to the second. After address matching that is roughly ${fmt(g.mailable.low)} to ${fmt(g.mailable.high)} people a postcard can still reach.`,
+      `Of ${fmt(g.total_profiles)} profiles, ${fmt(g.suppressed)} (${g.suppressed_pct}%) are suppressed or unsubscribed and ${fmt(g.unengaged)} (${g.unengaged_pct}%) have gone quiet for 90 days. Email cannot reach the first group and should not send to the second. Roughly ${fmt(g.mailable.low)} to ${fmt(g.mailable.high)} of them can still be reached by post.`,
     optimized_notes:
-      `Each existing flow gets a postcard at the end of its email sequence, and the suppressed and unengaged audience gets a winback program email cannot run. Every campaign holds out a share of its audience so results are read as incremental ROAS.` +
-      (rec ? ` The recommended program is about ${fmt(rec.pieces_per_month)} pieces a month, roughly $${fmt(rec.postpilot_monthly_total)} a month to PostPilot.` : ""),
+      `Each flow you already run gets a postcard at the end of its email sequence, and the audience email cannot reach gets a winback program of its own. Postal mail runs under its own consent rules, not as a workaround for email suppression. Every campaign holds out a share of its audience so results read as incremental ROAS.`,
     ai_findings:
-      `Retention programs to 1+ order customers have a holdout-tested median of ${plan.cannot_run[0].benchmark.median}x iROAS (${plan.cannot_run[0].benchmark.p25}x to ${plan.cannot_run[0].benchmark.p75}x). Connect Klaviyo to PostPilot over OAuth and sync the segments; a Shopify connection is a prerequisite. Test two or three one-offs with holdouts, read at 30 days, then automate the winners.`,
+      `Retention programs to customers with orders have a holdout-tested median of ${plan.cannot_run[0].benchmark.median}x iROAS (${plan.cannot_run[0].benchmark.p25}x to ${plan.cannot_run[0].benchmark.p75}x). Start with the unreachable winback and the strongest flow pairing as one-off tests with holdouts, read at 30 days, then automate.` +
+      (rec ? ` Recommended cadence is about ${fmt(rec.pieces_per_month)} postcards a month.` : ""),
     summary_text:
-      `Your Klaviyo program is doing its job. This section is about the ${fmt(g.unreachable)} profiles it is not allowed to touch, and how a postcard reaches them.`,
+      `Your Klaviyo program is doing its job; this is about the ${fmt(g.unreachable)} profiles it is not allowed to touch.`,
     key_findings: [
-      `${fmt(g.suppressed)} suppressed or unsubscribed profiles (${g.suppressed_pct}%) are permanently unreachable by email and still former or potential customers.`,
-      `${fmt(g.unengaged)} subscribers (${g.unengaged_pct}%) have not opened or clicked in 90 days, and good deliverability hygiene keeps them out of sends.`,
-      `After a 60 to 70% address match, about ${fmt(g.mailable.low)} to ${fmt(g.mailable.high)} people can be reached by post; none of that revenue is in the email forecast.`,
-      ...(rec && rec.break_even_rate != null
-        ? [`At a blended $${rec.blended_cpp.toFixed(2)} per piece, ${(rec.break_even_rate * 100).toFixed(2)}% of recipients need to order for a card to pay for itself.`]
-        : []),
+      `${fmt(g.suppressed)} suppressed or unsubscribed profiles (${g.suppressed_pct}%) are unreachable by email.`,
+      `${fmt(g.unengaged)} subscribers (${g.unengaged_pct}%) have not engaged in 90 days.`,
+      `About ${fmt(g.mailable.low)} to ${fmt(g.mailable.high)} of them can be reached by post.`,
     ],
   });
 }

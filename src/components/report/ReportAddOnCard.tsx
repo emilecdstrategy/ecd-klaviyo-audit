@@ -12,6 +12,8 @@ import ResizableReportImage from '../ui/ResizableReportImage';
 
 type ReportAddOnCardProps = {
   slice: AddOnPricingSlice;
+  /** The same add-on's other price (monthly next to one-time), shown as a second block. */
+  secondarySlice?: AddOnPricingSlice;
   customerAgentDemoUrl: string | null;
   uploadingAddOnKey: string | null;
   onImageUpload: (itemKey: string, file: File | undefined) => void;
@@ -87,6 +89,7 @@ function AddOnPriceBlock({
 
 export default function ReportAddOnCard({
   slice,
+  secondarySlice,
   customerAgentDemoUrl,
   uploadingAddOnKey,
   onImageUpload,
@@ -193,15 +196,28 @@ export default function ReportAddOnCard({
             )}
           >
             {showPriceBlock ? (
-              <AddOnPriceBlock
-                slice={slice}
-                itemKey={itemKey}
-                editMode={editMode}
-                priceDisplay={priceDisplay}
-                amountField={amountField}
-                labelField={labelField}
-                updateAddOnPrice={updateAddOnPrice}
-              />
+              <div className="flex flex-wrap items-stretch gap-2">
+                <AddOnPriceBlock
+                  slice={slice}
+                  itemKey={itemKey}
+                  editMode={editMode}
+                  priceDisplay={priceDisplay}
+                  amountField={amountField}
+                  labelField={labelField}
+                  updateAddOnPrice={updateAddOnPrice}
+                />
+                {secondarySlice ? (
+                  <AddOnPriceBlock
+                    slice={secondarySlice}
+                    itemKey={itemKey}
+                    editMode={editMode}
+                    priceDisplay={formatAddOnPrice(secondarySlice.amount, secondarySlice.label, secondarySlice.unit)}
+                    amountField={secondarySlice.unit === 'one_time' ? 'one_time_price' : 'monthly_price'}
+                    labelField={secondarySlice.unit === 'one_time' ? 'one_time_label' : 'monthly_label'}
+                    updateAddOnPrice={updateAddOnPrice}
+                  />
+                ) : null}
+              </div>
             ) : null}
 
             {showCtaColumn ? (

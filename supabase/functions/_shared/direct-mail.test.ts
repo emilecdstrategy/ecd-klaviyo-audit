@@ -2,10 +2,10 @@ import { assert, assertEquals, assertStringIncludes } from "https://deno.land/st
 import {
   buildDirectMailPlan,
   buildPairings,
+  buildVolume,
   type DirectMailInputs,
   factsForNarrative,
   inferMarketFromKlaviyoAccount,
-  planForVolume,
   sizeGap,
 } from "./direct-mail.ts";
 
@@ -40,7 +40,6 @@ Deno.test("audience is sized off the matched count, never the raw one", () => {
   const gap = sizeGap(higherDose)!;
   assertEquals(gap.unengaged, 409091 - 231820);
   assertEquals(gap.unreachable, 500350 + 177271);
-  // 60 to 70% of 677,621
   assertEquals(gap.mailable.low, Math.round(677621 * 0.6));
   assertEquals(gap.mailable.high, Math.round(677621 * 0.7));
   assertEquals(gap.sitematch, null);
@@ -50,20 +49,22 @@ Deno.test("a large US brand with a healthy AOV qualifies", () => {
   const plan = buildDirectMailPlan(higherDose);
   assert(plan.gate.qualified, plan.gate.reasons.join("; "));
   assertEquals(plan.gate.reasons, []);
-  const rec = plan.investment!.find((c) => c.label === "Recommended")!;
-  // 440k matched, quarterly cadence, capped at the enterprise line
-  assertEquals(rec.pieces_per_month, 50000);
-  assert(rec.enterprise_quote);
-  assertEquals(rec.plan, "pro_plus");
-  // $0.67 piece + $0.05 data over a $180 AOV
-  assertEquals(rec.blended_cpp, 0.72);
-  assert(rec.break_even_rate! < 0.005);
-  // Already at the enterprise line: no Scale column repeating the same numbers,
-  // and the narrative facts never quote a rate-card dollar total for it.
-  assertEquals(plan.investment!.map((c) => c.label), ["Test", "Recommended"]);
-  const facts = factsForNarrative(plan, "HigherDOSE");
-  assertStringIncludes(facts, "enterprise pricing");
-  assert(!facts.includes("$37,000"), "no rate-card total past the enterprise line");
+  assertEquals(plan.gate.checks, { market_us: true, audience_ok: true, aov_ok: true });
+});
+
+Deno.test("no PostPilot price or rate can appear anywhere in the plan", () => {
+  const plan = buildDirectMailPlan(higherDose);
+  const text = JSON.stringify(plan) + factsForNarrative(plan, "HigherDOSE");
+  assert(!/\$0\.\d\d|per piece|\bPro\+?\b|Growth plan|subscription|rate card/i.test(text.replace(plan.pricing_note, "")), "a price leaked");
+  assertStringIncludes(plan.pricing_note, "partner contact");
+  assertStringIncludes(factsForNarrative(plan, "HigherDOSE"), "never state, estimate or imply a price");
+});
+
+Deno.test("the compliance line and the source expiry travel with the plan", () => {
+  const plan = buildDirectMailPlan(higherDose);
+  assertStringIncludes(plan.compliance, "not a workaround for email suppression");
+  assertEquals(plan.expires, "2026-12-31");
+  assertStringIncludes(plan.version, "2.0");
 });
 
 Deno.test("a non-US brand never qualifies, and says why", () => {
@@ -93,18 +94,18 @@ Deno.test("a small list is refused even when everything else is fine", () => {
   assertStringIncludes(plan.gate.reasons[0], "3,000");
 });
 
-Deno.test("a low AOV fails on break-even, not on audience", () => {
+Deno.test("a low AOV fails on the AOV floor, not on audience", () => {
   const plan = buildDirectMailPlan({ ...higherDose, aov: 30 });
   assertEquals(plan.gate.qualified, false);
   assertEquals(plan.gate.checks.audience_ok, true);
-  assertEquals(plan.gate.checks.break_even_ok, false);
-  assertStringIncludes(plan.gate.reasons[0], "Break-even");
+  assertEquals(plan.gate.checks.aov_ok, false);
+  assertStringIncludes(plan.gate.reasons[0], "$50 floor");
 });
 
-Deno.test("no AOV means no verdict on break-even and no qualification", () => {
+Deno.test("no AOV means no verdict and no qualification", () => {
   const plan = buildDirectMailPlan({ ...higherDose, aov: null, aov_orders: null });
   assertEquals(plan.gate.qualified, false);
-  assertEquals(plan.gate.checks.break_even_ok, null);
+  assertEquals(plan.gate.checks.aov_ok, null);
   assertStringIncludes(plan.gate.reasons.join(" "), "Placed Order");
 });
 
@@ -118,7 +119,6 @@ Deno.test("pairings only cover flows the brand actually runs", () => {
     false,
   );
   assertEquals(rows.map((r) => r.klaviyo_flow), ["Welcome series", "Abandoned cart / checkout"]);
-  // Cart and checkout collapse into one pairing, and "not live" is carried through.
   assertEquals(rows[1].flow_live, false);
 });
 
@@ -135,33 +135,12 @@ Deno.test("the unreachable winback is always listed; anonymous retargeting only 
   assertEquals(withTraffic.gap!.sitematch, { low: 80000, high: 160000, mid: 120000 });
 });
 
-Deno.test("plan tier follows the published crossovers", () => {
-  assertEquals(planForVolume(4999), "growth");
-  assertEquals(planForVolume(5000), "pro");
-  assertEquals(planForVolume(24999), "pro");
-  assertEquals(planForVolume(25000), "pro_plus");
-});
-
-Deno.test("a mid-size brand lands on Pro with a realistic bill", () => {
-  const plan = buildDirectMailPlan({
-    ...higherDose,
-    total_profiles: 80000,
-    email_subscribed: 40000,
-    active_90d: 25000,
-    suppressed: 20000,
-    aov: 95,
-  });
-  assert(plan.gate.qualified, plan.gate.reasons.join("; "));
-  const rec = plan.investment!.find((c) => c.label === "Recommended")!;
-  // (20,000 + 15,000) * 0.65 = 22,750 matched; a third a month = 7,583 pieces
-  assertEquals(rec.pieces_per_month, 7583);
-  assertEquals(rec.plan, "pro");
-  assertEquals(rec.postpilot_subscription, 499);
-  assertEquals(rec.postpilot_pieces_cost, Math.round(7583 * 0.74));
-  assertEquals(rec.ecd_monthly, 1500);
-  const test = plan.investment!.find((c) => c.label === "Test")!;
-  assertEquals(test.ecd_setup, 2500);
-  assertEquals(test.pieces_per_month, 2275);
+Deno.test("volume is a cadence over the matched audience with no Scale when doubling adds nothing", () => {
+  const mid = buildVolume(sizeGap({ ...higherDose, total_profiles: 80000, email_subscribed: 40000, active_90d: 25000, suppressed: 20000 })!);
+  // (20,000 + 15,000) * 0.65 = 22,750 matched: 10% sample, a third a month, double that
+  assertEquals(mid.map((c) => [c.label, c.pieces_per_month]), [["Test", 2275], ["Recommended", 7583], ["Scale", 15166]]);
+  const capped = buildVolume(sizeGap({ ...higherDose, suppressed: 900000, total_profiles: 1500000 })!);
+  assertEquals(capped.map((c) => c.label), ["Test", "Recommended"]);
 });
 
 Deno.test("US inference from a Klaviyo account needs USD and a US timezone", () => {
@@ -173,11 +152,10 @@ Deno.test("US inference from a Klaviyo account needs USD and a US timezone", () 
   assertEquals(inferMarketFromKlaviyoAccount(null, null), null);
 });
 
-Deno.test("the narrative facts carry the spread, the assumptions and no case-study numbers", () => {
+Deno.test("the narrative facts carry the spread and the assumptions but no case-study numbers", () => {
   const facts = factsForNarrative(buildDirectMailPlan(higherDose), "HigherDOSE");
   assertStringIncludes(facts, "3.3x (1.52x to 6.98x)");
-  assertStringIncludes(facts, "Assumptions:");
   assert(!facts.includes("lower bounds"), "a complete scan is not described as partial");
-  assert(!/23\.17|16\.34|10x ROAS/.test(facts), "case study results must not reach the model as facts");
+  assert(!/23\.17|16\.34|10x ROAS|8\.35/.test(facts), "case study results must not reach the model as facts");
   assert(!facts.includes("—"), "no em dashes");
 });
