@@ -12,10 +12,16 @@ export default function ReportTrustFooter({ preparedDate }: { preparedDate: stri
               ECD Digital Strategy is a revenue-focused e-commerce marketing agency helping DTC brands
               grow through email, SMS, and conversion optimization.
             </p>
-            <div className="mt-5">
+            <div className="mt-5 flex flex-wrap items-center gap-6">
               <img
                 src="/kpartner.webp"
                 alt="Klaviyo K:PARTNERS Elite partner badge"
+                className="h-14 w-auto max-w-[min(100%,360px)] object-contain object-left"
+                loading="lazy"
+              />
+              <img
+                src="/postpilot-mailmaster.webp"
+                alt="PostPilot Certified MailMaster partner badge"
                 className="h-14 w-auto max-w-[min(100%,360px)] object-contain object-left"
                 loading="lazy"
               />
