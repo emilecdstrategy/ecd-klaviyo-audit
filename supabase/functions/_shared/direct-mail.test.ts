@@ -34,7 +34,7 @@ const higherDose: DirectMailInputs = {
   ],
   has_vip_segments: true,
   sells_subscriptions: false,
-  fees: { setup: 2500, monthly: 1500 },
+  fees: { setup: 2500, monthly: 500 },
 };
 
 Deno.test("audience is sized off the matched count, never the raw one", () => {

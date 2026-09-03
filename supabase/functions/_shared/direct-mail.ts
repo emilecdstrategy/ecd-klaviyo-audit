@@ -88,7 +88,7 @@ export const RECENCY_CURVE: Array<{ days: string; median: number }> = [
 
 /** The only pricing sentence the source permits. Verbatim. */
 export const PRICING_NOTE =
-  "PostPilot pricing is supplied by your PostPilot partner contact. Request current rates before quoting.";
+  "PostPilot bills its own platform, printing, postage and data costs on top of this budget. Those rates come from your PostPilot partner contact; request current pricing before quoting.";
 
 /** Required in the audit whenever suppressed or unsubscribed profiles are targeted. */
 export const COMPLIANCE_NOTE =

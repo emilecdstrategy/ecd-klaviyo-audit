@@ -434,6 +434,20 @@ async function syncAddOn(sb: Sb, auditId: string, layout: Record<string, unknown
   if (plan.gate.qualified) {
     if (idx >= 0) {
       items[idx] = { ...items[idx], highlighted: true, related_section_keys: ["flows", "segmentation"], presenter_note: presenterNote, is_hidden: false };
+      // An item we added ourselves keeps its fees in step with the catalog, so
+      // a price change in Admin reaches old audits on a regenerate instead of
+      // leaving a stale figure to go out in a proposal. An item a strategist
+      // added or re-priced by hand is left exactly as they left it.
+      if (items[idx].auto_added === true) {
+        items[idx] = {
+          ...items[idx],
+          content: template.content ? String(template.content) : items[idx].content,
+          one_time_price: template.one_time_price == null ? null : Number(template.one_time_price),
+          one_time_label: template.one_time_label ? String(template.one_time_label) : null,
+          monthly_price: template.monthly_price == null ? null : Number(template.monthly_price),
+          monthly_label: template.monthly_label ? String(template.monthly_label) : null,
+        };
+      }
     } else {
       const maxOrder = items.reduce((m, it) => Math.max(m, Number(it?.display_order ?? 0)), 0);
       items.push({
