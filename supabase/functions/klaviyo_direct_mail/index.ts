@@ -259,7 +259,7 @@ const SYSTEM = `You write one short section of a Klaviyo lifecycle audit for ECD
 
 Hard rules, none of them optional:
 - Use only the facts you are given. Every number in your text must appear in the facts. If a fact is missing, do not fill it in.
-- Never state, estimate or imply any PostPilot price, rate or plan. Pricing comes from the PostPilot partner contact. The opening BUDGET (0.5 to 1% of trailing 30-day revenue, given in the facts) is the client's own spend and may be stated, always as a planning starting point.
+- Never state, estimate or imply any PostPilot price, rate or plan. Pricing comes from the PostPilot partner contact. The recommended opening BUDGET (0.5% of trailing 30-day revenue, given in the facts) is the client's own spend and may be stated, always as a starting point to scale from on measured results.
 - Direct mail is a companion to Klaviyo, never a replacement, and it does not fix deliverability or list health.
 - Quote benchmarks as medians with their spread, exactly as given, and never as a forecast for this brand. Never quote a case-study result.
 - Say "iROAS" only for holdout-measured figures.
@@ -335,7 +335,7 @@ async function writeNarrative(plan: DirectMailPlan, companyName: string): Promis
 function fallbackNarrative(plan: DirectMailPlan): Narrative {
   const g = plan.gap!;
   const fmt = (v: number) => v.toLocaleString("en-US");
-  const rec = plan.budget?.find((c) => c.label === "Recommended");
+  const rec = plan.budget?.[0];
   return sanitizeDashDeep({
     current_state_title: "What email cannot reach",
     optimized_state_title: "Postcards where email stops",
@@ -345,7 +345,7 @@ function fallbackNarrative(plan: DirectMailPlan): Narrative {
       `Each flow you already run gets a postcard at the end of its email sequence, and the audience email cannot reach gets a winback program of its own. Postal mail runs under its own consent rules, not as a workaround for email suppression. Every campaign holds out a share of its audience so results read as incremental ROAS.`,
     ai_findings:
       `Retention programs to customers with orders have a holdout-tested median of ${plan.cannot_run[0].benchmark.median}x iROAS (${plan.cannot_run[0].benchmark.p25}x to ${plan.cannot_run[0].benchmark.p75}x). Start with the unreachable winback and the strongest flow pairing as one-off tests with holdouts, read at 30 days, then automate.` +
-      (rec ? ` An opening budget of about $${fmt(rec.budget_per_month)} a month, 1% of trailing 30-day revenue, buys roughly ${fmt(rec.pieces_low)} to ${fmt(rec.pieces_high)} postcards.` : ""),
+      (rec ? ` An opening budget of about $${fmt(rec.budget_per_month)} a month, 0.5% of trailing 30-day revenue, buys roughly ${fmt(rec.pieces_low)} to ${fmt(rec.pieces_high)} postcards.` : ""),
     summary_text:
       `Your Klaviyo program is doing its job; this is about the ${fmt(g.unreachable)} profiles it is not allowed to touch.`,
     key_findings: [

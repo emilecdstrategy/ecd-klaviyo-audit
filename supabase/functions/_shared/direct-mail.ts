@@ -167,7 +167,7 @@ export type CannotRun = {
 };
 
 export type BudgetColumn = {
-  label: "Test" | "Recommended";
+  label: "Recommended";
   /** Share of trailing 30-day revenue. */
   pct: number;
   budget_per_month: number;
@@ -395,18 +395,15 @@ function budgetColumn(label: BudgetColumn["label"], pct: number, revenue30d: num
   return { label, pct, budget_per_month: budget, pieces_low: low, pieces_high: high, pooled, read };
 }
 
-/** The opening budget, at both ends of the source's range. Test is the 0.5%
- * end, for a brand mailing for the first time; Recommended is the 1% end, for a
- * large suppressed population or proven retention, which is what qualifying
- * here already implies. Pieces are capped at the reachable audience: a budget
- * cannot buy more people than the file has. */
+/** The recommended opening budget: the 0.5% end of the source's range. Emil's
+ * call (2026-09-03): one number, not a Test and a Recommended side by side.
+ * The 1% end is where a proven program grows to, and that is a conversation
+ * for after the first read, not a column in the audit. Pieces are capped at the
+ * reachable audience: a budget cannot buy more people than the file has. */
 export function buildBudget(revenue30d: number | null, gap: GapSizing | null): BudgetColumn[] | null {
   if (revenue30d == null || revenue30d <= 0) return null;
   const cap = gap ? gap.mailable.mid : null;
-  return [
-    budgetColumn("Test", BUDGET.low_pct, revenue30d, cap),
-    budgetColumn("Recommended", BUDGET.high_pct, revenue30d, cap),
-  ];
+  return [budgetColumn("Recommended", BUDGET.low_pct, revenue30d, cap)];
 }
 
 // --- Proof -------------------------------------------------------------------
@@ -471,10 +468,10 @@ export function evaluateGate(input: DirectMailInputs, gap: GapSizing | null): Ga
   if (aov == null) reasons.push("Average order value could not be read from the Placed Order metric");
   else if (!aovOk) reasons.push(`AOV of $${Math.round(aov)} is below the $${GATE.min_aov} floor where a postcard can realistically pay for itself`);
   const rev = num(input.store_revenue_30d);
-  const budgetOk = rev == null ? null : rev * BUDGET.high_pct >= GATE.min_monthly_budget;
+  const budgetOk = rev == null ? null : rev * BUDGET.low_pct >= GATE.min_monthly_budget;
   if (budgetOk === false) {
     reasons.push(
-      `Trailing 30-day revenue of $${Math.round(rev!).toLocaleString("en-US")} puts a 1% test budget under $${GATE.min_monthly_budget.toLocaleString("en-US")} a month, where most programs were not incremental`,
+      `Trailing 30-day revenue of $${Math.round(rev!).toLocaleString("en-US")} puts a 0.5% opening budget under $${GATE.min_monthly_budget.toLocaleString("en-US")} a month, where most programs were not incremental`,
     );
   }
   return {
@@ -512,7 +509,7 @@ export function buildDirectMailPlan(input: DirectMailInputs, now = new Date()): 
   if (!gap?.sitematch) assumptions.push("Site traffic was not sized in this audit, so the never-subscribed audience is not counted.");
   const rev = num(input.store_revenue_30d);
   if (rev == null) assumptions.push("Trailing 30-day store revenue was not available, so no opening budget is sized.");
-  else assumptions.push(`Opening budget is 0.5 to 1% of trailing 30-day store revenue ($${Math.round(rev).toLocaleString("en-US")}), capped at the reachable audience.`);
+  else assumptions.push(`Opening budget is 0.5% of trailing 30-day store revenue ($${Math.round(rev).toLocaleString("en-US")}), the low end of PostPilot's 0.5 to 1% range, capped at the reachable audience.`);
 
   return {
     version: DIRECT_MAIL_SOURCE_VERSION,
@@ -570,9 +567,9 @@ export function factsForNarrative(plan: DirectMailPlan, companyName: string): st
   lines.push(`Benchmarks (holdout-tested medians with 25th to 75th percentile): retention ${BENCHMARKS.retention.median}x (${BENCHMARKS.retention.p25}x to ${BENCHMARKS.retention.p75}x); cart and checkout ${BENCHMARKS.cart.median}x (${BENCHMARKS.cart.p25}x to ${BENCHMARKS.cart.p75}x); retargeting ${BENCHMARKS.retargeting.median}x (${BENCHMARKS.retargeting.p25}x to ${BENCHMARKS.retargeting.p75}x)`);
   lines.push("Recency: median iROAS peaks 31 to 60 days after the last order and stays above 1.8x past two years");
   if (plan.budget && plan.store_revenue_30d != null) {
-    const [test, rec] = plan.budget;
+    const rec = plan.budget[0];
     lines.push(
-      `Opening budget (a PostPilot planning heuristic, 0.5 to 1% of trailing 30-day store revenue of $${Math.round(plan.store_revenue_30d).toLocaleString("en-US")}): $${test.budget_per_month.toLocaleString("en-US")} to $${rec.budget_per_month.toLocaleString("en-US")} a month, roughly ${test.pieces_low.toLocaleString("en-US")} to ${rec.pieces_high.toLocaleString("en-US")} postcards; a test cell needs at least 5,000 pieces to read a holdout${rec.pooled ? ", so pool two or three months into one drop" : ""}`,
+      `Recommended opening budget (a PostPilot planning heuristic, 0.5% of trailing 30-day store revenue of $${Math.round(plan.store_revenue_30d).toLocaleString("en-US")}): about $${rec.budget_per_month.toLocaleString("en-US")} a month, roughly ${rec.pieces_low.toLocaleString("en-US")} to ${rec.pieces_high.toLocaleString("en-US")} postcards; a test cell needs at least 5,000 pieces to read a holdout${rec.pooled ? ", so pool two or three months into one drop" : ""}. Scale from there on measured incremental ROAS.`,
     );
   }
   lines.push("Pricing: none available. PostPilot pricing comes from the partner contact; never state, estimate or imply a price, rate or monthly cost.");

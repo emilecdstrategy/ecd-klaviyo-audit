@@ -46,7 +46,7 @@ export type DirectMailCannotRun = {
 };
 
 export type DirectMailBudget = {
-  label: 'Test' | 'Recommended';
+  label: 'Recommended';
   pct: number;
   budget_per_month: number;
   pieces_low: number;

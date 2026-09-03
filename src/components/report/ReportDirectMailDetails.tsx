@@ -136,27 +136,33 @@ export default function ReportDirectMailDetails({ plan, cfg }: { plan: DirectMai
         </Block>
       )}
 
-      {show('budget') && plan.budget && (
-        <Block title={b.budget?.title} subtitle={b.budget?.subtitle}>
-          <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
-            {plan.budget.map(c => (
-              <div key={c.label} className={`rounded-xl border px-4 py-3 ${c.label === 'Recommended' ? 'border-violet-200 bg-violet-50/60' : 'border-gray-100 bg-white'}`}>
-                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">
-                  {c.label} <span className="font-medium normal-case text-gray-400">· {(c.pct * 100).toFixed(1).replace(/\.0$/, '')}% of trailing 30-day revenue</span>
-                </p>
-                <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">
-                  {formatCurrency(c.budget_per_month)} <span className="text-xs font-medium text-gray-500">/ mo</span>
-                </p>
-                <p className="mt-0.5 text-xs text-gray-700">About {n(c.pieces_low)} to {n(c.pieces_high)} postcards a month</p>
-                <p className={`mt-1 text-[11px] ${c.pooled ? 'text-amber-700' : 'text-gray-500'}`}>{c.read}</p>
+      {show('budget') && plan.budget && plan.budget[0] && (() => {
+        const c = plan.budget[0];
+        return (
+          <Block title={b.budget?.title} subtitle={b.budget?.subtitle}>
+            <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+              <div className="rounded-xl border border-violet-200 bg-violet-50/60 px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Monthly budget</p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-violet-900">{formatCurrency(c.budget_per_month)}</p>
+                <p className="mt-0.5 text-[11px] text-gray-500">{(c.pct * 100).toFixed(1).replace(/\.0$/, '')}% of trailing 30-day revenue</p>
               </div>
-            ))}
-          </div>
-          <p className="mt-2 text-xs text-gray-600">
-            {plan.pricing_note}{feeText ? ` ECD's ${feeText} are separate line items in the proposal.` : ''}
-          </p>
-        </Block>
-      )}
+              <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">Postcards a month</p>
+                <p className="mt-1 text-xl font-bold tabular-nums text-gray-900">{n(c.pieces_low)} to {n(c.pieces_high)}</p>
+                <p className="mt-0.5 text-[11px] text-gray-500">Indicative; confirm rates with PostPilot</p>
+              </div>
+              <div className="rounded-xl border border-gray-100 bg-white px-4 py-3">
+                <p className="text-[10px] font-semibold uppercase tracking-wider text-gray-500">What it reads</p>
+                <p className={`mt-1 text-sm font-semibold ${c.pooled ? 'text-amber-700' : 'text-gray-900'}`}>{c.read}</p>
+                <p className="mt-0.5 text-[11px] text-gray-500">Scale from here on measured iROAS</p>
+              </div>
+            </div>
+            <p className="mt-2 text-xs text-gray-600">
+              {plan.pricing_note}{feeText ? ` ECD's ${feeText} are separate line items in the proposal.` : ''}
+            </p>
+          </Block>
+        );
+      })()}
 
       {show('plan') && (
         <Block title={b.plan?.title}>

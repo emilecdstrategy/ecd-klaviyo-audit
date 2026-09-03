@@ -138,35 +138,35 @@ Deno.test("the unreachable winback is always listed; anonymous retargeting only 
   assertEquals(withTraffic.gap!.sitematch, { low: 80000, high: 160000, mid: 120000 });
 });
 
-Deno.test("the opening budget is 0.5 to 1% of trailing 30-day revenue, in pieces at the indicative rate", () => {
+Deno.test("the recommended budget is one number: 0.5% of trailing 30-day revenue, in pieces at the indicative rate", () => {
   // HigherDOSE: $1.91M last 30 days. Drew's answer to "is 50k a month high": yes.
   const cols = buildBudget(1909771, sizeGap(higherDose))!;
-  assertEquals(cols.map((c) => c.label), ["Test", "Recommended"]);
+  assertEquals(cols.map((c) => c.label), ["Recommended"]);
+  assertEquals(cols[0].pct, 0.005);
   assertEquals(cols[0].budget_per_month, 9549);
-  assertEquals(cols[1].budget_per_month, 19098);
-  // $19,098 at $0.70 to $0.80 a piece
-  assertEquals(cols[1].pieces_low, Math.round(19098 / 0.8));
-  assertEquals(cols[1].pieces_high, Math.round(19098 / 0.7));
-  assert(cols[1].pieces_high < 30000, "nowhere near 50,000 a month");
-  assertEquals(cols[1].pooled, false);
-  assertStringIncludes(cols[1].read, "Multiple test cells");
+  // $9,549 at $0.70 to $0.80 a piece
+  assertEquals(cols[0].pieces_low, Math.round(9549 / 0.8));
+  assertEquals(cols[0].pieces_high, Math.round(9549 / 0.7));
+  assert(cols[0].pieces_high < 15000, "nowhere near 50,000 a month");
+  assertEquals(cols[0].pooled, false);
+  assertStringIncludes(cols[0].read, "One test cell");
 });
 
 Deno.test("a small store is told to pool months rather than mail a sub-scale test", () => {
-  const cols = buildBudget(250000, sizeGap(higherDose))!;
-  // 1% of $250k = $2,500, about 3,100 to 3,600 pieces: under the 5,000 floor
-  assertEquals(cols[1].pooled, true);
-  assertStringIncludes(cols[1].read, "pool");
+  const cols = buildBudget(400000, sizeGap(higherDose))!;
+  // 0.5% of $400k = $2,000, about 2,500 to 2,900 pieces: under the 5,000 floor
+  assertEquals(cols[0].pooled, true);
+  assertStringIncludes(cols[0].read, "pool");
 });
 
 Deno.test("pieces are capped at the reachable audience", () => {
   const small = sizeGap({ ...higherDose, total_profiles: 20000, email_subscribed: 12000, active_90d: 10000, suppressed: 4000 })!;
   const cols = buildBudget(5000000, small)!;
-  assertEquals(cols[1].pieces_high, small.mailable.mid);
+  assertEquals(cols[0].pieces_high, small.mailable.mid);
 });
 
-Deno.test("a 1% budget under $1k a month fails the gate; unknown revenue does not", () => {
-  const tiny = buildDirectMailPlan({ ...higherDose, store_revenue_30d: 80000 });
+Deno.test("a 0.5% budget under $1k a month fails the gate; unknown revenue does not", () => {
+  const tiny = buildDirectMailPlan({ ...higherDose, store_revenue_30d: 150000 });
   assertEquals(tiny.gate.qualified, false);
   assertEquals(tiny.gate.checks.budget_ok, false);
   assertStringIncludes(tiny.gate.reasons[0], "under $1,000");
