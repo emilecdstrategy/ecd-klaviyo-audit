@@ -59,23 +59,63 @@ export function validateQuestion(input: any): ValidationResult<{
 }> {
   if (!input || typeof input !== "object") return { ok: false, error: "ask_user input must be an object" };
   if (!isStr(input.question) || !input.question.trim()) return { ok: false, error: "ask_user.question is required" };
-  if (!Array.isArray(input.options) || input.options.length < 2 || input.options.length > 4) {
-    return { ok: false, error: "ask_user.options must have 2-4 entries" };
+
+  // The schema asks for 2 to 4 options, and the model usually obliges. What
+  // arrives otherwise is worth repairing rather than refusing: the panel renders
+  // any number of chips and always offers a free-text "Other", so a single
+  // usable option is a working question, and an error is not.
+  const normalized = normalizeToArray(input.options);
+  if (normalized === null) {
+    return {
+      ok: false,
+      error:
+        "options could not be read as a list of choices. Send it as a JSON array of { label, value } objects, " +
+        "not as text and not as function-call markup.",
+    };
   }
-  for (const o of input.options) {
-    if (!o || !isStr(o.label) || !isStr(o.value) || !o.label.trim() || !o.value.trim()) {
-      return { ok: false, error: "each ask_user option needs a non-empty label and value" };
-    }
+
+  const options: Array<{ label: string; value: string }> = [];
+  for (const entry of normalized) {
+    if (!entry || typeof entry !== "object") continue;
+    const row = entry as Record<string, unknown>;
+    const label = isStr(row.label) ? row.label.trim() : "";
+    const value = isStr(row.value) ? row.value.trim() : "";
+    if (!label && !value) continue;
+    // A chip whose label is the whole answer is fine, and so is the reverse:
+    // the label is what the user reads, the value is what they send back.
+    options.push({ label: label || chipLabel(value), value: value || label });
   }
+
+  // Markup recovery can strand the last option's value as a sibling key of the
+  // payload, because that is where the model's broken syntax left it.
+  const stray = isStr(input.value) ? input.value.trim() : "";
+  const last = options[options.length - 1];
+  if (stray && last && last.value === last.label) last.value = stray;
+
+  if (options.length === 0) {
+    return { ok: false, error: "ask_user.options needs at least one option with a label and an answer value" };
+  }
+
   return {
     ok: true,
     value: {
       question: input.question.trim(),
-      options: input.options.map((o: any) => ({ label: o.label.trim(), value: o.value.trim() })),
+      // More than a handful of chips is a menu, not a question. Keep the first
+      // few rather than failing; "Other" covers anything dropped.
+      options: options.slice(0, 6),
       allow_other: true,
       multi_select: Boolean(input.multi_select),
     },
   };
+}
+
+/** A short, readable chip for an option that only gave its full answer text. */
+function chipLabel(value: string): string {
+  const oneLine = value.replace(/\s+/g, " ").trim();
+  if (oneLine.length <= 60) return oneLine;
+  const cut = oneLine.slice(0, 57);
+  const lastSpace = cut.lastIndexOf(" ");
+  return (lastSpace > 30 ? cut.slice(0, lastSpace) : cut) + "...";
 }
 
 function validateLineItem(item: any, label: string): string | null {
