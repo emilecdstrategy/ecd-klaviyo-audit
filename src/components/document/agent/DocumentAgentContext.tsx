@@ -26,6 +26,7 @@ import {
   listDocConversations,
   markDocAgentMessageApplied,
 } from '../../../lib/document-agent-db';
+import { canApplyPayloadKind } from '../../../lib/agent-apply';
 import { useAuth } from '../../../contexts/AuthContext';
 import type { DocumentAgentConversation, DocumentAgentMessage, ProposalAgentAttachment } from '../../../lib/types';
 
@@ -54,7 +55,10 @@ type DocumentAgentContextValue = {
   loadingHistory: boolean;
   error: string | null;
   applyingMessageId: string | null;
-  canApply: boolean;
+  /** Whether a result of this kind has somewhere to go on this page. A single
+   *  boolean showed an Apply button for a draft on a page that could only take
+   *  edits, and the click did nothing. */
+  canApplyKind: (kind: string | null | undefined) => boolean;
   /** Non-zero while a long document is being written across several calls:
    *  the number of the part currently being fetched. */
   partsProgress: number;
@@ -311,7 +315,10 @@ export function DocumentAgentProvider({ config, defaultOpen = false, children }:
       loadingHistory,
       error,
       applyingMessageId,
-      canApply: Boolean(config.onApplyDraft || config.onApplyEdits),
+      // The two handlers, not the whole config: the memo's deps list them,
+      // and config itself is a fresh object on every render.
+      canApplyKind: (kind) =>
+        canApplyPayloadKind({ onApplyDraft: config.onApplyDraft, onApplyEdits: config.onApplyEdits }, kind),
       sendMessage,
       applyMessage,
       resetChat,

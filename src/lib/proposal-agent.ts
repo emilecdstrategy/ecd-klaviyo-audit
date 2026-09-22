@@ -323,6 +323,85 @@ export async function applyDraftAsNewProposal(
 export type ApplyEditsResult = { proposal: Proposal; lineItems: ProposalLineItem[] };
 
 /**
+ * Apply an agent draft onto a proposal that is already open, replacing its
+ * narrative and its line items.
+ *
+ * The assistant answers a broad rewrite ("draft your own price allocation
+ * across the workstreams") with a whole draft rather than a list of edits, and
+ * on the editor page that draft had nowhere to go: Apply did nothing at all.
+ * Creating a second proposal would be wrong, so the draft lands on the one the
+ * user is looking at.
+ *
+ * Line items are replaced wholesale because a draft restates the full set and
+ * carries no ids to match on. Anything the draft leaves out is left alone:
+ * a draft says nothing about the recipient or the contracts unless it does.
+ */
+export async function applyDraftToProposal(
+  proposal: Proposal,
+  lineItems: ProposalLineItem[],
+  draft: ProposalDraftPayload,
+): Promise<ApplyEditsResult> {
+  const nextProposal = await updateProposal(proposal.id, {
+    title: sanitizeCopy(draft.title) || proposal.title,
+    content_blocks: draft.content_blocks.map(b => ({
+      key: blockKey(),
+      title: sanitizeCopy(b.title),
+      content: sanitizeCopy(b.content),
+    })),
+    ...(draft.include_contracts ? { include_contracts: draft.include_contracts } : {}),
+    ...(draft.recipient_name != null ? { recipient_name: draft.recipient_name } : {}),
+    ...(draft.recipient_email != null ? { recipient_email: draft.recipient_email } : {}),
+    ...(draft.discount && draft.discount.type !== 'none'
+      ? {
+          discount_type: draft.discount.type,
+          discount_value: draft.discount.value,
+          discount_applies_to: draft.discount.applies_to,
+          discount_label: draft.discount.label ? sanitizeCopy(draft.discount.label) : null,
+        }
+      : {}),
+  });
+
+  for (const item of lineItems) await deleteProposalLineItem(item.id);
+  const nextItems = await createProposalLineItems(
+    draft.line_items.map((item, i) => ({
+      proposal_id: proposal.id,
+      template_slug: null,
+      name: sanitizeCopy(item.name),
+      description: sanitizeCopy(item.description),
+      content: sanitizeCopy(item.content),
+      one_time_price: item.one_time_price,
+      one_time_label: item.one_time_label ? sanitizeCopy(item.one_time_label) : null,
+      monthly_price: item.monthly_price,
+      monthly_label: item.monthly_label ? sanitizeCopy(item.monthly_label) : null,
+      image_url: null,
+      display_order: (i + 1) * 10,
+    })),
+  );
+
+  // Best effort, and last, so a signer problem cannot lose the content.
+  if (draft.agency_signer) {
+    try {
+      const signers = await listStaffSigners();
+      const { signer } = resolveSigner(signers, draft.agency_signer);
+      const image = signer ? resolveSignatureImage(signer) : null;
+      if (signer && image) {
+        await countersignProposal({
+          proposal_id: proposal.id,
+          typed_name: signer.name,
+          signature_image: image,
+          signer_user_id: signer.id,
+          replace: true,
+        });
+      }
+    } catch (e) {
+      console.error('Could not change the proposal signer', e);
+    }
+  }
+
+  return { proposal: nextProposal, lineItems: nextItems };
+}
+
+/**
  * Apply an agent edit set against the current proposal state. Computes the
  * final content_blocks / discount / recipient state and writes it in one
  * updateProposal call, then performs line-item inserts/updates/deletes.

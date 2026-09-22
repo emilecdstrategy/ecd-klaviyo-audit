@@ -151,7 +151,7 @@ function ApplyFooter({ applying, applied, canApply, onApply, onDiscard, discarde
 }
 
 function MessageBubble({ message, isLast, onAnswer }: { message: DocAgentChatMessage; isLast: boolean; onAnswer: (v: string) => void }) {
-  const { applyMessage, applyingMessageId, canApply } = useDocumentAgent();
+  const { applyMessage, applyingMessageId, canApplyKind } = useDocumentAgent();
   const [discarded, setDiscarded] = useState(false);
 
   if (message.role === 'user') {
@@ -206,7 +206,7 @@ function MessageBubble({ message, isLast, onAnswer }: { message: DocAgentChatMes
           <ApplyFooter
             applying={applyingMessageId === message.id}
             applied={Boolean(message.applied_at)}
-            canApply={canApply && isLast && !discarded}
+            canApply={canApplyKind(message.payload_kind) && isLast && !discarded}
             onApply={() => void applyMessage(message)}
             onDiscard={() => setDiscarded(true)}
             discarded={discarded}

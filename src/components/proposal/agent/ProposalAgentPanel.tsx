@@ -379,7 +379,7 @@ function MessageBubble({
   itemNames: Map<string, string>;
   onAnswer: (value: string) => void;
 }) {
-  const { applyMessage, applyingMessageId, canApply } = useProposalAgent();
+  const { applyMessage, applyingMessageId, canApplyKind } = useProposalAgent();
   const [discarded, setDiscarded] = useState(false);
 
   if (message.role === 'user') {
@@ -454,7 +454,7 @@ function MessageBubble({
             message={message}
             applying={applyingMessageId === message.id}
             applied={Boolean(message.applied_at)}
-            canApply={canApply && isLast && !discarded}
+            canApply={canApplyKind(message.payload_kind) && isLast && !discarded}
             onApply={() => void applyMessage(message)}
             onDiscard={() => setDiscarded(true)}
             discarded={discarded}

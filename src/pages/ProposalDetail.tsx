@@ -29,7 +29,13 @@ import { ProposalAgentLayout, AgentToggleButton } from '../components/proposal/a
 import ClientEditModal from '../components/client/ClientEditModal';
 import { useAuth } from '../contexts/AuthContext';
 import { useProposalData } from '../hooks/useProposalData';
-import { applyEditSet, buildSnapshot, type ProposalEditSet } from '../lib/proposal-agent';
+import {
+  applyDraftToProposal,
+  applyEditSet,
+  buildSnapshot,
+  type ProposalDraftPayload,
+  type ProposalEditSet,
+} from '../lib/proposal-agent';
 import {
   countersignProposal,
   createProposalTemplate,
@@ -251,6 +257,14 @@ export default function ProposalDetail() {
         await applyEditSet(proposal, lineItems, edits);
         await reload();
       };
+  // A whole-proposal rewrite arrives as a draft, and it applies to this
+  // proposal rather than creating a second one.
+  const onApplyDraft = isSigned
+    ? undefined
+    : async (draft: ProposalDraftPayload) => {
+        await applyDraftToProposal(proposal, lineItems, draft);
+        await reload();
+      };
   const agentBlockTitles = new Map(proposal.content_blocks.map(b => [b.key, b.title]));
   const agentItemNames = new Map(lineItems.map(li => [li.id, li.name]));
 
@@ -261,6 +275,7 @@ export default function ProposalDetail() {
         clientId: proposal.client_id,
         getSnapshot: () => buildSnapshot(proposal, lineItems),
         onApplyEdits,
+        onApplyDraft,
       }}
     >
     <ProposalAgentLayout blockTitles={agentBlockTitles} itemNames={agentItemNames}>

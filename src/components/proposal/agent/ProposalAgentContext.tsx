@@ -24,6 +24,7 @@ import {
   markAgentMessageApplied,
   type ProposalAgentMessageWithAuthor,
 } from '../../../lib/proposal-agent-db';
+import { canApplyPayloadKind } from '../../../lib/agent-apply';
 import { useAuth } from '../../../contexts/AuthContext';
 import type {
   ProposalAgentAttachment,
@@ -61,7 +62,10 @@ type ProposalAgentContextValue = {
   loadingHistory: boolean;
   error: string | null;
   applyingMessageId: string | null;
-  canApply: boolean;
+  /** Whether a result of this kind has somewhere to go on this page. A single
+   *  boolean showed an Apply button for a draft on a page that could only take
+   *  edits, and the click did nothing. */
+  canApplyKind: (kind: string | null | undefined) => boolean;
   sendMessage: (text: string, attachments?: ProposalAgentAttachment[]) => Promise<void>;
   applyMessage: (message: AgentChatMessage) => Promise<void>;
   resetChat: () => void;
@@ -278,7 +282,13 @@ export function ProposalAgentProvider({
         } else if (message.payload_kind === 'edits' && cfg.onApplyEdits) {
           await cfg.onApplyEdits(message.payload as ProposalEditSet);
         } else {
-          return;
+          // This used to return quietly. On the editor page, which wired only
+          // onApplyEdits, a draft landed here and Apply did nothing at all: no
+          // change, no error, nothing in the console. Whatever the cause, the
+          // click now says so instead of being swallowed.
+          throw new Error(
+            `This ${message.payload_kind ?? 'result'} cannot be applied from here. Reload the page and try again.`,
+          );
         }
         await markAgentMessageApplied(message.id).catch(() => {});
         setMessages(prev =>
@@ -306,7 +316,10 @@ export function ProposalAgentProvider({
       loadingHistory,
       error,
       applyingMessageId,
-      canApply: Boolean(config.onApplyDraft || config.onApplyEdits),
+      // The two handlers, not the whole config: the memo's deps list them,
+      // and config itself is a fresh object on every render.
+      canApplyKind: (kind) =>
+        canApplyPayloadKind({ onApplyDraft: config.onApplyDraft, onApplyEdits: config.onApplyEdits }, kind),
       sendMessage,
       applyMessage,
       resetChat,

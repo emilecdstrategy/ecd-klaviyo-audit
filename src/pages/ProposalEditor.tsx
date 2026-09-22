@@ -7,7 +7,13 @@ import { ProposalEditProvider, useProposalEdit } from '../components/proposal/ed
 import { ProposalAgentProvider } from '../components/proposal/agent/ProposalAgentContext';
 import { ProposalAgentLayout, AgentToggleButton } from '../components/proposal/agent/ProposalAgentLayout';
 import { useProposalData } from '../hooks/useProposalData';
-import { applyEditSet, buildSnapshot, type ProposalEditSet } from '../lib/proposal-agent';
+import {
+  applyDraftToProposal,
+  applyEditSet,
+  buildSnapshot,
+  type ProposalDraftPayload,
+  type ProposalEditSet,
+} from '../lib/proposal-agent';
 
 function SaveStatusDot() {
   const { saveStatus } = useProposalEdit();
@@ -64,11 +70,20 @@ export default function ProposalEditor() {
 
   const { proposal, client, lineItems, contractDocs, signatures, settings } = data;
 
-  const onApplyEdits = async (edits: ProposalEditSet) => {
-    const result = await applyEditSet(proposal, lineItems, edits);
+  const setApplied = (result: { proposal: typeof proposal; lineItems: typeof lineItems }) =>
     setData(prev =>
       prev ? { ...prev, proposal: result.proposal, lineItems: result.lineItems } : prev,
     );
+
+  const onApplyEdits = async (edits: ProposalEditSet) => {
+    setApplied(await applyEditSet(proposal, lineItems, edits));
+  };
+
+  // A broad rewrite comes back as a whole draft rather than a list of edits, so
+  // the editor has to accept one. Without this, Apply on a draft card did
+  // nothing at all. The draft lands on the open proposal, never a new one.
+  const onApplyDraft = async (draft: ProposalDraftPayload) => {
+    setApplied(await applyDraftToProposal(proposal, lineItems, draft));
   };
 
   return (
@@ -79,6 +94,7 @@ export default function ProposalEditor() {
         clientId: proposal.client_id,
         getSnapshot: () => buildSnapshot(proposal, lineItems),
         onApplyEdits,
+        onApplyDraft,
       }}
     >
       <ProposalAgentLayout blockTitles={blockTitles} itemNames={itemNames}>
