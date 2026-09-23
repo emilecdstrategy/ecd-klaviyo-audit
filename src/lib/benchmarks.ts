@@ -1,5 +1,5 @@
 import { classifyCoreFlowName } from './core-flows-matrix';
-import { isNonRevenueFlow } from './revenue-calculator';
+import { isNonRevenueFlow } from './non-revenue-flows';
 
 /** Canonical Klaviyo email/flow benchmark bands (decimal rates, e.g. 0.25 = 25%). */
 export const OPEN_RATE_BENCHMARK = { low: 0.25, high: 0.45 } as const;
@@ -112,7 +112,7 @@ export function buildFlowsHealthBenchmarks(config: BenchmarkConfig = DEFAULT_BEN
     clickRateLow: config.clickRateLow,
     clickRateHigh: config.clickRateHigh,
     revenueTiers: [...REVENUE_TIERS],
-  } as const;
+  };
 }
 
 export const DEFAULT_FLOWS_HEALTH_BENCHMARKS = buildFlowsHealthBenchmarks();

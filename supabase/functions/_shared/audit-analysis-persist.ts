@@ -11,36 +11,39 @@ import {
   fetchCoreFlowRecommendations,
 } from "./core-flow-recommendations.ts";
 
+// MUST match computeAuditTotalRevenueOpportunity in src/lib/revenue-calculator.ts.
+// This copy writes audits.total_revenue_opportunity; that one is what every
+// screen shows. They had drifted two ways (see below), so the stored total and
+// the displayed one disagreed; audit-analysis-persist.test.ts pins the parity.
 const REVENUE_SECTION_KEYS = ["flows", "segmentation", "campaigns", "signup_forms", "email_design"];
 
 export function defaultEmailDesignRevenue(totalExcludingEmail: number): number {
   return Math.max(300, Math.round(totalExcludingEmail * 0.1));
 }
 
+/** The report editor stores "hidden" at section_config[sectionKey].hidden, which
+ * is where the frontend reads it. This used to read section_config.hidden at the
+ * root, which nothing ever sets, so a hidden section was always counted: the
+ * June HigherDose audit stored $16,100 against the $14,300 its report shows. */
 function sectionVisible(sectionKey: string, sectionConfig: unknown): boolean {
   if (!sectionConfig || typeof sectionConfig !== "object") return true;
-  const hidden = (sectionConfig as Record<string, unknown>).hidden;
-  return hidden !== true;
+  const own = (sectionConfig as Record<string, unknown>)[sectionKey];
+  if (!own || typeof own !== "object") return true;
+  return (own as Record<string, unknown>).hidden !== true;
 }
 
+/** Sections only. Add-ons used to be added in as revenue estimates; since they
+ * became ECD's own priced services (one-time and monthly fees the client pays)
+ * they are a cost, not an opportunity, and the frontend dropped them. This copy
+ * kept adding them. The layout parameter is kept for the call sites. */
 export function computeAuditTotalRevenueOpportunity(
   sections: Array<{ section_key?: string; revenue_opportunity?: number; section_config?: unknown }>,
-  layout: unknown,
+  _layout?: unknown,
 ): number {
-  const sectionTotal = sections
+  return sections
     .filter((s) => s.section_key && REVENUE_SECTION_KEYS.includes(s.section_key))
     .filter((s) => sectionVisible(s.section_key!, s.section_config ?? null))
     .reduce((sum, s) => sum + (Number(s.revenue_opportunity) || 0), 0);
-
-  const layoutObj = (layout as Record<string, unknown> | null | undefined) ?? {};
-  const revenueSummary = layoutObj.revenue_summary as Record<string, unknown> | undefined;
-  const blocks = revenueSummary?.blocks as Record<string, unknown> | undefined;
-  const addOns = blocks?.addOns as Record<string, unknown> | undefined;
-  const items = Array.isArray(addOns?.items) ? addOns.items as Array<{ revenue_monthly?: number; is_hidden?: boolean }> : [];
-  const addOnTotal = items
-    .filter((item) => item && !item.is_hidden)
-    .reduce((sum, item) => sum + (Number(item.revenue_monthly) || 0), 0);
-  return sectionTotal + addOnTotal;
 }
 
 export type AddOnPlacementPersist = {

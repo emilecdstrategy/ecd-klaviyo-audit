@@ -1,27 +1,8 @@
 import { isRevenueOpportunitySectionVisible } from './report-config/resolve';
 
-const NON_REVENUE_FLOW_PATTERNS = [
-  /review\s*request/i,
-  /review\s*follow/i,
-  /feedback/i,
-  /survey/i,
-  /nps/i,
-  /sunset/i,
-  /list\s*clean/i,
-  /order\s*confirm/i,
-  /order\s*notif/i,
-  /shipping/i,
-  /delivery/i,
-  /fulfillment/i,
-  /transactional/i,
-  /password\s*reset/i,
-  /account\s*confirm/i,
-  /double\s*opt/i,
-];
-
-export function isNonRevenueFlow(flowName: string): boolean {
-  return NON_REVENUE_FLOW_PATTERNS.some(p => p.test(flowName));
-}
+// Re-exported for existing importers; the helper itself lives on its own to
+// keep benchmarks.ts out of an import cycle (see non-revenue-flows.ts).
+export { isNonRevenueFlow } from './non-revenue-flows';
 
 export function formatCurrency(amount: number): string {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(amount);

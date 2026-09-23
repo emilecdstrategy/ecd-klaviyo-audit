@@ -28,7 +28,12 @@ describe('computeAuditTotalRevenueOpportunity', () => {
     expect(total).toBe(6200);
   });
 
-  it('still includes visible add-on items from layout', () => {
+  // Add-ons stopped being revenue estimates in ed84d8e: they are ECD's own
+  // priced services (fees the client pays), so they are a cost, not an
+  // opportunity. This test still asserted the old sum and had been failing
+  // since. The backend copy of this function is pinned to the same behaviour in
+  // supabase/functions/_shared/audit-analysis-persist.test.ts.
+  it('does not count add-on items, which are priced services rather than revenue', () => {
     const sections = [
       {
         section_key: 'flows',
@@ -49,6 +54,6 @@ describe('computeAuditTotalRevenueOpportunity', () => {
       },
     };
 
-    expect(computeAuditTotalRevenueOpportunity(sections, layout)).toBe(1250);
+    expect(computeAuditTotalRevenueOpportunity(sections, layout)).toBe(1000);
   });
 });
