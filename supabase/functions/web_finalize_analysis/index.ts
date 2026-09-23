@@ -4,6 +4,7 @@ import { sessionsEvidence } from "../_shared/shopify-sessions.ts";
 import { belowFoldEvidence, isBelowFoldReport, popupEvidence, storefrontFactsForPlays } from "../_shared/below-fold-probe.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, hasCronSecret, isServiceRoleAuthorization } from "../_shared/auth.ts";
+import { claimJobStep, ensureJobRow, releaseStaleRun, writeClaimedStep } from "../_shared/job-claim.ts";
 import { createLlmClient, type LlmImage, type LlmMessage } from "../_shared/llm-adapter.ts";
 import { FINDINGS_GUARDRAILS, CRO_HEURISTICS } from "../_shared/ecommerce-ux-kb.ts";
 import { afterImagesEnabled } from "../_shared/after-images-enabled.ts";
@@ -359,15 +360,8 @@ function buildPageImages(
 }
 
 async function ensureJob(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
-  const { data: existing } = await sb.from("audit_analysis_jobs").select("*").eq("audit_id", auditId).maybeSingle();
-  if (existing) return existing;
-  const { data, error } = await sb
-    .from("audit_analysis_jobs")
-    .insert({ audit_id: auditId, client_id: clientId, status: "pending", step_index: 0, partial_state: { web: true } })
-    .select("*")
-    .single();
-  if (error) throw error;
-  return data;
+  // deno-lint-ignore no-explicit-any
+  return (await ensureJobRow(sb, auditId, clientId, { web: true })) as any;
 }
 
 async function clearWebSections(sb: ReturnType<typeof assertServiceClient>, sections: SectionRow[]) {
@@ -1167,6 +1161,9 @@ async function runPipeline(auditId: string, correlationId: string, mode?: string
   if (job.status === "running" && !stale) {
     return json({ ok: true, correlationId, status: "in_progress", reason: "already_running" });
   }
+  if (stale) {
+    await releaseStaleRun(sb, auditId, new Date(Date.now() - 160_000).toISOString());
+  }
 
   // CAPTURE MUST BE FINISHED FIRST. Analysis reads only screenshots whose row
   // says "success", so a page whose shot has not landed yet looks exactly like a
@@ -1188,7 +1185,7 @@ async function runPipeline(auditId: string, correlationId: string, mode?: string
     await sb.from("audit_analysis_jobs").update({
       status: "pending",
       updated_at: new Date().toISOString(),
-    }).eq("audit_id", auditId);
+    }).eq("audit_id", auditId).neq("status", "running");
     return json({
       ok: true,
       correlationId,
@@ -1203,7 +1200,11 @@ async function runPipeline(auditId: string, correlationId: string, mode?: string
     return json({ ok: true, correlationId, status: "complete" });
   }
 
-  await sb.from("audit_analysis_jobs").update({ status: "running", updated_at: new Date().toISOString() }).eq("audit_id", auditId);
+  // Exactly one runner gets this step (see _shared/job-claim.ts).
+  const claim = await claimJobStep(sb, auditId, stepIndex);
+  if (!claim) {
+    return json({ ok: true, correlationId, status: "in_progress", reason: "step_claimed_elsewhere", step: stepIndex });
+  }
 
   const llm = createLlmClient("anthropic", { model: WEB_MODEL });
   const step = STEPS[stepIndex];
@@ -1218,22 +1219,21 @@ async function runPipeline(auditId: string, correlationId: string, mode?: string
     await runStep(sb, llm, auditId, step, (freshRows ?? []) as SectionRow[], undefined, contextBlock);
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await sb.from("audit_analysis_jobs").update({
-      status: "failed",
-      error_message: msg.slice(0, 1000),
-      updated_at: new Date().toISOString(),
-    }).eq("audit_id", auditId);
+    await writeClaimedStep(sb, auditId, claim.token, { status: "failed", error_message: msg.slice(0, 1000) });
     return json({ ok: false, correlationId, status: "failed", error: msg }, { status: 200 });
   }
 
   const nextIndex = stepIndex + 1;
   const done = nextIndex >= STEPS.length;
-  await sb.from("audit_analysis_jobs").update({
+  const stillOwned = await writeClaimedStep(sb, auditId, claim.token, {
     status: done ? "complete" : "pending",
     step_index: nextIndex,
     error_message: null,
-    updated_at: new Date().toISOString(),
-  }).eq("audit_id", auditId);
+  });
+  // A runner that lost the step must not start a second chain.
+  if (!stillOwned) {
+    return json({ ok: true, correlationId, status: "in_progress", reason: "step_lost", step: stepIndex });
+  }
 
   // IMPORTANT: never propagate `mode` to the continuation. `regenerate` must only
   // reset (clear sections + step_index=0) on the FIRST invocation; passing it to

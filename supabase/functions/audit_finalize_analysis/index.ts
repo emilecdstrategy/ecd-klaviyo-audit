@@ -3,6 +3,7 @@ import { createClient } from "npm:@supabase/supabase-js@2";
 import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { persistAuditAnalysisResults } from "../_shared/audit-analysis-persist.ts";
 import { autoPublishAudit } from "../_shared/auto-publish.ts";
+import { claimJobStep, ensureJobRow, releaseStaleRun, writeClaimedStep } from "../_shared/job-claim.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -278,28 +279,8 @@ async function buildWizardData(sb: ReturnType<typeof assertServiceClient>, audit
 }
 
 async function ensureJob(sb: ReturnType<typeof assertServiceClient>, auditId: string, clientId: string) {
-  const { data: existing } = await sb
-    .from("audit_analysis_jobs")
-    .select("*")
-    .eq("audit_id", auditId)
-    .maybeSingle();
-
-  if (existing?.status === "complete") return { job: existing, created: false };
-  if (existing) return { job: existing, created: false };
-
-  const { data: inserted, error } = await sb
-    .from("audit_analysis_jobs")
-    .insert({
-      audit_id: auditId,
-      client_id: clientId,
-      status: "pending",
-      step_index: 0,
-      partial_state: {},
-    })
-    .select("*")
-    .single();
-  if (error) throw error;
-  return { job: inserted, created: true };
+  // deno-lint-ignore no-explicit-any
+  return { job: (await ensureJobRow(sb, auditId, clientId, {})) as any };
 }
 
 async function runPipeline(
@@ -336,6 +317,15 @@ async function runPipeline(
       && ["pending", "running"].includes(String(activeJob.status)),
     );
     if (!highlightJobActive) {
+      // A full run cannot proceed once the summary exists, so a pending or
+      // running full-run row here was orphaned by a runner that lost a race.
+      // Left alone it was re-kicked by the watchdog every five minutes forever.
+      if (activeJob && ["pending", "running"].includes(String(activeJob.status))) {
+        await sb.from("audit_analysis_jobs")
+          .update({ status: "complete", updated_at: new Date().toISOString() })
+          .eq("audit_id", auditId)
+          .in("status", ["pending", "running"]);
+      }
       return json({ ok: true, correlationId, status: "complete", reason: "already_analyzed" });
     }
   }
@@ -414,10 +404,7 @@ async function runPipeline(
     return json({ ok: true, correlationId, status: "in_progress", reason: "already_running" });
   }
   if (jobStale) {
-    await sb.from("audit_analysis_jobs").update({
-      status: "pending",
-      updated_at: new Date().toISOString(),
-    }).eq("audit_id", auditId);
+    await releaseStaleRun(sb, auditId, new Date(Date.now() - 160_000).toISOString());
     job = { ...job, status: "pending" };
   }
 
@@ -454,12 +441,14 @@ async function runPipeline(
     }
   }
 
-  await sb.from("audit_analysis_jobs").update({
-    status: "running",
-    updated_at: new Date().toISOString(),
-  }).eq("audit_id", auditId);
-
-  const partial = (job.partial_state ?? {}) as Record<string, unknown>;
+  // Exactly one runner gets this step. Two kicks arriving together used to
+  // both run it, and then every step after it, in lockstep.
+  const claim = await claimJobStep(sb, auditId, stepIndex);
+  if (!claim) {
+    return json({ ok: true, correlationId, status: "in_progress", reason: "step_claimed_elsewhere", step: stepIndex });
+  }
+  // Read state as of the claim, not as of the select at the top.
+  const partial = (claim.row.partial_state ?? {}) as Record<string, unknown>;
   const step = steps[stepIndex];
 
   try {
@@ -558,13 +547,12 @@ async function runPipeline(
           }
           : undefined,
       );
-      await sb.from("audit_analysis_jobs").update({
+      await writeClaimedStep(sb, auditId, claim.token, {
         status: "complete",
         step_index: steps.length,
         partial_state: partial,
         error_message: null,
-        updated_at: new Date().toISOString(),
-      }).eq("audit_id", auditId);
+      });
       // The analysis is the whole Klaviyo pipeline, so this is "done".
       await autoPublishAudit(sb, auditId);
       // The direct mail section sits outside the step machine: it reads the
@@ -575,15 +563,15 @@ async function runPipeline(
     }
 
     const nextIndex = stepIndex + 1;
-    await sb.from("audit_analysis_jobs").update({
+    const stillOwned = await writeClaimedStep(sb, auditId, claim.token, {
       status: nextIndex >= steps.length ? "complete" : "pending",
       step_index: nextIndex,
       partial_state: partial,
       error_message: null,
-      updated_at: new Date().toISOString(),
-    }).eq("audit_id", auditId);
+    });
 
-    if (nextIndex < steps.length) {
+    // A runner that lost the step must not start a second chain.
+    if (stillOwned && nextIndex < steps.length) {
       await chainSelf(auditId, highlightRegen ? "highlight_regen" : undefined);
     }
 
@@ -596,11 +584,10 @@ async function runPipeline(
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
-    await sb.from("audit_analysis_jobs").update({
+    await writeClaimedStep(sb, auditId, claim.token, {
       status: "failed",
       error_message: msg.slice(0, 1000),
-      updated_at: new Date().toISOString(),
-    }).eq("audit_id", auditId);
+    });
     return json({ ok: false, correlationId, status: "failed", error: msg }, { status: 200 });
   }
 }
