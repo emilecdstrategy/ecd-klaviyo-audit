@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "preview": "vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.app.json",
+    "test": "vitest run",
+    "test:functions": "npx --yes deno test --allow-read --allow-env supabase/functions",
     "sb:functions:list": "dotenv -e .env.supabase -- supabase functions list --project-ref wuvqwuviwubthmuncuya",
     "sb:functions:deploy": "dotenv -e .env.supabase -- supabase functions deploy --project-ref wuvqwuviwubthmuncuya",
     "sb:functions:logs": "dotenv -e .env.supabase -- supabase functions logs --project-ref wuvqwuviwubthmuncuya",
@@ -63,6 +65,7 @@
     "tailwindcss": "^3.4.1",
     "typescript": "^5.5.3",
     "typescript-eslint": "^8.3.0",
-    "vite": "^5.4.2"
+    "vite": "^5.4.2",
+    "vitest": "3.2.7"
   }
 }

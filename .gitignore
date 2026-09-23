@@ -31,7 +31,23 @@ dist-ssr
 # Supabase CLI local state
 supabase/.temp/
 
-# MCP deploy debug artifacts
+# MCP deploy debug artifacts at the repo root. Dumps of function source and CLI
+# output from the old MCP deploy route (deploys use the Supabase CLI now); 65 of
+# these sat untracked and unignored, one `git add -A` from being committed.
+# Root-anchored so nothing inside src/ or supabase/ can match.
+/*deploy*.json
+/.*deploy*
+/*-mcp-args.json
+/mcp-*.json
+/.mcp-*
+/.tmp-*
+/.hp.html
+# Written by running `deno test` / `deno check` locally; deploys never had one.
+/deno.lock
+scripts/deploy-*.mjs
+# Reads the Supabase CLI access token: never commit.
+scripts/read-supabase-cli-token.ps1
+
 scripts/.*
 scripts/_*.cjs
 scripts/for-mcp-embed.json
