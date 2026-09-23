@@ -321,6 +321,14 @@ export async function deleteProposalLineItem(id: string): Promise<void> {
   if (error) throw error;
 }
 
+/** Remove several line items in one statement, so it either removes all of
+ * them or none, never a random subset. */
+export async function deleteProposalLineItems(ids: string[]): Promise<void> {
+  if (ids.length === 0) return;
+  const { error } = await supabase.from('proposal_line_items').delete().in('id', ids);
+  if (error) throw error;
+}
+
 // ---------------------------------------------------------------------------
 // Sending / public link
 

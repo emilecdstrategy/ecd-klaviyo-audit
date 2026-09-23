@@ -5,6 +5,7 @@ import {
   createProposal,
   createProposalLineItems,
   deleteProposalLineItem,
+  deleteProposalLineItems,
   recordProposalEvent,
   updateProposal,
   updateProposalLineItem,
@@ -361,7 +362,10 @@ export async function applyDraftToProposal(
       : {}),
   });
 
-  for (const item of lineItems) await deleteProposalLineItem(item.id);
+  // New items first, then the old ones in a single statement. The first
+  // version deleted first, so a failed insert left the proposal with no line
+  // items at all. In this order the worst case is a proposal showing both sets,
+  // which is visible and fixable, not a lost price list.
   const nextItems = await createProposalLineItems(
     draft.line_items.map((item, i) => ({
       proposal_id: proposal.id,
@@ -377,6 +381,7 @@ export async function applyDraftToProposal(
       display_order: (i + 1) * 10,
     })),
   );
+  await deleteProposalLineItems(lineItems.map(li => li.id));
 
   // Best effort, and last, so a signer problem cannot lose the content.
   if (draft.agency_signer) {
