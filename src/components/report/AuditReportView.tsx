@@ -34,7 +34,7 @@ import { ReportEntityProvider, useReportEntities } from './edit/ReportEntityCont
 import { usePlatformSettings } from '../../contexts/PlatformSettingsContext';
 import ReportBlockEditChrome, { ReportHiddenItemStub, ReportItemHideButton } from './edit/ReportBlockEditChrome';
 import ReportSectionEditChrome, { emailDesignAction, revenueOpportunitiesAction } from './edit/ReportSectionEditChrome';
-import { RichAuditText, renderInlineMarkdown } from '../ui/RichAuditText';
+import { renderInlineMarkdown } from '../ui/RichAuditText';
 import ImageLightbox from '../ui/ImageLightbox';
 import ImageUploadZone from '../ui/ImageUploadZone';
 import ResizableReportImage from '../ui/ResizableReportImage';
@@ -89,7 +89,7 @@ import {
   isDirectMailBlockVisible,
 } from '../../lib/report-config/resolve';
 import { DEFAULT_REVENUE_SUMMARY_SECTION } from '../../lib/report-config/defaults';
-import type { DeliverabilitySnapshotSectionConfig, RevenueSummarySectionConfig, GenericBlockConfig } from '../../lib/report-config/types';
+import type { RevenueSummarySectionConfig, GenericBlockConfig } from '../../lib/report-config/types';
 import type { SectionKeyFindings } from '../../lib/types';
 
 const NAV_ITEMS = [
@@ -177,10 +177,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     updateAddOnPrice,
     updateAddOnContent,
     updateAddOnImage,
-    updateAddOnImageScale,
     updateAttributionScreenshot,
     updateAttributionScreenshotScale,
-    updateSectionRevenueOpportunity,
     toggleLayoutSectionHidden,
     toggleAuditSectionHidden,
     toggleExecutiveBlockHidden,
@@ -188,7 +186,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
     toggleFlowsBlockHidden,
     toggleTimelinePhaseHidden,
     updateSectionBlockField,
-    patchSectionBlock,
   } = useReportEdit();
   const [activeSection, setActiveSection] = useState('summary');
   const [scrollProgress, setScrollProgress] = useState(0);
@@ -333,7 +330,6 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
   }, [audit.executive_summary, editMode]);
 
   const {
-    execText,
     aiFindings,
     aiStrengths,
     aiTimeline,
@@ -987,18 +983,8 @@ export default function AuditReportView({ data, topBanner, onManageEmailDesign, 
         >
           <ReportSectionHeader
             number={sectionNumbers['deliverability'] ?? deliverabilitySnapshotCfg.sectionNumber ?? '04'}
-            label={
-              editMode ? (
-                <EditablePlainText
-                  value={deliverabilitySnapshotCfg.sectionTitle ?? 'Deliverability'}
-                  onSave={v => updateLayoutTitle('deliverability_snapshot', 'sectionTitle', v)}
-                  className="text-base font-bold text-gray-900"
-                  as="span"
-                />
-              ) : (
-                deliverabilitySnapshotCfg.sectionTitle ?? 'Deliverability'
-              )
-            }
+            label={deliverabilitySnapshotCfg.sectionTitle ?? 'Deliverability'}
+            onSaveLabel={v => updateLayoutTitle('deliverability_snapshot', 'sectionTitle', v)}
             demoMarkers={demoFor('deliverability')}
             sectionKey="account_health"
             addOnItems={addOnCatalogItems}
@@ -2358,7 +2344,7 @@ function EmailDesignSection({
   clientTitle,
 }: {
   emailDesign: AuditEmailDesign;
-  annotations: import('../lib/types').Annotation[];
+  annotations: Annotation[];
   sections: AuditSection[];
   subtitleOverride?: string;
   benchmarkTitle?: string;
@@ -2415,7 +2401,7 @@ function EmailDesignComparison({
   onFullscreenChange,
 }: {
   emailDesign: AuditEmailDesign;
-  annotations: import('../lib/types').Annotation[];
+  annotations: Annotation[];
   sections: AuditSection[];
   benchmarkTitle?: string;
   clientTitle?: string;

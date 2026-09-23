@@ -25,12 +25,10 @@ import HoverTooltip from '../components/ui/HoverTooltip';
 import { ALL_AREAS, AREA_LABELS, canManageUsers } from '../lib/access';
 import type { AppAccess, AppArea } from '../lib/types';
 import { Select, SelectContent, SelectItem, SelectItemText, SelectTrigger, SelectValue } from '../components/ui/select';
-import { useToast } from '../components/ui/Toast';
 import { supabase } from '../lib/supabase';
 import { DEFAULT_HOURLY_RATE, getWebAuditHourlyRate, updateWebAuditHourlyRate } from '../lib/web-audit-pricing';
 import SimpleRichEditor from '../components/ui/SimpleRichEditor';
 import {
-  uploadAuditAssetFile,
   listRevenueOpportunityTemplates,
   createRevenueOpportunityTemplate,
   updateRevenueOpportunityTemplate,

@@ -82,7 +82,7 @@ export function computeInvestmentTotals(lines: InvestmentLineItem[]): Investment
 export function formatInvestmentTotal(
   total: number,
   hasLabelOnly: boolean,
-  unit: AddOnPriceUnit,
+  _unit: AddOnPriceUnit,
 ): string {
   if (total > 0) return formatCurrency(total);
   if (hasLabelOnly) return 'See line items';

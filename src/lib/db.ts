@@ -664,7 +664,7 @@ export async function deleteAnnotation(id: string): Promise<void> {
   if (error) throw error;
 }
 
-type AuditReportBundle = {
+export type AuditReportBundle = {
   audit: Audit;
   client: Client;
   sections: AuditSection[];

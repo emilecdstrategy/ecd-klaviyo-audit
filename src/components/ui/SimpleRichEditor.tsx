@@ -25,7 +25,6 @@ export default function SimpleRichEditor({
   placeholder,
   entityTags = true,
   entityLookup,
-  autoTagEntities = true,
   richBlocks = false,
 }: SimpleRichEditorProps) {
   const { entityHighlightsEnabled } = usePlatformSettings();

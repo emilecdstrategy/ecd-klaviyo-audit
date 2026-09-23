@@ -12,7 +12,7 @@ type EditablePlainTextProps = {
   value: string;
   onSave?: (value: string) => void;
   className?: string;
-  as?: 'span' | 'h1' | 'h2' | 'h3' | 'p';
+  as?: 'span' | 'h1' | 'h2' | 'h3' | 'h4' | 'p';
   placeholder?: string;
   rich?: boolean;
 };

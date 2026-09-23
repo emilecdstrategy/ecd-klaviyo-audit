@@ -10,13 +10,13 @@ describe('flattenSectionsWithAnnotations', () => {
     const annotation = {
       id: 'ann-1',
       audit_section_id: 'sec-1',
-      x: 0,
-      y: 0,
-      width: 10,
-      height: 10,
-      text: 'Note',
+      asset_id: null,
+      x_position: 0,
+      y_position: 0,
+      label: 'Note',
+      side: 'current',
       created_at: '2026-01-01',
-    } as Annotation;
+    } satisfies Annotation;
 
     const section = {
       id: 'sec-1',

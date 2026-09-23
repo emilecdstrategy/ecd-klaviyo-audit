@@ -107,7 +107,7 @@ type ReportEditContextValue = {
   updateExecText: (value: string) => void;
   updateSectionField: (
     sectionKey: string,
-    field: 'current_state_notes' | 'optimized_state_notes' | 'current_state_title' | 'optimized_state_title' | 'human_edited_findings' | 'summary_text',
+    field: 'current_state_notes' | 'optimized_notes' | 'current_state_title' | 'optimized_state_title' | 'human_edited_findings' | 'summary_text',
     value: string,
   ) => void;
   updateLayoutTitle: (
@@ -188,6 +188,8 @@ type ReportEditContextValue = {
 
 const ReportEditContext = createContext<ReportEditContextValue>({
   editMode: false,
+  addFinding: () => {},
+  removeFinding: () => {},
   investmentToggleMode: false,
   saveStatus: 'idle',
   updateFinding: () => {},
@@ -385,7 +387,7 @@ export function ReportEditProvider({
   const updateSectionField = useCallback(
     (
       sectionKey: string,
-      field: 'current_state_notes' | 'optimized_state_notes' | 'current_state_title' | 'optimized_state_title' | 'human_edited_findings' | 'summary_text',
+      field: 'current_state_notes' | 'optimized_notes' | 'current_state_title' | 'optimized_state_title' | 'human_edited_findings' | 'summary_text',
       value: string,
     ) => {
       const section = sections.find(s => s.section_key === sectionKey);

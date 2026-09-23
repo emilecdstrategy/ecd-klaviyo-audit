@@ -143,7 +143,7 @@ export default function EditableCurrency({
         <Pencil
           className={cn(
             'h-3 w-3 shrink-0 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100',
-            variant === 'on-dark' ? 'text-white/50' : 'text-brand-primary/50',
+            'text-brand-primary/50',
           )}
           aria-hidden
         />

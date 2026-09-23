@@ -2,7 +2,14 @@ import { ENTITY_CHIP_CLASS, resolveEntityType, type EntityType } from './entity-
 
 export const HIGHLIGHT_SHORTCUT_LABEL = 'Ctrl+Shift+H';
 
-export function isHighlightShortcut(e: KeyboardEvent): boolean {
+// Structural so both DOM and React keyboard events are accepted.
+export function isHighlightShortcut(e: {
+  key: string;
+  shiftKey: boolean;
+  altKey: boolean;
+  ctrlKey: boolean;
+  metaKey: boolean;
+}): boolean {
   return (
     e.key.toLowerCase() === 'h' &&
     e.shiftKey &&
@@ -13,6 +20,7 @@ export function isHighlightShortcut(e: KeyboardEvent): boolean {
 
 function findEntityTagAncestor(node: Node | null, root: HTMLElement): HTMLElement | null {
   let el: Node | null = node;
+  if (!el) return null;
   if (el.nodeType === Node.TEXT_NODE) el = el.parentElement;
   while (el instanceof HTMLElement && el !== root) {
     if (el.hasAttribute('data-entity-type')) return el;

@@ -3,7 +3,6 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import {
   ArrowLeft,
   ArrowRight,
-  CheckCircle2,
   Globe,
   Loader2,
   Mail,
@@ -24,8 +23,6 @@ import { KlaviyoApiKeyHelpTrigger } from '../components/klaviyo/KlaviyoApiKeyHel
 import WebStoreAccess from '../components/web/WebStoreAccess';
 import ImageUploadZone from '../components/ui/ImageUploadZone';
 import { supabase } from '../lib/supabase';
-
-const CONTEXT_CHAR_HARD = 30_000;
 
 type StepKey = 'type' | 'prospect' | 'klaviyo_connection' | 'web_setup' | 'attribution' | 'line_items';
 
@@ -267,7 +264,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     (async () => {
       try {
         // Only surface services for the chosen audit type (plus 'both').
-        const templates = await listRevenueOpportunityTemplates({ activeOnly: true, auditType });
+        const templates = await listRevenueOpportunityTemplates({ activeOnly: true, auditType: auditType ?? undefined });
         if (!cancelled) setRevenueTemplates(templates);
       } catch {
         if (!cancelled) setRevenueTemplates([]);
@@ -418,7 +415,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             esp_platform: 'Klaviyo',
             api_key_placeholder: '',
             notes: '',
-          }) as Partial<Client>);
+          }) as Omit<Client, 'id' | 'created_at'>);
           clientId = created.id;
         }
       } else if (form.industry) {
@@ -483,7 +480,7 @@ export default function NewAudit({ asModal }: NewAuditProps) {
             esp_platform: 'Shopify',
             api_key_placeholder: '',
             notes: '',
-          }) as Partial<Client>);
+          }) as Omit<Client, 'id' | 'created_at'>);
           clientId = created.id;
         }
       } else {

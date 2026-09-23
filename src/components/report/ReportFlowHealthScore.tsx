@@ -6,7 +6,6 @@ import {
   classifyRate,
   buildFlowsHealthBenchmarks,
   DEFAULT_FLOWS_HEALTH_BENCHMARKS,
-  formatBenchmarkRange,
   formatHealthyBenchmarkRange,
   formatPctDecimal,
 } from '../../lib/benchmarks';

@@ -59,11 +59,6 @@ function formatRatePct(n: number | null) {
   return formatPctDecimal(n, { extraPrecisionBelow: 0.01 });
 }
 
-function formatInt(n: number | null) {
-  if (n == null || !Number.isFinite(n)) return 'N/A';
-  return new Intl.NumberFormat('en-US').format(Math.round(n));
-}
-
 function formatIntWithTruncFlag(n: number | null, truncated: boolean | null | undefined) {
   if (n == null || !Number.isFinite(n)) return 'N/A';
   const s = new Intl.NumberFormat('en-US').format(Math.round(n));

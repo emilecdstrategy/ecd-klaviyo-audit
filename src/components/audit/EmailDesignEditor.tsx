@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Mail, Maximize2, RefreshCw, X as XIcon, Palette } from 'lucide-react';
 import AnnotationLayer from './AnnotationLayer';
 import ClientEmailPickerModal from './ClientEmailPickerModal';
@@ -19,7 +19,6 @@ export default function EmailDesignEditor({
   section,
   onAnnotationsChange,
   onEmailDesignChange,
-  onSectionUpdate,
 }: {
   audit: Audit;
   emailDesign: AuditEmailDesign | null;

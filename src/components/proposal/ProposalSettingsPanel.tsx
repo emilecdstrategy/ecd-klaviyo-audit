@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Image as ImageIcon, Mail } from 'lucide-react';
 import ImageUploadZone from '../ui/ImageUploadZone';
 import { useToast } from '../ui/Toast';
-import { getProposalSettings, updateProposalSettings, generateVoiceProfile } from '../../lib/proposals-db';
+import { getProposalSettings, updateProposalSettings } from '../../lib/proposals-db';
 import { uploadReportScreenshot } from '../../lib/db';
 import type { ProposalSettings } from '../../lib/types';
 import VoiceProfileSection from '../ui/VoiceProfileSection';

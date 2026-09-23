@@ -1,60 +1,11 @@
 import { useEffect, useState } from 'react';
-import { getPublicReportByToken } from '../lib/db';
+import { getPublicReportByToken, type AuditReportBundle } from '../lib/db';
 import { preloadAuditReportView } from '../lib/preload-audit-report-view';
-import type {
-  Audit,
-  AuditAsset,
-  AuditEmailDesign,
-  AuditSection,
-  Annotation,
-  Client,
-  FlowPerformance,
-  KlaviyoCampaignSnapshot,
-  KlaviyoFlowSnapshot,
-  KlaviyoFormSnapshot,
-  KlaviyoSegmentSnapshot,
-  ShopifyDataSnapshot,
-  WebPageSnapshot,
-} from '../lib/types';
-import type { GroupNameMap } from '../lib/segment-definition';
+import type { Audit, AuditEmailDesign, AuditSection, Annotation } from '../lib/types';
 
-export type AuditReportBundle = {
-  audit: Audit;
-  client: Client;
-  sections: AuditSection[];
-  assets: AuditAsset[];
-  annotations: Annotation[];
-  flowPerformance: FlowPerformance[];
-  flowSnapshots: KlaviyoFlowSnapshot[];
-  segmentSnapshots: KlaviyoSegmentSnapshot[];
-  formSnapshots: KlaviyoFormSnapshot[];
-  campaignSnapshots: KlaviyoCampaignSnapshot[];
-  emailDesign: AuditEmailDesign | null;
-  /** Web-audit-only payloads (empty/absent for Klaviyo audits). */
-  webPageSnapshots?: WebPageSnapshot[];
-  shopifySnapshots?: ShopifyDataSnapshot[];
-  reportingDiagnostic?: string | null;
-  /** Segment/list ID → name map stored once on the Klaviyo rollup (large accounts). */
-  klaviyoGroupNameMap?: GroupNameMap;
-  accountSnapshot?: {
-    total_profiles_count?: number | null;
-    email_subscribed_profiles_count: number | null;
-    sms_subscribed_profiles_count?: number | null;
-    active_profiles_90d_count: number | null;
-    suppressed_profiles_count: number | null;
-    bounce_rate_90d: number | null;
-    spam_rate_90d: number | null;
-    campaign_revenue_per_recipient_30d?: number | null;
-    active_profiles_definition?: string | null;
-    computed_at?: string | null;
-    email_subscribed_profiles_truncated?: boolean | null;
-    active_profiles_90d_truncated?: boolean | null;
-    suppressed_profiles_truncated?: boolean | null;
-    campaigns_truncated?: boolean | null;
-    deliverability_campaign_timeframe?: 'last_30_days' | 'last_90_days' | null;
-    profile_scan_status?: 'pending' | 'complete' | 'failed' | 'skipped' | null;
-  } | null;
-};
+// One definition, in db.ts, next to the fetch that fills it. The copy that
+// lived here had drifted (no revenue_breakdown or deliverability).
+export type { AuditReportBundle } from '../lib/db';
 
 export function useAuditReportData(token: string | undefined) {
   const [loading, setLoading] = useState(true);
