@@ -5,6 +5,7 @@ import { useAudioTranscription } from '../../../hooks/useAudioTranscription';
 import { useToast } from '../../ui/Toast';
 import { formatCurrency } from '../../../lib/revenue-calculator';
 import { RichAuditContent } from '../../ui/RichAuditText';
+import AgentQuestionFlow from '../../ui/AgentQuestionFlow';
 import { useProposalAgent, type AgentChatMessage, type ConversationSummary } from './ProposalAgentContext';
 import { uploadProposalAgentFile } from '../../../lib/proposal-agent';
 import { imagesFromClipboard, isImageAttachment } from '../../../lib/chat-image-upload';
@@ -38,123 +39,6 @@ function TypingIndicator() {
         <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-gray-300 [animation-delay:400ms]" />
       </span>
       <span className="leading-none">{TYPING_LABELS[labelIndex]}…</span>
-    </div>
-  );
-}
-
-function QuestionChips({
-  question,
-  active,
-  onAnswer,
-}: {
-  question: AgentQuestion;
-  active: boolean;
-  onAnswer: (value: string) => void;
-}) {
-  const [selected, setSelected] = useState<string[]>([]);
-  const [otherOpen, setOtherOpen] = useState(false);
-  const [otherText, setOtherText] = useState('');
-  const otherRef = useRef<HTMLDivElement>(null);
-  const multi = Boolean(question.multi_select);
-
-  // Opening the free-text box grows the panel; bring it into view so the
-  // textarea is fully visible without manual scrolling.
-  useEffect(() => {
-    if (otherOpen) otherRef.current?.scrollIntoView({ behavior: 'smooth', block: 'end' });
-  }, [otherOpen]);
-
-  if (!active) return null;
-
-  return (
-    <div className="mt-3 space-y-2">
-      {question.options.map(opt => {
-        const isSelected = selected.includes(opt.value);
-        return (
-          <button
-            key={opt.label}
-            onClick={() => {
-              if (!multi) {
-                onAnswer(opt.value);
-                return;
-              }
-              setSelected(prev =>
-                isSelected ? prev.filter(v => v !== opt.value) : [...prev, opt.value],
-              );
-            }}
-            className={cn(
-              'flex w-full items-center gap-2.5 rounded-xl border px-3.5 py-2.5 text-left text-sm font-medium transition-colors',
-              isSelected
-                ? 'border-brand-primary bg-brand-primary/10 text-brand-primary'
-                : 'border-gray-200 bg-white text-gray-700 hover:border-brand-primary/40 hover:bg-gray-50',
-            )}
-          >
-            {multi && (
-              <span
-                className={cn(
-                  'flex h-4 w-4 shrink-0 items-center justify-center rounded border',
-                  isSelected ? 'border-brand-primary bg-brand-primary text-white' : 'border-gray-300',
-                )}
-              >
-                {isSelected && <Check className="h-3 w-3" />}
-              </span>
-            )}
-            <span className="flex-1">{opt.label}</span>
-          </button>
-        );
-      })}
-
-      {otherOpen ? (
-        <div ref={otherRef} className="rounded-xl border border-brand-primary/40 bg-white p-2">
-          <textarea
-            autoFocus
-            value={otherText}
-            onChange={e => setOtherText(e.target.value)}
-            onKeyDown={e => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                if (otherText.trim()) onAnswer(otherText.trim());
-              }
-            }}
-            rows={2}
-            placeholder="Type your own answer…"
-            className="w-full resize-none bg-transparent px-1.5 py-1 text-sm text-gray-900 outline-none placeholder:text-gray-400"
-          />
-          <div className="flex justify-end gap-2 pt-1">
-            <button
-              onClick={() => {
-                setOtherOpen(false);
-                setOtherText('');
-              }}
-              className="rounded-lg px-3 py-1.5 text-xs font-medium text-gray-500 hover:text-gray-700"
-            >
-              Cancel
-            </button>
-            <button
-              onClick={() => otherText.trim() && onAnswer(otherText.trim())}
-              disabled={!otherText.trim()}
-              className="rounded-lg bg-brand-primary px-3 py-1.5 text-xs font-semibold text-white hover:bg-brand-primary-dark disabled:opacity-40"
-            >
-              Send
-            </button>
-          </div>
-        </div>
-      ) : (
-        <button
-          onClick={() => setOtherOpen(true)}
-          className="flex w-full items-center gap-2.5 rounded-xl border border-dashed border-gray-300 px-3.5 py-2.5 text-left text-sm font-medium text-gray-500 hover:border-gray-400 hover:text-gray-700"
-        >
-          Other (type your own answer)…
-        </button>
-      )}
-
-      {multi && selected.length > 0 && (
-        <button
-          onClick={() => onAnswer(selected.join('; '))}
-          className="w-full rounded-xl bg-brand-primary px-3.5 py-2.5 text-sm font-semibold text-white hover:bg-brand-primary-dark"
-        >
-          Send {selected.length} selected
-        </button>
-      )}
     </div>
   );
 }
@@ -439,13 +323,7 @@ function MessageBubble({
           />
         )}
         {question && (
-          <>
-            {!message.content && <p className="text-sm text-gray-700">{question.question}</p>}
-            {message.content && !message.content.includes(question.question) && (
-              <p className="mt-1 text-sm text-gray-700">{question.question}</p>
-            )}
-            <QuestionChips question={question} active={isLast} onAnswer={onAnswer} />
-          </>
+          <AgentQuestionFlow payload={question} messageText={message.content ?? ''} active={isLast} onAnswer={onAnswer} />
         )}
         {draft && <DraftPreviewCard draft={draft} />}
         {edits && <EditSetPreviewCard edits={edits} blockTitles={blockTitles} itemNames={itemNames} />}

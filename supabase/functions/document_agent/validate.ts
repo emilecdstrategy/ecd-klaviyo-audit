@@ -37,33 +37,9 @@ function isStr(v: unknown): v is string {
   return typeof v === "string";
 }
 
-export function validateQuestion(input: any): ValidationResult<{
-  question: string;
-  options: Array<{ label: string; value: string }>;
-  allow_other: true;
-  multi_select: boolean;
-}> {
-  if (!input || typeof input !== "object") return { ok: false, error: "ask_user input must be an object" };
-  if (!isStr(input.question) || !input.question.trim()) return { ok: false, error: "ask_user.question is required" };
-  if (!Array.isArray(input.options) || input.options.length < 2 || input.options.length > 4) {
-    return { ok: false, error: "ask_user.options must have 2-4 entries" };
-  }
-  for (const o of input.options) {
-    if (!o || !isStr(o.label) || !isStr(o.value) || !o.label.trim() || !o.value.trim()) {
-      return { ok: false, error: "each ask_user option needs a non-empty label and value" };
-    }
-  }
-  return {
-    ok: true,
-    value: {
-      question: input.question.trim(),
-      options: input.options.map((o: any) => ({ label: o.label.trim(), value: o.value.trim() })),
-      allow_other: true,
-      multi_select: Boolean(input.multi_select),
-    },
-  };
-}
-
+// Shared with the proposal assistant, including recovery of options that
+// arrive as text or leaked markup, and multi-question asks.
+export { validateQuestion } from "../_shared/ask-user.ts";
 /** A named signer, trimmed and length-capped. Kept as free text on purpose: the
  * app resolves it against the real team list and falls back to the default
  * signer, so an unrecognised name never signs as the wrong person. */

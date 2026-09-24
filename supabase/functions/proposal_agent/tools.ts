@@ -1,4 +1,5 @@
 import type { LlmTool } from "../_shared/llm-adapter.ts";
+import { askUserTool } from "../_shared/ask-user.ts";
 
 const LINE_ITEM_SCHEMA = {
   type: "object",
@@ -93,32 +94,9 @@ export const AGENT_TOOLS: LlmTool[] = [
       "Get a fuller history for the CURRENT client (the one this proposal is for): more of their past proposals (titles, sections, line items, pricing, status) and their most recent audit (background, meeting notes, revenue opportunity, chosen add-ons). A short summary is already provided in WHAT WE ALREADY KNOW ABOUT THIS CLIENT; call this only when you need more depth than that summary. No arguments needed.",
     input_schema: { type: "object", properties: {} },
   },
-  {
-    name: "ask_user",
-    description:
-      "Ask the user one clarifying question with 2-4 concrete options rendered as clickable chips (plus an automatic free-text 'Other'). ALWAYS use this tool to ask a question, including simple yes/no questions (give Yes and No as the two options). This is the only way the user gets clickable answers. Never ask a question as plain chat text. Use it when a decision materially shapes the proposal and the answer is not available. This ends your turn.",
-    input_schema: {
-      type: "object",
-      properties: {
-        question: { type: "string", description: "One clear question, a single sentence" },
-        options: {
-          type: "array",
-          minItems: 2,
-          maxItems: 4,
-          items: {
-            type: "object",
-            properties: {
-              label: { type: "string", description: "Short chip label, 1-6 words" },
-              value: { type: "string", description: "The full answer text sent back when this chip is clicked" },
-            },
-            required: ["label", "value"],
-          },
-        },
-        multi_select: { type: "boolean", description: "Allow selecting multiple options" },
-      },
-      required: ["question", "options"],
-    },
-  },
+  askUserTool(
+    "Use it when a decision materially shapes the proposal and the answer is not available.",
+  ),
   {
     name: "propose_draft",
     description:

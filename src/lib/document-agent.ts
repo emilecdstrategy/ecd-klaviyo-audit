@@ -12,6 +12,8 @@ export type DocAgentQuestion = {
   options: Array<{ label: string; value: string }>;
   allow_other: boolean;
   multi_select?: boolean;
+  /** Set when several questions were asked at once; the first mirrors the top level. */
+  questions?: Array<{ question: string; options: Array<{ label: string; value: string }>; multi_select?: boolean }>;
 };
 
 export type DocDraftPayload = {

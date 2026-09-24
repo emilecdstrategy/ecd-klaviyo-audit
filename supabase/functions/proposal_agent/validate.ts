@@ -51,72 +51,8 @@ function isStrOrNull(v: unknown): v is string | null {
   return v === null || v === undefined || typeof v === "string";
 }
 
-export function validateQuestion(input: any): ValidationResult<{
-  question: string;
-  options: Array<{ label: string; value: string }>;
-  allow_other: true;
-  multi_select: boolean;
-}> {
-  if (!input || typeof input !== "object") return { ok: false, error: "ask_user input must be an object" };
-  if (!isStr(input.question) || !input.question.trim()) return { ok: false, error: "ask_user.question is required" };
-
-  // The schema asks for 2 to 4 options, and the model usually obliges. What
-  // arrives otherwise is worth repairing rather than refusing: the panel renders
-  // any number of chips and always offers a free-text "Other", so a single
-  // usable option is a working question, and an error is not.
-  const normalized = normalizeToArray(input.options);
-  if (normalized === null) {
-    return {
-      ok: false,
-      error:
-        "options could not be read as a list of choices. Send it as a JSON array of { label, value } objects, " +
-        "not as text and not as function-call markup.",
-    };
-  }
-
-  const options: Array<{ label: string; value: string }> = [];
-  for (const entry of normalized) {
-    if (!entry || typeof entry !== "object") continue;
-    const row = entry as Record<string, unknown>;
-    const label = isStr(row.label) ? row.label.trim() : "";
-    const value = isStr(row.value) ? row.value.trim() : "";
-    if (!label && !value) continue;
-    // A chip whose label is the whole answer is fine, and so is the reverse:
-    // the label is what the user reads, the value is what they send back.
-    options.push({ label: label || chipLabel(value), value: value || label });
-  }
-
-  // Markup recovery can strand the last option's value as a sibling key of the
-  // payload, because that is where the model's broken syntax left it.
-  const stray = isStr(input.value) ? input.value.trim() : "";
-  const last = options[options.length - 1];
-  if (stray && last && last.value === last.label) last.value = stray;
-
-  if (options.length === 0) {
-    return { ok: false, error: "ask_user.options needs at least one option with a label and an answer value" };
-  }
-
-  return {
-    ok: true,
-    value: {
-      question: input.question.trim(),
-      // More than a handful of chips is a menu, not a question. Keep the first
-      // few rather than failing; "Other" covers anything dropped.
-      options: options.slice(0, 6),
-      allow_other: true,
-      multi_select: Boolean(input.multi_select),
-    },
-  };
-}
-
-/** A short, readable chip for an option that only gave its full answer text. */
-function chipLabel(value: string): string {
-  const oneLine = value.replace(/\s+/g, " ").trim();
-  if (oneLine.length <= 60) return oneLine;
-  const cut = oneLine.slice(0, 57);
-  const lastSpace = cut.lastIndexOf(" ");
-  return (lastSpace > 30 ? cut.slice(0, lastSpace) : cut) + "...";
-}
+// ask_user validation is shared with the document assistant.
+export { validateQuestion } from "../_shared/ask-user.ts";
 
 function validateLineItem(item: any, label: string): string | null {
   if (!item || typeof item !== "object") return `${label} must be an object`;

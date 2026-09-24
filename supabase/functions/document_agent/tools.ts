@@ -1,4 +1,5 @@
 import type { LlmTool } from "../_shared/llm-adapter.ts";
+import { askUserTool } from "../_shared/ask-user.ts";
 
 export const AGENT_TOOLS: LlmTool[] = [
   {
@@ -27,32 +28,9 @@ export const AGENT_TOOLS: LlmTool[] = [
       "List the saved document templates (name + body) to reuse existing wording and structure. Use before drafting when the user references a known document type.",
     input_schema: { type: "object", properties: {} },
   },
-  {
-    name: "ask_user",
-    description:
-      "Ask the user one clarifying question with 2-4 concrete options rendered as clickable chips (plus an automatic free-text 'Other'). ALWAYS use this tool to ask a question, including yes/no (give Yes and No). This is the only way the user gets clickable answers. Never ask a question as plain chat text. This ends your turn.",
-    input_schema: {
-      type: "object",
-      properties: {
-        question: { type: "string", description: "One clear question, a single sentence" },
-        options: {
-          type: "array",
-          minItems: 2,
-          maxItems: 4,
-          items: {
-            type: "object",
-            properties: {
-              label: { type: "string", description: "Short chip label, 1-6 words" },
-              value: { type: "string", description: "The full answer text sent back when this chip is clicked" },
-            },
-            required: ["label", "value"],
-          },
-        },
-        multi_select: { type: "boolean", description: "Allow selecting multiple options" },
-      },
-      required: ["question", "options"],
-    },
-  },
+  askUserTool(
+    "Use it when a required detail or decision is missing.",
+  ),
   {
     name: "propose_draft",
     description:
