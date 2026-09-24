@@ -141,7 +141,8 @@ export function markdownToEditorHtml(md: string): string {
     .map(block => {
       if (block.type === 'list') {
         const items = block.items.map(item => `<li>${inlineMdToHtml(item)}</li>`).join('');
-        return block.ordered ? `<ol>${items}</ol>` : `<ul>${items}</ul>`;
+        if (!block.ordered) return `<ul>${items}</ul>`;
+        return block.start ? `<ol start="${block.start}">${items}</ol>` : `<ol>${items}</ol>`;
       }
       if (block.type === 'heading') {
         const tag = `h${Math.min(block.level, 3)}`;
@@ -308,7 +309,8 @@ export function htmlToMd(html: string): string {
 export type RichAuditBlock =
   | { type: 'paragraph'; text: string }
   | { type: 'heading'; level: number; text: string }
-  | { type: 'list'; ordered: boolean; items: string[] }
+  /** `start` is the first item's own number, so a list the source broke up still counts on. */
+  | { type: 'list'; ordered: boolean; items: string[]; start?: number }
   | { type: 'table'; header: string[]; rows: string[][] };
 
 /** `| a | b |` -> ['a', 'b'], tolerating missing outer pipes. */
@@ -332,10 +334,15 @@ export function parseRichAuditBlocks(text: string): RichAuditBlock[] {
   const blocks: RichAuditBlock[] = [];
   let listItems: string[] | null = null;
   let listOrdered = false;
+  let listStart = 1;
 
   const flushList = () => {
     if (listItems?.length) {
-      blocks.push({ type: 'list', ordered: listOrdered, items: listItems });
+      blocks.push(
+        listOrdered && listStart !== 1
+          ? { type: 'list', ordered: true, items: listItems, start: listStart }
+          : { type: 'list', ordered: listOrdered, items: listItems },
+      );
       listItems = null;
     }
   };
@@ -345,6 +352,15 @@ export function parseRichAuditBlocks(text: string): RichAuditBlock[] {
     const rawLine = lines[i];
     const line = rawLine.trim();
     if (!line) {
+      // A blank line between items ("1. a", "", "2. b") is a loose list, not the
+      // end of one. Flushing here restarted every item at 1.
+      if (listItems) {
+        let k = i + 1;
+        while (k < lines.length && !lines[k].trim()) k++;
+        const next = k < lines.length ? lines[k].trim() : '';
+        const nextIsSameList = listOrdered ? /^\d+\.\s+/.test(next) : /^[-*•]\s+/.test(next);
+        if (nextIsSameList) continue;
+      }
       flushList();
       continue;
     }
@@ -383,6 +399,7 @@ export function parseRichAuditBlocks(text: string): RichAuditBlock[] {
       if (!listItems) {
         listItems = [];
         listOrdered = ordered;
+        listStart = ordered ? parseInt(line, 10) || 1 : 1;
       }
       listItems.push(line.replace(ordered ? /^\d+\.\s+/ : /^[-*•]\s+/, '').trim());
       continue;

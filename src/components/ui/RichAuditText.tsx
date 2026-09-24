@@ -142,7 +142,7 @@ export function RichAuditContent({
             </li>
           ));
           return block.ordered ? (
-            <ol key={`list-${blockIndex}`} className={cls}>{items}</ol>
+            <ol key={`list-${blockIndex}`} className={cls} start={block.start}>{items}</ol>
           ) : (
             <ul key={`list-${blockIndex}`} className={cls}>{items}</ul>
           );
