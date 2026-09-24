@@ -134,10 +134,13 @@ serve(async (req) => {
           return json({ ok: false, error: { code: "bad_request", message: "This is the last admin. Promote another admin before removing this one." } }, { status: 200 });
         }
       }
-      // Remove profile first (non-fatal if missing)
-      await sb.from("profiles").delete().eq("id", body.user_id);
+      // Delete the account itself; the profile goes with it (on delete cascade)
+      // and anything they created or did keeps its row with the user cleared.
+      // Deleting the profile first used to leave a login with no profile behind
+      // whenever the account delete then failed.
       const { error } = await sb.auth.admin.deleteUser(body.user_id);
       if (error) throw error;
+      await sb.from("profiles").delete().eq("id", body.user_id);
       return json({ ok: true });
     }
 
