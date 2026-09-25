@@ -39,6 +39,7 @@ export async function sendSignedProposalToTracker(
     lineItems: LineItemRow[];
     signedAt: string;
     signerName: string;
+    signerEmail?: string | null;
     publicUrl: string | null;
   },
 ): Promise<void> {
@@ -62,6 +63,7 @@ export async function sendSignedProposalToTracker(
       proposal_url: args.publicUrl,
       signed_at: args.signedAt,
       signed_by_name: args.signerName,
+      signer_email: args.signerEmail ?? null,
       company_name: proposal.client?.company_name ?? proposal.title ?? "New client",
       website: proposal.client?.website_url ?? null,
       hubspot_company_id: hubspotCompanyId,

@@ -176,6 +176,7 @@ serve(async (req) => {
         lineItems,
         signedAt,
         signerName: typedName,
+        signerEmail,
         publicUrl: `https://proposal.ecdigitalstrategy.com/proposal/${token}`,
       }).catch(() => {});
     }
