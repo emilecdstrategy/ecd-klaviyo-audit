@@ -3,7 +3,7 @@ import { attachActorNames } from './actor-names';
 import { publicProposalOrigin } from './public-origin';
 import { resolveSignatureImage } from './signature-image';
 import { listStaffSigners, resolveSigner } from './staff-signers';
-import { MSA_SLUG, swapMsaForOnFile, type ExecutedMsa } from './msa-on-file';
+import { MSA_ON_FILE_SLUG, MSA_SLUG, swapMsaForOnFile, type ExecutedMsa } from './msa-on-file';
 import type {
   ContractDocument,
   Proposal,
@@ -173,7 +173,7 @@ export async function resolveContractsForClient(
   contracts: string[],
   excludeProposalId?: string,
 ): Promise<{ include_contracts: string[]; overrides: Record<string, string> }> {
-  if (!contracts.includes(MSA_SLUG)) return { include_contracts: contracts, overrides: {} };
+  if (!contracts.includes(MSA_SLUG) && !contracts.includes(MSA_ON_FILE_SLUG)) return { include_contracts: contracts, overrides: {} };
   const [msa, { data: client }] = await Promise.all([
     findExecutedMsa(clientId, excludeProposalId),
     supabase.from('clients').select('company_name, name').eq('id', clientId).maybeSingle(),

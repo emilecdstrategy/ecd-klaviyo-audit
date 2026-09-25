@@ -41,7 +41,13 @@ export function swapMsaForOnFile(
   msa: ExecutedMsa | null,
   clientName: string,
 ): { include_contracts: string[]; overrides: Record<string, string> } {
-  if (!msa || !contracts.includes(MSA_SLUG)) return { include_contracts: contracts, overrides: {} };
+  // The reference means nothing without a signed MSA behind it: a new client
+  // always gets the full agreement.
+  if (!msa) {
+    const include_contracts = [...new Set(contracts.map((s) => (s === MSA_ON_FILE_SLUG ? MSA_SLUG : s)))];
+    return { include_contracts, overrides: {} };
+  }
+  if (!contracts.includes(MSA_SLUG)) return { include_contracts: contracts, overrides: {} };
   const include_contracts = [...new Set(contracts.map((s) => (s === MSA_SLUG ? MSA_ON_FILE_SLUG : s)))];
   return { include_contracts, overrides: { [MSA_ON_FILE_SLUG]: msaOnFileText(msa, clientName) } };
 }

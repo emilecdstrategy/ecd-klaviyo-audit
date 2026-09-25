@@ -24,6 +24,13 @@ describe('MSA on file', () => {
     });
   });
 
+  it('gives a new client the full MSA even if the reference was picked', () => {
+    expect(swapMsaForOnFile([MSA_ON_FILE_SLUG, 'operating_agreement'], null, 'New Co').include_contracts).toEqual([
+      'msa',
+      'operating_agreement',
+    ]);
+  });
+
   it('does nothing when the MSA was not selected', () => {
     expect(swapMsaForOnFile(['operating_agreement'], signed, 'Lane 201').include_contracts).toEqual(['operating_agreement']);
   });
