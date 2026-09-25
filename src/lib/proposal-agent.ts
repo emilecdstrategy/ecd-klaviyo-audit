@@ -7,6 +7,7 @@ import {
   deleteProposalLineItem,
   deleteProposalLineItems,
   recordProposalEvent,
+  resolveContractsForClient,
   updateProposal,
   updateProposalLineItem,
 } from './proposals-db';
@@ -344,6 +345,11 @@ export async function applyDraftToProposal(
   lineItems: ProposalLineItem[],
   draft: ProposalDraftPayload,
 ): Promise<ApplyEditsResult> {
+  // A draft that attaches the template MSA for a client who already signed one
+  // gets the on-file reference instead, same as a newly created proposal.
+  const contracts = draft.include_contracts
+    ? await resolveContractsForClient(proposal.client_id, draft.include_contracts, proposal.id)
+    : null;
   const nextProposal = await updateProposal(proposal.id, {
     title: sanitizeCopy(draft.title) || proposal.title,
     content_blocks: draft.content_blocks.map(b => ({
@@ -351,7 +357,12 @@ export async function applyDraftToProposal(
       title: sanitizeCopy(b.title),
       content: sanitizeCopy(b.content),
     })),
-    ...(draft.include_contracts ? { include_contracts: draft.include_contracts } : {}),
+    ...(contracts
+      ? {
+          include_contracts: contracts.include_contracts,
+          contract_overrides: { ...(proposal.contract_overrides ?? {}), ...contracts.overrides },
+        }
+      : {}),
     ...(draft.recipient_name != null ? { recipient_name: draft.recipient_name } : {}),
     ...(draft.recipient_email != null ? { recipient_email: draft.recipient_email } : {}),
     ...(draft.discount && draft.discount.type !== 'none'

@@ -3,6 +3,7 @@ import { attachActorNames } from './actor-names';
 import { publicProposalOrigin } from './public-origin';
 import { resolveSignatureImage } from './signature-image';
 import { listStaffSigners, resolveSigner } from './staff-signers';
+import { MSA_SLUG, swapMsaForOnFile, type ExecutedMsa } from './msa-on-file';
 import type {
   ContractDocument,
   Proposal,
@@ -148,6 +149,38 @@ export async function getProposal(id: string): Promise<Proposal | null> {
  * contract selection. */
 export const DEFAULT_INCLUDED_CONTRACTS = ['msa', 'operating_agreement'];
 
+/** The first MSA this client signed, if any. Later proposals point to it
+ * rather than attaching the template again (see msa-on-file.ts). */
+export async function findExecutedMsa(clientId: string, excludeProposalId?: string): Promise<ExecutedMsa | null> {
+  let query = supabase
+    .from('proposals')
+    .select('id, title, client_signed_at')
+    .eq('client_id', clientId)
+    .not('client_signed_at', 'is', null)
+    .contains('include_contracts', [MSA_SLUG])
+    .order('client_signed_at', { ascending: true })
+    .limit(1);
+  if (excludeProposalId) query = query.neq('id', excludeProposalId);
+  const { data, error } = await query;
+  if (error) throw error;
+  const row = data?.[0];
+  return row ? { proposalId: row.id, proposalTitle: row.title ?? '', signedAt: row.client_signed_at } : null;
+}
+
+/** Apply the MSA-on-file rule to a contract selection for this client. */
+export async function resolveContractsForClient(
+  clientId: string,
+  contracts: string[],
+  excludeProposalId?: string,
+): Promise<{ include_contracts: string[]; overrides: Record<string, string> }> {
+  if (!contracts.includes(MSA_SLUG)) return { include_contracts: contracts, overrides: {} };
+  const [msa, { data: client }] = await Promise.all([
+    findExecutedMsa(clientId, excludeProposalId),
+    supabase.from('clients').select('company_name, name').eq('id', clientId).maybeSingle(),
+  ]);
+  return swapMsaForOnFile(contracts, msa, client?.company_name || client?.name || '');
+}
+
 export type CreateProposalInput = {
   client_id: string;
   audit_id?: string | null;
@@ -169,6 +202,13 @@ export async function createProposal(
 ): Promise<Proposal> {
   const { data: userData } = await supabase.auth.getUser();
   const userId = userData?.user?.id ?? null;
+  // Master Services Agreement + Operating Agreement are checked by default; an
+  // explicit non-empty selection (e.g. a template's own contracts) wins. A
+  // client who already signed the MSA gets the on-file reference instead.
+  const contracts = await resolveContractsForClient(
+    input.client_id,
+    input.include_contracts?.length ? input.include_contracts : DEFAULT_INCLUDED_CONTRACTS,
+  );
   const { data, error } = await supabase
     .from('proposals')
     .insert({
@@ -177,9 +217,8 @@ export async function createProposal(
       template_id: input.template_id ?? null,
       title: input.title,
       content_blocks: input.content_blocks ?? [],
-      // Master Services Agreement + Operating Agreement are checked by default;
-      // an explicit non-empty selection (e.g. a template's own contracts) wins.
-      include_contracts: input.include_contracts?.length ? input.include_contracts : DEFAULT_INCLUDED_CONTRACTS,
+      include_contracts: contracts.include_contracts,
+      ...(Object.keys(contracts.overrides).length ? { contract_overrides: contracts.overrides } : {}),
       recipient_name: input.recipient_name ?? '',
       recipient_email: input.recipient_email ?? '',
       ...(input.discount_type ? { discount_type: input.discount_type } : {}),

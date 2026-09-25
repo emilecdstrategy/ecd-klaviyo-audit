@@ -121,10 +121,13 @@ serve(async (req) => {
         .from("contract_documents")
         .select("slug, name, content, updated_at")
         .in("slug", includeContracts.length ? includeContracts : ["__none__"]);
+      // A per-proposal rewrite (redlines, the "MSA on file" reference) is what
+      // the client reads, so it is what gets frozen.
+      const overrides = (proposal.contract_overrides ?? {}) as Record<string, string>;
       updates.contracts_snapshot = (docs ?? []).map((doc) => ({
         slug: doc.slug,
         name: doc.name,
-        content: doc.content,
+        content: overrides[doc.slug]?.trim() ? overrides[doc.slug] : doc.content,
         version_updated_at: doc.updated_at,
       }));
     }
