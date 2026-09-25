@@ -20,6 +20,7 @@ import EmptyState from '../components/ui/EmptyState';
 import { SkeletonTable } from '../components/ui/Skeleton';
 import { useAuth } from '../contexts/AuthContext';
 import { canUseWebAudits } from '../lib/web-audit-access';
+import { canAccessArea } from '../lib/access';
 import { formatCurrency } from '../lib/revenue-calculator';
 import { listAudits, listClients } from '../lib/db';
 import { fetchActiveAuditRuns } from '../lib/audit-pipeline-status';
@@ -52,7 +53,10 @@ export default function Audits() {
   const webLocked = !canUseWebAudits(user);
   const [searchParams, setSearchParams] = useSearchParams();
   const tabParam = searchParams.get('tab');
-  const availableTabs = TABS.filter(t => !t.adminOnly || isAdmin);
+  // The audit settings (report display, benchmarks, core flows, email library)
+  // belong to whoever works in Audits, not only admins (Emil, 2026-09-25).
+  const canEditAuditSettings = isAdmin || canAccessArea(user, 'audits');
+  const availableTabs = TABS.filter(t => !t.adminOnly || canEditAuditSettings);
   const tab: TabId = availableTabs.some(t => t.id === tabParam) ? (tabParam as TabId) : 'overview';
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState('__all__');
