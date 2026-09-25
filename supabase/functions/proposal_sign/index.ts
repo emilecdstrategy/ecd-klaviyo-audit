@@ -17,6 +17,7 @@ import {
 } from "../_shared/proposal-public.ts";
 import { notificationRecipients, proposalEmailHtml, resolveFromAddress, resolveOrigin, sendEmail } from "../_shared/mailer.ts";
 import { escapeHtml, proposalReferenceLink } from "../_shared/proposal-links.ts";
+import { sendSignedProposalToTracker } from "../_shared/client-onboarding-trigger.ts";
 
 const MAX_SIGNATURE_LENGTH = 300000;
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -169,6 +170,14 @@ serve(async (req) => {
           new Promise((resolve) => setTimeout(resolve, 2500)),
         ]).catch(() => {});
       }
+      // New-client onboarding in the Client Tracker (best effort, same rules).
+      await sendSignedProposalToTracker(sb, {
+        proposal,
+        lineItems,
+        signedAt,
+        signerName: typedName,
+        publicUrl: `https://proposal.ecdigitalstrategy.com/proposal/${token}`,
+      }).catch(() => {});
     }
 
     // Team notification (best effort; signing already succeeded).
