@@ -84,6 +84,27 @@ serve(async (req) => {
         .map((a: any) => ({ name: a.name, description: text(a.description, 400) }))
       : [];
 
+    // The client's other signed proposals: already sold, so never an upsell.
+    // Lane 201 signed an Alia build the day after its SMS migration, and the
+    // first preview recommended Alia because it only saw the migration.
+    const { data: otherRows } = await sb
+      .from("proposals")
+      .select("id, title, client_signed_at, line_items:proposal_line_items(name, one_time_price, monthly_price)")
+      .eq("client_id", proposal.client_id)
+      .not("client_signed_at", "is", null)
+      .neq("id", proposal.id)
+      .order("client_signed_at", { ascending: false })
+      .limit(10);
+    const otherSigned = (otherRows ?? []).map((o: any) => ({
+      title: o.title,
+      signed_at: o.client_signed_at,
+      line_items: (o.line_items ?? []).map((li: any) => ({
+        name: li.name,
+        one_time_price: li.one_time_price,
+        monthly_price: li.monthly_price,
+      })),
+    }));
+
     // Transcripts and docs fetched into the assistant's chat for this proposal
     // or this client.
     const { data: convs } = await sb
@@ -148,6 +169,7 @@ serve(async (req) => {
           ? { type: proposal.discount_type, value: proposal.discount_value, label: proposal.discount_label }
           : null,
       },
+      other_signed_proposals: otherSigned,
       client: {
         company_name: proposal.client?.company_name ?? null,
         website: proposal.client?.website_url ?? null,
