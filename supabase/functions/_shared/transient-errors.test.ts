@@ -30,6 +30,10 @@ const RETRY = [
   "server is temporarily overloaded",
   "stream closed unexpectedly",
   "TLS handshake failure",
+  // Lane 201, 2026-09-24: 114,600 profiles in, the response body cut off
+  // mid-read. Deno words that differently from a reset, so it read as permanent.
+  "TypeError: error reading a body from connection",
+  "connection closed before message completed",
 ];
 
 const DO_NOT_RETRY = [

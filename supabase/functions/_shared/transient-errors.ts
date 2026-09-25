@@ -30,7 +30,7 @@ const RETRYABLE_WORDS =
  * worst possible reading of it.
  */
 const RETRYABLE_CONNECTION =
-  /connection (reset|closed|refused|error|aborted)|econnreset|econnrefused|econnaborted|epipe|etimedout|enotfound|socket hang ?up|error sending request|sendrequest|fetch failed|network error|stream (closed|ended) unexpectedly|premature close|tls|handshake/i;
+  /connection (reset|closed|refused|error|aborted)|econnreset|econnrefused|econnaborted|epipe|etimedout|enotfound|socket hang ?up|error sending request|sendrequest|fetch failed|network error|stream (closed|ended) unexpectedly|premature close|tls|handshake|error reading a body|body from connection|unexpected eof|connection closed before message completed/i;
 
 /**
  * Failures that will never fix themselves, whatever we do. Checked FIRST, because
