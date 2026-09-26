@@ -1,7 +1,7 @@
 import type { SupabaseClient } from "npm:@supabase/supabase-js@2";
 
-// Hands a fully signed proposal to the Client Tracker (ct.ecdigitalstrategy.com),
-// which runs new-client onboarding: tracker row, pod confirmation, Drive folder,
+// Hands a fully signed proposal from a brand new client to the Client Tracker
+// (ct.ecdigitalstrategy.com), which runs new-client onboarding: tracker row, pod confirmation, Drive folder,
 // Slack channel, Asana board, Everhour, kickoff post. The tracker lives in the
 // ECD Hub project, so this is a plain HTTPS call with a shared key.
 //
@@ -48,6 +48,20 @@ export async function sendSignedProposalToTracker(
   if (!url || !key) return;
 
   const { proposal } = args;
+
+  // Onboarding is only for completely new clients. A client that already
+  // signed a proposal here (Lane 201's Alia build the day after its migration)
+  // is not handed over; the tracker also refuses clients it already has.
+  if (proposal.client_id) {
+    const { count } = await sb
+      .from("proposals")
+      .select("id", { count: "exact", head: true })
+      .eq("client_id", proposal.client_id)
+      .neq("id", proposal.id)
+      .not("client_signed_at", "is", null);
+    if ((count ?? 0) > 0) return;
+  }
+
   let hubspotCompanyId: string | null = null;
   if (proposal.client_id) {
     const { data } = await sb.from("clients").select("hubspot_company_id").eq("id", proposal.client_id).maybeSingle();
