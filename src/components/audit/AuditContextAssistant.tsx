@@ -65,7 +65,6 @@ export default function AuditContextAssistant({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
   const [listening, setListening] = useState(false);
-  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const recognitionRef = useRef<any>(null);
   const dictationBaseRef = useRef('');
@@ -83,7 +82,7 @@ export default function AuditContextAssistant({
     typeof window !== 'undefined' && Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
   // Start at the latest message and stay there as content renders in.
-  useStickToBottom(scrollRef, true, sending);
+  const scrollRef = useStickToBottom(true, sending);
 
   // Grow the input with what has been typed, so a long answer stays readable
   // instead of scrolling inside a one-line box. Capped by max-h in the class,

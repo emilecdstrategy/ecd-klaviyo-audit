@@ -205,7 +205,6 @@ export default function DocumentAgentPanel() {
     selectConversation, deleteConversation,
   } = useDocumentAgent();
   const [input, setInput] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const showToast = useToast();
@@ -214,7 +213,7 @@ export default function DocumentAgentPanel() {
   const [pending, setPending] = useState<Pending[]>([]);
 
   // Open at the latest message and stay there as content renders in.
-  useStickToBottom(scrollRef, isOpen, sending);
+  const scrollRef = useStickToBottom(isOpen, sending);
 
   useEffect(() => {
     const el = inputRef.current;

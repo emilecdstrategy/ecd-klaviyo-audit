@@ -460,7 +460,6 @@ export default function ProposalAgentPanel({
     deleteConversation,
   } = useProposalAgent();
   const [input, setInput] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -476,7 +475,7 @@ export default function ProposalAgentPanel({
   const [pending, setPending] = useState<PendingAttachment[]>([]);
 
   // Open at the latest message and stay there as content renders in.
-  useStickToBottom(scrollRef, isOpen, sending);
+  const scrollRef = useStickToBottom(isOpen, sending);
 
   // Auto-grow the composer as the user types or pastes long content.
   useEffect(() => {

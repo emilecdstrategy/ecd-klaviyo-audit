@@ -62,7 +62,6 @@ export default function WebAuditAgentPanel({
   const [input, setInput] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState('');
-  const scrollRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // Screenshots attached to the next message: uploaded as soon as they're
   // picked or pasted, shown as thumbnails above the composer until sent.
@@ -94,7 +93,7 @@ export default function WebAuditAgentPanel({
   const awaitingChoice = !sending && lastMsg?.role === 'assistant' && Boolean(lastMsg.question);
 
   // Open at the latest message and stay there as content renders in.
-  useStickToBottom(scrollRef, open, sending);
+  const scrollRef = useStickToBottom(open, sending);
 
   // Load persisted chat history for this audit (one thread per audit).
   useEffect(() => {
