@@ -8,10 +8,12 @@ import {
   type ReactNode,
 } from 'react';
 import { scheduleSavedToast, useToast } from '../../ui/Toast';
+import { MSA_ON_FILE_SLUG, MSA_SLUG } from '../../../lib/msa-on-file';
 import {
   createProposalLineItems,
   deleteProposalLineItem,
   listContractDocuments,
+  resolveContractsForClient,
   updateProposal,
   updateProposalLineItem,
   updateProposalTemplate,
@@ -268,48 +270,64 @@ export function ProposalEditProvider({
 
   const toggleContract = useCallback(
     (slug: string, included: boolean) => {
-      const next = included
-        ? [...new Set([...proposal.include_contracts, slug])]
-        : proposal.include_contracts.filter(s => s !== slug);
+      // The MSA is one choice with two forms: the full agreement, or the short
+      // "on file" reference for a client who already signed it. Turning it on
+      // picks the form by the same rule as creating a proposal; turning it off
+      // removes whichever form is attached.
+      const isMsa = slug === MSA_SLUG || slug === MSA_ON_FILE_SLUG;
+      const base = included
+        ? [...new Set([...proposal.include_contracts, isMsa ? MSA_SLUG : slug])]
+        : proposal.include_contracts.filter(s => (isMsa ? s !== MSA_SLUG && s !== MSA_ON_FILE_SLUG : s !== slug));
 
-      // Once a proposal has been sent, contracts render from the frozen
-      // contracts_snapshot rather than the live docs (see ProposalDocument).
-      // While it is still unsigned, toggling a contract must also refresh
-      // that snapshot — otherwise a newly-added contract has no content in
-      // the snapshot and silently fails to render. Fetch the live docs first
-      // so the optimistic update and the persisted row apply together.
-      if (proposal.contracts_snapshot && !proposal.client_signed_at) {
-        setSaveStatus('saving');
-        listContractDocuments()
-          .then(docs => {
-            const overrides = proposal.contract_overrides ?? {};
-            const snapshot = docs
-              .filter(d => next.includes(d.slug))
-              .map(d => ({
-                slug: d.slug,
-                name: d.name,
-                // A per-proposal rewrite wins over the shared catalog text.
-                content: overrides[d.slug]?.trim() ? overrides[d.slug] : d.content,
-                version_updated_at: d.updated_at,
-              }));
-            onProposalChange?.({ ...proposal, include_contracts: next, contracts_snapshot: snapshot } as Proposal);
-            return updateProposal(proposal.id, { include_contracts: next, contracts_snapshot: snapshot });
-          })
-          .then(() => {
-            setSaveStatus('saved');
-            scheduleSavedToast(toast);
-            window.setTimeout(() => setSaveStatus(s => (s === 'saved' ? 'idle' : s)), 2500);
-          })
-          .catch(() => {
-            setSaveStatus('error');
-            toast('Could not save');
-          });
-        return;
-      }
+      setSaveStatus('saving');
+      (async () => {
+        let next = base;
+        let overrides = proposal.contract_overrides ?? {};
+        if (isMsa && included) {
+          const resolved = await resolveContractsForClient(proposal.client_id, base, proposal.id);
+          next = resolved.include_contracts;
+          overrides = { ...overrides, ...resolved.overrides };
+        }
+        const overridesChanged = overrides !== (proposal.contract_overrides ?? {});
 
-      saveProposalPatch('contracts', { include_contracts: next });
+        // Once a proposal has been sent, contracts render from the frozen
+        // contracts_snapshot rather than the live docs (see ProposalDocument).
+        // While it is still unsigned, toggling a contract must also refresh
+        // that snapshot — otherwise a newly-added contract has no content in
+        // the snapshot and silently fails to render. Fetch the live docs first
+        // so the optimistic update and the persisted row apply together.
+        let snapshot: Proposal['contracts_snapshot'] | undefined;
+        if (proposal.contracts_snapshot && !proposal.client_signed_at) {
+          const docs = await listContractDocuments();
+          snapshot = docs
+            .filter(d => next.includes(d.slug))
+            .map(d => ({
+              slug: d.slug,
+              name: d.name,
+              // A per-proposal rewrite wins over the shared catalog text.
+              content: overrides[d.slug]?.trim() ? overrides[d.slug] : d.content,
+              version_updated_at: d.updated_at,
+            }));
+        }
+        const patch = {
+          include_contracts: next,
+          ...(overridesChanged ? { contract_overrides: overrides } : {}),
+          ...(snapshot ? { contracts_snapshot: snapshot } : {}),
+        };
+        onProposalChange?.({ ...proposal, ...patch } as Proposal);
+        await updateProposal(proposal.id, patch);
+      })()
+        .then(() => {
+          setSaveStatus('saved');
+          scheduleSavedToast(toast);
+          window.setTimeout(() => setSaveStatus(s => (s === 'saved' ? 'idle' : s)), 2500);
+        })
+        .catch(() => {
+          setSaveStatus('error');
+          toast('Could not save');
+        });
     },
-    [proposal, onProposalChange, saveProposalPatch, toast],
+    [proposal, onProposalChange, toast],
   );
 
   /** Tailor one contract's text for THIS proposal only, or pass null to drop the

@@ -7,6 +7,7 @@ import ProposalPricingTable from './ProposalPricingTable';
 import ProposalContractSection from './ProposalContractSection';
 import ProposalSignatureSection from './ProposalSignatureSection';
 import { useProposalEdit } from './edit/ProposalEditContext';
+import { MSA_ON_FILE_SLUG, MSA_SLUG } from '../../lib/msa-on-file';
 import type {
   Client,
   ContractDocument,
@@ -124,14 +125,25 @@ export default function ProposalDocument({
           <span className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">
             Attach contracts:
           </span>
-          {contractDocs.map(doc => {
-            const included = proposal.include_contracts.includes(doc.slug);
+          {/* The MSA is one chip: which form attaches (full agreement, or the
+              "on file" reference for a client who already signed it) is
+              decided automatically. */}
+          {contractDocs.filter(doc => doc.slug !== MSA_ON_FILE_SLUG).map(doc => {
+            const onFile = doc.slug === MSA_SLUG && proposal.include_contracts.includes(MSA_ON_FILE_SLUG);
+            const included = onFile || proposal.include_contracts.includes(doc.slug);
             return (
               <button
                 key={doc.slug}
                 type="button"
                 onClick={() => toggleContract(doc.slug, !included)}
                 aria-pressed={included}
+                title={
+                  onFile
+                    ? 'This client already signed the MSA, so the proposal includes a short reference to it instead of the full agreement.'
+                    : doc.slug === MSA_SLUG && !isTemplate
+                      ? 'Attaches the full MSA. For a client who already signed one, a short reference is attached instead.'
+                      : undefined
+                }
                 className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium transition-colors ${
                   included
                     ? 'border-brand-primary/30 bg-brand-primary/10 text-brand-primary'
@@ -146,6 +158,11 @@ export default function ProposalDocument({
                   {included && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
                 </span>
                 {doc.name}
+                {onFile && (
+                  <span className="rounded-full bg-white/80 px-1.5 py-px text-[10px] font-semibold uppercase tracking-wide text-brand-primary">
+                    On file
+                  </span>
+                )}
               </button>
             );
           })}
