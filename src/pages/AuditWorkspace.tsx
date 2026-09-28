@@ -468,7 +468,7 @@ export default function AuditWorkspace() {
           }
           navigate(`/proposals/${proposal.id}/edit`);
         } catch (e) {
-          toast(e instanceof Error ? e.message : 'Failed to create proposal');
+          toast((e as { message?: string } | null)?.message || 'Failed to create proposal');
           setCreatingProposal(false);
         }
       }}

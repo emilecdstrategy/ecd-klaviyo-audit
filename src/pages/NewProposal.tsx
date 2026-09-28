@@ -95,7 +95,8 @@ export default function NewProposal({ asModal }: NewProposalProps) {
       const proposal = await createProposalFromTemplate(selectedClient, template);
       navigate(`/proposals/${proposal.id}/edit`, { replace: !asModal });
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Failed to create proposal');
+      // Database errors are plain objects with a message, not Error instances.
+      setError((e as { message?: string } | null)?.message || 'Failed to create proposal');
       setCreating(false);
     }
   };

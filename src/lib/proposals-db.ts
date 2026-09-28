@@ -157,7 +157,9 @@ export async function findExecutedMsa(clientId: string, excludeProposalId?: stri
     .select('id, title, client_signed_at')
     .eq('client_id', clientId)
     .not('client_signed_at', 'is', null)
-    .contains('include_contracts', [MSA_SLUG])
+    // include_contracts is jsonb: an array here is sent as the Postgres literal
+    // {msa}, which jsonb rejects with a 400 (broke creating every proposal).
+    .contains('include_contracts', JSON.stringify([MSA_SLUG]))
     .order('client_signed_at', { ascending: true })
     .limit(1);
   if (excludeProposalId) query = query.neq('id', excludeProposalId);
