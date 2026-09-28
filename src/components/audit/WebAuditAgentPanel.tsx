@@ -21,6 +21,7 @@ import {
   type WebAuditRegenerate,
   type WebAuditAgentQuestion,
 } from '../../lib/web-audit-agent';
+import { useStickToBottom } from '../../hooks/useStickToBottom';
 
 type ChatMessage = {
   id: string;
@@ -92,9 +93,8 @@ export default function WebAuditAgentPanel({
   const lastMsg = messages[messages.length - 1];
   const awaitingChoice = !sending && lastMsg?.role === 'assistant' && Boolean(lastMsg.question);
 
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, sending, open]);
+  // Open at the latest message and stay there as content renders in.
+  useStickToBottom(scrollRef, open, sending);
 
   // Load persisted chat history for this audit (one thread per audit).
   useEffect(() => {

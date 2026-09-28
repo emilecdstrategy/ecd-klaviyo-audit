@@ -8,6 +8,7 @@ import {
 } from '../../lib/audit-context-agent';
 import type { ProposalAgentAttachment } from '../../lib/types';
 import { imagesFromClipboard, isImageFile, uploadChatImage, MAX_CHAT_IMAGES_PER_MESSAGE } from '../../lib/chat-image-upload';
+import { useStickToBottom } from '../../hooks/useStickToBottom';
 
 type ChatMessage = {
   id: string;
@@ -81,9 +82,8 @@ export default function AuditContextAssistant({
   const voiceSupported =
     typeof window !== 'undefined' && Boolean((window as any).SpeechRecognition || (window as any).webkitSpeechRecognition);
 
-  useEffect(() => {
-    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
-  }, [messages, sending]);
+  // Start at the latest message and stay there as content renders in.
+  useStickToBottom(scrollRef, true, sending);
 
   // Grow the input with what has been typed, so a long answer stays readable
   // instead of scrolling inside a one-line box. Capped by max-h in the class,

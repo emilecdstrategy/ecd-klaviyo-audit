@@ -16,6 +16,7 @@ import type {
   ProposalEditSet,
 } from '../../../lib/proposal-agent';
 import type { ProposalAgentAttachment } from '../../../lib/types';
+import { useStickToBottom } from '../../../hooks/useStickToBottom';
 
 const TYPING_LABELS = [
   'Thinking',
@@ -474,21 +475,8 @@ export default function ProposalAgentPanel({
   };
   const [pending, setPending] = useState<PendingAttachment[]>([]);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    // Scroll after paint so it lands at the bottom even once markdown/preview
-    // content has expanded the list height (e.g. when opening a saved chat).
-    const scrollDown = () => {
-      el.scrollTop = el.scrollHeight;
-    };
-    scrollDown();
-    const r1 = requestAnimationFrame(() => {
-      scrollDown();
-      requestAnimationFrame(scrollDown);
-    });
-    return () => cancelAnimationFrame(r1);
-  }, [messages, sending, isOpen, loadingHistory]);
+  // Open at the latest message and stay there as content renders in.
+  useStickToBottom(scrollRef, isOpen, sending);
 
   // Auto-grow the composer as the user types or pastes long content.
   useEffect(() => {

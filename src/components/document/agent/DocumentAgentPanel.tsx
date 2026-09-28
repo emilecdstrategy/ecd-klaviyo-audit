@@ -10,6 +10,7 @@ import { uploadDocumentAgentFile, type DocDraftPayload, type DocEditPayload } fr
 import { imagesFromClipboard, isImageAttachment } from '../../../lib/chat-image-upload';
 import type { ProposalAgentAttachment } from '../../../lib/types';
 import { useDocumentAgent, type DocAgentChatMessage, type ConversationSummary } from './DocumentAgentContext';
+import { useStickToBottom } from '../../../hooks/useStickToBottom';
 
 
 const TYPING_LABELS = ['Thinking', 'Reading your notes', 'Reviewing templates', 'Drafting the document'];
@@ -212,14 +213,8 @@ export default function DocumentAgentPanel() {
   type Pending = { id: string; name: string; status: 'uploading' | 'ready'; attachment?: ProposalAgentAttachment };
   const [pending, setPending] = useState<Pending[]>([]);
 
-  useEffect(() => {
-    const el = scrollRef.current;
-    if (!el) return;
-    const scrollDown = () => { el.scrollTop = el.scrollHeight; };
-    scrollDown();
-    const r = requestAnimationFrame(() => { scrollDown(); requestAnimationFrame(scrollDown); });
-    return () => cancelAnimationFrame(r);
-  }, [messages, sending, isOpen, loadingHistory]);
+  // Open at the latest message and stay there as content renders in.
+  useStickToBottom(scrollRef, isOpen, sending);
 
   useEffect(() => {
     const el = inputRef.current;
