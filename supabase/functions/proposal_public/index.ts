@@ -6,10 +6,12 @@ import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { assertServiceRoleClient, getUserIdFromAuthorization } from "../_shared/auth.ts";
 import {
   PROPOSAL_CORS_HEADERS,
+  computeProposalTotals,
   fetchPublicProposal,
   isProposalExpired,
   proposalJson,
   serializePublicProposal,
+  totalsEmailLine,
 } from "../_shared/proposal-public.ts";
 import { notificationRecipients, proposalEmailHtml, resolveFromAddress, resolveOrigin, sendEmail } from "../_shared/mailer.ts";
 import { escapeHtml, proposalReferenceLink } from "../_shared/proposal-links.ts";
@@ -140,15 +142,28 @@ serve(async (req) => {
         if (recipients.length > 0) {
           const origin = resolveOrigin(req);
           const company = proposal.client?.company_name ?? "a client";
+          // Same shape as the signed email: who, the totals, and a way in.
+          const proposalUrl = origin ? `${origin}/proposals/${proposal.id}` : null;
+          const viewerName = (bundle.signerIndex === 2 ? proposal.recipient2_name : proposal.recipient_name)?.trim() || "";
+          const viewerEmail = (bundle.signerIndex === 2 ? proposal.recipient2_email : proposal.recipient_email)?.trim() || "";
+          const viewerLink = viewerEmail
+            ? `<a href="mailto:${escapeHtml(viewerEmail)}" style="color:#4b3afe;text-decoration:underline;">${escapeHtml(viewerEmail)}</a>`
+            : "";
+          const totals = computeProposalTotals(bundle.lineItems, proposal);
           await sendEmail({
             to: recipients,
             from: resolveFromAddress(settings.email),
             subject: `Proposal viewed by ${company}`,
             html: proposalEmailHtml({
-              heading: `${escapeHtml(company)} just opened their proposal`,
+              heading: viewerName
+                ? `${escapeHtml(viewerName)} opened the ${escapeHtml(company)} proposal`
+                : `${escapeHtml(company)} just opened their proposal`,
               bodyLines: [
-                `${proposalReferenceLink(origin, proposal)} was viewed for the first time.`,
+                `${proposalReferenceLink(origin, proposal)} was viewed for the first time${viewerLink ? ` by ${viewerLink}` : ""}.`,
+                totalsEmailLine(totals),
               ],
+              ctaLabel: proposalUrl ? "Open the proposal" : undefined,
+              ctaUrl: proposalUrl ?? undefined,
               logoUrl: origin ? `${origin}/favicon.png` : undefined,
             }),
           });

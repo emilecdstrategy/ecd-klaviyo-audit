@@ -93,6 +93,17 @@ export function computeProposalTotals(items: LineItemRow[], discount: DiscountFi
   };
 }
 
+/** "Totals: $9,975 one-time." for team emails, leaving out a side that is $0
+ * (most proposals have no monthly fee, and "plus $0/mo" read like a mistake). */
+export function totalsEmailLine(totals: ProposalTotals): string {
+  const money = (n: number) => `$${Math.round(n).toLocaleString("en-US")}`;
+  const parts = [
+    totals.oneTimeTotal > 0 ? `${money(totals.oneTimeTotal)} one-time` : null,
+    totals.monthlyTotal > 0 ? `${money(totals.monthlyTotal)}/mo` : null,
+  ].filter(Boolean);
+  return `Totals: ${parts.length ? parts.join(" plus ") : "$0"}.`;
+}
+
 /** Deterministic snapshot of exactly what the client saw and agreed to at signing
  * time: content, pricing, and contract text, but not administrative/mutable fields
  * like status or timestamps. Hashed and frozen into the "signed" event so any later
