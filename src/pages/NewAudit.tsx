@@ -308,7 +308,9 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     resumedRef.current = true;
     params.delete('resume_web');
     const qs = params.toString();
-    window.history.replaceState({}, '', location.pathname + (qs ? `?${qs}` : ''));
+    // Through the router, keeping its state: that state is what makes this the
+    // popup rather than a bare page.
+    navigate(location.pathname + (qs ? `?${qs}` : ''), { replace: true, state: location.state });
     if (!clients.some(c => c.id === resumeClientId)) return;
     setAuditType('web');
     handleClientSelect(resumeClientId);

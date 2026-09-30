@@ -286,7 +286,8 @@ export default function WebStoreAccess({
     params.delete('shop');
     params.delete('shop_name');
     const qs = params.toString();
-    window.history.replaceState({}, '', window.location.pathname + (qs ? `?${qs}` : ''));
+    // Keep the router's state on the entry: it is what keeps the wizard a popup.
+    window.history.replaceState(window.history.state, '', window.location.pathname + (qs ? `?${qs}` : ''));
     if (outcome === 'ok') {
       checkedFor.current = null; // force a re-check with the new connection
     }
@@ -497,7 +498,7 @@ export default function WebStoreAccess({
             type="button"
             onClick={linkPromoConnection}
             disabled={linking}
-            className="inline-flex items-center gap-2 rounded-lg gradient-bg px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+            className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg gradient-bg px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
           >
             {linking ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
             {linking ? 'Linking…' : 'Use this connection'}
@@ -540,7 +541,7 @@ export default function WebStoreAccess({
                   type="button"
                   onClick={resumeInstall}
                   disabled={resuming}
-                  className="inline-flex items-center gap-2 rounded-lg gradient-bg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg gradient-bg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {resuming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
                   {resuming ? 'Opening Shopify…' : 'Finish connecting'}
@@ -706,7 +707,7 @@ export default function WebStoreAccess({
                   type="button"
                   onClick={startInstall}
                   disabled={starting}
-                  className="inline-flex items-center gap-2 rounded-lg gradient-bg px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                  className="inline-flex shrink-0 items-center gap-2 whitespace-nowrap rounded-lg gradient-bg px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Store className="h-4 w-4" />}
                   {starting ? 'Checking the store…' : 'Save and connect'}

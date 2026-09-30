@@ -1,4 +1,4 @@
-import { lazy, Suspense } from 'react';
+import { lazy, Suspense, useEffect } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { getZoneRedirectOrigin } from './lib/route-zones';
@@ -74,6 +74,21 @@ function AppRoutes() {
   // them back to the page they actually clicked instead of defaulting to "/".
   const deepLinkFrom = typeof state?.from === 'string' ? state.from : null;
 
+  // Back from Shopify's install page, which is a full page load: the new-audit
+  // wizard would render as a bare page because the popup only exists while a
+  // background location is in router state. Put the Audits list behind it and
+  // reopen the wizard as the popup, so closing it lands on Audits, not Shopify.
+  const resumingWizard =
+    location.pathname === '/audits/new' && !backgroundLocation && new URLSearchParams(location.search).has('resume_web');
+  useEffect(() => {
+    if (!resumingWizard) return;
+    const search = location.search;
+    navigate('/audits', { replace: true });
+    navigate(`/audits/new${search}`, {
+      state: { backgroundLocation: { pathname: '/audits', search: '', hash: '', state: null, key: 'shopify-resume' } },
+    });
+  }, [resumingWizard, location.search, navigate]);
+
   // Proposals live on proposal.ecdigitalstrategy.com; everything else (dashboard,
   // audits, clients, admin) lives on audit.ecdigitalstrategy.com. Checked against
   // whatever's actually being rendered (the modal system swaps in a background
@@ -99,6 +114,9 @@ function AppRoutes() {
   const isViewer = user && user.role === 'viewer';
 
   const closeAuditWizardModal = () => navigate(-1);
+
+  // Swapping the bare page for the popup (see above): show nothing in between.
+  if (resumingWizard) return <AppPreloader />;
 
   return (
     <>
