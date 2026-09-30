@@ -18,6 +18,17 @@ const corsHeaders: Record<string, string> = {
   "access-control-allow-methods": "POST, OPTIONS",
 };
 
+/** How long a started install can be resumed from its saved credentials. */
+const RESUME_WINDOW_MS = 30 * 24 * 60 * 60 * 1000;
+
+/** 32 random bytes: the callback proves it belongs to this request by quoting
+ *  it back, so it has to be unguessable. */
+function newState(): string {
+  return [...crypto.getRandomValues(new Uint8Array(32))]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 const json = (body: unknown, init?: ResponseInit) =>
   new Response(JSON.stringify(body), {
     ...init,
@@ -39,6 +50,9 @@ Deno.serve(async (req) => {
     }
 
     const input = (await req.json()) as {
+      /** "status": the client's latest install and how it ended. "resume": start
+       *  that install again from its saved credentials. Default: a new install. */
+      action?: "status" | "resume";
       client_id?: string;
       shop_domain?: string;
       app_client_id?: string;
@@ -47,6 +61,61 @@ Deno.serve(async (req) => {
     };
 
     const clientId = (input.client_id ?? "").trim();
+
+    if (input.action === "status" || input.action === "resume") {
+      if (!clientId) return json({ ok: false, error: { code: "bad_request", message: "Missing client_id" }, correlationId }, { status: 400 });
+      const sbr = createClient(SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, {
+        auth: { persistSession: false, autoRefreshToken: false },
+      });
+      const since = new Date(Date.now() - RESUME_WINDOW_MS).toISOString();
+      const { data: latest } = await sbr
+        .from("shopify_oauth_installs")
+        .select("shop_domain, app_client_id, app_secret_ciphertext, app_secret_iv, created_at, consumed_at, failed_reason, failed_at")
+        .eq("client_id", clientId)
+        .gte("created_at", since)
+        .order("created_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+
+      if (input.action === "status") {
+        // Nothing secret leaves here: the store, when, and how it ended.
+        return json({
+          ok: true,
+          install: latest
+            ? {
+              shop_domain: latest.shop_domain,
+              started_at: latest.created_at,
+              finished: Boolean(latest.consumed_at) && !latest.failed_reason,
+              failed_reason: latest.failed_reason ?? null,
+            }
+            : null,
+          correlationId,
+        });
+      }
+
+      // Resume: a fresh single-use state carrying the same app credentials, so
+      // nobody has to find and paste the Client secret a second time.
+      if (!latest) {
+        return json({ ok: false, error: { code: "not_found", message: "No install to resume. Enter the app credentials and start again." }, correlationId });
+      }
+      const state = newState();
+      const { error: insertError } = await sbr.from("shopify_oauth_installs").insert({
+        state,
+        client_id: clientId,
+        shop_domain: latest.shop_domain,
+        app_client_id: latest.app_client_id,
+        app_secret_ciphertext: latest.app_secret_ciphertext,
+        app_secret_iv: latest.app_secret_iv,
+        requested_by: uid,
+        return_path: (input.return_path ?? "").slice(0, 500) || null,
+      });
+      if (insertError) throw insertError;
+      return json({
+        ok: true,
+        authorize_url: authorizeUrl(latest.shop_domain as string, latest.app_client_id as string, state),
+        correlationId,
+      });
+    }
     const shopDomain = normalizeShopDomain(input.shop_domain ?? "");
     const appClientId = (input.app_client_id ?? "").trim();
     const appSecret = (input.app_client_secret ?? "").trim();
@@ -65,11 +134,7 @@ Deno.serve(async (req) => {
       auth: { persistSession: false, autoRefreshToken: false },
     });
 
-    // 32 random bytes: the callback proves it belongs to this request by quoting
-    // it back, so it has to be unguessable.
-    const state = [...crypto.getRandomValues(new Uint8Array(32))]
-      .map((b) => b.toString(16).padStart(2, "0"))
-      .join("");
+    const state = newState();
 
     const enc = await encryptString(appSecret);
     const { error } = await sb.from("shopify_oauth_installs").insert({

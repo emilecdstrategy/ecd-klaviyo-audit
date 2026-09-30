@@ -294,6 +294,28 @@ export default function NewAudit({ asModal }: NewAuditProps) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clients, form.clientId, location.state]);
 
+  // Back from Shopify's install page (?resume_web=<client id>): the round trip
+  // is a full page load, so without this the wizard came back empty at step 1
+  // and the connection looked like it was never saved. Reopen the web audit on
+  // that client at the Website step, where the store check runs again. The
+  // install outcome params are left for that step to read.
+  const resumedRef = useRef(false);
+  useEffect(() => {
+    if (resumedRef.current || webAuditsLocked) return;
+    const params = new URLSearchParams(location.search);
+    const resumeClientId = params.get('resume_web');
+    if (!resumeClientId || !clients.length) return;
+    resumedRef.current = true;
+    params.delete('resume_web');
+    const qs = params.toString();
+    window.history.replaceState({}, '', location.pathname + (qs ? `?${qs}` : ''));
+    if (!clients.some(c => c.id === resumeClientId)) return;
+    setAuditType('web');
+    handleClientSelect(resumeClientId);
+    setStep(WEB_STEPS.findIndex(s => s.key === 'web_setup'));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [clients, location.search, webAuditsLocked]);
+
   const updateField = (field: string, value: string | number) => {
     setForm(prev => ({ ...prev, [field]: value }));
   };

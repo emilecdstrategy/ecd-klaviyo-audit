@@ -87,6 +87,35 @@ function CopyBox({ value, label }: { value: string; label: string }) {
   );
 }
 
+/** Why an install stopped, in words, from the reason the callback recorded. */
+const INSTALL_FAILURE_TEXT: Record<string, string> = {
+  expired: 'it was not approved within 30 minutes',
+  shop_mismatch: 'Shopify came back with a different store than the one entered',
+  bad_signature: "the Client secret does not match this app's",
+  exchange_failed: 'Shopify would not hand over the access token',
+  verify_failed: 'the new token could not read the store',
+  shop_taken: 'this store is already connected to another client',
+  opened_app_instead_of_callback:
+    "Shopify opened the app instead of coming back here. Check the Allowed redirection URL in the app's Configuration",
+  not_started_here: 'Shopify opened the app, but no install for that store was started here',
+  already_used: 'that approval link was already used',
+  unknown_state: 'that approval link is not one we started',
+  bad_request: 'Shopify came back without the details needed',
+  server_error: 'something went wrong on our side',
+};
+
+function failureText(reason?: string | null): string {
+  if (!reason) return '';
+  return INSTALL_FAILURE_TEXT[reason] ?? reason.replace(/_/g, ' ');
+}
+
+/** Where Shopify should bring someone back to: this wizard, on this client. */
+function resumePath(clientId: string): string {
+  return `/audits/new?resume_web=${encodeURIComponent(clientId)}`;
+}
+
+type PendingInstall = { shop_domain: string; started_at: string; finished: boolean; failed_reason: string | null };
+
 type CheckState =
   | { status: 'idle' }
   | { status: 'checking' }
@@ -137,6 +166,26 @@ export default function WebStoreAccess({
   const [starting, setStarting] = useState(false);
   const [startError, setStartError] = useState('');
   const [installOutcome, setInstallOutcome] = useState<{ ok: boolean; reason?: string } | null>(null);
+  // An install started earlier for this client that has not finished, so
+  // coming back to the step shows where it got to instead of an empty form.
+  const [pendingInstall, setPendingInstall] = useState<PendingInstall | null>(null);
+  const [resuming, setResuming] = useState(false);
+
+  const loadPendingInstall = useCallback(async (id: string) => {
+    if (!id) {
+      setPendingInstall(null);
+      return;
+    }
+    try {
+      const { data } = await supabase.functions.invoke<{ ok?: boolean; install?: PendingInstall | null }>(
+        'shopify_oauth_start',
+        { body: { action: 'status', client_id: id } },
+      );
+      setPendingInstall(data?.ok && data.install && !data.install.finished ? data.install : null);
+    } catch {
+      setPendingInstall(null);
+    }
+  }, []);
 
   /** Is this store connected in the promo calendar? Returns the shop name if so.
    *  Needs no client record, so it is safe to run on a bare check. */
@@ -217,7 +266,13 @@ export default function WebStoreAccess({
     if (checkedFor.current === clientId) return;
     checkedFor.current = clientId;
     void runCheck(clientId);
-  }, [clientId, runCheck]);
+    void loadPendingInstall(clientId);
+  }, [clientId, runCheck, loadPendingInstall]);
+
+  // A working connection makes any earlier unfinished install irrelevant.
+  useEffect(() => {
+    if (check.status === 'connected') setPendingInstall(null);
+  }, [check.status]);
 
   // Shopify sends the merchant back here after the consent screen.
   useEffect(() => {
@@ -261,6 +316,16 @@ export default function WebStoreAccess({
     }
   };
 
+  /**
+   * Save and connect: save the app and check the store first, and only go to
+   * Shopify when the store owner really has to approve.
+   *
+   * A store in ECD's own Shopify organization connects straight from the
+   * Client ID and secret, no install page at all. Anything else needs the
+   * owner's approval, so the credentials are saved with the started install
+   * (Finish connecting can pick it up later without retyping) and Shopify
+   * brings the owner back to this same step afterwards.
+   */
   const startInstall = async () => {
     setStartError('');
     if (!appClientId.trim() || !appSecret.trim()) {
@@ -277,6 +342,27 @@ export default function WebStoreAccess({
       // before handing control to Shopify. Coming back to nothing to attach the
       // token to would waste the merchant's approval.
       const id = clientId || (await ensureClient());
+
+      // 1. Save and check: works whenever the store is in ECD's organization.
+      const direct = await supabase.functions
+        .invoke<{ ok?: boolean }>('shopify_connect_client', {
+          body: {
+            client_id: id,
+            shop_domain: shopDomain.trim(),
+            shopify_client_id: appClientId.trim(),
+            shopify_client_secret: appSecret.trim(),
+            website_url: websiteUrl,
+          },
+        })
+        .catch(() => null);
+      if (direct?.data?.ok) {
+        setStarting(false);
+        checkedFor.current = null;
+        await runCheck(id);
+        return;
+      }
+
+      // 2. Otherwise the owner approves in Shopify.
       const { data, error } = await supabase.functions.invoke<{
         ok?: boolean;
         authorize_url?: string;
@@ -287,7 +373,7 @@ export default function WebStoreAccess({
           shop_domain: shopDomain.trim(),
           app_client_id: appClientId.trim(),
           app_client_secret: appSecret.trim(),
-          return_path: window.location.pathname,
+          return_path: resumePath(id),
         },
       });
       if (error || !data?.ok || !data.authorize_url) {
@@ -305,6 +391,28 @@ export default function WebStoreAccess({
   };
 
 
+  /** Pick up the unfinished install from its saved credentials. */
+  const resumeInstall = async () => {
+    if (!clientId) return;
+    setResuming(true);
+    setStartError('');
+    try {
+      const { data } = await supabase.functions.invoke<{ ok?: boolean; authorize_url?: string; error?: { message?: string } | null }>(
+        'shopify_oauth_start',
+        { body: { action: 'resume', client_id: clientId, return_path: resumePath(clientId) } },
+      );
+      if (!data?.ok || !data.authorize_url) {
+        setStartError(data?.error?.message || 'Could not pick the install back up.');
+        setResuming(false);
+        return;
+      }
+      window.location.href = data.authorize_url;
+    } catch (e) {
+      setStartError(e instanceof Error ? e.message : 'Could not pick the install back up.');
+      setResuming(false);
+    }
+  };
+
   const appName = `${companyName || 'Client Name'} - ECD Web Audit`;
 
   return (
@@ -319,7 +427,10 @@ export default function WebStoreAccess({
         {check.status !== 'checking' && (
           <button
             type="button"
-            onClick={() => runCheck(clientId)}
+            onClick={() => {
+              void runCheck(clientId);
+              void loadPendingInstall(clientId);
+            }}
             className="inline-flex shrink-0 items-center gap-1.5 text-xs font-medium text-brand-primary hover:underline"
           >
             <RefreshCw className="h-3.5 w-3.5" />
@@ -338,7 +449,7 @@ export default function WebStoreAccess({
         >
           {installOutcome.ok
             ? 'Store connected. The install came back successfully.'
-            : `The install did not complete${installOutcome.reason ? ` (${installOutcome.reason.replace(/_/g, ' ')})` : ''}. Nothing was saved, so you can try again.`}
+            : `The install did not finish${installOutcome.reason ? `: ${failureText(installOutcome.reason)}` : ''}. The app details are saved, so you can finish connecting without entering them again.`}
         </div>
       )}
 
@@ -403,6 +514,41 @@ export default function WebStoreAccess({
               storefront, but the performance section is left out entirely.
             </div>
           </div>
+
+          {/* An install started earlier for this client: pick it up rather than
+              starting over. */}
+          {pendingInstall && (
+            <div className="space-y-2 rounded-xl border border-brand-primary/20 bg-brand-primary/[0.04] p-4">
+              <div className="flex items-start gap-2.5">
+                <Store className="mt-0.5 h-4 w-4 shrink-0 text-brand-primary" />
+                <div className="min-w-0 text-sm text-gray-700">
+                  <p className="font-medium text-gray-900">
+                    Install on {pendingInstall.shop_domain} started{' '}
+                    {new Date(pendingInstall.started_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    , not finished yet.
+                  </p>
+                  <p className="mt-0.5 text-xs text-gray-600">
+                    {pendingInstall.failed_reason
+                      ? `It stopped because ${failureText(pendingInstall.failed_reason)}.`
+                      : 'Shopify never came back with the approval.'}{' '}
+                    If the app is installed on the store now, Finish connecting completes it with the saved details.
+                  </p>
+                </div>
+              </div>
+              <div className="flex flex-wrap items-center gap-3 pl-6">
+                <button
+                  type="button"
+                  onClick={resumeInstall}
+                  disabled={resuming}
+                  className="inline-flex items-center gap-2 rounded-lg gradient-bg px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
+                >
+                  {resuming ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                  {resuming ? 'Opening Shopify…' : 'Finish connecting'}
+                </button>
+                <span className="text-xs text-gray-500">Opens Shopify to confirm, then straight back here.</span>
+              </div>
+            </div>
+          )}
 
           {/* Two real routes, in the order you would normally take them. */}
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -507,7 +653,7 @@ export default function WebStoreAccess({
                   <p className="font-medium text-gray-900">6. Copy the Client ID and Secret back here</p>
                   <p className="mt-1 text-xs text-gray-600">
                     <span className="text-gray-900">Settings, then Credentials</span> in the app. Paste both below and
-                    press <span className="text-gray-900">Install on store</span>.
+                    press <span className="text-gray-900">Save and connect</span>.
                   </p>
                 </li>
               </ol>
@@ -563,10 +709,11 @@ export default function WebStoreAccess({
                   className="inline-flex items-center gap-2 rounded-lg gradient-bg px-4 py-2.5 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50"
                 >
                   {starting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Store className="h-4 w-4" />}
-                  {starting ? 'Opening Shopify…' : 'Install on store'}
+                  {starting ? 'Checking the store…' : 'Save and connect'}
                 </button>
                 <p className="text-xs text-gray-500">
-                  Takes you to Shopify to approve, then straight back here.
+                  Saves the app and checks the store. If the owner has to approve, it opens Shopify and comes back to
+                  this step.
                 </p>
               </div>
             </div>

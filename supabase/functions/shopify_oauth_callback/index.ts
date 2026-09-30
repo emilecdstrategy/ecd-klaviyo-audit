@@ -8,10 +8,10 @@
 // This endpoint is public by necessity, which is exactly why the HMAC check is not
 // optional: without it, anyone who found the URL could name a shop and have us
 // write a connection for it.
-import { createClient } from "npm:@supabase/supabase-js@2";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2";
 import { decryptString, encryptString } from "../_shared/crypto.ts";
 import { SHOPIFY_API_VERSION, normalizeShopDomain, shopifyRest } from "../_shared/shopify-api.ts";
-import { exchangeCode, isValidShopDomain, verifyHmac } from "../_shared/shopify-oauth.ts";
+import { authorizeUrl, exchangeCode, isValidShopDomain, verifyHmac } from "../_shared/shopify-oauth.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -21,6 +21,71 @@ const APP_ORIGIN = (Deno.env.get("APP_PUBLIC_ORIGIN") ?? "https://audit.ecdigita
  *  consent screen and find their password, short enough that a leaked state is
  *  not useful tomorrow. */
 const INSTALL_TTL_MS = 30 * 60 * 1000;
+
+/** How far back a Shopify app launch may pick up a started install. Installing
+ *  often happens later than the click (the store owner does it, or someone
+ *  installs from the Dev Dashboard), so this is a day rather than half an hour. */
+const LAUNCH_WINDOW_MS = 24 * 60 * 60 * 1000;
+
+// deno-lint-ignore no-explicit-any
+type Sb = SupabaseClient<any, "public", any>;
+
+/** Keep why an install stopped on its row, so the wizard can say so and the
+ *  next person does not have to guess. */
+async function recordFailure(sb: Sb, state: string, reason: string) {
+  await sb
+    .from("shopify_oauth_installs")
+    .update({ failed_reason: reason, failed_at: new Date().toISOString() })
+    .eq("state", state);
+}
+
+/**
+ * Shopify opened the app itself rather than returning to this callback: an app
+ * installed from the Dev Dashboard, or the managed install flow, lands on the
+ * App URL with only shop, hmac, host and timestamp. The web app forwards that
+ * here. If someone started an install for this store in the last day and the
+ * signature checks out with that app's secret, send the merchant through
+ * authorize once more; the app is installed now, so Shopify answers straight
+ * away with a code for this same state.
+ */
+async function resumeFromLaunch(sb: Sb, url: URL, shopDomain: string): Promise<Response> {
+  const since = new Date(Date.now() - LAUNCH_WINDOW_MS).toISOString();
+  const { data: rows } = await sb
+    .from("shopify_oauth_installs")
+    .select("state, app_client_id, app_secret_ciphertext, app_secret_iv, return_path, relaunched_at")
+    .eq("shop_domain", shopDomain)
+    .is("consumed_at", null)
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  for (const row of rows ?? []) {
+    let secret: string;
+    try {
+      secret = await decryptString(row.app_secret_ciphertext as string, row.app_secret_iv as string);
+    } catch {
+      continue;
+    }
+    // Only the app this row was started with signs the launch correctly.
+    if (!(await verifyHmac(url, secret))) continue;
+    const returnPath = (row.return_path as string) || "/audits/new";
+    if (row.relaunched_at) {
+      // Already sent through authorize once and Shopify came back here again
+      // instead of with a code: stop rather than bounce between the two.
+      await recordFailure(sb, row.state as string, "opened_app_instead_of_callback");
+      return backToApp(returnPath, { shopify_install: "failed", reason: "opened_app_instead_of_callback" });
+    }
+    await sb
+      .from("shopify_oauth_installs")
+      .update({ relaunched_at: new Date().toISOString() })
+      .eq("state", row.state as string);
+    return new Response(null, {
+      status: 302,
+      headers: { location: authorizeUrl(shopDomain, row.app_client_id as string, row.state as string) },
+    });
+  }
+  return backToApp("/audits/new", { shopify_install: "failed", reason: "not_started_here" });
+}
 
 /** Send the merchant back into the app with the outcome in the URL, so the page
  *  they land on can say what happened instead of silently re-testing. */
@@ -40,6 +105,12 @@ Deno.serve(async (req) => {
     auth: { persistSession: false, autoRefreshToken: false },
   });
 
+  // An app launch (no code, no state) rather than the end of an authorize.
+  if (!code && !state && url.searchParams.get("hmac") && isValidShopDomain(shopParam)) {
+    const shop = normalizeShopDomain(shopParam);
+    if (shop) return await resumeFromLaunch(sb, url, shop);
+  }
+
   // Nothing below can be trusted until the pending row and the HMAC agree, so
   // failures here deliberately say little and write nothing.
   if (!state || !code || !isValidShopDomain(shopParam)) {
@@ -48,23 +119,26 @@ Deno.serve(async (req) => {
 
   const { data: pending } = await sb
     .from("shopify_oauth_installs")
-    .select("state, client_id, shop_domain, app_client_id, app_secret_ciphertext, app_secret_iv, return_path, created_at, consumed_at")
+    .select("state, client_id, shop_domain, app_client_id, app_secret_ciphertext, app_secret_iv, return_path, created_at, consumed_at, relaunched_at")
     .eq("state", state)
     .maybeSingle();
 
   if (!pending) return backToApp("/audits/new", { shopify_install: "failed", reason: "unknown_state" });
   const returnPath = pending.return_path || "/audits/new";
 
+  const fail = async (reason: string) => {
+    await recordFailure(sb, state, reason);
+    return backToApp(returnPath, { shopify_install: "failed", reason });
+  };
+
   // Single use, and expiring: a replayed callback must not mint a second token.
   if (pending.consumed_at) return backToApp(returnPath, { shopify_install: "failed", reason: "already_used" });
-  if (Date.now() - new Date(pending.created_at as string).getTime() > INSTALL_TTL_MS) {
-    return backToApp(returnPath, { shopify_install: "failed", reason: "expired" });
-  }
+  // A launch that sent the merchant through authorize again restarts the clock.
+  const startedAt = (pending.relaunched_at as string | null) ?? (pending.created_at as string);
+  if (Date.now() - new Date(startedAt).getTime() > INSTALL_TTL_MS) return await fail("expired");
   // The shop that came back must be the shop we sent them to.
   const shopDomain = normalizeShopDomain(String(pending.shop_domain ?? ""));
-  if (!shopDomain || normalizeShopDomain(shopParam) !== shopDomain) {
-    return backToApp(returnPath, { shopify_install: "failed", reason: "shop_mismatch" });
-  }
+  if (!shopDomain || normalizeShopDomain(shopParam) !== shopDomain) return await fail("shop_mismatch");
 
   try {
     const appSecret = await decryptString(
@@ -73,7 +147,7 @@ Deno.serve(async (req) => {
     );
 
     if (!(await verifyHmac(url, appSecret))) {
-      return backToApp(returnPath, { shopify_install: "failed", reason: "bad_signature" });
+      return await fail("bad_signature");
     }
 
     // Burn the row before spending the code, so a duplicated callback cannot run
@@ -89,13 +163,13 @@ Deno.serve(async (req) => {
 
     const granted = await exchangeCode(shopDomain, pending.app_client_id as string, appSecret, code);
     if (!granted.ok) {
-      return backToApp(returnPath, { shopify_install: "failed", reason: "exchange_failed" });
+      return await fail("exchange_failed");
     }
 
     // Confirm the token actually reads the store before claiming a connection.
     const shopRes = await shopifyRest(shopDomain, granted.token, "/shop.json");
     if (!shopRes.ok) {
-      return backToApp(returnPath, { shopify_install: "failed", reason: "verify_failed" });
+      return await fail("verify_failed");
     }
     const shop = shopRes.body?.shop ?? {};
 
@@ -110,7 +184,7 @@ Deno.serve(async (req) => {
       .neq("client_id", clientId)
       .maybeSingle();
     if (clash?.client_id) {
-      return backToApp(returnPath, { shopify_install: "failed", reason: "shop_taken" });
+      return await fail("shop_taken");
     }
 
     const enc = await encryptString(granted.token);
@@ -171,6 +245,6 @@ Deno.serve(async (req) => {
       shop_name: String(shop.name ?? ""),
     });
   } catch {
-    return backToApp(returnPath, { shopify_install: "failed", reason: "server_error" });
+    return await fail("server_error");
   }
 });
