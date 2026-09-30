@@ -38,10 +38,27 @@ export function normalizeHours(value: unknown): number | null {
   return Math.min(MAX_HOURS, Math.round(n / HOUR_STEP) * HOUR_STEP);
 }
 
-/** What a row costs to set up. Null when nobody has estimated it yet. */
+/** Prices are quoted in round numbers, always rounded up (Emil, Sep 30): a row
+ *  to the next $10, the one-time total to the next $100. Half-hour steps at
+ *  $175 otherwise give $87.50 rows and a $3,503 total. */
+export const ROW_PRICE_STEP = 10;
+export const TOTAL_PRICE_STEP = 100;
+
+export function roundUpTo(value: number, step: number): number {
+  // The epsilon keeps a float like 350.00000000000006 from jumping a whole step.
+  return Math.ceil(value / step - 1e-9) * step;
+}
+
+/** The one-time total as quoted: the sum of the rows, rounded up to $100. */
+export function roundOneTimeTotal(total: number): number {
+  return total > 0 ? roundUpTo(total, TOTAL_PRICE_STEP) : total;
+}
+
+/** What a row costs to set up, rounded up to $10. Null when nobody has
+ *  estimated it yet. */
 export function setupCost(row: WebRoadmapRow, hourlyRate: number): number | null {
   const hours = normalizeHours(row.setup_hours);
-  return hours == null ? null : Math.round(hours * hourlyRate);
+  return hours == null ? null : roundUpTo(hours * hourlyRate, ROW_PRICE_STEP);
 }
 
 /** Rows that belong in the investment summary and in a proposal built from it:
