@@ -12,7 +12,6 @@ import {
   computeWebInvestmentTotals,
   investmentRows,
   parseMonthly,
-  roundOneTimeTotal,
   setupCost,
 } from '../../../lib/web-audit-pricing';
 import { formatCurrency } from '../../../lib/revenue-calculator';
@@ -106,9 +105,9 @@ export default function WebInvestmentSummary({
   const addOnGroups = useMemo(() => groupInvestmentLinesByItem(buildInvestmentLineItems(addOns)), [addOns]);
   const addOnTotals = useMemo(() => computeInvestmentTotals(addOnGroups.flatMap((g) => g.lines)), [addOnGroups]);
 
-  // Quoted as a round number: rows are already rounded up to $10, the total
-  // goes up to the next $100.
-  const oneTimeTotal = roundOneTimeTotal(totals.oneTimeTotal + addOnTotals.oneTimeTotal);
+  // The exact sum of the rows as shown (each already rounded up to $10), so
+  // the rows always add up to the total.
+  const oneTimeTotal = totals.oneTimeTotal + addOnTotals.oneTimeTotal;
   const monthlyTotal = totals.monthlyTotal + addOnTotals.monthlyTotal;
   const oneTimeLabelOnly = totals.unpricedCount > 0 || addOnTotals.oneTimeHasLabelOnly;
   const monthlyLabelOnly = totals.ongoingLabelOnly || addOnTotals.monthlyHasLabelOnly;

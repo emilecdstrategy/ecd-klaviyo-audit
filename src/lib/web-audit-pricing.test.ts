@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { computeWebInvestmentTotals, roundOneTimeTotal, roundUpTo, setupCost } from './web-audit-pricing';
+import { computeWebInvestmentTotals, roundUpTo, setupCost } from './web-audit-pricing';
 import type { WebRoadmapRow } from './web-report-details';
 
 const row = (setup_hours: number | null): WebRoadmapRow => ({
@@ -20,20 +20,16 @@ describe('web audit prices are quoted in round numbers', () => {
     expect(setupCost(row(null), 175)).toBeNull();
   });
 
-  it('rounds the one-time total up to the next $100', () => {
-    expect(roundOneTimeTotal(3540)).toBe(3600);
-    expect(roundOneTimeTotal(3500)).toBe(3500);
-    expect(roundOneTimeTotal(0)).toBe(0);
-  });
-
   it('never jumps a step on a float that is already round', () => {
     expect(roundUpTo(0.1 * 3 * 1000, 100)).toBe(300);
   });
 
-  it('prices the Simple & Dainty report: $3,540 of rows, $3,600 total (was $3,503)', () => {
+  it('totals the Simple & Dainty report to exactly what its rows add up to: $3,540 (was $3,503)', () => {
     const hours = [2, 0.5, 1, 2, 0.5, 1.5, 2.5, 3, 2, 2.5, 1, 1.5];
-    const totals = computeWebInvestmentTotals(hours.map(row), 175);
+    const rows = hours.map(row);
+    const totals = computeWebInvestmentTotals(rows, 175);
+    const rowSum = rows.reduce((sum, r) => sum + (setupCost(r, 175) ?? 0), 0);
     expect(totals.oneTimeTotal).toBe(3540);
-    expect(roundOneTimeTotal(totals.oneTimeTotal)).toBe(3600);
+    expect(totals.oneTimeTotal).toBe(rowSum);
   });
 });
