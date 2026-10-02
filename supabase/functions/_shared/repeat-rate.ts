@@ -26,6 +26,27 @@ const DAY_MS = 24 * 60 * 60 * 1000;
  */
 export const REPEAT_LOOKBACK_DAYS = 90;
 
+/**
+ * How much repeat history the fetched orders actually support.
+ *
+ * Without read_all_orders Shopify returns only the last 60 days. Simple & Dainty
+ * (Oct 2) then showed a repeat rate "up 102%": every current order could look a
+ * month or more back, every prior-period order had nearly nothing behind it, so
+ * the prior rate was half-blind. The lookback is cut to what reaches behind every
+ * current order, and the comparison is dropped unless the prior period gets the
+ * same lookback in full.
+ */
+export function repeatHistory(historyDays: number, periodDays: number): {
+  lookbackDays: number;
+  comparable: boolean;
+} {
+  const behindCurrent = Math.floor(historyDays - periodDays);
+  const lookbackDays = Math.max(0, Math.min(REPEAT_LOOKBACK_DAYS, behindCurrent));
+  // The prior period needs the same lookback behind its oldest order.
+  const comparable = lookbackDays > 0 && historyDays >= 2 * periodDays + lookbackDays - 1;
+  return { lookbackDays, comparable };
+}
+
 export type RepeatCounts = {
   current: { returning: number; identified: number };
   previous: { returning: number; identified: number };
@@ -53,8 +74,11 @@ export function computeRepeat(
   orders: RepeatOrder[],
   currentSinceMs: number,
   priorStartMs: number,
+  /** Shorter than REPEAT_LOOKBACK_DAYS when the order history cannot reach that
+   *  far behind every counted order (see repeatHistory). */
+  lookbackDays: number = REPEAT_LOOKBACK_DAYS,
 ): RepeatCounts {
-  const lookbackMs = REPEAT_LOOKBACK_DAYS * DAY_MS;
+  const lookbackMs = lookbackDays * DAY_MS;
 
   const byCustomer = new Map<string, number[]>();
   for (const o of orders) {

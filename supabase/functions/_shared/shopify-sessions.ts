@@ -21,7 +21,16 @@ export type SessionFunnel = {
   conversion_rate: number | null;
 };
 
-export type DeviceSplit = { device: string; sessions: number; conversion_rate: number | null };
+/** How a device gap should be said in words, from one device's rate as a
+ *  percentage of the other's (50.3 -> "about half"). */
+export function deviceGapWords(pct: number, lo: string, hi: string): string {
+  if (pct >= 95) return `So ${lo} and ${hi} convert at about the same rate.`;
+  if (pct >= 45 && pct <= 55) return `So ${lo} converts at about half the rate of ${hi}.`;
+  if (pct < 45) return `So ${lo} converts at less than half the rate of ${hi}.`;
+  return `So ${lo} converts below ${hi}, at about ${Math.round(pct / 10) * 10}% of its rate.`;
+}
+
+export type DeviceSplit ={ device: string; sessions: number; conversion_rate: number | null };
 
 export type SessionsReport = {
   period_days: number;
@@ -229,6 +238,17 @@ export function sessionsEvidence(report: SessionsReport | null): string {
           })
           .join("\n"),
     );
+    // The comparison, worked out here. Left to the model, 0.91% against 1.81%
+    // became "less than half" (it is 50.3%, so about half) in a client report.
+    const rated = report.devices.filter((d) => d.conversion_rate !== null && d.sessions > 0);
+    const [a, b] = rated;
+    if (a && b && a.conversion_rate! > 0 && b.conversion_rate! > 0) {
+      const [hi, lo] = a.conversion_rate! >= b.conversion_rate! ? [a, b] : [b, a];
+      const pct = Math.round((lo.conversion_rate! / hi.conversion_rate!) * 1000) / 10;
+      lines.push(
+        `Comparison: ${lo.device} converts at ${pct}% of ${hi.device}'s rate (${lo.conversion_rate}% vs ${hi.conversion_rate}%). ${deviceGapWords(pct, lo.device, hi.device)} Use this wording; do not recompute it.`,
+      );
+    }
   }
   return (
     "\n\nTRAFFIC AND CONVERSION. Shopify's own analytics for this store, so these are measured:\n" +

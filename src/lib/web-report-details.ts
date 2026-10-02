@@ -531,6 +531,9 @@ export type OrdersRollup = {
    *  what makes the comparison honest; see repeat-rate.ts. */
   repeat_basis?: {
     lookback_days?: number;
+    /** False when the order history (60 days without read_all_orders) could not
+     *  give the prior period the same lookback, so there is no trend. */
+    comparable?: boolean;
     current_identified_orders?: number;
     previous_identified_orders?: number;
   } | null;
@@ -583,8 +586,13 @@ export function formatMoney(amount: number, currency?: string | null): string {
   }
 }
 
-export function formatDelta(delta: number | null | undefined): { text: string; positive: boolean } | null {
+export function formatDelta(
+  delta: number | null | undefined,
+): { text: string; positive: boolean; flat?: boolean } | null {
   if (delta == null || !Number.isFinite(delta)) return null;
+  // A flat period read as a green "+0%", i.e. as growth (Simple & Dainty's
+  // conversion, 1.48% both months). Under half a point either way is no change.
+  if (Math.abs(delta) < 0.5) return { text: 'No change', positive: true, flat: true };
   const positive = delta >= 0;
   return { text: `${positive ? '+' : ''}${delta}%`, positive };
 }

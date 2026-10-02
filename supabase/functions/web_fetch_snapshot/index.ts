@@ -1,12 +1,12 @@
 import { serve } from "https://deno.land/std@0.224.0/http/server.ts";
 import { fetchSessions } from "../_shared/shopify-sessions.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
-import { getUserIdFromAuthorization, isServiceRoleAuthorization } from "../_shared/auth.ts";
+import { getUserIdFromAuthorization, hasCronSecret, isServiceRoleAuthorization } from "../_shared/auth.ts";
 import { decryptString } from "../_shared/crypto.ts";
 import { normalizeShopDomain, shopifyRest, shopifyGraphql, mapShopifyErrorCode, exchangeClientCredentials } from "../_shared/shopify-api.ts";
 import {
   BULK_WINDOW_DAYS, currentBulk, ingestBulkOrders, pollBulk, startBulkOrders, type BulkOrderRow } from "../_shared/shopify-bulk.ts";
-import { computeRepeat, repeatRate, REPEAT_LOOKBACK_DAYS } from "../_shared/repeat-rate.ts";
+import { computeRepeat, repeatHistory, repeatRate } from "../_shared/repeat-rate.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
@@ -81,6 +81,9 @@ function assertServiceClient() {
 async function authorize(req: Request) {
   const token = (req.headers.get("authorization") ?? "").replace(/^Bearer\s+/i, "").trim();
   if (token && isServiceRoleAuthorization(token)) return;
+  // The web pipeline's own secret, as the capture and analysis steps accept:
+  // lets a backfill re-read the store data without a signed-in user.
+  if (await hasCronSecret(req, "web_pipeline_cron_secret")) return;
   await getUserIdFromAuthorization(req);
 }
 
@@ -299,6 +302,16 @@ type BasketOrder = {
   }>;
 };
 
+/** Shipping protection, insurance, packaging and free-gift lines: things that
+ *  ride along on an order rather than products the shopper picked. */
+const ADD_ON_TITLE = /shipping protection|package protection|order protection|shipping insurance|package insurance|navidium|route\b.*protect|\bseel\b|\bcorso\b|extend protection|carbon (offset|neutral)|green shipping|gift (wrap|wrapping|note|message|box)\b|jewelry pouch|\bfree gift\b/i;
+export function isAddOnLine(item: { title: string; revenue: number; unit_price: number | null; handle?: string | null }): boolean {
+  if (ADD_ON_TITLE.test(item.title)) return true;
+  if (item.handle && /freegift|free-gift|shipping-protection|package-protection/i.test(item.handle)) return true;
+  // A $0 line is a gift or a freebie, never a product someone chose to buy.
+  return item.revenue <= 0 && (item.unit_price ?? 0) <= 0;
+}
+
 function percentile(sorted: number[], p: number): number {
   if (sorted.length === 0) return 0;
   const idx = Math.min(sorted.length - 1, Math.max(0, Math.round((p / 100) * (sorted.length - 1))));
@@ -348,9 +361,23 @@ function analyzeBaskets(
   const historyLimited = shortWindow && !cause.truncated
     && (cause.hasAllOrders === null ? true : !cause.hasAllOrders);
 
-  const withItems = orders.filter((o) => o.items.length > 0);
+  // Add-ons are not products the shopper chose: Simple & Dainty's Shipping
+  // Protection rides on 2,715 of 3,477 orders, so it topped every "bought
+  // together" pair and made 85% of baskets look multi-item (Hugo, Oct 2). Free
+  // gifts ($0 clones) inflate the same numbers. Baskets are measured on the
+  // real products only; what was left out is reported alongside.
+  const addOnCounts = new Map<string, number>();
+  const real = orders.map((o) => {
+    const items = o.items.filter((i) => {
+      const addOn = isAddOnLine(i);
+      if (addOn) addOnCounts.set(i.title, (addOnCounts.get(i.title) ?? 0) + 1);
+      return !addOn;
+    });
+    return { ...o, items, units: items.reduce((s, i) => s + i.units, 0) };
+  });
+  const withItems = real.filter((o) => o.items.length > 0);
   const singleLine = withItems.filter((o) => o.items.length === 1).length;
-  const unitsTotal = orders.reduce((s, o) => s + o.units, 0);
+  const unitsTotal = withItems.reduce((s, o) => s + o.units, 0);
 
   // What actually gets bought together. Unordered pairs, counted per order, so
   // buying two of the same thing is not a "pair".
@@ -425,7 +452,13 @@ function analyzeBaskets(
     // True when the window is short because the store is busy enough to fill
     // our page cap, which is a fact about volume, not a missing permission.
     orders_truncated: ordersTruncated,
-    units_per_order: round2(unitsTotal / n),
+    units_per_order: withItems.length > 0 ? round2(unitsTotal / withItems.length) : null,
+    /** Lines left out of the basket figures (shipping protection, free gifts),
+     *  most frequent first, so the report can say what was excluded. */
+    excluded_add_ons: [...addOnCounts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .slice(0, 5)
+      .map(([title, orders]) => ({ title, orders })),
     single_item_order_share: withItems.length > 0 ? round2((singleLine / withItems.length) * 100) : null,
     multi_item_order_share: withItems.length > 0 ? round2(((withItems.length - singleLine) / withItems.length) * 100) : null,
     frequent_pairs: pairs,
@@ -617,7 +650,17 @@ async function fetchOrdersRollup(
   // Repeat purchase, on identical footing for both periods. Runs over every
   // order retained for the window, including the history months that are never
   // reported on their own but are exactly what makes the lookback possible.
-  const repeat = computeRepeat(orders, currentSinceMs, priorStartMs);
+  // $0 orders are exchanges and replacements (Happy Returns, staff draft
+  // orders), placed for someone who already bought: counted, they read as
+  // repeat purchases that nobody paid for.
+  const paid = orders.filter((o) => o.revenue > 0);
+  // How far back the orders really go: 60 days without read_all_orders, which
+  // is too little to judge the prior period on the same lookback.
+  const historyDays = paid.length > 0
+    ? (nowMs - Math.min(...paid.map((o) => o.created_ms))) / DAY_MS
+    : 0;
+  const repeatWindow = repeatHistory(historyDays, PERIOD_DAYS);
+  const repeat = computeRepeat(paid, currentSinceMs, priorStartMs, repeatWindow.lookbackDays);
   current.returning_orders = repeat.current.returning;
   previous.returning_orders = repeat.previous.returning;
 
@@ -631,7 +674,8 @@ async function fetchOrdersRollup(
   // Now comparable: both periods are measured with the same fixed lookback over
   // per-order customer identity, so this is a like-for-like trend rather than the
   // artefact the lifetime counter produced.
-  const prevReturning = customerDataUnavailable ? null : prevRate;
+  // ...but only when the history gave the prior period that same lookback.
+  const prevReturning = customerDataUnavailable || !repeatWindow.comparable ? null : prevRate;
   const topProducts = await fetchTopProducts(shopDomain, token, currentSince);
   // Traffic and the checkout funnel, over the same window the order data used so
   // the two halves of the section describe one period. Needs read_analytics; a
@@ -648,7 +692,11 @@ async function fetchOrdersRollup(
     /** How the repeat rate was measured, so the number is never read as something
      * it is not. Both periods use this same lookback. */
     repeat_basis: customerDataUnavailable ? null : {
-      lookback_days: REPEAT_LOOKBACK_DAYS,
+      lookback_days: repeatWindow.lookbackDays,
+      /** False when the order history was too short to give the prior period
+       *  the same lookback, so no repeat trend is reported. */
+      comparable: repeatWindow.comparable,
+      history_days: Math.round(historyDays),
       current_identified_orders: repeat.current.identified,
       previous_identified_orders: repeat.previous.identified,
     },

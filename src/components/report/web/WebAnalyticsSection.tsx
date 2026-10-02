@@ -484,6 +484,12 @@ export default function WebAnalyticsSection({
       <p className={`text-xs text-gray-400${hideTitle ? '' : ' mt-0.5'}`}>
         {windowLabel}
       </p>
+      {/* Shopify Markets show other visitors another currency and storefront (a
+          reviewer abroad landed on /en-ie in EUR), so say which one this is.
+          Captures run through US proxies (BROWSERLESS_PROXY_COUNTRY). */}
+      <p className="mt-0.5 text-xs text-gray-400">
+        Amounts in {currency}. Store pages were reviewed as a shopper in the United States.
+      </p>
 
       {/* KPI band */}
       <div className={`mt-4 grid grid-cols-2 gap-3 ${kpis.length > 4 ? 'lg:grid-cols-3' : 'lg:grid-cols-4'}`}>
@@ -494,10 +500,22 @@ export default function WebAnalyticsSection({
             <div key={key} className="rounded-xl border border-gray-200 bg-white px-4 py-4 shadow-[0_1px_3px_rgba(16,24,40,0.06)]">
               <div className="flex items-center gap-1">
                 <p className="text-xs font-semibold uppercase tracking-wider text-gray-500">{label}</p>
+                {key === 'conversion_rate' && (
+                  <HoverTooltip
+                    label="How this is measured"
+                    description="Shopify's own conversion rate: the share of sessions that completed checkout. It is not orders divided by sessions, which also counts draft, exchange and app orders that never came through a session."
+                  >
+                    <Info className="h-3 w-3 text-gray-300" />
+                  </HoverTooltip>
+                )}
                 {isRepeat && !repeatUnavailable && (
                   <HoverTooltip
                     label="How this is measured"
-                    description={`The share of orders placed by someone who had already bought from you in the previous ${repeatLookbackDays} days. Both periods are measured the same way, so the comparison is like for like.`}
+                    description={
+                      rollup?.repeat_basis?.comparable === false
+                        ? `The share of orders placed by someone who had already bought from you in the previous ${repeatLookbackDays} days. Shopify shares only the last 60 days of orders with this connection, too little to measure the month before the same way, so no trend is shown.`
+                        : `The share of orders placed by someone who had already bought from you in the previous ${repeatLookbackDays} days. Both periods are measured the same way, so the comparison is like for like.`
+                    }
                   >
                     <Info className="h-3 w-3 text-gray-300" />
                   </HoverTooltip>
@@ -517,10 +535,10 @@ export default function WebAnalyticsSection({
               {delta ? (
                 <p
                   className={`mt-2 inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-semibold tabular-nums ${
-                    delta.positive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
+                    delta.flat ? 'bg-gray-100 text-gray-600' : delta.positive ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'
                   }`}
                 >
-                  {delta.positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
+                  {delta.flat ? null : delta.positive ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}
                   {delta.text}
                 </p>
               ) : (

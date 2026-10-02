@@ -5,7 +5,7 @@
 // date. Every past period therefore inflated the longer it sat there, and Power
 // Planter looked like it had lost 45% of its repeat business when nothing had
 // changed. These cases pin the properties that stop that happening again.
-import { computeRepeat, REPEAT_LOOKBACK_DAYS } from "./repeat-rate.ts";
+import { computeRepeat, repeatHistory, REPEAT_LOOKBACK_DAYS } from "./repeat-rate.ts";
 
 const DAY = 86_400_000;
 const NOW = 1_700_000_000_000; // fixed, so the cases never drift
@@ -93,4 +93,13 @@ Deno.test("two lines of the same basket are one order, not a repeat", () => {
 Deno.test("a period with no attributable orders has no rate at all", () => {
   const r = computeRepeat([order(200, "c1")], CURRENT_SINCE, PRIOR_START);
   assertEq(rate(r.current), null, "no rate");
+});
+
+Deno.test("a 60-day order history gives no repeat trend", () => {
+  // Simple & Dainty, no read_all_orders: the prior period had nothing behind it
+  // and the report showed the repeat rate up 102%.
+  assertEq(repeatHistory(60, 30), { lookbackDays: 30, comparable: false }, "60 days");
+  // A full 180-day read covers both periods on the full lookback.
+  assertEq(repeatHistory(180, 30), { lookbackDays: REPEAT_LOOKBACK_DAYS, comparable: true }, "180 days");
+  assertEq(repeatHistory(20, 30), { lookbackDays: 0, comparable: false }, "20 days");
 });
