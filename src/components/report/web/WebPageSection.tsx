@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Loader2, Monitor, Plus, Smartphone, Wand2 } from 'lucide-react';
 import type { AuditSection, WebPageSnapshot } from '../../../lib/types';
-import { parseWebSectionDetail, findingHighlights } from '../../../lib/web-report-details';
+import { parseWebSectionDetail, findingHighlights, findingVisual } from '../../../lib/web-report-details';
 import { fetchSectionAfterImages, generateSectionAfter } from '../../../lib/web-pipeline-status';
 import { WEB_AFTER_IMAGES_ENABLED } from '../../../lib/feature-flags';
 import { useReportEdit } from '../edit/ReportEditContext';
@@ -154,6 +154,12 @@ export default function WebPageSection({
     ...forViewport.filter((item) => !item.pinned),
   ].map((item, idx) => ({ ...item, number: idx + 1 }));
 
+  // Findings that bring their own pictures (a "today" crop, a mock-up of the
+  // fix) read as one row each, picture beside text, the way Hugo laid out the
+  // Simple & Dainty v2. Showing the page screenshot as well put two screenshots
+  // side by side and made the section a mishmash, so it steps aside.
+  const rowsMode = visibleFindings.length > 0 && visibleFindings.every(({ f }) => Boolean(findingVisual(f, viewport)));
+
   // A finding can carry a pin per screenshot (desktop AND mobile); show the one
   // that belongs to the currently shown shot so the same finding pins on both.
   const markers = visibleFindings.flatMap(({ f, number }) => {
@@ -291,12 +297,12 @@ export default function WebPageSection({
       {/* Side-by-side: the annotated screenshot sits on the left (sticky while the
           reader scans), with every finding always expanded in a column on the
           right. The numbered pins on the shot match the numbered findings. */}
-      <div className="mt-5 grid grid-cols-1 items-start gap-6 lg:grid-cols-2">
+      <div className={`mt-5 grid grid-cols-1 items-start gap-6 ${rowsMode ? '' : 'lg:grid-cols-2'}`}>
         {/* Left: reference screenshot (before) with optional AI "after" concept */}
         {/* Clears the report's sticky section nav, which is ~46px tall and would
             otherwise crop the top of the pinned screenshot as you scroll. Same
             72px the anchor links already scroll to. */}
-        <div className="lg:sticky lg:top-[4.5rem]">
+        <div className={rowsMode ? 'hidden' : 'lg:sticky lg:top-[4.5rem]'}>
           {shown ? (
             <div className={afterUrl || viewport === 'desktop' ? 'w-full' : 'mx-auto w-full max-w-[360px]'}>
               {/* Editor-only generate / regenerate control. */}
@@ -438,11 +444,11 @@ export default function WebPageSection({
 
         {/* Right: findings, always expanded */}
         <div>
-          <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Findings</p>
+          {!rowsMode && <p className="text-xs font-semibold uppercase tracking-wide text-gray-500">Findings</p>}
           {visibleFindings.length === 0 && !editMode ? (
             <p className="mt-2 text-sm text-gray-400">No issues flagged on this page.</p>
           ) : (
-            <div className="mt-2 space-y-3">
+            <div className={rowsMode ? 'space-y-4' : 'mt-2 space-y-3'}>
               {visibleFindings.map(({ f, number, origIndex, pinned }) => {
                 const i = origIndex;
                 return (
@@ -453,6 +459,7 @@ export default function WebPageSection({
                     pinned={pinned}
                     finding={f}
                     viewport={viewport}
+                    layout={rowsMode ? 'row' : 'stack'}
                     cropShot={null}
                     active={activeIndex === number || hoveredMarker === number}
                     dimmed={hoveredMarker !== null && hoveredMarker !== number}

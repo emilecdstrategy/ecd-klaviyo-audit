@@ -32,7 +32,11 @@ export default function WebFindingCard({
   onRemoveHighlight,
   onToggleHidden,
   viewport = 'desktop',
+  layout = 'stack',
 }: {
+  /** 'row' puts the finding's pictures on the left and its text on the right,
+   *  one finding per full-width row (sections whose findings bring visuals). */
+  layout?: 'stack' | 'row';
   /** The device the section is showing, to pick the finding's matching visual. */
   viewport?: 'desktop' | 'mobile';
   number: number;
@@ -60,6 +64,7 @@ export default function WebFindingCard({
   const { editMode } = useReportEdit();
   const hasCrop = Boolean(finding.highlight && cropShot?.screenshot_url);
   const visual = findingVisual(finding, viewport);
+  const row = layout === 'row';
   // One opacity, decided here. Two opacity utilities on the same element do not
   // combine, they race on stylesheet order, so being dimmed and being hidden
   // have to resolve to a single class.
@@ -74,7 +79,12 @@ export default function WebFindingCard({
         active ? 'border-brand-primary ring-2 ring-brand-primary/25' : 'border-gray-300'
       } ${fade}`}
     >
-      <div>
+      <div className={row ? 'grid gap-5 md:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)] md:items-start' : ''}>
+        {row && visual && (
+          <div className="min-w-0">
+            <WebFindingVisuals visual={visual} size="large" />
+          </div>
+        )}
         {hasCrop && (
           <div className="relative mb-3">
             <WebCropCard index={number} imageUrl={cropShot!.screenshot_url as string} highlight={finding.highlight!} />
@@ -136,7 +146,7 @@ export default function WebFindingCard({
             )}
           </div>
 
-          {visual && (
+          {!row && visual && (
             <div className="mt-3">
               <WebFindingVisuals visual={visual} />
             </div>
