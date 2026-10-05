@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { WebFindingVisual } from '../../../lib/web-report-details';
 
 /**
@@ -37,14 +37,19 @@ export default function WebFindingVisuals({ visual }: { visual: WebFindingVisual
 
 function MockupFrame({ html }: { html: string }) {
   const [height, setHeight] = useState(160);
-  // Measured after load, and again once its web font has swapped in, since the
-  // font changes line breaks and with them the height.
+  const observer = useRef<ResizeObserver | null>(null);
+  useEffect(() => () => observer.current?.disconnect(), []);
+  // Sized to its content, and kept sized: product photos and the web font
+  // arrive after load and change the height, which left the first version
+  // scrolling inside a frame measured too early.
   const measure = useCallback((frame: HTMLIFrameElement | null) => {
     const doc = frame?.contentDocument;
     if (!doc?.body) return;
-    const fit = () => setHeight(Math.ceil(doc.documentElement.scrollHeight) + 2);
+    const fit = () => setHeight(Math.ceil(doc.body.scrollHeight) + 2);
     fit();
-    doc.fonts?.ready.then(fit).catch(() => {});
+    observer.current?.disconnect();
+    observer.current = new ResizeObserver(fit);
+    observer.current.observe(doc.body);
   }, []);
   return (
     <iframe
@@ -52,7 +57,8 @@ function MockupFrame({ html }: { html: string }) {
       sandbox="allow-same-origin"
       srcDoc={`<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent}</style></head><body>${html}</body></html>`}
       onLoad={(e) => measure(e.currentTarget)}
-      className="block w-full rounded-lg border-0"
+      scrolling="no"
+      className="block w-full overflow-hidden rounded-lg border-0"
       style={{ height }}
     />
   );
