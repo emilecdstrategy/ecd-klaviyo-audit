@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { ExternalLink, FileText, Loader2, RefreshCw } from 'lucide-react';
-import { createXeroDraftInvoice, xeroInvoiceUrl } from '../../lib/xero';
+import { createXeroDraftInvoice, xeroErrorMessage, xeroInvoiceUrl } from '../../lib/xero';
 import { useToast } from '../ui/Toast';
 import type { Proposal } from '../../lib/types';
 
@@ -22,15 +22,14 @@ export default function XeroInvoiceCard({
       toast(`Draft invoice ${invoice_number || ''} created in Xero`.trim());
       onChanged();
     } catch (e) {
-      const message = e instanceof Error ? e.message : 'Could not create the invoice';
-      // "not connected" is a setup state, not a failure worth alarming about.
-      toast(message.includes('not connected') ? 'Connect Xero first, under Settings > API Connection.' : message);
+      toast(xeroErrorMessage(e instanceof Error ? e.message : null).message);
     } finally {
       setBusy(false);
     }
   };
 
   const invoiced = Boolean(proposal.xero_invoice_id);
+  const failure = proposal.xero_invoice_error ? xeroErrorMessage(proposal.xero_invoice_error) : null;
 
   return (
     <div className="rounded-xl border border-gray-200 bg-white p-4">
@@ -67,10 +66,19 @@ export default function XeroInvoiceCard({
         </div>
       ) : (
         <div className="mt-2">
-          {proposal.xero_invoice_error ? (
-            <p className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
-              Last attempt failed: {proposal.xero_invoice_error}
-            </p>
+          {failure ? (
+            <div className="rounded-lg bg-amber-50 px-2.5 py-2 text-[11px] text-amber-800">
+              <p>
+                <span className="font-semibold">Last attempt failed.</span> {failure.message}
+              </p>
+              {/* Xero's raw reply, kept for whoever has to dig in. */}
+              {failure.detail && (
+                <details className="mt-1.5">
+                  <summary className="cursor-pointer text-amber-700/80 hover:text-amber-900">Technical details</summary>
+                  <p className="mt-1 break-all font-mono text-[10px] text-amber-700/80">{failure.detail}</p>
+                </details>
+              )}
+            </div>
           ) : (
             <p className="text-xs text-gray-500">No draft invoice yet.</p>
           )}
