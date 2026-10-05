@@ -452,6 +452,7 @@ export default function WebPageSection({
                     number={number}
                     pinned={pinned}
                     finding={f}
+                    viewport={viewport}
                     cropShot={null}
                     active={activeIndex === number || hoveredMarker === number}
                     dimmed={hoveredMarker !== null && hoveredMarker !== number}

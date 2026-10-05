@@ -26,7 +26,33 @@ export type WebFinding = {
    *  used to filter the finding out of the array, which meant a mis-click threw
    *  away an audit's work with no way to undo it. */
   removed?: boolean;
+  /** How urgent the fix is, shown as a pill on the card. */
+  priority?: WebFindingPriority | null;
+  /** Pictures that belong to this finding rather than to the page screenshot:
+   *  a "today" crop of what is wrong, a "proposed" mock-up of the fix, or both.
+   *  Hugo's v2 of Simple & Dainty (Oct 5) showed issues our capture cannot see
+   *  (a cookie banner over Checkout) and fixes drawn in the client's own brand. */
+  visuals?: WebFindingVisual[];
 };
+
+export type WebFindingPriority = 'high' | 'medium' | 'low';
+
+export type WebFindingVisual = {
+  viewport: 'desktop' | 'mobile';
+  /** A screenshot, already cropped to the problem. */
+  image_url?: string | null;
+  caption?: string | null;
+  /** The fix drawn as self-contained HTML (its own <style>), rendered in a
+   *  sandboxed frame with scripts off. */
+  mockup_html?: string | null;
+  mockup_caption?: string | null;
+};
+
+/** The visual for the device being viewed, else whichever one exists. */
+export function findingVisual(f: WebFinding, viewport: 'desktop' | 'mobile'): WebFindingVisual | null {
+  const all = f.visuals ?? [];
+  return all.find((v) => v.viewport === viewport) ?? all[0] ?? null;
+}
 
 /** All pins for a finding, combining the new `highlights` array with the legacy
  * single `highlight`, de-duplicated by snapshot_id. */
@@ -149,6 +175,31 @@ function asNumber(v: unknown): number {
   return Number.isFinite(n) ? n : 0;
 }
 
+function parsePriority(v: unknown): WebFindingPriority | null {
+  const p = asString(v).toLowerCase();
+  return p === 'high' || p === 'medium' || p === 'low' ? p : null;
+}
+
+function parseVisuals(v: unknown): WebFindingVisual[] | undefined {
+  if (!Array.isArray(v)) return undefined;
+  const out: WebFindingVisual[] = [];
+  for (const raw of v) {
+    const rec = asRecord(raw);
+    const viewport = asString(rec.viewport) === 'desktop' ? 'desktop' : 'mobile';
+    const image_url = asString(rec.image_url) || null;
+    const mockup_html = asString(rec.mockup_html) || null;
+    if (!image_url && !mockup_html) continue;
+    out.push({
+      viewport,
+      image_url,
+      caption: asString(rec.caption) || null,
+      mockup_html,
+      mockup_caption: asString(rec.mockup_caption) || null,
+    });
+  }
+  return out.length ? out : undefined;
+}
+
 export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail {
   const web = asRecord(asRecord(sectionDetails).web);
   const pros = Array.isArray(web.pros) ? web.pros.map(asString).filter(Boolean) : [];
@@ -189,6 +240,8 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
           highlights,
           hidden: rec.hidden === true,
           removed: rec.removed === true,
+          priority: parsePriority(rec.priority),
+          visuals: parseVisuals(rec.visuals),
         };
       })
     : [];

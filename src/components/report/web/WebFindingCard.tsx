@@ -1,9 +1,16 @@
 import { ArrowRight, Eye, EyeOff, Trash2, X } from 'lucide-react';
-import type { WebFinding } from '../../../lib/web-report-details';
+import { findingVisual, type WebFinding, type WebFindingPriority } from '../../../lib/web-report-details';
 import type { WebPageSnapshot } from '../../../lib/types';
 import { useReportEdit } from '../edit/ReportEditContext';
 import EditablePlainText from '../edit/EditablePlainText';
 import WebCropCard from './WebCropCard';
+import WebFindingVisuals from './WebFindingVisuals';
+
+const PRIORITY_STYLE: Record<WebFindingPriority, string> = {
+  high: 'bg-red-50 text-red-700',
+  medium: 'bg-amber-50 text-amber-700',
+  low: 'bg-gray-100 text-gray-600',
+};
 
 /**
  * A single finding rendered as a full-width card: the flagged crop (when the AI
@@ -24,7 +31,10 @@ export default function WebFindingCard({
   onRemove,
   onRemoveHighlight,
   onToggleHidden,
+  viewport = 'desktop',
 }: {
+  /** The device the section is showing, to pick the finding's matching visual. */
+  viewport?: 'desktop' | 'mobile';
   number: number;
   /** False when nothing on the current screenshot carries this number, which is
    *  the honest answer for something the capture cannot photograph, such as a
@@ -49,6 +59,7 @@ export default function WebFindingCard({
 }) {
   const { editMode } = useReportEdit();
   const hasCrop = Boolean(finding.highlight && cropShot?.screenshot_url);
+  const visual = findingVisual(finding, viewport);
   // One opacity, decided here. Two opacity utilities on the same element do not
   // combine, they race on stylesheet order, so being dimmed and being hidden
   // have to resolve to a single class.
@@ -93,6 +104,13 @@ export default function WebFindingCard({
               {number}
             </span>
             <div className="min-w-0 flex-1 text-[13px] text-gray-800">
+              {finding.priority && (
+                <span
+                  className={`mb-1 mr-1.5 inline-block rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${PRIORITY_STYLE[finding.priority]}`}
+                >
+                  {finding.priority}
+                </span>
+              )}
               <EditablePlainText value={finding.text} onSave={onChangeText} placeholder="Finding…" />
             </div>
             {editMode && (
@@ -117,6 +135,12 @@ export default function WebFindingCard({
               </div>
             )}
           </div>
+
+          {visual && (
+            <div className="mt-3">
+              <WebFindingVisuals visual={visual} />
+            </div>
+          )}
 
           {(editMode || finding.recommendation) && (
             <div className="mt-3 flex items-start gap-2 rounded-lg bg-brand-primary/5 p-3">

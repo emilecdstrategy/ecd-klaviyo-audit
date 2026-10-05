@@ -160,6 +160,24 @@ export default function WebAuditReportView({
 
   const demoLabel = demoKind === 'helpdesk' ? 'Helpdesk' : demoKind === 'both' ? 'Agent & Helpdesk' : 'Customer Agent';
 
+  // The page sections in this audit's order, with any renamed titles. A client
+  // who asked us to focus on the cart (Simple & Dainty) gets it first, titled
+  // for what it covers. Set in audit.layout; without it the default order holds.
+  const pageSections = useMemo(() => {
+    const layout = (audit.layout ?? {}) as { web_page_order?: unknown; web_section_titles?: unknown };
+    const order = Array.isArray(layout.web_page_order) ? layout.web_page_order.map(String) : [];
+    const titles = (layout.web_section_titles && typeof layout.web_section_titles === 'object'
+      ? layout.web_section_titles
+      : {}) as Record<string, unknown>;
+    const rank = (key: string) => {
+      const i = order.indexOf(key);
+      return i === -1 ? order.length + PAGE_SECTIONS.findIndex((p) => p.key === key) : i;
+    };
+    return [...PAGE_SECTIONS]
+      .sort((a, b) => rank(a.key) - rank(b.key))
+      .map((p) => ({ ...p, title: typeof titles[p.key] === 'string' && titles[p.key] ? String(titles[p.key]) : p.title }));
+  }, [audit.layout]);
+
   const overview = byKey.get('web_overview');
   const performance = byKey.get('web_performance');
   const roadmap = byKey.get('web_revenue_summary');
@@ -172,7 +190,7 @@ export default function WebAuditReportView({
   const navItems = useMemo(() => {
     const items: Array<{ id: string; label: string }> = [];
     if (overview && !isHidden(overview)) items.push({ id: 'web_overview', label: 'Overview' });
-    for (const { key, title, page_type } of PAGE_SECTIONS) {
+    for (const { key, title, page_type } of pageSections) {
       const section = byKey.get(key);
       if (!section || isHidden(section)) continue;
       if (!pageSnapshots.some((s) => s.page_type === page_type)) continue;
@@ -185,7 +203,7 @@ export default function WebAuditReportView({
     if (roadmap && !isHidden(roadmap)) items.push({ id: 'web_revenue_summary', label: 'Roadmap' });
     return items;
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [sections, pageSnapshots, demoKind, demoLabel]);
+  }, [sections, pageSnapshots, demoKind, demoLabel, pageSections]);
 
   const sectionRefs = useRef<Record<string, HTMLElement | null>>({});
   const setRef = (id: string, el: HTMLElement | null) => { sectionRefs.current[id] = el; };
@@ -285,7 +303,7 @@ export default function WebAuditReportView({
           </WebSectionShell>
         )}
 
-        {PAGE_SECTIONS.map(({ key, title, page_type }) => {
+        {pageSections.map(({ key, title, page_type }) => {
           const section = byKey.get(key);
           if (!section || isHidden(section)) return null;
           const snapshots = pageSnapshots.filter((s) => s.page_type === page_type);
