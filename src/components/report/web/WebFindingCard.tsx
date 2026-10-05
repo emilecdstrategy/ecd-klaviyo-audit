@@ -27,6 +27,7 @@ export default function WebFindingCard({
   dimmed,
   onActivate,
   onChangeText,
+  onChangeTitle,
   onChangeRecommendation,
   onRemove,
   onRemoveHighlight,
@@ -56,6 +57,7 @@ export default function WebFindingCard({
   dimmed?: boolean;
   onActivate: (active: boolean) => void;
   onChangeText: (value: string) => void;
+  onChangeTitle?: (value: string) => void;
   onChangeRecommendation: (value: string) => void;
   onRemove: () => void;
   onRemoveHighlight: () => void;
@@ -69,6 +71,95 @@ export default function WebFindingCard({
   // combine, they race on stylesheet order, so being dimmed and being hidden
   // have to resolve to a single class.
   const fade = dimmed ? 'opacity-40' : finding.hidden ? 'opacity-50' : '';
+
+  const editControls = editMode && (
+    <div className="flex shrink-0 items-center gap-1">
+      <button
+        type="button"
+        onClick={onToggleHidden}
+        className="text-gray-300 hover:text-gray-600"
+        aria-label={finding.hidden ? 'Show finding' : 'Hide finding'}
+        title={finding.hidden ? 'Show on report' : 'Hide from report'}
+      >
+        {finding.hidden ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+      </button>
+      <button type="button" onClick={onRemove} className="text-gray-300 hover:text-red-500" aria-label="Remove finding">
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
+  );
+
+  // One finding per row, Hugo's shape: pictures on the left, and on the right a
+  // header (number, priority, device), a real title, the problem and the fix as
+  // separate blocks. A single phone shot gets a narrow column so the text is
+  // not left floating beside a tall, thin picture, and the text sits centred
+  // against the picture rather than leaving the lower right empty.
+  if (row) {
+    const phoneOnly = Boolean(visual && visual.viewport === 'mobile' && visual.image_url && !visual.mockup_html);
+    const cols = !visual
+      ? ''
+      : phoneOnly
+        ? 'md:grid-cols-[280px_minmax(0,1fr)]'
+        : 'md:grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)]';
+    const device = finding.viewport === 'both' ? 'Phone & desktop' : finding.viewport === 'mobile' ? 'Phone only' : 'Desktop only';
+    return (
+      <div
+        id={anchorId ?? `finding-${number}`}
+        onMouseEnter={() => onActivate(true)}
+        onMouseLeave={() => onActivate(false)}
+        className={`scroll-mt-24 rounded-xl border p-5 transition duration-150 ${
+          active ? 'border-brand-primary ring-2 ring-brand-primary/25' : 'border-gray-200'
+        } ${fade}`}
+      >
+        <div className={`grid gap-6 md:items-center ${cols}`}>
+          {visual && (
+            <div className="min-w-0">
+              <WebFindingVisuals visual={visual} size="large" />
+            </div>
+          )}
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-brand-primary/10 text-xs font-bold text-brand-primary">
+                {number}
+              </span>
+              {finding.priority && (
+                <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold uppercase tracking-wide ${PRIORITY_STYLE[finding.priority]}`}>
+                  {finding.priority}
+                </span>
+              )}
+              <span className="text-[11px] font-medium text-gray-400">{device}</span>
+              <div className="ml-auto">{editControls}</div>
+            </div>
+            {(finding.title || (editMode && onChangeTitle)) && (
+              <h3 className="mt-3 text-base font-semibold leading-snug text-gray-900">
+                {onChangeTitle ? (
+                  <EditablePlainText value={finding.title ?? ''} onSave={onChangeTitle} placeholder="Title…" />
+                ) : (
+                  finding.title
+                )}
+              </h3>
+            )}
+            <div className="mt-3">
+              <p className="text-[11px] font-semibold uppercase tracking-wider text-gray-400">The problem</p>
+              <div className="mt-1 text-sm leading-relaxed text-gray-700">
+                <EditablePlainText value={finding.text} onSave={onChangeText} placeholder="Finding…" />
+              </div>
+            </div>
+            {(editMode || finding.recommendation) && (
+              <div className="mt-4 rounded-lg bg-brand-primary/5 p-3.5">
+                <p className="flex items-center gap-1.5 text-[11px] font-semibold uppercase tracking-wider text-brand-primary">
+                  <ArrowRight className="h-3.5 w-3.5" /> Recommended fix
+                </p>
+                <div className="mt-1 text-sm leading-relaxed text-gray-700">
+                  <EditablePlainText value={finding.recommendation} onSave={onChangeRecommendation} placeholder="Recommendation…" />
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

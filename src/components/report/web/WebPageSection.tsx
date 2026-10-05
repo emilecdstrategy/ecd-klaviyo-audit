@@ -465,6 +465,7 @@ export default function WebPageSection({
                     dimmed={hoveredMarker !== null && hoveredMarker !== number}
                     onActivate={(a) => setActiveIndex(a ? number : null)}
                     onChangeText={(v) => setFinding(i, 'text', v)}
+                    onChangeTitle={(v) => setFinding(i, 'title', v)}
                     onChangeRecommendation={(v) => setFinding(i, 'recommendation', v)}
                     onRemove={() => removeFinding(i)}
                     onRemoveHighlight={() => removeFindingHighlight(i)}

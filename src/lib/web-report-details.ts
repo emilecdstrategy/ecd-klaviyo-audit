@@ -26,6 +26,10 @@ export type WebFinding = {
    *  used to filter the finding out of the array, which meant a mis-click threw
    *  away an audit's work with no way to undo it. */
   removed?: boolean;
+  /** A short heading for the finding ("The cookie banner can hide the Checkout
+   *  button"); `text` is then the problem in full. Optional, older findings
+   *  are a single sentence. */
+  title?: string | null;
   /** How urgent the fix is, shown as a pill on the card. */
   priority?: WebFindingPriority | null;
   /** Pictures that belong to this finding rather than to the page screenshot:
@@ -243,6 +247,7 @@ export function parseWebSectionDetail(sectionDetails: unknown): WebSectionDetail
           highlights,
           hidden: rec.hidden === true,
           removed: rec.removed === true,
+          title: asString(rec.title) || null,
           priority: parsePriority(rec.priority),
           visuals: parseVisuals(rec.visuals),
         };
