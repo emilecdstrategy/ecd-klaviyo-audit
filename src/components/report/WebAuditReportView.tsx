@@ -1,10 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { Settings2 } from 'lucide-react';
+import { Eye, Settings2 } from 'lucide-react';
 import type { Audit, AuditSection, Client, ShopifyDataSnapshot, WebPageSnapshot, WebPageType } from '../../lib/types';
 import { parseWebRoadmapDetail, type OrdersRollup } from '../../lib/web-report-details';
 import { getAddOnItemsFromLayout } from '../../lib/addon-highlight';
 import { addOnIsCustomerAgent, addOnIsHelpdesk } from '../../lib/customer-agent-demo';
 import { useReportEdit } from './edit/ReportEditContext';
+import ReportSectionEditChrome from './edit/ReportSectionEditChrome';
 import EditablePlainText from './edit/EditablePlainText';
 import WebPageSection from './web/WebPageSection';
 import WebAnalyticsSection from './web/WebAnalyticsSection';
@@ -44,6 +45,8 @@ function WebSectionShell({
   setRef,
   children,
   action,
+  hidden = false,
+  onToggleHidden,
 }: {
   id: string;
   number: string;
@@ -53,7 +56,32 @@ function WebSectionShell({
   /** Editor-only control belonging to this section, sat on the right of its
    *  heading rather than floating at the end of the report. */
   action?: React.ReactNode;
+  /** Taken off the client report, as on the Klaviyo report. The editor still
+   *  sees a placeholder with a button to put it back. */
+  hidden?: boolean;
+  onToggleHidden?: (hidden: boolean) => void;
 }) {
+  const { editMode } = useReportEdit();
+  if (hidden) {
+    if (!editMode || !onToggleHidden) return null;
+    return (
+      <section id={id} ref={el => setRef(id, el)} className="scroll-mt-24 print:hidden">
+        <ReportSectionEditChrome label={label} hidden onToggleHidden={onToggleHidden}>
+          {null}
+        </ReportSectionEditChrome>
+      </section>
+    );
+  }
+  const hideButton = editMode && onToggleHidden ? (
+    <button
+      type="button"
+      onClick={() => onToggleHidden(true)}
+      title="Hide section from report"
+      className="flex h-9 w-9 items-center justify-center rounded-lg border border-gray-200 bg-white text-gray-600 shadow-sm transition-colors hover:border-amber-300 hover:text-amber-700"
+    >
+      <Eye className="h-4 w-4" />
+    </button>
+  ) : null;
   return (
     <section id={id} ref={el => setRef(id, el)} className="scroll-mt-24">
       <div className="mb-6 flex min-w-0 items-center gap-4">
@@ -66,7 +94,12 @@ function WebSectionShell({
           </p>
           <h2 className="text-xl font-bold tracking-tight text-gray-900 sm:text-2xl">{label}</h2>
         </div>
-        {action ? <div className="ml-auto shrink-0 print:hidden">{action}</div> : null}
+        {action || hideButton ? (
+          <div className="ml-auto flex shrink-0 items-center gap-2 print:hidden">
+            {action}
+            {hideButton}
+          </div>
+        ) : null}
       </div>
       {children}
     </section>
@@ -136,7 +169,7 @@ export default function WebAuditReportView({
   onManageAddOns?: () => void;
 }) {
   const { audit, client, sections, pageSnapshots, shopifySnapshots } = data;
-  const { editMode } = useReportEdit();
+  const { editMode, toggleAuditSectionHidden } = useReportEdit();
   const byKey = new Map(sections.map((s) => [s.section_key, s]));
 
   // Customer Agent and Helpdesk share one demo app, so selecting both gets a
@@ -297,19 +330,35 @@ export default function WebAuditReportView({
           description="A page-by-page review of your storefront on desktop and mobile. What is working, what is costing you orders, and what to fix first."
         />
 
-        {overview && !isHidden(overview) && (
-          <WebSectionShell id="web_overview" number={nextNumber()} label="Overview" setRef={setRef}>
+        {overview && (
+          <WebSectionShell
+            id="web_overview"
+            number={isHidden(overview) ? '' : nextNumber()}
+            label="Overview"
+            setRef={setRef}
+            hidden={isHidden(overview)}
+            onToggleHidden={(h) => toggleAuditSectionHidden('web_overview', h)}
+          >
             <OverviewBlock section={overview} companyName={client.company_name} />
           </WebSectionShell>
         )}
 
         {pageSections.map(({ key, title, page_type }) => {
           const section = byKey.get(key);
-          if (!section || isHidden(section)) return null;
+          if (!section) return null;
           const snapshots = pageSnapshots.filter((s) => s.page_type === page_type);
           if (!snapshots.length) return null;
+          const hidden = isHidden(section);
           return (
-            <WebSectionShell key={key} id={key} number={nextNumber()} label={title} setRef={setRef}>
+            <WebSectionShell
+              key={key}
+              id={key}
+              number={hidden ? '' : nextNumber()}
+              label={title}
+              setRef={setRef}
+              hidden={hidden}
+              onToggleHidden={(h) => toggleAuditSectionHidden(key, h)}
+            >
               <WebPageSection section={section} title={title} snapshots={snapshots} hideTitle />
             </WebSectionShell>
           );
@@ -326,8 +375,15 @@ export default function WebAuditReportView({
           </div>
         )}
 
-        {performance && !isHidden(performance) && (
-          <WebSectionShell id="web_performance" number={nextNumber()} label="Performance" setRef={setRef}>
+        {performance && (
+          <WebSectionShell
+            id="web_performance"
+            number={isHidden(performance) ? '' : nextNumber()}
+            label="Performance"
+            setRef={setRef}
+            hidden={isHidden(performance)}
+            onToggleHidden={(h) => toggleAuditSectionHidden('web_performance', h)}
+          >
             <WebAnalyticsSection section={performance} rollup={rollup} hideTitle />
           </WebSectionShell>
         )}
@@ -347,8 +403,15 @@ export default function WebAuditReportView({
           </WebSectionShell>
         )}
 
-        {roadmap && !isHidden(roadmap) && (
-          <WebSectionShell id="web_revenue_summary" number={nextNumber()} label="Prioritized Roadmap" setRef={setRef}>
+        {roadmap && (
+          <WebSectionShell
+            id="web_revenue_summary"
+            number={isHidden(roadmap) ? '' : nextNumber()}
+            label="Prioritized Roadmap"
+            setRef={setRef}
+            hidden={isHidden(roadmap)}
+            onToggleHidden={(h) => toggleAuditSectionHidden('web_revenue_summary', h)}
+          >
             <WebRoadmapTable section={roadmap} title="Prioritized Roadmap" hideTitle />
           </WebSectionShell>
         )}
