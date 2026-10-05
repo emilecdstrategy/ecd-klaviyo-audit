@@ -38,6 +38,12 @@ const DEV_DASHBOARD_APPS = 'https://dev.shopify.com/dashboard/129438360/apps';
  * on which route somebody happened to take. It is also cheaper to ask for a
  * scope now than to add one later, because adding one means going back to every
  * store and reinstalling.
+ *
+ * Except read_all_orders: Shopify grants it per app, only after a request in
+ * the Partner Dashboard, and the Dev Dashboard refuses to save a scope list that
+ * contains it ("Contains invalid scopes: read_all_orders", Oct 5). Every client
+ * gets its own app, so it is left out here; the audit reads the 60 days Shopify
+ * allows and says so in the report.
  */
 const SHOPIFY_SCOPES = [
   'read_analytics',
@@ -49,7 +55,6 @@ const SHOPIFY_SCOPES = [
   'read_marketing_integrated_campaigns',
   'read_marketing_events',
   'read_orders',
-  'read_all_orders',
   'read_product_listings',
   'read_products',
   'read_publications',
