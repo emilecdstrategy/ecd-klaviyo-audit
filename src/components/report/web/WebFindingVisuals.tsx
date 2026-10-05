@@ -79,7 +79,9 @@ function MockupFrame({ html }: { html: string }) {
     <iframe
       title="Proposed fix"
       sandbox="allow-same-origin"
-      srcDoc={`<!doctype html><html><head><meta charset="utf-8"><style>html,body{margin:0;padding:0;background:transparent}</style></head><body>${html}</body></html>`}
+      // The base every mock-up was drawn against: border-box sizing and images
+      // that never overflow, as in the report Hugo built them in.
+      srcDoc={`<!doctype html><html><head><meta charset="utf-8"><style>*{box-sizing:border-box}html,body{margin:0;padding:0;background:transparent}img{max-width:100%}</style></head><body>${html}</body></html>`}
       onLoad={(e) => measure(e.currentTarget)}
       scrolling="no"
       className="block w-full overflow-hidden rounded-lg border-0"
