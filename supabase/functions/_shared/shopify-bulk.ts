@@ -20,6 +20,8 @@ export type BulkOrderRow = {
     handle: string | null;
     image: string | null;
     unit_price: number | null;
+    /** The product's lowest variant price: what the store lists it "from". */
+    from_price?: number | null;
   }>;
   channel: string;
   appName: string;
@@ -65,7 +67,7 @@ export function ordersBulkQuery(sinceIso: string, includeCustomer: boolean): str
                   title
                   originalTotalSet { shopMoney { amount } }
                   variant { price }
-                  product { handle featuredImage { url } }
+                  product { handle featuredImage { url } priceRangeV2 { minVariantPrice { amount } } }
                 }
               }
             }
@@ -226,7 +228,8 @@ export async function ingestBulkOrders(
         String((node.originalTotalSet as { shopMoney?: { amount?: unknown } } | null)?.shopMoney?.amount ?? "0"),
       );
       const unitPrice = Number.parseFloat(String((node.variant as { price?: unknown } | null)?.price ?? ""));
-      const product = node.product as { handle?: unknown; featuredImage?: { url?: unknown } | null } | null;
+      const product = node.product as { handle?: unknown; featuredImage?: { url?: unknown } | null; priceRangeV2?: { minVariantPrice?: { amount?: unknown } } | null } | null;
+      const fromPrice = Number.parseFloat(String(product?.priceRangeV2?.minVariantPrice?.amount ?? ""));
       parent.items.push({
         title: intern(title),
         revenue: Number.isFinite(lineRevenue) ? lineRevenue : 0,
@@ -234,6 +237,7 @@ export async function ingestBulkOrders(
         handle: typeof product?.handle === "string" ? intern(product.handle) : null,
         image: typeof product?.featuredImage?.url === "string" ? intern(product.featuredImage.url) : null,
         unit_price: Number.isFinite(unitPrice) ? unitPrice : null,
+        from_price: Number.isFinite(fromPrice) ? fromPrice : null,
       });
       return;
     }

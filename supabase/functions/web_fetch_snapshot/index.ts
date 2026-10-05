@@ -208,7 +208,7 @@ async function aggregateOrders(
                 title
                 originalTotalSet { shopMoney { amount } }
                 variant { price }
-                product { handle featuredImage { url } }
+                product { handle featuredImage { url } priceRangeV2 { minVariantPrice { amount } } }
               }
             }
             ${customerField}
@@ -270,6 +270,9 @@ async function aggregateOrders(
           handle: String(li?.product?.handle ?? "").trim() || null,
           image: String(li?.product?.featuredImage?.url ?? "").trim() || null,
           unit_price: Number.parseFloat(li?.variant?.price ?? "0") || null,
+          // The price of whichever variant sold is not the list price: a pair or a
+          // 14k version put Thin Hoop Earrings at $74 against a $37 list (Hugo).
+          from_price: Number.parseFloat(li?.product?.priceRangeV2?.minVariantPrice?.amount ?? "") || null,
         })).filter((i) => i.title),
       });
     }
@@ -299,6 +302,7 @@ type BasketOrder = {
     handle: string | null;
     image: string | null;
     unit_price: number | null;
+    from_price?: number | null;
   }>;
 };
 
@@ -405,18 +409,19 @@ function analyzeBaskets(
   // real card linking to the live product page.
   const byProduct = new Map<string, {
     revenue: number; units: number; orders: number;
-    handle: string | null; image: string | null; unit_price: number | null;
+    handle: string | null; image: string | null; unit_price: number | null; from_price: number | null;
   }>();
   for (const o of withItems) {
     for (const i of o.items) {
       const cur = byProduct.get(i.title) ??
-        { revenue: 0, units: 0, orders: 0, handle: null, image: null, unit_price: null };
+        { revenue: 0, units: 0, orders: 0, handle: null, image: null, unit_price: null, from_price: null };
       cur.revenue += i.revenue;
       cur.units += i.units;
       cur.orders += 1;
       cur.handle = cur.handle ?? i.handle;
       cur.image = cur.image ?? i.image;
       cur.unit_price = cur.unit_price ?? i.unit_price;
+      cur.from_price = cur.from_price ?? i.from_price ?? null;
       byProduct.set(i.title, cur);
     }
   }
@@ -429,6 +434,7 @@ function analyzeBaskets(
       handle: v.handle,
       image: v.image,
       unit_price: v.unit_price,
+      from_price: v.from_price,
     }))
     .sort((a, b) => b.revenue - a.revenue);
   const totalItemRevenue = ranked.reduce((s, p) => s + p.revenue, 0);

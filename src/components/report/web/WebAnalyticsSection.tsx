@@ -3,6 +3,7 @@ import { ArrowUpRight, Eye, EyeOff, ExternalLink, Info, Plus, TrendingDown, Tren
 import type { AuditSection } from '../../../lib/types';
 import {
   formatDelta,
+  productPriceLabel,
   formatMoney,
   parseWebAnalyticsDetail,
   playIsAboutProducts,
@@ -67,7 +68,7 @@ function ProductCard({
   const href = productUrl(storeBase, product.handle);
   const meta = [
     product.units != null && product.units > 0 ? `${product.units} sold` : null,
-    product.unit_price != null ? `${formatMoney(product.unit_price, currency)} each` : null,
+    productPriceLabel(product, (n) => formatMoney(n, currency)),
   ]
     .filter(Boolean)
     .join(' · ');
@@ -119,8 +120,8 @@ function ProductCard({
       </p>
       <p className="mt-0.5 text-xs text-gray-500">
         {product.units != null && product.units > 0 ? `${product.units} sold` : null}
-        {product.units != null && product.units > 0 && product.unit_price != null ? ' · ' : null}
-        {product.unit_price != null ? `${formatMoney(product.unit_price, currency)} each` : null}
+        {product.units != null && product.units > 0 && productPriceLabel(product, (n) => formatMoney(n, currency)) ? ' · ' : null}
+        {productPriceLabel(product, (n) => formatMoney(n, currency))}
       </p>
       {href && (
         <span className="mt-1 inline-flex items-center gap-1 text-xs font-medium text-brand-primary opacity-0 transition-opacity group-hover/prod:opacity-100">

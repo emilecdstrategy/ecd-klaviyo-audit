@@ -120,6 +120,9 @@ export type BasketProduct = {
   handle?: string | null;
   image?: string | null;
   unit_price?: number | null;
+  /** The lowest variant price, what the store lists the product "from". Newer
+   *  snapshots only; unit_price is whichever variant happened to sell. */
+  from_price?: number | null;
 };
 
 /** The live product page for a card. Handles carry ® and ™ on some stores, and
@@ -637,6 +640,14 @@ export function formatMoney(amount: number, currency?: string | null): string {
   } catch {
     return `$${Math.round(amount).toLocaleString('en-US')}`;
   }
+}
+
+/** The price line for a product card: the list "from" price when we have it,
+ *  else the older per-variant figure. */
+export function productPriceLabel(p: { unit_price?: number | null; from_price?: number | null }, fmt: (n: number) => string): string | null {
+  if (p.from_price != null) return `from ${fmt(p.from_price)}`;
+  if (p.unit_price != null) return `${fmt(p.unit_price)} each`;
+  return null;
 }
 
 export function formatDelta(
