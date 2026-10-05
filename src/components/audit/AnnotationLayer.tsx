@@ -72,6 +72,8 @@ export default function AnnotationLayer({
   const shownImageUrl = proxyFailed ? imageUrl : optimizedStorageImage(imageUrl);
   const [hoveredListId, setHoveredListId] = useState<string | null>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
+  // The image and its markers, which scroll together inside the capped box.
+  const imageBoxRef = useRef<HTMLDivElement>(null);
   const wrapperRef = useRef<HTMLDivElement>(null);
   const outerRef = useRef<HTMLDivElement>(null);
   const [contentHeight, setContentHeight] = useState(800);
@@ -133,8 +135,11 @@ export default function AnnotationLayer({
       const yPct = (screenY / scale / contentHeight) * 100;
       setPendingPos({ x: xPct, y: yPct });
     } else {
-      const xPct = ((e.clientX - rect.left) / rect.width) * 100;
-      const yPct = ((e.clientY - rect.top) / rect.height) * 100;
+      // Against the image itself, not the scrolling box around it: its rect
+      // already moves with the scroll, so a pin lands where it was clicked.
+      const box = imageBoxRef.current?.getBoundingClientRect() ?? rect;
+      const xPct = ((e.clientX - box.left) / box.width) * 100;
+      const yPct = ((e.clientY - box.top) / box.height) * 100;
       setPendingPos({ x: xPct, y: yPct });
     }
     setLabelText('');
@@ -221,9 +226,13 @@ export default function AnnotationLayer({
         className={`relative rounded-lg ${adding ? 'cursor-crosshair' : 'cursor-default'}`}
         onClick={handleClick}
         onScroll={handleWrapperScroll}
-        style={htmlContent ? { maxHeight: maxHeight, overflowY: 'auto', overflowX: 'hidden' } : undefined}
+        // Images get the same fixed-height scrolling box as HTML emails. A
+        // screenshot benchmark used to render at full length beside a capped,
+        // scrolling client email.
+        style={htmlContent || imageUrl ? { maxHeight: maxHeight, overflowY: 'auto', overflowX: 'hidden' } : undefined}
       >
         {imageUrl && !htmlContent && (
+          <div ref={imageBoxRef} className="relative">
           <img
             ref={(el) => {
               if (el) el.onerror = () => { if (el.src !== imageUrl) setProxyFailed(true); };
@@ -235,6 +244,14 @@ export default function AnnotationLayer({
             className="w-full h-auto object-cover rounded-lg"
             draggable={false}
           />
+          {/* Markers sit in % of the image, so they live inside its box. */}
+          {sideAnnotations.map((ann, i) => renderMarker(ann, i))}
+          {pendingPos && renderMarker(
+            { id: 'pending', x_position: pendingPos.x, y_position: pendingPos.y, label: '' },
+            0,
+            true,
+          )}
+          </div>
         )}
 
         {htmlContent && (
@@ -262,12 +279,6 @@ export default function AnnotationLayer({
           </div>
         )}
 
-        {!htmlContent && sideAnnotations.map((ann, i) => renderMarker(ann, i))}
-        {!htmlContent && pendingPos && renderMarker(
-          { id: 'pending', x_position: pendingPos.x, y_position: pendingPos.y, label: '' },
-          0,
-          true,
-        )}
       </div>
 
       {htmlContent && (
