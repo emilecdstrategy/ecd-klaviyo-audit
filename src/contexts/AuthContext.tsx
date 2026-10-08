@@ -7,6 +7,8 @@ import { isAllowedSignInEmail, signInErrorMessage } from '../lib/sign-in-policy'
 interface AuthState {
   user: Profile | null;
   isLoading: boolean;
+  /** A saved session is being refreshed; signed in again in a moment. */
+  isRestoring: boolean;
   authError: string;
   sendMagicLink: (email: string, redirectPath?: string) => Promise<void>;
   signOut: () => Promise<void>;
@@ -16,6 +18,13 @@ interface AuthState {
 const AuthContext = createContext<AuthState | null>(null);
 
 const PROFILE_COLUMNS = 'id,name,email,role,app_access,created_at';
+
+/** Whether the browser holds a Supabase session cookie (sb-<ref>-auth-token,
+ *  possibly split into .0/.1 chunks), i.e. someone has signed in here before. */
+function hasSessionCookie(): boolean {
+  if (typeof document === 'undefined') return false;
+  return document.cookie.split(';').some((c) => /^\s*sb-[^=]*-auth-token(\.\d+)?=./.test(c));
+}
 const ADMIN_DOMAIN = 'ecdigitalstrategy.com';
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -23,6 +32,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<Profile | null>(cachedProfile);
   const [isLoading, setIsLoading] = useState(!cachedProfile);
   const [authError, setAuthError] = useState('');
+  // True while a saved but expired session is being refreshed, so the app can
+  // say "Signing you in" instead of flashing the login screen.
+  const [isRestoring, setIsRestoring] = useState(false);
   const handlingUserId = useRef<string | null>(null);
 
   useEffect(() => {
@@ -35,11 +47,20 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const email = (sessionUser.email ?? '').toLowerCase().trim();
 
       try {
-        const { data: existing, error: profileErr } = await supabase
+        const fetchProfile = () => supabase
           .from('profiles')
           .select(PROFILE_COLUMNS)
           .eq('id', sessionUser.id)
           .maybeSingle();
+        let { data: existing, error: profileErr } = await fetchProfile();
+        // The usual cause of "login screen, then signed in a second later": the
+        // profile read went out on an access token that was just expiring, it
+        // failed, and a failed read looked like being signed out until the
+        // refresh landed. Refresh and read again before giving up.
+        if (profileErr && isMounted) {
+          await supabase.auth.refreshSession().catch(() => null);
+          ({ data: existing, error: profileErr } = await fetchProfile());
+        }
 
         if (!isMounted) return;
         if (profileErr) {
@@ -96,6 +117,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
+    // A saved session whose access token has expired comes back as "no session"
+    // first and only signs in once the refresh lands, a second or two later.
+    // Showing the login screen in that gap told a signed-in person they were
+    // signed out (Emil, Oct 8). While a session cookie is there, we wait for the
+    // refresh behind a "Signing you in" screen, and only show the login once it
+    // has really failed.
+    let restoring = false;
+    let restoreTimer: ReturnType<typeof setTimeout> | null = null;
+    const endRestore = () => {
+      restoring = false;
+      if (restoreTimer) clearTimeout(restoreTimer);
+      restoreTimer = null;
+      if (isMounted) {
+        setIsRestoring(false);
+        setIsLoading(false);
+      }
+    };
+    const signedOut = () => {
+      handlingUserId.current = null;
+      setUser(null);
+      clearCachedProfile();
+    };
+
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
       const finishInitialLoad = () => {
         if (event === 'INITIAL_SESSION' && isMounted) setIsLoading(false);
@@ -106,17 +150,49 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         // there's a window where the session is known but `user` is still null, which
         // App.tsx reads as "logged out" and bounces to /login, losing the deep link the
         // user actually clicked (e.g. a proposal notification email).
-        void handleSessionUser({ id: session.user.id, email: session.user.email }).finally(finishInitialLoad);
-      } else {
-        handlingUserId.current = null;
-        setUser(null);
-        clearCachedProfile();
-        finishInitialLoad();
+        // A session is there, so the loading screen says what is happening.
+        if (event === 'INITIAL_SESSION' && isMounted) setIsRestoring(true);
+        void handleSessionUser({ id: session.user.id, email: session.user.email }).finally(() => {
+          if (restoring) endRestore();
+          else {
+            if (event === 'INITIAL_SESSION' && isMounted) setIsRestoring(false);
+            finishInitialLoad();
+          }
+        });
+        return;
       }
+
+      if (event === 'INITIAL_SESSION' && hasSessionCookie()) {
+        restoring = true;
+        if (isMounted) {
+          setIsRestoring(true);
+          setIsLoading(true);
+        }
+        // The refresh reports back through this same listener on success.
+        void supabase.auth.refreshSession().then(({ data, error }) => {
+          if (!restoring) return;
+          if (error || !data.session) {
+            signedOut();
+            endRestore();
+          }
+        });
+        // Never strand someone on the loading screen if the refresh hangs.
+        restoreTimer = setTimeout(() => {
+          if (!restoring) return;
+          signedOut();
+          endRestore();
+        }, 8000);
+        return;
+      }
+
+      signedOut();
+      if (restoring) endRestore();
+      else finishInitialLoad();
     });
 
     return () => {
       isMounted = false;
+      if (restoreTimer) clearTimeout(restoreTimer);
       subscription.unsubscribe();
     };
   }, []);
@@ -162,7 +238,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, authError, sendMagicLink, signOut, hasRole }}>
+    <AuthContext.Provider value={{ user, isLoading, isRestoring, authError, sendMagicLink, signOut, hasRole }}>
       {children}
     </AuthContext.Provider>
   );

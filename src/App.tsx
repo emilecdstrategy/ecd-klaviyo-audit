@@ -61,7 +61,7 @@ function ViewerLanding() {
 }
 
 function AppRoutes() {
-  const { user, isLoading, hasRole } = useAuth();
+  const { user, isLoading, isRestoring, hasRole } = useAuth();
   const location = useLocation();
   const navigate = useNavigate();
   const state = location.state as any;
@@ -104,7 +104,7 @@ function AppRoutes() {
   }
 
   if (isLoading && !isPublicReportRoute) {
-    return <AppPreloader />;
+    return <AppPreloader message={isRestoring ? 'Signing you in…' : undefined} />;
   }
 
   // Viewer means the read-only role, explicitly. This used to be "anyone who is
