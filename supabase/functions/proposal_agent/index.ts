@@ -387,7 +387,7 @@ serve(async (req) => {
           payload: result,
           payload_kind: payloadKind,
         });
-        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text, raw: turn.raw });
         messages.push({ role: "tool_result", id: turn.id, name: turn.name, result: resultStr });
         continue;
       }
@@ -434,7 +434,7 @@ serve(async (req) => {
           );
         }
         retriedValidation = true;
-        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text, raw: turn.raw });
         messages.push({
           role: "tool_result",
           id: turn.id,
@@ -478,7 +478,7 @@ serve(async (req) => {
             );
           }
           retriedValidation = true;
-          messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+          messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text, raw: turn.raw });
           messages.push({
             role: "tool_result",
             id: turn.id,

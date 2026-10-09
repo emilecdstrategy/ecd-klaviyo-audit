@@ -247,7 +247,7 @@ serve(async (req) => {
           payload: result,
           payload_kind: payloadKind,
         });
-        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text, raw: turn.raw });
         messages.push({ role: "tool_result", id: turn.id, name: turn.name, result: JSON.stringify(result) });
         continue;
       }
@@ -263,7 +263,7 @@ serve(async (req) => {
           return json({ ok: false, error: { code: "bad_response", message: `Invalid ${turn.name}: ${validation.error}` } }, { status: 200 });
         }
         retriedValidation = true;
-        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text, raw: turn.raw });
         messages.push({ role: "tool_result", id: turn.id, name: turn.name, result: JSON.stringify({ error: `Invalid input: ${validation.error}. Fix and call ${turn.name} again.` }) });
         continue;
       }

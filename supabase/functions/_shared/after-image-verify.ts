@@ -5,7 +5,7 @@ import { createLlmClient, type LlmMessage, type LlmTool } from "./llm-adapter.ts
 import type { Viewport } from "./after-image-prompt.ts";
 
 /** Vision model that grades the generated "after" against the fixes it should show. */
-export const VERIFY_MODEL = "claude-sonnet-5";
+export const VERIFY_MODEL = "claude-sonnet-5-5";
 
 export const VERIFY_TOOL: LlmTool = {
   name: "record_after_check",

@@ -53,7 +53,7 @@ import { createLlmClient, type LlmMessage, type LlmTool } from "./llm-adapter.ts
 import { HTML_AFTER_RULES } from "./ecommerce-ux-kb.ts";
 import type { Viewport } from "./after-image-prompt.ts";
 
-export const EDIT_AUTHOR_MODEL = "claude-sonnet-5";
+export const EDIT_AUTHOR_MODEL = "claude-sonnet-5-5";
 
 // ---------------------------------------------------------------------------
 // 1. The DOM outline probe (read-only, runs on the settled page before edits)

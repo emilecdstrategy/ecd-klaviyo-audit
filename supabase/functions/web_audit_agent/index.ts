@@ -18,7 +18,7 @@ function json(data: unknown, init: ResponseInit = {}) {
   });
 }
 
-const WEB_MODEL = "claude-sonnet-5";
+const WEB_MODEL = "claude-sonnet-5-5";
 const dash = (s: unknown) => String(s ?? "").replace(/\s*[—–]\s*/g, ", ").trim();
 
 // The page sections the assistant can edit, with their capture page_type.
@@ -274,7 +274,7 @@ serve(async (req) => {
     let built = validateAndBuild(turn.name, (turn.input ?? {}) as Record<string, unknown>);
     // One retry: feed the validation error back so the model can fix it.
     if (built.error) {
-      messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input });
+      messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, raw: turn.raw });
       messages.push({ role: "tool_result", id: turn.id, name: turn.name, result: `Invalid: ${built.error}. Please call the tool again with valid values.` });
       turn = await runOnce();
       if (turn.kind === "text") return json({ ok: true, assistant_text: dash(turn.text) });

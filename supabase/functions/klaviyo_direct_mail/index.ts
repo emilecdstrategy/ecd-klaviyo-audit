@@ -31,7 +31,7 @@ import {
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const MODEL = "claude-sonnet-5";
+const MODEL = "claude-sonnet-5-5";
 const AOV_WINDOW_DAYS = 90;
 
 const corsHeaders: Record<string, string> = {

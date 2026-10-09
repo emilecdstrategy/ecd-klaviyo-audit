@@ -233,7 +233,7 @@ serve(async (req) => {
         } else {
           result = { error: `Unknown tool ${turn.name}` };
         }
-        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text, raw: turn.raw });
         messages.push({ role: "tool_result", id: turn.id, name: turn.name, result: JSON.stringify(result) });
         continue;
       }
@@ -244,7 +244,7 @@ serve(async (req) => {
         if (!input.question || opts.length < 2) {
           if (retried) return json({ ok: false, error: { code: "bad_response", message: "Invalid question" } }, { status: 200 });
           retried = true;
-          messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+          messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text, raw: turn.raw });
           messages.push({ role: "tool_result", id: turn.id, name: turn.name, result: JSON.stringify({ error: "Provide a question and 2-4 options." }) });
           continue;
         }
@@ -252,7 +252,7 @@ serve(async (req) => {
           // The user answered this already; asking again is the loop, not a fix.
           if (repeated) return json({ ok: false, error: { code: "bad_response", message: "The assistant repeated itself. Try rephrasing, or fill the context in manually." } }, { status: 200 });
           repeated = true;
-          messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+          messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text, raw: turn.raw });
           messages.push({
             role: "tool_result",
             id: turn.id,
@@ -281,7 +281,7 @@ serve(async (req) => {
       if (!input.client_background && !input.custom_instructions) {
         if (retried) return json({ ok: false, error: { code: "bad_response", message: "Empty context" } }, { status: 200 });
         retried = true;
-        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text });
+        messages.push({ role: "assistant_tool_call", id: turn.id, name: turn.name, input: turn.input, text: turn.text, raw: turn.raw });
         messages.push({ role: "tool_result", id: turn.id, name: turn.name, result: JSON.stringify({ error: "Provide client_background and custom_instructions." }) });
         continue;
       }

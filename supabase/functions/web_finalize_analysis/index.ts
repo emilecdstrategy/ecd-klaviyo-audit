@@ -28,7 +28,7 @@ import { REPEAT_LOOKBACK_DAYS } from "../_shared/repeat-rate.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL") ?? "";
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY") ?? "";
-const WEB_MODEL = "claude-sonnet-5";
+const WEB_MODEL = "claude-sonnet-5-5";
 
 const corsHeaders: Record<string, string> = {
   "access-control-allow-origin": "*",
